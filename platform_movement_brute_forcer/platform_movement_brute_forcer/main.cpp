@@ -20,11 +20,44 @@ using namespace std;
 
 #pragma comment(lib, "Ws2_32.lib")
 
+Inputs MainScript::GetInputs(uint64_t frame)
+{
+	if (BaseStatus.m64Diff.frames.count(frame))
+		return BaseStatus.m64Diff.frames[frame];
+	else if (_m64->frames.count(frame))
+		return _m64->frames[frame];
+
+	return Inputs(0, 0, 0);
+}
+
+bool MainScript::verification()
+{
+	return true;
+}
+
+bool MainScript::execution()
+{
+	StartToFrame(3531);
+	auto status = Script::Modify<BitFsPyramidOscillation_RunDownhill>();
+	return true;
+}
+
+bool MainScript::validation()
+{
+	//Save m64Diff to M64
+	for (auto& [frame, inputs] : BaseStatus.m64Diff.frames)
+	{
+		_m64->frames[frame] = inputs;
+	}
+
+	return true;
+}
+
 int main(int argc, char* argv[]) {
 	M64 m64 = M64("C:\\Users\\Tyler\\Downloads\\TestWrite2.m64");
 	m64.load();
 
-	long scriptFrame = 3265;
+	long scriptFrame = 3531;
 	Slot scriiptSaveState = game.alloc_slot();
 	/*
 	do
@@ -54,8 +87,13 @@ int main(int argc, char* argv[]) {
 
 	Inputs::PopulateInputMappings();
 
-	auto status = Script::Execute<AdvanceM64FromStartToFrame>(&m64, 3531);
-	auto status2 = Script::Execute<GetMinimumDownhillWalkingAngle>(&m64);
+	auto status = Script::Main<MainScript>(&m64);
+
+	//auto status = Script::Modify<AdvanceM64FromStartToFrame>(&m64, 3531);
+	//auto status2 = Script::Modify<BitFsPyramidOscillation_RunDownhill>(&m64);
+
+	m64.save();
+
 	return 0;
 	//int16_t cameraYaw = Script::Execute<GetNextFrameCameraYaw>(m64).cameraYaw;
 	/*

@@ -20,9 +20,7 @@ bool TryHackedWalkOutOfBounds::execution()
 	marioState->forwardVel = _speed;
 	marioState->action = ACT_WALKING;
 	auto inputs = Inputs::GetClosestInputByYawHau(marioState->faceAngle[1], 32, camera->yaw);
-	Inputs::set_inputs(Inputs(0, inputs.first, inputs.second));
-
-	game.advance_frame();
+	advance_frame(Inputs(0, inputs.first, inputs.second));
 
 	CustomStatus.endSpeed = marioState->forwardVel;
 	Script::CopyVec3f(CustomStatus.endPos, marioState->pos);

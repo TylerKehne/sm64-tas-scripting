@@ -16,6 +16,9 @@
     <Filter Include="Source Files\Scripts">
       <UniqueIdentifier>{2d57d75e-9ebb-4872-b8b3-58be6174fb14}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\Scripts\BitFsPyramidOscillation">
+      <UniqueIdentifier>{2d92ff06-1518-4003-82ad-e5003b9669a0}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Game.cpp">
@@ -42,17 +45,17 @@
     <ClCompile Include="Inputs.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="RunDownhillOnInvertedPyramid.cpp">
-      <Filter>Source Files\Scripts</Filter>
-    </ClCompile>
-    <ClCompile Include="AdvanceM64FromStartToFrame.cpp">
-      <Filter>Source Files\Scripts</Filter>
-    </ClCompile>
     <ClCompile Include="GetMinimumDownhillWalkingAngle.cpp">
       <Filter>Source Files\Scripts</Filter>
     </ClCompile>
     <ClCompile Include="TryHackedWalkOutOfBounds.cpp">
       <Filter>Source Files\Scripts</Filter>
+    </ClCompile>
+    <ClCompile Include="BitFsPyramidOscillation.cpp">
+      <Filter>Source Files\Scripts\BitFsPyramidOscillation</Filter>
+    </ClCompile>
+    <ClCompile Include="BitFsPyramidOscillation_RunDownhill.cpp">
+      <Filter>Source Files\Scripts\BitFsPyramidOscillation</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -93,6 +96,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Sm64.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ObjectFields.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

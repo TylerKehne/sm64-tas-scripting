@@ -10,17 +10,14 @@
 class Slot
 {
 public:
-	char* buf1;
-	char* buf2;
+	std::vector<uint8_t> buf1;
+	std::vector<uint8_t> buf2;
 
-	Slot() { }
+	Slot () {}
 
 	Slot(size_t size1, size_t size2) {
-		buf1 = (char*)malloc(size1);
-		buf2 = (char*)malloc(size2);
-
-		memset(buf1, 0, size1);
-		memset(buf2, 0, size2);
+		buf1 = std::vector<uint8_t>(size1, 0);
+		buf2 = std::vector<uint8_t>(size2, 0);
 	}
 };
 

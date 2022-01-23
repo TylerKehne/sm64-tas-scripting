@@ -61,14 +61,14 @@ void Inputs::PopulateInputMappings()
 	}
 }
 
-std::pair<int8_t, int8_t> Inputs::GetClosestInputByYawHau(int16_t intendedYaw, float intendedMag, int16_t cameraYaw)
+std::pair<int8_t, int8_t> Inputs::GetClosestInputByYawHau(int16_t intendedYaw, float intendedMag, int16_t cameraYaw, int32_t direction)
 {
 	//intendedYaw = baseIntendedYaw + cameraYaw
 
 	if (intendedMag == 0.0f)
 		return std::pair(0, 0);
 
-	int16_t minIntendedYaw = intendedYaw - intendedYaw % 16;
+	int16_t minIntendedYaw = intendedYaw - (intendedYaw & 15);
 	int16_t maxIntendedYaw = minIntendedYaw + 15;
 
 	int16_t minBaseIntendedYaw = minIntendedYaw - cameraYaw;
@@ -136,18 +136,33 @@ std::pair<int8_t, int8_t> Inputs::GetClosestInputByYawHau(int16_t intendedYaw, f
 		}
 
 		//Check both positive and negative HAU offsets for the closest mag if either of them finds a matching yaw
-		if (hauOffset == 0)
+		if (direction == 0)
+		{
+			if (hauOffset == 0)
+			{
+				if (foundMatchingYawHau)
+					break;
+				hauOffset = 1;
+			}
+			else if (hauOffset > 0)
+				hauOffset *= -1;
+			else if (foundMatchingYawHau)
+				break;
+			else
+				hauOffset = -hauOffset + 1;
+		}
+		else if (direction > 0)
 		{
 			if (foundMatchingYawHau)
 				break;
-			hauOffset = 1;
+			hauOffset++;
 		}
-		else if (hauOffset > 0)
-			hauOffset *= -1;
-		else if (foundMatchingYawHau)
-			break;
 		else
-			hauOffset = -hauOffset + 1;
+		{
+			if (foundMatchingYawHau)
+				break;
+			hauOffset--;
+		}
 	}
 
 	return closestInput;
@@ -170,6 +185,7 @@ int M64::load()
 
 		fseek(f, 0x400, SEEK_SET);
 
+		uint64_t index = 0;
 		while (true) {
 			uint16_t bigEndianButtons;
 
@@ -193,7 +209,8 @@ int M64::load()
 				break;
 			}
 
-			frames.emplace_back(Inputs(buttons, stick_x, stick_y));
+			frames[index] = Inputs(buttons, stick_x, stick_y);
+			index++;
 		}
 
 		fclose(f);
@@ -215,9 +232,10 @@ int M64::save(long initFrame)
 	int8_t stick_x, stick_y;
 
 	size_t err;
+	uint64_t lastFrame = frames.rbegin()->first;
 
 	try {
-		if ((err = fopen_s(&f, fileName, "wb")) != 0) {
+		if ((err = fopen_s(&f, fileName, "r+b")) != 0) {
 			std::cerr << "Bad open: " << err << std::endl;
 			exit(EXIT_FAILURE);
 		}
@@ -231,14 +249,20 @@ int M64::save(long initFrame)
 
 		//Write frames
 		fseek(f, 0x400 + 4 * initFrame, SEEK_SET);
-		for (int i = 0; i < frames.size(); i++) {
-			uint16_t bigEndianButtons = htons(frames[i].buttons);
+		for (int i = 0; i <= lastFrame; i++) {
+			uint16_t bigEndianButtons = 0;
+			int8_t stickX = 0;
+			int8_t stickY = 0;
+			
+			if (frames.count(i))
+			{
+				bigEndianButtons = htons(frames[i].buttons);
+				stickX = frames[i].stick_x;
+				stickY = frames[i].stick_y;
+			}
+			
 			fwrite(&bigEndianButtons, sizeof(uint16_t), 1, f);
-
-			int8_t stickX = frames[i].stick_x;
 			fwrite(&stickX, sizeof(int8_t), 1, f);
-
-			int8_t stickY = frames[i].stick_y;
 			fwrite(&stickY, sizeof(int8_t), 1, f);
 		}
 
@@ -251,18 +275,4 @@ int M64::save(long initFrame)
 	}
 
 	return 1;
-}
-
-void M64Diff::apply()
-{
-	long long size = frames.size();
-	long long baseSize = baseM64.frames.size();
-
-	for (long long i = 0; i < size; i++)
-	{
-		if (initFrame + i < baseSize)
-			baseM64.frames[initFrame + i] = frames[i];
-		else
-			baseM64.frames.push_back(frames[i]);
-	}
 }

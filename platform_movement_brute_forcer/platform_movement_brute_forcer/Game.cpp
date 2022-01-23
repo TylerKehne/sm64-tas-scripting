@@ -27,18 +27,18 @@ Slot Game::alloc_slot() {
 
 void Game::save_state(Slot* slot) {
 	int64_t *temp = reinterpret_cast<int64_t*>(dll) + segment[0].virtual_address / sizeof(int64_t);
-	memmove(slot->buf1, temp, segment[0].virtual_size);
+	memmove(slot->buf1.data(), temp, segment[0].virtual_size);
 
 	temp = reinterpret_cast<int64_t*>(dll) + segment[1].virtual_address / sizeof(int64_t);
-	memmove(slot->buf2, temp, segment[1].virtual_size);
+	memmove(slot->buf2.data(), temp, segment[1].virtual_size);
 }
 
 void Game::load_state(Slot* slot) {
 	int64_t *temp = reinterpret_cast<int64_t*>(dll) + segment[0].virtual_address / sizeof(int64_t);
-	memmove(temp, slot->buf1, segment[0].virtual_size);
+	memmove(temp, slot->buf1.data(), segment[0].virtual_size);
 
 	temp = reinterpret_cast<int64_t*>(dll) + segment[1].virtual_address / sizeof(int64_t);
-	memmove(temp, slot->buf2, segment[1].virtual_size);
+	memmove(temp, slot->buf2.data(), segment[1].virtual_size);
 }
 
 intptr_t Game::addr(const char* symbol) {

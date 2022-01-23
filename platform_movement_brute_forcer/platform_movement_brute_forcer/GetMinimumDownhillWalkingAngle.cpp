@@ -14,7 +14,7 @@ bool GetMinimumDownhillWalkingAngle::execution()
 	//Walk OOB to get Mario's floor after surface updates + platform displacement with no QStep interference
 	for (float walkSpeed = -131072.0f; walkSpeed > -(1 << 31); walkSpeed *= 1.5f)
 	{
-		auto status = Script::Execute<TryHackedWalkOutOfBounds>(_m64, walkSpeed);
+		auto status = Test<TryHackedWalkOutOfBounds>(walkSpeed);
 
 		if (status.validated)
 		{
@@ -41,8 +41,6 @@ bool GetMinimumDownhillWalkingAngle::execution()
 	int32_t lowerAngle = marioState->floorAngle + 0x3FFF;
 	int32_t upperAngle = marioState->floorAngle - 0x3FFF;
 
-	game.load_state(&_initialSave);
-
 	int32_t lowerAngleDiff = abs(lowerAngle - marioState->faceAngle[1]);
 	int32_t upperAngleDiff = abs(upperAngle - marioState->faceAngle[1]);
 
@@ -62,5 +60,8 @@ bool GetMinimumDownhillWalkingAngle::execution()
 
 bool GetMinimumDownhillWalkingAngle::validation()
 {
+	if (!CustomStatus.isSlope)
+		return false;
+
 	return true;
 }

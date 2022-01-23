@@ -141,7 +141,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="AdvanceM64FromStartToFrame.cpp" />
+    <ClCompile Include="BitFsPyramidOscillation.cpp" />
     <ClCompile Include="Brute.cpp" />
     <ClCompile Include="Game.cpp" />
     <ClCompile Include="GetMinimumDownhillWalkingAngle.cpp" />
@@ -149,7 +149,7 @@
     <ClCompile Include="Magic.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="Movement.cpp" />
-    <ClCompile Include="RunDownhillOnInvertedPyramid.cpp" />
+    <ClCompile Include="BitFsPyramidOscillation_RunDownhill.cpp" />
     <ClCompile Include="Script.cpp" />
     <ClCompile Include="Trig.cpp" />
     <ClCompile Include="TryHackedWalkOutOfBounds.cpp" />
@@ -158,6 +158,7 @@
     <ClInclude Include="Brute.hpp" />
     <ClInclude Include="Game.hpp" />
     <ClInclude Include="Camera.hpp" />
+    <ClInclude Include="ObjectFields.hpp" />
     <ClInclude Include="Sm64.hpp" />
     <ClInclude Include="Inputs.hpp" />
     <ClInclude Include="Macros.hpp" />
