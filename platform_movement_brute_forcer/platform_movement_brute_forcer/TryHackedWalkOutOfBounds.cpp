@@ -25,6 +25,7 @@ bool TryHackedWalkOutOfBounds::execution()
 	CustomStatus.endSpeed = marioState->forwardVel;
 	Script::CopyVec3f(CustomStatus.endPos, marioState->pos);
 	CustomStatus.endAction = marioState->action;
+	CustomStatus.floorAngle = marioState->floorAngle;
 
 	return true;
 }

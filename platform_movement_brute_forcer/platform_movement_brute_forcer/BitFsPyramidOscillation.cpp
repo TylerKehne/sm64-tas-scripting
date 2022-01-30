@@ -45,18 +45,65 @@ bool BitFsPyramidOscillation::execution()
 	Camera* camera = *(Camera**)(game.addr("gCamera"));
 	Object* pyramid = marioState->floor->object;
 
-	//Record initial XZ sum, don't want to decrease this
-	CustomStatus.initialXzSum = fabs(pyramid->oTiltingPyramidNormalX) + fabs(pyramid->oTiltingPyramidNormalZ);
+	//TODO: Optimize init angle
+	auto initAngleStatus = Test<GetMinimumDownhillWalkingAngle>(0);
+	auto stick = Inputs::GetClosestInputByYawExact(0x2000, 32, camera->yaw, initAngleStatus.downhillRotation);
+	advance_frame(Inputs(0, stick.first, stick.second));
 
-	auto status = Execute<BitFsPyramidOscillation_RunDownhill>();
-	if (!status.validated)
+	Slot preTurnSave = game.alloc_slot();
+	game.save_state(&preTurnSave);
+
+	auto initRunStatus = Modify<BitFsPyramidOscillation_RunDownhill>();
+	if (!initRunStatus.validated)
 		return false;
 
-	if (status.maxSpeed > CustomStatus.maxSpeed)
-		CustomStatus.maxSpeed = status.maxSpeed;
+	//Record initial XZ sum, don't want to decrease this (TODO: optimize angle of first frame and record this before run downhill)
+	CustomStatus.initialXzSum = fabs(pyramid->oTiltingPyramidNormalX) + fabs(pyramid->oTiltingPyramidNormalZ);
+
+	if (initRunStatus.maxSpeed > CustomStatus.maxSpeed)
+		CustomStatus.maxSpeed = initRunStatus.maxSpeed;
 
 	//We want to turn uphill as late as possible, and also turn around as late as possible, without sacrificing XZ sum
+	uint64_t minFrame = initRunStatus.m64Diff.frames.begin()->first;
+	uint64_t maxFrame = initRunStatus.m64Diff.frames.rbegin()->first;
+	while (true)
+	{
+		float maxSpeed = 0;
+		float finalXzSum = 0;
+		uint64_t passedEquilibriumFrame = -1;
+		M64Diff turnRunDiff = M64Diff();
+		for (uint64_t frame = maxFrame; frame >= minFrame; frame--)
+		{
+			game.load_state(&preTurnSave);
+			GoToFrame(frame);
 
+			auto turnRunStatus = Execute<BitFsPyramidOscillation_TurnThenRunDownhill>();
+			if (!turnRunStatus.validated)
+				continue;
+
+			if (turnRunStatus.maxSpeed > maxSpeed)
+			{
+				maxSpeed = turnRunStatus.maxSpeed;
+				finalXzSum = turnRunStatus.finalXzSum;
+				turnRunDiff = turnRunStatus.m64Diff;
+				passedEquilibriumFrame = turnRunStatus.framePassedEquilibriumPoint;
+			}
+		}
+
+		if (maxSpeed > CustomStatus.maxSpeed)
+		{
+			CustomStatus.finalXzSum = finalXzSum;
+			CustomStatus.maxSpeed = maxSpeed;
+			Apply(&turnRunDiff);
+			minFrame = passedEquilibriumFrame;
+			maxFrame = turnRunDiff.frames.rbegin()->first;
+			game.load_state(&preTurnSave);
+			GoToFrame(minFrame);
+			game.save_state(&preTurnSave);
+		}
+		else
+			break;
+	}
 
 	return true;
 }

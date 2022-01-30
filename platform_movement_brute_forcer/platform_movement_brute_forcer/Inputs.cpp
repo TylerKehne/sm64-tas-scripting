@@ -5,6 +5,7 @@
 #include "Game.hpp"
 
 std::map<int16_t, std::map<float, std::pair<int8_t, int8_t>>> yawMagToInputs;
+std::map<int8_t, std::map<int8_t, std::pair<int16_t, float>>> inputsToYawMag;
 
 void Inputs::set_inputs(Inputs inputs)
 {
@@ -49,19 +50,22 @@ void Inputs::PopulateInputMappings()
 			float intendedMag = ((stickMag / 64.0f) * (stickMag / 64.0f)) * 64.0f;
 			intendedMag = intendedMag / 2.0f;
 
+			int16_t baseIntendedYaw = 0;
 			if (intendedMag > 0.0f)
 			{
-				int16_t baseIntendedYaw = atan2s(-adjustedStickY, adjustedStickX);
+				baseIntendedYaw = atan2s(-adjustedStickY, adjustedStickX);
 				if (yawMagToInputs.count(baseIntendedYaw) == 0)
 					yawMagToInputs[baseIntendedYaw] = std::map<float, std::pair<int8_t, int8_t>>{ { intendedMag, std::pair<int8_t, int8_t>(stickX, stickY) } };
 				else if (yawMagToInputs[baseIntendedYaw].count(intendedMag) == 0)
 					yawMagToInputs[baseIntendedYaw][intendedMag] = std::pair<int8_t, int8_t>(stickX, stickY);
 			}
+
+			inputsToYawMag[stickX][stickY] = std::pair<int16_t, float>(baseIntendedYaw, intendedMag);
 		}
 	}
 }
 
-std::pair<int8_t, int8_t> Inputs::GetClosestInputByYawHau(int16_t intendedYaw, float intendedMag, int16_t cameraYaw, int32_t direction)
+std::pair<int8_t, int8_t> Inputs::GetClosestInputByYawHau(int16_t intendedYaw, float intendedMag, int16_t cameraYaw, Rotation bias)
 {
 	//intendedYaw = baseIntendedYaw + cameraYaw
 
@@ -136,7 +140,7 @@ std::pair<int8_t, int8_t> Inputs::GetClosestInputByYawHau(int16_t intendedYaw, f
 		}
 
 		//Check both positive and negative HAU offsets for the closest mag if either of them finds a matching yaw
-		if (direction == 0)
+		if (bias == Rotation::NONE)
 		{
 			if (hauOffset == 0)
 			{
@@ -151,7 +155,7 @@ std::pair<int8_t, int8_t> Inputs::GetClosestInputByYawHau(int16_t intendedYaw, f
 			else
 				hauOffset = -hauOffset + 1;
 		}
-		else if (direction > 0)
+		else if (bias == Rotation::COUNTERCLOCKWISE)
 		{
 			if (foundMatchingYawHau)
 				break;
@@ -166,6 +170,115 @@ std::pair<int8_t, int8_t> Inputs::GetClosestInputByYawHau(int16_t intendedYaw, f
 	}
 
 	return closestInput;
+}
+
+std::pair<int8_t, int8_t> Inputs::GetClosestInputByYawExact(int16_t intendedYaw, float intendedMag, int16_t cameraYaw, Rotation bias)
+{
+	//intendedYaw = baseIntendedYaw + cameraYaw
+
+	if (intendedMag == 0.0f)
+		return std::pair(0, 0);
+
+	int16_t baseIntendedYaw = intendedYaw - cameraYaw;
+
+	std::pair<int8_t, int8_t> closestInput = std::pair(0, 0);
+	float closestMagDistance = INFINITY;
+
+	bool foundMatchingYaw = false;
+	int offset = 0;
+	while (true)
+	{
+		int16_t yaw = baseIntendedYaw + offset;
+		if (yawMagToInputs.count(yaw))
+		{
+			foundMatchingYaw = true;
+			if (yawMagToInputs[yaw].count(intendedMag))
+				return yawMagToInputs[yaw][intendedMag];
+
+			auto lower = yawMagToInputs[yaw].lower_bound(intendedMag);
+			auto upper = yawMagToInputs[yaw].upper_bound(intendedMag);
+			float magDistance = INFINITY;
+			if (lower == yawMagToInputs[yaw].begin())
+			{
+				magDistance = (*upper).first - intendedMag;
+				if (magDistance < closestMagDistance)
+				{
+					closestMagDistance = magDistance;
+					closestInput = (*upper).second;
+				}
+			}
+			else if (upper == yawMagToInputs[yaw].end())
+			{
+				magDistance = intendedMag - (*lower).first;
+				if (magDistance < closestMagDistance)
+				{
+					closestMagDistance = magDistance;
+					closestInput = (*lower).second;
+				}
+			}
+			else
+			{
+				float lowerMagDistance = intendedMag - (*lower).first;
+				float upperMagDistance = (*upper).first - intendedMag;
+
+				if (lowerMagDistance <= upperMagDistance)
+				{
+					if (lowerMagDistance < closestMagDistance)
+					{
+						closestMagDistance = lowerMagDistance;
+						closestInput = (*lower).second;
+					}
+				}
+				else
+				{
+					if (upperMagDistance < closestMagDistance)
+					{
+						closestMagDistance = upperMagDistance;
+						closestInput = (*upper).second;
+					}
+				}
+			}
+		}
+
+		//Check both positive and negative HAU offsets for the closest mag if either of them finds a matching yaw
+		if (bias == Rotation::NONE)
+		{
+			if (offset == 0)
+			{
+				if (foundMatchingYaw)
+					break;
+				offset = 1;
+			}
+			else if (offset > 0)
+				offset *= -1;
+			else if (foundMatchingYaw)
+				break;
+			else
+				offset = -offset + 1;
+		}
+		else if (bias == Rotation::COUNTERCLOCKWISE)
+		{
+			if (foundMatchingYaw)
+				break;
+			offset++;
+		}
+		else
+		{
+			if (foundMatchingYaw)
+				break;
+			offset--;
+		}
+	}
+
+	return closestInput;
+}
+
+std::pair<int16_t, float> Inputs::GetIntendedYawMagFromInput(int8_t stickX, int8_t stickY, int16_t cameraYaw)
+{
+	int16_t baseIntendedYaw = inputsToYawMag[stickX][stickY].first;
+	float intendedMag = inputsToYawMag[stickX][stickY].second;
+
+	return std::pair<int16_t, float>(baseIntendedYaw + cameraYaw, intendedMag);
 }
 
 int M64::load()
@@ -222,6 +335,14 @@ int M64::load()
 	}
 
 	return 1;
+}
+
+bool Inputs::HauEquals(int16_t angle1, int16_t angle2)
+{
+	int16_t hau1 = angle1 - (angle1 & 15);
+	int16_t hau2 = angle2 - (angle2 & 15);
+
+	return hau1 == hau2;
 }
 
 int M64::save(long initFrame)

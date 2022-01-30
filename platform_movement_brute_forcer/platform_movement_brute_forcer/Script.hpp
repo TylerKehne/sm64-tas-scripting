@@ -3,6 +3,9 @@
 #include "Game.hpp"
 #include "Types.hpp"
 #include "ObjectFields.hpp"
+#include "Sm64.hpp"
+#include "Camera.hpp"
+#include "Trig.hpp"
 #include <unordered_map>
 
 #ifndef SCRIPT_H
@@ -168,15 +171,17 @@ public:
 	};
 	CustomScriptStatus CustomStatus = CustomScriptStatus();
 
-	BitFsPyramidOscillation_RunDownhill(Script* parentScript) : Script(parentScript) {}
+	BitFsPyramidOscillation_RunDownhill(Script* parentScript, int16_t roughTargetAngle = 0)
+		: Script(parentScript), _roughTargetAngle(roughTargetAngle) {}
 
 	bool verification();
 	bool execution();
 	bool validation();
 
 private:
-	int _initXDirection = 0;
-	int _initZDirection = 0;
+	int _targetXDirection = 0;
+	int _targetZDirection = 0;
+	int16_t _roughTargetAngle = 0;
 };
 
 class GetMinimumDownhillWalkingAngle: public Script
@@ -188,14 +193,24 @@ public:
 		bool isSlope = false;
 		int32_t angleFacing = 0;
 		int32_t angleNotFacing = 0;
+		int32_t angleFacingAnalogBack = 0;
+		int32_t angleNotFacingAnalogBack = 0;
+		Rotation downhillRotation = Rotation::NONE;
 	};
 	CustomScriptStatus CustomStatus = CustomScriptStatus();
 
-	GetMinimumDownhillWalkingAngle(Script* parentScript) : Script(parentScript) {}
+	GetMinimumDownhillWalkingAngle(Script* parentScript, int16_t targetAngle)
+		: Script(parentScript), _targetAngle(targetAngle), _faceAngle(targetAngle) {}
+	GetMinimumDownhillWalkingAngle(Script* parentScript, int16_t targetAngle, int16_t faceAngle)
+		: Script(parentScript), _targetAngle(targetAngle), _faceAngle(faceAngle) {}
 
 	bool verification();
 	bool execution();
 	bool validation();
+
+private:
+	int16_t _faceAngle;
+	int16_t _targetAngle;
 };
 
 class TryHackedWalkOutOfBounds : public Script
@@ -209,6 +224,7 @@ public:
 		float startSpeed;
 		float endSpeed;
 		uint32_t endAction;
+		uint16_t floorAngle;
 	};
 	CustomScriptStatus CustomStatus = CustomScriptStatus();
 
@@ -239,6 +255,50 @@ public:
 	bool verification();
 	bool execution();
 	bool validation();
+};
+
+class BitFsPyramidOscillation_TurnThenRunDownhill : public Script
+{
+public:
+	class CustomScriptStatus
+	{
+	public:
+		float initialXzSum = 0;
+		float finalXzSum = 0;
+		float maxSpeed = 0;
+		int64_t framePassedEquilibriumPoint = -1;
+	};
+	CustomScriptStatus CustomStatus = CustomScriptStatus();
+
+	BitFsPyramidOscillation_TurnThenRunDownhill(Script* parentScript) : Script(parentScript) {}
+
+	bool verification();
+	bool execution();
+	bool validation();
+};
+
+class BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle : public Script
+{
+public:
+	class CustomScriptStatus
+	{
+	public:
+		float initialXzSum = 0;
+		float finalXzSum = 0;
+		float maxSpeed = 0;
+		int64_t framePassedEquilibriumPoint = -1;
+		bool tooSlowForTurnAround = false;
+	};
+	CustomScriptStatus CustomStatus = CustomScriptStatus();
+
+	BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle(Script* parentScript, int16_t angle) : Script(parentScript), _angle(angle) {}
+
+	bool verification();
+	bool execution();
+	bool validation();
+
+private:
+	int16_t _angle;
 };
 
 #endif

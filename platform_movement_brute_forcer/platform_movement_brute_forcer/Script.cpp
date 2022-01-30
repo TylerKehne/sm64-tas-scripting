@@ -100,7 +100,6 @@ void Script::load_state(Slot* saveState)
 {
 	game.load_state(saveState);
 
-	//Roll back diff to current frame
 	uint64_t currentFrame = game.getCurrentFrame();
 	auto firstInvalidFrame = BaseStatus.m64Diff.frames.upper_bound(currentFrame);
 	BaseStatus.m64Diff.frames.erase(firstInvalidFrame, BaseStatus.m64Diff.frames.end());
@@ -170,7 +169,7 @@ void Script::GoToFrame(uint64_t frame)
 
 void Script::StartToFrame(uint64_t frame)
 {
-	load_state(&game.startSave);
+	game.load_state(&game.startSave);
 
 	for (uint64_t i = 0; i < frame; i++)
 	{

@@ -132,6 +132,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -142,6 +143,8 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="BitFsPyramidOscillation.cpp" />
+    <ClCompile Include="BitFsPyramidOscillation_TurnThenRunDownhill.cpp" />
+    <ClCompile Include="BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle.cpp" />
     <ClCompile Include="Brute.cpp" />
     <ClCompile Include="Game.cpp" />
     <ClCompile Include="GetMinimumDownhillWalkingAngle.cpp" />

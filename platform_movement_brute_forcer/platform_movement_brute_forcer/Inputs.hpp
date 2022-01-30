@@ -7,6 +7,35 @@
 #ifndef INPUTS_H
 #define INPUTS_H
 
+class Rotation
+{
+public:
+	enum Value : int8_t
+	{
+		CLOCKWISE = -1,
+		NONE = 0,
+		COUNTERCLOCKWISE = 1
+	};
+
+	Rotation() = default;
+	constexpr Rotation(Value v) : value(v) { }
+
+	constexpr operator Value() const { return value; }
+
+	Rotation Negate()
+	{
+		if (value == Rotation::CLOCKWISE)
+			return Rotation::COUNTERCLOCKWISE;
+		else if (value == Rotation::COUNTERCLOCKWISE)
+			return Rotation::CLOCKWISE;
+
+		return Rotation::NONE;
+	}
+
+private:
+	Value value;
+};
+
 enum Buttons
 {
 	C_RIGHT = 1 << 0,
@@ -38,7 +67,10 @@ public:
 
 	static void set_inputs(Inputs inputs);
 	static void PopulateInputMappings();
-	static std::pair<int8_t, int8_t> GetClosestInputByYawHau(int16_t intendedYaw, float intendedMag, int16_t cameraYaw, int32_t direction = 0);
+	static std::pair<int8_t, int8_t> GetClosestInputByYawHau(int16_t intendedYaw, float intendedMag, int16_t cameraYaw, Rotation bias = Rotation::NONE);
+	static std::pair<int8_t, int8_t> GetClosestInputByYawExact(int16_t intendedYaw, float intendedMag, int16_t cameraYaw, Rotation bias = Rotation::NONE);
+	static std::pair<int16_t, float> GetIntendedYawMagFromInput(int8_t stickX, int8_t stickY, int16_t cameraYaw);
+	static bool HauEquals(int16_t angle1, int16_t angle2);
 };
 
 class M64Base

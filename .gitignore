@@ -1,0 +1,43 @@
+# Prerequisites
+*.d
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+*.ipch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Fortran module files
+*.mod
+*.smod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+
+# Other
+*.db
+*.user
+
+platform_movement_brute_forcer/platform_movement_brute_forcer/Debug/
+platform_movement_brute_forcer/platform_movement_brute_forcer/x64/
+platform_movement_brute_forcer/.vs/
+platform_movement_brute_forcer/Debug/
+platform_movement_brute_forcer/x64/

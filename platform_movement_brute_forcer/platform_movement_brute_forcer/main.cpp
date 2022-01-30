@@ -37,8 +37,8 @@ bool MainScript::verification()
 
 bool MainScript::execution()
 {
-	StartToFrame(3531);
-	auto status = Script::Modify<BitFsPyramidOscillation_RunDownhill>();
+	StartToFrame(3562);
+	auto status = Script::Modify<BitFsPyramidOscillation>();
 	return true;
 }
 
@@ -54,7 +54,7 @@ bool MainScript::validation()
 }
 
 int main(int argc, char* argv[]) {
-	M64 m64 = M64("C:\\Users\\Tyler\\Downloads\\TestWrite2.m64");
+	M64 m64 = M64("C:\\Users\\Tyler\\Downloads\\TestWrite4.m64");
 	m64.load();
 
 	long scriptFrame = 3531;
