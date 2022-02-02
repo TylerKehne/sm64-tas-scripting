@@ -225,6 +225,12 @@ void Script::Save()
 	game->nAllocSlots++;
 }
 
+void Script::Save(uint64_t frame)
+{
+	Load(frame);
+	Save();
+}
+
 void Script::OptionalSave()
 {
 	OptionalSave(game->getCurrentFrame());

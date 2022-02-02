@@ -77,8 +77,16 @@ bool BitFsPyramidOscillation::execution()
 			Load(frame);
 
 			auto turnRunStatus = Execute<BitFsPyramidOscillation_TurnThenRunDownhill>();
+
+			//Keep iterating until we get a valid result, then keep iterating until we stop getting better results
+			//Once we get a valid result, we expect successive iterations to be worse, but that isn't always true
 			if (!turnRunStatus.validated)
-				continue;
+			{
+				if (maxSpeed == 0.0)
+					continue;
+				else
+					break;
+			}
 
 			if (turnRunStatus.maxSpeed > maxSpeed)
 			{
@@ -87,6 +95,8 @@ bool BitFsPyramidOscillation::execution()
 				turnRunDiff = turnRunStatus.m64Diff;
 				passedEquilibriumFrame = turnRunStatus.framePassedEquilibriumPoint;
 			}
+			else if (maxSpeed == 0.0)
+				break;
 		}
 
 		if (maxSpeed > CustomStatus.maxSpeed)
@@ -96,7 +106,7 @@ bool BitFsPyramidOscillation::execution()
 			Apply(turnRunDiff);
 			minFrame = passedEquilibriumFrame;
 			maxFrame = turnRunDiff.frames.rbegin()->first;
-			Save();
+			Save(minFrame);
 		}
 		else
 			break;

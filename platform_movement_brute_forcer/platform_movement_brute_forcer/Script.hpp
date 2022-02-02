@@ -144,6 +144,7 @@ protected:
 	void OptionalSave();
 	void OptionalSave(uint64_t frame);
 	void Save();
+	void Save(uint64_t frame);
 	void Load(uint64_t frame);
 	void Rollback(uint64_t frame);
 
