@@ -10,8 +10,8 @@ bool TryHackedWalkOutOfBounds::verification()
 
 bool TryHackedWalkOutOfBounds::execution()
 {
-	MarioState* marioState = *(MarioState**)(game.addr("gMarioState"));
-	Camera* camera = *(Camera**)(game.addr("gCamera"));
+	MarioState* marioState = *(MarioState**)(game->addr("gMarioState"));
+	Camera* camera = *(Camera**)(game->addr("gCamera"));
 
 	CustomStatus.startSpeed = _speed;
 	Script::CopyVec3f(CustomStatus.startPos, marioState->pos);
@@ -20,7 +20,7 @@ bool TryHackedWalkOutOfBounds::execution()
 	marioState->forwardVel = _speed;
 	marioState->action = ACT_WALKING;
 	auto inputs = Inputs::GetClosestInputByYawHau(marioState->faceAngle[1], 32, camera->yaw);
-	advance_frame(Inputs(0, inputs.first, inputs.second));
+	AdvanceFrameWrite(Inputs(0, inputs.first, inputs.second));
 
 	CustomStatus.endSpeed = marioState->forwardVel;
 	Script::CopyVec3f(CustomStatus.endPos, marioState->pos);

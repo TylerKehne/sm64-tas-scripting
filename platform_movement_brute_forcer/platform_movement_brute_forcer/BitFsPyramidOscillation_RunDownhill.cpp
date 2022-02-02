@@ -6,7 +6,7 @@
 bool BitFsPyramidOscillation_RunDownhill::verification()
 {
 	//Check if Mario is on the pyramid platform
-	MarioState* marioState = *(MarioState**)(game.addr("gMarioState"));
+	MarioState* marioState = *(MarioState**)(game->addr("gMarioState"));
 
 	Surface* floor = marioState->floor;
 	if (!floor)
@@ -17,7 +17,7 @@ bool BitFsPyramidOscillation_RunDownhill::verification()
 		return false;
 
 	const BehaviorScript* behavior = floorObject->behavior;
-	const BehaviorScript* pyramidBehavior = (const BehaviorScript*)(game.addr("bhvBitfsTiltingInvertedPyramid"));
+	const BehaviorScript* pyramidBehavior = (const BehaviorScript*)(game->addr("bhvBitfsTiltingInvertedPyramid"));
 	if (behavior != pyramidBehavior)
 		return false;
 
@@ -31,9 +31,9 @@ bool BitFsPyramidOscillation_RunDownhill::verification()
 
 bool BitFsPyramidOscillation_RunDownhill::execution()
 {
-	const BehaviorScript* pyramidBehavior = (const BehaviorScript*)(game.addr("bhvBitfsTiltingInvertedPyramid"));
-	MarioState* marioState = *(MarioState**)(game.addr("gMarioState"));
-	Camera* camera = *(Camera**)(game.addr("gCamera"));
+	const BehaviorScript* pyramidBehavior = (const BehaviorScript*)(game->addr("bhvBitfsTiltingInvertedPyramid"));
+	MarioState* marioState = *(MarioState**)(game->addr("gMarioState"));
+	Camera* camera = *(Camera**)(game->addr("gCamera"));
 	Object* pyramid = marioState->floor->object;
 
 	_targetXDirection = sign(gSineTable[(uint16_t)_roughTargetAngle >> 4]);
@@ -47,25 +47,29 @@ bool BitFsPyramidOscillation_RunDownhill::execution()
 
 		//Turnaround face angle is not guaranteed to be closer to one orientation or the other, so rely on caller to specify a close-enough target orientation
 		int16_t targetAngle = marioState->action == ACT_TURNING_AROUND ? _roughTargetAngle : marioState->faceAngle[1];
+		int64_t testFrame1 = game->getCurrentFrame();
 		auto status = Test<GetMinimumDownhillWalkingAngle>(targetAngle, marioState->faceAngle[1]);
+		int64_t testFrame2 = game->getCurrentFrame();
 
 		//Terminate if unable to locate a downhill angle
 		if (!status.executed)
+		{
+			if (n > 0)
+				Rollback(game->getCurrentFrame() - 1);
 			return true;
-
-		Slot lastFrameSave = game.alloc_slot();
+		}
 
 		//Attempt to run downhill with minimum angle
 		int16_t intendedYaw = marioState->action == ACT_TURNING_AROUND ? status.angleFacingAnalogBack : status.angleFacing;
 		auto stick = Inputs::GetClosestInputByYawExact(intendedYaw, 32, camera->yaw, status.downhillRotation);
-		advance_frame(Inputs(0, stick.first, stick.second));
+		AdvanceFrameWrite(Inputs(0, stick.first, stick.second));
 
 		//Terminate and roll back frame if Mario is no longer running on the platform
 		if ((marioState->action != ACT_WALKING && marioState->action != ACT_FINISH_TURNING_AROUND)
 			|| marioState->marioObj->platform == NULL
 			|| marioState->marioObj->platform->behavior != pyramidBehavior)
 		{
-			load_state(&lastFrameSave);
+			Rollback(game->getCurrentFrame() - 1);
 			return true;
 		}
 
@@ -86,7 +90,7 @@ bool BitFsPyramidOscillation_RunDownhill::execution()
 		int32_t angleNotFacingHau = status.angleNotFacing - (status.angleNotFacing & 15);
 		frameStatus.isAngleOptimal = frameStatus.isAngleDownhill && (faceYawHau == angleFacingHau || faceYawHau == angleNotFacingHau);
 
-		CustomStatus.frameStatuses[game.getCurrentFrame() - 1] = frameStatus;
+		CustomStatus.frameStatuses[game->getCurrentFrame() - 1] = frameStatus;
 
 		//Update max speed
 		/*
@@ -104,7 +108,7 @@ bool BitFsPyramidOscillation_RunDownhill::execution()
 			&& fabs(pyramid->oTiltingPyramidNormalX - prevNormalX) + fabs(pyramid->oTiltingPyramidNormalZ - prevNormalZ) >= 0.0199999f)
 		{
 			CustomStatus.maxSpeed = marioState->forwardVel;
-			CustomStatus.framePassedEquilibriumPoint = game.getCurrentFrame() - 1;
+			CustomStatus.framePassedEquilibriumPoint = game->getCurrentFrame() - 1;
 		}
 	}
 

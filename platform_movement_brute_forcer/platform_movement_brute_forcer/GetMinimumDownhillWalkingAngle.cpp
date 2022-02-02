@@ -9,8 +9,8 @@ bool GetMinimumDownhillWalkingAngle::verification()
 
 bool GetMinimumDownhillWalkingAngle::execution()
 {
-	MarioState* marioState = *(MarioState**)(game.addr("gMarioState"));
-	s32(*mario_floor_is_slope)(struct MarioState*) = (s32(*)(struct MarioState*))(game.addr("mario_floor_is_slope"));
+	MarioState* marioState = *(MarioState**)(game->addr("gMarioState"));
+	s32(*mario_floor_is_slope)(struct MarioState*) = (s32(*)(struct MarioState*))(game->addr("mario_floor_is_slope"));
 
 	bool hackedWalkValidated = false;
 

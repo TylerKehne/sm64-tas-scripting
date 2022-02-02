@@ -27,12 +27,6 @@
     <ClCompile Include="main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Brute.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Movement.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="Trig.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -68,9 +62,6 @@
     <ClInclude Include="Inputs.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Brute.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="Game.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -78,9 +69,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Magic.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Movement.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Script.hpp">

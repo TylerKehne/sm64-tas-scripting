@@ -145,20 +145,17 @@
     <ClCompile Include="BitFsPyramidOscillation.cpp" />
     <ClCompile Include="BitFsPyramidOscillation_TurnThenRunDownhill.cpp" />
     <ClCompile Include="BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle.cpp" />
-    <ClCompile Include="Brute.cpp" />
     <ClCompile Include="Game.cpp" />
     <ClCompile Include="GetMinimumDownhillWalkingAngle.cpp" />
     <ClCompile Include="Inputs.cpp" />
     <ClCompile Include="Magic.cpp" />
     <ClCompile Include="main.cpp" />
-    <ClCompile Include="Movement.cpp" />
     <ClCompile Include="BitFsPyramidOscillation_RunDownhill.cpp" />
     <ClCompile Include="Script.cpp" />
     <ClCompile Include="Trig.cpp" />
     <ClCompile Include="TryHackedWalkOutOfBounds.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Brute.hpp" />
     <ClInclude Include="Game.hpp" />
     <ClInclude Include="Camera.hpp" />
     <ClInclude Include="ObjectFields.hpp" />
@@ -166,7 +163,6 @@
     <ClInclude Include="Inputs.hpp" />
     <ClInclude Include="Macros.hpp" />
     <ClInclude Include="Magic.hpp" />
-    <ClInclude Include="Movement.hpp" />
     <ClInclude Include="Script.hpp" />
     <ClInclude Include="Slot.hpp" />
     <ClInclude Include="Trig.hpp" />

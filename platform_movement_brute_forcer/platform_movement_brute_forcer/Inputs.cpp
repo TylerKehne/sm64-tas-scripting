@@ -7,18 +7,6 @@
 std::map<int16_t, std::map<float, std::pair<int8_t, int8_t>>> yawMagToInputs;
 std::map<int8_t, std::map<int8_t, std::pair<int16_t, float>>> inputsToYawMag;
 
-void Inputs::set_inputs(Inputs inputs)
-{
-	uint16_t* buttonDllAddr = (uint16_t*)game.addr("gControllerPads");
-	buttonDllAddr[0] = inputs.buttons;
-
-	int8_t* xStickDllAddr = (int8_t*)(game.addr("gControllerPads") + 2);
-	xStickDllAddr[0] = inputs.stick_x;
-
-	int8_t* yStickDllAddr = (int8_t*)(game.addr("gControllerPads") + 3);
-	yStickDllAddr[0] = inputs.stick_y;
-}
-
 void Inputs::PopulateInputMappings()
 {
 	for (int16_t stickX = -128; stickX <= 127; stickX++)
@@ -93,19 +81,10 @@ std::pair<int8_t, int8_t> Inputs::GetClosestInputByYawHau(int16_t intendedYaw, f
 				if (yawMagToInputs[yaw].count(intendedMag))
 					return yawMagToInputs[yaw][intendedMag];
 
-				auto lower = yawMagToInputs[yaw].lower_bound(intendedMag);
 				auto upper = yawMagToInputs[yaw].upper_bound(intendedMag);
+				auto lower = upper = std::prev(upper);
 				float magDistance = INFINITY;
-				if (lower == yawMagToInputs[yaw].begin())
-				{
-					magDistance = (*upper).first - intendedMag;
-					if (magDistance < closestMagDistance)
-					{
-						closestMagDistance = magDistance;
-						closestInput = (*upper).second;
-					}
-				}
-				else if (upper == yawMagToInputs[yaw].end())
+				if (upper == yawMagToInputs[yaw].end())
 				{
 					magDistance = intendedMag - (*lower).first;
 					if (magDistance < closestMagDistance)
@@ -195,19 +174,10 @@ std::pair<int8_t, int8_t> Inputs::GetClosestInputByYawExact(int16_t intendedYaw,
 			if (yawMagToInputs[yaw].count(intendedMag))
 				return yawMagToInputs[yaw][intendedMag];
 
-			auto lower = yawMagToInputs[yaw].lower_bound(intendedMag);
 			auto upper = yawMagToInputs[yaw].upper_bound(intendedMag);
+			auto lower = std::prev(upper);
 			float magDistance = INFINITY;
-			if (lower == yawMagToInputs[yaw].begin())
-			{
-				magDistance = (*upper).first - intendedMag;
-				if (magDistance < closestMagDistance)
-				{
-					closestMagDistance = magDistance;
-					closestInput = (*upper).second;
-				}
-			}
-			else if (upper == yawMagToInputs[yaw].end())
+			if (upper == yawMagToInputs[yaw].end())
 			{
 				magDistance = intendedMag - (*lower).first;
 				if (magDistance < closestMagDistance)

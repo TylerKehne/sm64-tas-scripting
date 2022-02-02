@@ -65,7 +65,6 @@ public:
 	Inputs(uint16_t buttons, int8_t stick_x, int8_t stick_y)
 		: buttons(buttons), stick_x(stick_x), stick_y(stick_y) {}
 
-	static void set_inputs(Inputs inputs);
 	static void PopulateInputMappings();
 	static std::pair<int8_t, int8_t> GetClosestInputByYawHau(int16_t intendedYaw, float intendedMag, int16_t cameraYaw, Rotation bias = Rotation::NONE);
 	static std::pair<int8_t, int8_t> GetClosestInputByYawExact(int16_t intendedYaw, float intendedMag, int16_t cameraYaw, Rotation bias = Rotation::NONE);
@@ -76,12 +75,9 @@ public:
 class M64Base
 {
 public:
-	uint64_t initFrame = -1;
 	std::map<uint64_t, Inputs> frames;
 
 	M64Base() {}
-
-	Inputs getInputs(uint64_t frame);
 };
 
 class M64 : public M64Base
@@ -89,10 +85,7 @@ class M64 : public M64Base
 public:
 	const char* fileName;
 
-	M64(const char* fileName) : fileName(fileName)
-	{
-		initFrame = 0;
-	}
+	M64(const char* fileName) : fileName(fileName) {}
 
 	int load();
 	int save(long initFrame = 0);
@@ -102,11 +95,6 @@ class M64Diff: public M64Base
 {
 public:
 	M64Diff() : M64Base() {}
-
-	M64Diff(uint64_t initFrame) : M64Base()
-	{
-		this->initFrame = initFrame;
-	}
 };
 
 #endif

@@ -25,11 +25,12 @@ public:
 	uint64_t verificationDuration = 0;
 	uint64_t executionDuration = 0;
 	uint64_t validationDuration = 0;
+	uint64_t nLoads = 0;
+	uint64_t nSaves = 0;
+	uint64_t nFrameAdvances = 0;
 	M64Diff m64Diff = M64Diff();
 
 	BaseScriptStatus() {}
-
-	BaseScriptStatus(uint64_t initFrame) : m64Diff(M64Diff(initFrame)) {}
 };
 
 template<std::derived_from<Script> TScript> class ScriptStatus
@@ -41,7 +42,7 @@ public:
 };
 
 /// <summary>
-/// Execute a state-changing operation on the game. Parameters should correspond to the script's class constructor.
+/// Execute a state-changing operation on the game-> Parameters should correspond to the script's class constructor.
 /// </summary>
 class Script
 {
@@ -49,15 +50,18 @@ public:
 	class CustomScriptStatus {};
 	CustomScriptStatus CustomStatus = {};
 	BaseScriptStatus BaseStatus;
-	Slot _initialSave = game.alloc_slot();
 	Script* _parentScript;
+	std::map<uint64_t, Slot> saveBank;
+	Game* game = NULL;
 
 	Script(Script* parentScript)
 	{
 		_parentScript = parentScript;
-		_initialFrame = game.getCurrentFrame();
-		BaseStatus = BaseScriptStatus(_initialFrame);
-		game.save_state(&_initialSave);
+		if (_parentScript)
+		{
+			game = _parentScript->game;
+			_initialFrame = game->getCurrentFrame();
+		}
 	}
 
 	template<std::derived_from<Script> TScript, typename... Us>
@@ -69,8 +73,6 @@ public:
 		if (script.verify() && script.execute())
 			script.validate();
 
-		game.load_state(&script._initialSave);
-
 		return ScriptStatus<TScript>(script.BaseStatus, script.CustomStatus);
 	}
 
@@ -78,12 +80,22 @@ public:
 	requires (std::constructible_from<TScript, Script*, Us...>)
 	ScriptStatus<TScript> Execute(Us&&... params)
 	{
+		//Save state if performant
+		uint64_t initialFrame = game->getCurrentFrame();
+		if (game->shouldSave(initialFrame - GetLatestSave(this, initialFrame).first))
+			Save();
+
 		TScript script = TScript(this, std::forward<Us>(params)...);
 
 		if (script.verify() && script.execute())
 			script.validate();
 		
-		game.load_state(&script._initialSave);
+		//Load if necessary
+		Revert(initialFrame, script.BaseStatus.m64Diff);
+
+		BaseStatus.nLoads += script.BaseStatus.nLoads;
+		BaseStatus.nSaves += script.BaseStatus.nSaves;
+		BaseStatus.nFrameAdvances += script.BaseStatus.nFrameAdvances;
 
 		return ScriptStatus<TScript>(script.BaseStatus, script.CustomStatus);
 	}
@@ -94,7 +106,7 @@ public:
 	{
 		ScriptStatus<TScript> status = Execute<TScript>(std::forward<Us>(params)...);
 		if (status.validated)
-			Apply(&status.m64Diff);
+			Apply(status.m64Diff);
 
 		return status;
 	}
@@ -112,15 +124,10 @@ public:
 
 	static void CopyVec3f(Vec3f dest, Vec3f source);
 
-	void advance_frame();
-	void advance_frame(Inputs inputs);
-	void load_state(Slot* saveState);
-	void GoToFrame(uint64_t frame);
-	void StartToFrame(uint64_t frame);
 	virtual Inputs GetInputs(uint64_t frame);
 
 protected:
-	uint32_t _initialFrame = -1;
+	uint32_t _initialFrame = 0;
 
 	bool verify();
 	bool execute();
@@ -131,23 +138,36 @@ protected:
 		return (T(0) < val) - (val < T(0));
 	}
 
-	void Apply(M64Diff* m64Diff);
+	void Apply(const M64Diff& m64Diff);
+	void AdvanceFrameRead();
+	void AdvanceFrameWrite(Inputs inputs);
+	void OptionalSave();
+	void OptionalSave(uint64_t frame);
+	void Save();
+	void Load(uint64_t frame);
+	void Rollback(uint64_t frame);
 
 	virtual bool verification() = 0;
 	virtual bool execution() = 0;
 	virtual bool validation() = 0;	
+
+private:
+	std::pair<uint64_t, Slot*> GetLatestSave(Script* script, uint64_t frame);
+	void SetInputs(Inputs inputs);
+	void Revert(uint64_t frame, const M64Diff& m64);
 };
 
 class MainScript : public Script
 {
 public:
-	MainScript(M64* m64) : Script(NULL), _m64(m64) {}
+	MainScript(M64* m64, Game* game) : Script(NULL), _m64(m64) { this->game = game; }
 
 	bool verification();
 	bool execution();
 	bool validation();
 
 	Inputs GetInputs(uint64_t frame);
+
 private:
 	M64* _m64;
 };

@@ -10,8 +10,6 @@
 #include "Game.hpp"
 #include "Trig.hpp"
 #include "Macros.hpp"
-#include "Brute.hpp"
-#include "Movement.hpp"
 #include "Script.hpp"
 #include "Types.hpp"
 #include "Camera.hpp"
@@ -37,7 +35,8 @@ bool MainScript::verification()
 
 bool MainScript::execution()
 {
-	StartToFrame(3562);
+	Load(3562);
+	Save();
 	auto status = Script::Modify<BitFsPyramidOscillation>();
 	return true;
 }
@@ -58,7 +57,6 @@ int main(int argc, char* argv[]) {
 	m64.load();
 
 	long scriptFrame = 3531;
-	Slot scriiptSaveState = game.alloc_slot();
 	/*
 	do
 	{
@@ -76,7 +74,7 @@ int main(int argc, char* argv[]) {
 
 	/*
 	int frame = 0;
-	for (frame = 0; frame < 3528; frame = game.advance_frame(true))
+	for (frame = 0; frame < 3528; frame = game->advance_frame(true))
 	{
 		set_inputs(game, m64.frames[frame]);
 	}
@@ -87,7 +85,8 @@ int main(int argc, char* argv[]) {
 
 	Inputs::PopulateInputMappings();
 
-	auto status = Script::Main<MainScript>(&m64);
+	Game game = Game("jp", ".\\sm64_jp.dll");
+	auto status = Script::Main<MainScript>(&m64, &game);
 
 	//auto status = Script::Modify<AdvanceM64FromStartToFrame>(&m64, 3531);
 	//auto status2 = Script::Modify<BitFsPyramidOscillation_RunDownhill>(&m64);
@@ -97,15 +96,15 @@ int main(int argc, char* argv[]) {
 	return 0;
 	//int16_t cameraYaw = Script::Execute<GetNextFrameCameraYaw>(m64).cameraYaw;
 	/*
-	Camera* camera = *(Camera**)(game.addr("gCamera"));
+	Camera* camera = *(Camera**)(game->addr("gCamera"));
 	int16_t cameraYaw = camera->yaw;
 	auto inputs = Inputs::GetClosestInputByYawHau(11952, 16.0f, cameraYaw);
 
 	m64.frames[3800] = Inputs(Buttons::A | Buttons::Z | Buttons::R, inputs.first, inputs.second);
 	set_inputs(game, m64.frames[3800]);
-	game.advance_frame();
+	game->advance_frame();
 
-	MarioState* marioState = *(MarioState**)(game.addr("gMarioState"));
+	MarioState* marioState = *(MarioState**)(game->addr("gMarioState"));
 	float intendedMag = marioState->intendedMag;
 	int16_t intendedYaw = marioState->intendedYaw;
 
@@ -169,18 +168,18 @@ int main(int argc, char* argv[]) {
 				}
 
 				//seems to be either 48 or 100 to deactivate. I think it's 180
-				short* active_flag = (short*)(game.addr("gObjectPool") + (obj * 1392 + 180));
+				short* active_flag = (short*)(game->addr("gObjectPool") + (obj * 1392 + 180));
 				*active_flag = *active_flag & 0xFFFE;
 			}
 
 		}
 
 		if (frame == 3274) {
-			game.save_state(&backup);
+			game->save_state(&backup);
 			break;
 		}
 
-		int16_t num_stars = *(int16_t*)(game.addr("gMarioStates") + 230);
+		int16_t num_stars = *(int16_t*)(game->addr("gMarioStates") + 230);
 
 		if (frame % 1000 == 0) {
 			printf("Frame %05d stars %02d\n", frame, num_stars);
@@ -188,7 +187,7 @@ int main(int argc, char* argv[]) {
 
 
 		set_inputs(game, m64.at(frame));
-		game.advance_frame();
+		game->advance_frame();
 	}
 
 	std::fprintf(stderr, "starting brute force\n");

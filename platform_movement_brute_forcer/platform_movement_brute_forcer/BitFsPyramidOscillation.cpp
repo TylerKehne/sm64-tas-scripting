@@ -7,7 +7,7 @@
 bool BitFsPyramidOscillation::verification()
 {
 	//Check if Mario is on the pyramid platform
-	MarioState* marioState = *(MarioState**)(game.addr("gMarioState"));
+	MarioState* marioState = *(MarioState**)(game->addr("gMarioState"));
 
 	Surface* floor = marioState->floor;
 	if (!floor)
@@ -18,7 +18,7 @@ bool BitFsPyramidOscillation::verification()
 		return false;
 
 	const BehaviorScript* behavior = floorObject->behavior;
-	const BehaviorScript* pyramidBehavior = (const BehaviorScript*)(game.addr("bhvBitfsTiltingInvertedPyramid"));
+	const BehaviorScript* pyramidBehavior = (const BehaviorScript*)(game->addr("bhvBitfsTiltingInvertedPyramid"));
 	if (behavior != pyramidBehavior)
 		return false;
 
@@ -29,7 +29,7 @@ bool BitFsPyramidOscillation::verification()
 
 	//Check that pyramid is at equilibrium
 	vector<float> normal = { floorObject->oTiltingPyramidNormalX, floorObject->oTiltingPyramidNormalY, floorObject->oTiltingPyramidNormalZ };
-	advance_frame();
+	AdvanceFrameRead();
 	vector<float> normal2 = { floorObject->oTiltingPyramidNormalX, floorObject->oTiltingPyramidNormalY, floorObject->oTiltingPyramidNormalZ };
 
 	if (normal != normal2)
@@ -40,18 +40,18 @@ bool BitFsPyramidOscillation::verification()
 
 bool BitFsPyramidOscillation::execution()
 {
-	const BehaviorScript* pyramidBehavior = (const BehaviorScript*)(game.addr("bhvBitfsTiltingInvertedPyramid"));
-	MarioState* marioState = *(MarioState**)(game.addr("gMarioState"));
-	Camera* camera = *(Camera**)(game.addr("gCamera"));
+	const BehaviorScript* pyramidBehavior = (const BehaviorScript*)(game->addr("bhvBitfsTiltingInvertedPyramid"));
+	MarioState* marioState = *(MarioState**)(game->addr("gMarioState"));
+	Camera* camera = *(Camera**)(game->addr("gCamera"));
 	Object* pyramid = marioState->floor->object;
 
 	//TODO: Optimize init angle
 	auto initAngleStatus = Test<GetMinimumDownhillWalkingAngle>(0);
 	auto stick = Inputs::GetClosestInputByYawExact(0x2000, 32, camera->yaw, initAngleStatus.downhillRotation);
-	advance_frame(Inputs(0, stick.first, stick.second));
+	AdvanceFrameWrite(Inputs(0, stick.first, stick.second));
 
-	Slot preTurnSave = game.alloc_slot();
-	game.save_state(&preTurnSave);
+	uint64_t preTurnFrame = game->getCurrentFrame();
+	OptionalSave();
 
 	auto initRunStatus = Modify<BitFsPyramidOscillation_RunDownhill>();
 	if (!initRunStatus.validated)
@@ -74,8 +74,7 @@ bool BitFsPyramidOscillation::execution()
 		M64Diff turnRunDiff = M64Diff();
 		for (uint64_t frame = maxFrame; frame >= minFrame; frame--)
 		{
-			game.load_state(&preTurnSave);
-			GoToFrame(frame);
+			Load(frame);
 
 			auto turnRunStatus = Execute<BitFsPyramidOscillation_TurnThenRunDownhill>();
 			if (!turnRunStatus.validated)
@@ -94,12 +93,10 @@ bool BitFsPyramidOscillation::execution()
 		{
 			CustomStatus.finalXzSum = finalXzSum;
 			CustomStatus.maxSpeed = maxSpeed;
-			Apply(&turnRunDiff);
+			Apply(turnRunDiff);
 			minFrame = passedEquilibriumFrame;
 			maxFrame = turnRunDiff.frames.rbegin()->first;
-			game.load_state(&preTurnSave);
-			GoToFrame(minFrame);
-			game.save_state(&preTurnSave);
+			Save();
 		}
 		else
 			break;

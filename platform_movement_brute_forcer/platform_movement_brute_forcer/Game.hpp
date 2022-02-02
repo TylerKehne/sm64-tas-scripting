@@ -1,3 +1,5 @@
+#pragma once
+
 #include <windows.h>
 #include <iostream>
 #include <string.h>
@@ -8,19 +10,27 @@
 #include "Slot.hpp"
 #include "Inputs.hpp"
 
-using namespace std;
-
 #ifndef GAME_H
 #define GAME_H
 
-#pragma once
+using namespace std;
+
 class Game
 {
 public:
-	string version;
+	double _avgFrameAdvanceTime = 0;
+	double _avgLoadStateTime = 0;
+	double _avgSaveStateTime = 0;
+	double _avgAllocSlotTime = 0;
+	uint64_t nFrameAdvances = 0;
+	uint64_t nLoadStates = 0;
+	uint64_t nSaveStates = 0;
+	uint64_t nAllocSlots = 0;
+
+	std::string version;
 	HMODULE dll;
-	vector<SegVal> segment;
-	Slot startSave;
+	std::vector<SegVal> segment;
+	Slot startSave = Slot();
 
 	Game(string vers, const char* dll_path) {
 		version = vers;
@@ -55,14 +65,15 @@ public:
 		save_state(&startSave);
 	}
 
-	uint32_t advance_frame(bool returnFrame = false);
+	void advance_frame();
 	Slot alloc_slot();
 	void save_state(Slot* slot);
 	void load_state(Slot* slot);
 	intptr_t addr(const char* symbol);
 	uint32_t getCurrentFrame();
+	bool shouldSave(uint64_t framesSinceLastSave);
 };
 
-extern Game game;
+
 
 #endif

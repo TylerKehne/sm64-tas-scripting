@@ -3,7 +3,7 @@
 bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::verification()
 {
 	//Verify Mario is running on the platform
-	MarioState* marioState = *(MarioState**)(game.addr("gMarioState"));
+	MarioState* marioState = *(MarioState**)(game->addr("gMarioState"));
 
 	Surface* floor = marioState->floor;
 	if (!floor)
@@ -14,7 +14,7 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::verification()
 		return false;
 
 	const BehaviorScript* behavior = floorObject->behavior;
-	const BehaviorScript* pyramidBehavior = (const BehaviorScript*)(game.addr("bhvBitfsTiltingInvertedPyramid"));
+	const BehaviorScript* pyramidBehavior = (const BehaviorScript*)(game->addr("bhvBitfsTiltingInvertedPyramid"));
 	if (behavior != pyramidBehavior)
 		return false;
 
@@ -28,9 +28,9 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::verification()
 
 bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::execution()
 {
-	const BehaviorScript* pyramidBehavior = (const BehaviorScript*)(game.addr("bhvBitfsTiltingInvertedPyramid"));
-	MarioState* marioState = *(MarioState**)(game.addr("gMarioState"));
-	Camera* camera = *(Camera**)(game.addr("gCamera"));
+	const BehaviorScript* pyramidBehavior = (const BehaviorScript*)(game->addr("bhvBitfsTiltingInvertedPyramid"));
+	MarioState* marioState = *(MarioState**)(game->addr("gMarioState"));
+	Camera* camera = *(Camera**)(game->addr("gCamera"));
 	Object* pyramid = marioState->floor->object;
 
 	//Record initial XZ sum, don't want to decrease this
@@ -39,13 +39,11 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::execution()
 	//Keep running until target angle is reached
 	int16_t actualIntendedYaw = 0;
 	int16_t roughTargetAngle = marioState->faceAngle[1] + 0x8000;
-	Slot lowSpeedSave = game.alloc_slot();
 	do
 	{
-		game.save_state(&lowSpeedSave);
 		auto inputs = Inputs::GetClosestInputByYawHau(_angle, 32, camera->yaw);
 		actualIntendedYaw = Inputs::GetIntendedYawMagFromInput(inputs.first, inputs.second, camera->yaw).first;
-		advance_frame(Inputs(0, inputs.first, inputs.second));
+		AdvanceFrameWrite(Inputs(0, inputs.first, inputs.second));
 
 		if ((marioState->action != ACT_WALKING && marioState->action != ACT_FINISH_TURNING_AROUND)
 			|| marioState->floor->object == NULL
@@ -55,7 +53,7 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::execution()
 		//TODO: This is temporary, I want to make a script for getting the valid turning range
 		if (marioState->forwardVel < 16.0f)
 		{
-			load_state(&lowSpeedSave);
+			Rollback(game->getCurrentFrame() - 1);
 			break;
 		}
 
@@ -71,12 +69,10 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::execution()
 	}
 
 	//Turn around
-	Slot turnAroundSave = game.alloc_slot();
 	do
 	{
 		auto inputs = Inputs::GetClosestInputByYawHau(marioState->faceAngle[1] + 0x8000, 32, camera->yaw);
-		game.save_state(&turnAroundSave);
-		advance_frame(Inputs(0, inputs.first, inputs.second));
+		AdvanceFrameWrite(Inputs(0, inputs.first, inputs.second));
 
 		if (marioState->action != ACT_TURNING_AROUND && marioState->action != ACT_FINISH_TURNING_AROUND)
 			return false;
@@ -86,8 +82,11 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::execution()
 	} while (marioState->action == ACT_TURNING_AROUND);
 
 	//Wind back 1f and run downhill optimally
-	load_state(&turnAroundSave);
+	int64_t testFrame1 = game->getCurrentFrame();
+	Rollback(game->getCurrentFrame() - 1);
+	int64_t testFrame2 = game->getCurrentFrame();
 	auto runDownhillStatus = Modify<BitFsPyramidOscillation_RunDownhill>(roughTargetAngle);
+	int64_t testFrame3 = game->getCurrentFrame();
 
 	if (!runDownhillStatus.validated)
 		return false;

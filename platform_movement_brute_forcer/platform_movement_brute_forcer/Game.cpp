@@ -1,11 +1,12 @@
 #include <windows.h>
 #include <stdlib.h>
+#include <chrono>
 
 #include "Game.hpp"
 
-Game game = Game("jp", ".\\sm64_jp.dll");
+void Game::advance_frame() {
+	auto start = std::chrono::high_resolution_clock::now();
 
-uint32_t Game::advance_frame(bool returnFrame) {
 	FARPROC processID = GetProcAddress(dll, "sm64_update");
 
 	typedef void(__stdcall* pICFUNC)();
@@ -15,10 +16,16 @@ uint32_t Game::advance_frame(bool returnFrame) {
 
 	sm64_update();
 
-	if (returnFrame)
-		return getCurrentFrame();
+	auto finish = std::chrono::high_resolution_clock::now();
+	auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(finish - start).count();
+
+	if (!nFrameAdvances)
+		_avgFrameAdvanceTime = duration;
 	else
-		return 0;
+		_avgFrameAdvanceTime = (_avgFrameAdvanceTime * nFrameAdvances + duration) / (nFrameAdvances + 1);
+
+	nFrameAdvances++;
+
 }
 
 Slot Game::alloc_slot() {
@@ -26,19 +33,45 @@ Slot Game::alloc_slot() {
 }
 
 void Game::save_state(Slot* slot) {
+	auto start = std::chrono::high_resolution_clock::now();
+
 	int64_t *temp = reinterpret_cast<int64_t*>(dll) + segment[0].virtual_address / sizeof(int64_t);
 	memmove(slot->buf1.data(), temp, segment[0].virtual_size);
 
 	temp = reinterpret_cast<int64_t*>(dll) + segment[1].virtual_address / sizeof(int64_t);
 	memmove(slot->buf2.data(), temp, segment[1].virtual_size);
+
+	auto finish = std::chrono::high_resolution_clock::now();
+	auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(finish - start).count();
+
+	if (!nSaveStates)
+		_avgSaveStateTime = duration;
+	else
+		_avgSaveStateTime = (_avgSaveStateTime * nSaveStates + duration) / (nSaveStates + 1);
+
+	nSaveStates++;
+
 }
 
 void Game::load_state(Slot* slot) {
+	auto start = std::chrono::high_resolution_clock::now();
+
 	int64_t *temp = reinterpret_cast<int64_t*>(dll) + segment[0].virtual_address / sizeof(int64_t);
 	memmove(temp, slot->buf1.data(), segment[0].virtual_size);
 
 	temp = reinterpret_cast<int64_t*>(dll) + segment[1].virtual_address / sizeof(int64_t);
 	memmove(temp, slot->buf2.data(), segment[1].virtual_size);
+
+	auto finish = std::chrono::high_resolution_clock::now();
+	auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(finish - start).count();
+
+	if (!nLoadStates)
+		_avgLoadStateTime = duration;
+	else
+		_avgLoadStateTime = (_avgLoadStateTime * nLoadStates + duration) / (nLoadStates + 1);
+
+	nLoadStates++;
+
 }
 
 intptr_t Game::addr(const char* symbol) {
@@ -47,6 +80,14 @@ intptr_t Game::addr(const char* symbol) {
 
 uint32_t Game::getCurrentFrame()
 {
-	return *(uint32_t*)(game.addr("gGlobalTimer")) - 1;
+	return *(uint32_t*)(addr("gGlobalTimer")) - 1;
 }
 
+bool Game::shouldSave(uint64_t framesSinceLastSave)
+{
+	double estTimeToSave = _avgAllocSlotTime;
+	double estTimeToLoadFromRecent = _avgFrameAdvanceTime * framesSinceLastSave;
+
+	//TODO: Reduce number of automatic load states in script
+	return estTimeToSave <= 2 * estTimeToLoadFromRecent;
+}
