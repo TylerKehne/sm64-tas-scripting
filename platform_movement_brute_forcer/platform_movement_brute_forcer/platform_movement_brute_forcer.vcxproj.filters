@@ -57,6 +57,9 @@
     <ClCompile Include="BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle.cpp">
       <Filter>Source Files\Scripts\BitFsPyramidOscillation</Filter>
     </ClCompile>
+    <ClCompile Include="BitFsPyramidOscillation_TurnAroundAndRunDownhill.cpp">
+      <Filter>Source Files\Scripts\BitFsPyramidOscillation</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Inputs.hpp">

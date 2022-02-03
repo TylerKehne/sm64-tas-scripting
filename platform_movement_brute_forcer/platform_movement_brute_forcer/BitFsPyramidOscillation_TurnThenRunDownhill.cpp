@@ -39,97 +39,51 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill::execution()
 	auto hillStatus = Test<GetMinimumDownhillWalkingAngle>(marioState->faceAngle[1]);
 	Rotation downhillRotation = hillStatus.downhillRotation == Rotation::CLOCKWISE ? Rotation::CLOCKWISE : Rotation::COUNTERCLOCKWISE;
 	int32_t extremeDownhillHau = hillStatus.angleFacing - (hillStatus.angleFacing & 15);
-	int32_t extremeUphillHau = extremeDownhillHau - 0x3F00 * (int)downhillRotation;
+	int32_t extremeUphillHau = extremeDownhillHau - 0x4000 * (int)downhillRotation;
+	int32_t midHau = (extremeDownhillHau + extremeUphillHau) / 2;
 
-	//Verify we aren't too close to the lava
-	if (Test<BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle>(extremeUphillHau).framePassedEquilibriumPoint == -1)
-		return false;
-
-	//Binary search to get most downhill turning angle that passes equilibrium point
-	if (Test<BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle>(extremeDownhillHau).framePassedEquilibriumPoint == -1)
+	ScriptStatus<BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle> runStatus;
+	for (int32_t angle = midHau; angle * -downhillRotation >= extremeDownhillHau * -downhillRotation; angle += 512 * downhillRotation)
 	{
-		int32_t downhillLimitHau = extremeDownhillHau;
-		int32_t uphillLimitHau = extremeUphillHau;
-		while (true)
+		auto status = Execute<BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle>(angle, _prevMaxSpeed, _minXzSum);
+
+		if (!status.validated)
 		{
-			int32_t midAngle = (downhillLimitHau + uphillLimitHau) / 2;
-			int32_t midHau = midAngle - (midAngle & 15);
-
-			//Boundary is two HAUs wide and we checked the edges already so this should never happen
-			if (midHau == downhillLimitHau || midHau == uphillLimitHau)
-				throw std::exception("Binary search failed to find downhill turning limit.");
-
-			bool passedEquilibriumPoint = Test<BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle>(midHau).framePassedEquilibriumPoint != -1;
-			if (passedEquilibriumPoint)
-			{
-				if (Test<BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle>(midHau + 16 * (int)downhillRotation).framePassedEquilibriumPoint == -1)
-				{
-					extremeDownhillHau = midHau;
-					break;
-				}
-
-				uphillLimitHau = midHau;
-			}
+			if (status.tooDownhill)
+				break;
 			else
-			{
-				if (Test<BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle>(midHau - 16 * (int)downhillRotation).framePassedEquilibriumPoint != -1)
-				{
-					extremeDownhillHau = midHau - 16 * (int)downhillRotation;
-					break;
-				}
-
-				downhillLimitHau = midHau;
-			}
+				continue;
 		}
+
+		if (status.passedEquilibriumSpeed > runStatus.passedEquilibriumSpeed)
+			runStatus = status;
 	}
 
-	//Verify window for preserving XZ sum exists
-	if (!Test<BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle>(extremeDownhillHau).validated)
-		return false;
-
-	//Binary search to get most uphill turning angle that preserves XZ sum
-	int32_t optimalHau = extremeUphillHau;
-	if (!Test<BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle>(extremeUphillHau).validated)
+	for (int32_t angle = midHau - 512 * downhillRotation; angle * -downhillRotation <= extremeUphillHau * -downhillRotation; angle -= 512 * downhillRotation)
 	{
-		int32_t downhillLimitHau = extremeDownhillHau;
-		int32_t uphillLimitHau = extremeUphillHau;
-		while (true)
+		auto status = Execute<BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle>(angle, _prevMaxSpeed, _minXzSum);
+
+		if (!status.validated)
 		{
-			int32_t midAngle = (downhillLimitHau + uphillLimitHau) / 2;
-			int32_t midHau = midAngle - (midAngle & 15);
-
-			//Boundary is two HAUs wide and we checked the edges already so this should never happen
-			if (midHau == downhillLimitHau || midHau == uphillLimitHau)
-				throw std::exception("Binary search failed to find optimal HAU.");
-
-			if (!Test<BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle>(midHau).validated)
-			{
-				if (Test<BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle>(midHau + 16 * (int)downhillRotation).validated)
-				{
-					optimalHau = midHau + 16 * (int)downhillRotation;
-					break;
-				}
-
-				uphillLimitHau = midHau;
-			}
+			if (status.tooUphill)
+				break;
 			else
-			{
-				if (!Test<BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle>(midHau - 16 * (int)downhillRotation).validated)
-				{
-					optimalHau = midHau;
-					break;
-				}
-
-				downhillLimitHau = midHau;
-			}
+				continue;
 		}
+
+		if (status.passedEquilibriumSpeed > runStatus.passedEquilibriumSpeed)
+			runStatus = status;
 	}
-	
-	auto runStatus = Modify<BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle>(optimalHau);
+
+	if (!runStatus.validated)
+		return false;
 
 	CustomStatus.finalXzSum = runStatus.finalXzSum;
 	CustomStatus.framePassedEquilibriumPoint = runStatus.framePassedEquilibriumPoint;
 	CustomStatus.maxSpeed = runStatus.maxSpeed;
+	CustomStatus.passedEquilibriumSpeed = runStatus.passedEquilibriumSpeed;
+
+	Apply(runStatus.m64Diff);
 
 	return runStatus.validated;
 }
@@ -139,7 +93,7 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill::validation()
 	if (!BaseStatus.m64Diff.frames.size())
 		return false;
 
-	if (CustomStatus.finalXzSum < CustomStatus.initialXzSum - 0.00001)
+	if (CustomStatus.finalXzSum < _minXzSum - 0.00001)
 		return false;
 
 	if (CustomStatus.framePassedEquilibriumPoint == -1)

@@ -41,6 +41,11 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::execution()
 	int16_t roughTargetAngle = marioState->faceAngle[1] + 0x8000;
 	do
 	{
+		//Don't want to turn around early, so cap intended yaw diff at 2048
+		int16_t intendedYaw = _angle;
+		if (abs(_angle - marioState->faceAngle[1]) > 2048)
+			intendedYaw = marioState->faceAngle[1] + 2048 * sign(_angle - marioState->faceAngle[1]);
+
 		auto inputs = Inputs::GetClosestInputByYawHau(_angle, 32, camera->yaw);
 		actualIntendedYaw = Inputs::GetIntendedYawMagFromInput(inputs.first, inputs.second, camera->yaw).first;
 		AdvanceFrameWrite(Inputs(0, inputs.first, inputs.second));
@@ -50,50 +55,77 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::execution()
 			|| marioState->floor->object->behavior != pyramidBehavior)
 			return false;
 
-		//TODO: This is temporary, I want to make a script for getting the valid turning range
+		//At least 16 speed is needed for turnaround
 		if (marioState->forwardVel < 16.0f)
 		{
-			Rollback(game->getCurrentFrame() - 1);
-			break;
+			CustomStatus.tooSlowForTurnAround = true;
+			return false;
 		}
 
 	} while (marioState->faceAngle[1] != actualIntendedYaw);
 
 	if (marioState->action != ACT_WALKING)
-		return false;
-
-	if (marioState->forwardVel < 16.0f)
 	{
-		CustomStatus.tooSlowForTurnAround = true;
+		CustomStatus.tooDownhill = (marioState->action == ACT_LAVA_BOOST);
 		return false;
 	}
 
-	//Turn around
-	do
+	ScriptStatus<BitFsPyramidOscillation_TurnAroundAndRunDownhill> runDownhillStatus;
+	uint64_t initFrame = game->getCurrentFrame();
+	//This should never reach 50 frames, but just in case
+	for (int i = 0; i < 50; i++)
 	{
-		auto inputs = Inputs::GetClosestInputByYawHau(marioState->faceAngle[1] + 0x8000, 32, camera->yaw);
+		//Immediately turn around and run downhill optimally
+		auto status = Execute<BitFsPyramidOscillation_TurnAroundAndRunDownhill>(roughTargetAngle);
+
+		//Something weird happened, terminate
+		if (!status.validated)
+			break;
+
+		//We've gone too far uphill, terminate
+		if (status.tooUphill)
+
+		//Extra running frames are no longer helping, terminate
+		//Note that this requires a previous valid status to trigger
+		//This is the value we want to maximize
+		if (status.passedEquilibriumSpeed < runDownhillStatus.passedEquilibriumSpeed)
+			break;
+
+		//Route is only valid if it got more speed than the last time
+		//We aren't trying to maxmimize this, but this ensures route won't be too close to the lava
+		//Also make sure equillibrium point has been passed
+		if (status.maxSpeed >= _prevMaxSpeed && status.framePassedEquilibriumPoint != -1)
+			runDownhillStatus = status;
+		//This also indicates running frames aren't helping and we can terminate, except when past the threshold
+		//In that case, we don't mind if this goes down.
+		else if (status.maxSpeed <= runDownhillStatus.maxSpeed)
+			break;
+
+		//Run forward for another frame and try again
+		auto inputs = Inputs::GetClosestInputByYawHau(_angle, 32, camera->yaw);
 		AdvanceFrameWrite(Inputs(0, inputs.first, inputs.second));
-
-		if (marioState->action != ACT_TURNING_AROUND && marioState->action != ACT_FINISH_TURNING_AROUND)
-			return false;
-
-		if (marioState->floor->object == NULL || marioState->floor->object->behavior != pyramidBehavior)
-			return false;
-	} while (marioState->action == ACT_TURNING_AROUND);
-
-	//Wind back 1f and run downhill optimally
-	int64_t testFrame1 = game->getCurrentFrame();
-	Rollback(game->getCurrentFrame() - 1);
-	int64_t testFrame2 = game->getCurrentFrame();
-	auto runDownhillStatus = Modify<BitFsPyramidOscillation_RunDownhill>(roughTargetAngle);
-	int64_t testFrame3 = game->getCurrentFrame();
-
+	} 
+	
 	if (!runDownhillStatus.validated)
-		return false;
+	{
+		//We want to record if these flags are set without any additional running frames
+		//This tells the caller that the angle paramter is definitely not in the valid range
+		//After the first frame it's more ambiguous, so don't record
+		if (game->getCurrentFrame() != initFrame)
+		{
+			CustomStatus.tooDownhill = runDownhillStatus.tooDownhill;
+			CustomStatus.tooUphill = runDownhillStatus.tooUphill;
+		}
 
+		return false;
+	}
+		
 	CustomStatus.framePassedEquilibriumPoint = runDownhillStatus.framePassedEquilibriumPoint;
 	CustomStatus.maxSpeed = runDownhillStatus.maxSpeed;
-	CustomStatus.finalXzSum = fabs(pyramid->oTiltingPyramidNormalX) + fabs(pyramid->oTiltingPyramidNormalZ);
+	CustomStatus.passedEquilibriumSpeed = runDownhillStatus.passedEquilibriumSpeed;
+	CustomStatus.finalXzSum = runDownhillStatus.finalXzSum;
+
+	Apply(runDownhillStatus.m64Diff);
 
 	return true;
 }
@@ -103,7 +135,7 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::validation()
 	if (!BaseStatus.m64Diff.frames.size())
 		return false;
 
-	if (CustomStatus.finalXzSum < CustomStatus.initialXzSum - 0.00001)
+	if (CustomStatus.finalXzSum < _minXzSum - 0.00001)
 		return false;
 
 	if (CustomStatus.framePassedEquilibriumPoint == -1)

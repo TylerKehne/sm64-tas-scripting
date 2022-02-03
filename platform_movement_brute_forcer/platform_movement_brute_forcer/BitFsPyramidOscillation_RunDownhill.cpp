@@ -53,11 +53,7 @@ bool BitFsPyramidOscillation_RunDownhill::execution()
 
 		//Terminate if unable to locate a downhill angle
 		if (!status.executed)
-		{
-			if (n > 0)
-				Rollback(game->getCurrentFrame() - 1);
 			return true;
-		}
 
 		//Attempt to run downhill with minimum angle
 		int16_t intendedYaw = marioState->action == ACT_TURNING_AROUND ? status.angleFacingAnalogBack : status.angleFacing;
@@ -93,10 +89,8 @@ bool BitFsPyramidOscillation_RunDownhill::execution()
 		CustomStatus.frameStatuses[game->getCurrentFrame() - 1] = frameStatus;
 
 		//Update max speed
-		/*
 		if (marioState->forwardVel > CustomStatus.maxSpeed)
 			CustomStatus.maxSpeed = marioState->forwardVel;
-		*/
 
 		//Record initial tilt change direction and check if equilibrium point has been passed
 		int xTiltDirection = Script::sign(pyramid->oTiltingPyramidNormalX - prevNormalX);
@@ -107,9 +101,11 @@ bool BitFsPyramidOscillation_RunDownhill::execution()
 			&& zTiltDirection == _targetZDirection
 			&& fabs(pyramid->oTiltingPyramidNormalX - prevNormalX) + fabs(pyramid->oTiltingPyramidNormalZ - prevNormalZ) >= 0.0199999f)
 		{
-			CustomStatus.maxSpeed = marioState->forwardVel;
+			CustomStatus.passedEquilibriumSpeed = marioState->forwardVel;
 			CustomStatus.framePassedEquilibriumPoint = game->getCurrentFrame() - 1;
 		}
+
+		CustomStatus.finalXzSum = fabs(pyramid->oTiltingPyramidNormalX) + fabs(pyramid->oTiltingPyramidNormalZ);
 	}
 
 	return true;
@@ -119,6 +115,8 @@ bool BitFsPyramidOscillation_RunDownhill::validation()
 {
 	if (!BaseStatus.m64Diff.frames.size())
 		return false;
+
+	
 
 	return true;
 }

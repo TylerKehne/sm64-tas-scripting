@@ -60,52 +60,45 @@ bool BitFsPyramidOscillation::execution()
 	//Record initial XZ sum, don't want to decrease this (TODO: optimize angle of first frame and record this before run downhill)
 	CustomStatus.initialXzSum = fabs(pyramid->oTiltingPyramidNormalX) + fabs(pyramid->oTiltingPyramidNormalZ);
 
-	if (initRunStatus.maxSpeed > CustomStatus.maxSpeed)
-		CustomStatus.maxSpeed = initRunStatus.maxSpeed;
+	if (initRunStatus.maxSpeed > CustomStatus.maxSpeed[0])
+		CustomStatus.maxSpeed[0] = initRunStatus.maxSpeed;
 
 	//We want to turn uphill as late as possible, and also turn around as late as possible, without sacrificing XZ sum
 	uint64_t minFrame = initRunStatus.m64Diff.frames.begin()->first;
 	uint64_t maxFrame = initRunStatus.m64Diff.frames.rbegin()->first;
-	while (true)
+	for (int i = 0; i < 12; i++)
 	{
-		float maxSpeed = 0;
-		float finalXzSum = 0;
-		uint64_t passedEquilibriumFrame = -1;
-		M64Diff turnRunDiff = M64Diff();
+		ScriptStatus<BitFsPyramidOscillation_TurnThenRunDownhill> turnRunStatus;
 		for (uint64_t frame = maxFrame; frame >= minFrame; frame--)
 		{
 			Load(frame);
 
-			auto turnRunStatus = Execute<BitFsPyramidOscillation_TurnThenRunDownhill>();
+			auto status = Execute<BitFsPyramidOscillation_TurnThenRunDownhill>(CustomStatus.maxSpeed[i & 1], CustomStatus.initialXzSum);
 
 			//Keep iterating until we get a valid result, then keep iterating until we stop getting better results
 			//Once we get a valid result, we expect successive iterations to be worse, but that isn't always true
-			if (!turnRunStatus.validated)
+			if (!status.validated)
 			{
-				if (maxSpeed == 0.0)
+				if (turnRunStatus.passedEquilibriumSpeed == 0.0)
 					continue;
 				else
 					break;
 			}
 
-			if (turnRunStatus.maxSpeed > maxSpeed)
-			{
-				maxSpeed = turnRunStatus.maxSpeed;
-				finalXzSum = turnRunStatus.finalXzSum;
-				turnRunDiff = turnRunStatus.m64Diff;
-				passedEquilibriumFrame = turnRunStatus.framePassedEquilibriumPoint;
-			}
-			else if (maxSpeed == 0.0)
+			if (status.passedEquilibriumSpeed > turnRunStatus.passedEquilibriumSpeed && status.maxSpeed > CustomStatus.maxSpeed[i & 1])
+				turnRunStatus = status;
+			else if (status.maxSpeed == 0.0)
 				break;
 		}
 
-		if (maxSpeed > CustomStatus.maxSpeed)
+		if (turnRunStatus.validated)//turnRunStatus.passedEquilibriumSpeed > CustomStatus.maxPassedEquilibriumSpeed[i & 1])
 		{
-			CustomStatus.finalXzSum = finalXzSum;
-			CustomStatus.maxSpeed = maxSpeed;
-			Apply(turnRunDiff);
-			minFrame = passedEquilibriumFrame;
-			maxFrame = turnRunDiff.frames.rbegin()->first;
+			CustomStatus.finalXzSum = turnRunStatus.finalXzSum;
+			CustomStatus.maxSpeed[i & 1] = turnRunStatus.maxSpeed;
+			CustomStatus.maxPassedEquilibriumSpeed[i & 1] = turnRunStatus.passedEquilibriumSpeed;
+			Apply(turnRunStatus.m64Diff);
+			minFrame = turnRunStatus.framePassedEquilibriumPoint;
+			maxFrame = turnRunStatus.m64Diff.frames.rbegin()->first;
 			Save(minFrame);
 		}
 		else

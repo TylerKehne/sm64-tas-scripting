@@ -233,13 +233,8 @@ void Script::Save(uint64_t frame)
 
 void Script::OptionalSave()
 {
-	OptionalSave(game->getCurrentFrame());
-}
-
-void Script::OptionalSave(uint64_t frame)
-{
 	uint64_t currentFrame = game->getCurrentFrame();
-	if (game->shouldSave(currentFrame - GetLatestSave(this, frame).first))
+	if (game->shouldSave(currentFrame - GetLatestSave(this, currentFrame).first))
 		Save();
 }
 
