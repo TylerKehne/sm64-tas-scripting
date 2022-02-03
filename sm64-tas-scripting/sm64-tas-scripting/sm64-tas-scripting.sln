@@ -1,9 +1,9 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 16
-VisualStudioVersion = 16.0.30907.101
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.32014.148
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "platform_movement_brute_forcer", "platform_movement_brute_forcer\platform_movement_brute_forcer.vcxproj", "{BD932B15-DEA8-4F2C-B72A-D214C8557334}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "sm64_tas_scripting", "sm64-tas-scripting.vcxproj", "{BD932B15-DEA8-4F2C-B72A-D214C8557334}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -26,6 +26,6 @@ Global
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
-		SolutionGuid = {E837AAAC-9618-4512-A219-74749E8E5D58}
+		SolutionGuid = {E2312339-7C19-4550-8897-E5885EA3C692}
 	EndGlobalSection
 EndGlobal

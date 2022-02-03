@@ -36,8 +36,9 @@
 *.db
 *.user
 
-platform_movement_brute_forcer/platform_movement_brute_forcer/Debug/
-platform_movement_brute_forcer/platform_movement_brute_forcer/x64/
-platform_movement_brute_forcer/.vs/
-platform_movement_brute_forcer/Debug/
-platform_movement_brute_forcer/x64/
+sm64-tas-scripting/sm64-tas-scripting/Debug/
+sm64-tas-scripting/sm64-tas-scripting/x64/
+sm64-tas-scripting/.vs/
+sm64-tas-scripting/sm64-tas-scripting/.vs/
+sm64-tas-scripting/Debug/
+sm64-tas-scripting/x64/
