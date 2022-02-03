@@ -24,6 +24,7 @@
     <ProjectGuid>{bd932b15-dea8-4f2c-b72a-d214c8557334}</ProjectGuid>
     <RootNamespace>platformmovementbruteforcer</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <ProjectName>sm64_tas_scripting</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
@@ -149,7 +150,6 @@
     <ClCompile Include="Game.cpp" />
     <ClCompile Include="GetMinimumDownhillWalkingAngle.cpp" />
     <ClCompile Include="Inputs.cpp" />
-    <ClCompile Include="Magic.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="BitFsPyramidOscillation_RunDownhill.cpp" />
     <ClCompile Include="Script.cpp" />
@@ -157,15 +157,14 @@
     <ClCompile Include="TryHackedWalkOutOfBounds.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Script_BitFsPyramidOscillation.hpp" />
     <ClInclude Include="Game.hpp" />
     <ClInclude Include="Camera.hpp" />
     <ClInclude Include="ObjectFields.hpp" />
+    <ClInclude Include="Script_General.hpp" />
     <ClInclude Include="Sm64.hpp" />
     <ClInclude Include="Inputs.hpp" />
-    <ClInclude Include="Macros.hpp" />
-    <ClInclude Include="Magic.hpp" />
     <ClInclude Include="Script.hpp" />
-    <ClInclude Include="Slot.hpp" />
     <ClInclude Include="Trig.hpp" />
     <ClInclude Include="Types.hpp" />
     <ClInclude Include="UltraTypes.hpp" />

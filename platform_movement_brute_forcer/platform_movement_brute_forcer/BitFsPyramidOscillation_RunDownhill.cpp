@@ -47,9 +47,9 @@ bool BitFsPyramidOscillation_RunDownhill::execution()
 
 		//Turnaround face angle is not guaranteed to be closer to one orientation or the other, so rely on caller to specify a close-enough target orientation
 		int16_t targetAngle = marioState->action == ACT_TURNING_AROUND ? _roughTargetAngle : marioState->faceAngle[1];
-		int64_t testFrame1 = game->getCurrentFrame();
+		int64_t testFrame1 = GetCurrentFrame();
 		auto status = Test<GetMinimumDownhillWalkingAngle>(targetAngle, marioState->faceAngle[1]);
-		int64_t testFrame2 = game->getCurrentFrame();
+		int64_t testFrame2 = GetCurrentFrame();
 
 		//Terminate if unable to locate a downhill angle
 		if (!status.executed)
@@ -65,7 +65,7 @@ bool BitFsPyramidOscillation_RunDownhill::execution()
 			|| marioState->marioObj->platform == NULL
 			|| marioState->marioObj->platform->behavior != pyramidBehavior)
 		{
-			Rollback(game->getCurrentFrame() - 1);
+			Rollback(GetCurrentFrame() - 1);
 			return true;
 		}
 
@@ -86,7 +86,7 @@ bool BitFsPyramidOscillation_RunDownhill::execution()
 		int32_t angleNotFacingHau = status.angleNotFacing - (status.angleNotFacing & 15);
 		frameStatus.isAngleOptimal = frameStatus.isAngleDownhill && (faceYawHau == angleFacingHau || faceYawHau == angleNotFacingHau);
 
-		CustomStatus.frameStatuses[game->getCurrentFrame() - 1] = frameStatus;
+		CustomStatus.frameStatuses[GetCurrentFrame() - 1] = frameStatus;
 
 		//Update max speed
 		if (marioState->forwardVel > CustomStatus.maxSpeed)
@@ -102,7 +102,7 @@ bool BitFsPyramidOscillation_RunDownhill::execution()
 			&& fabs(pyramid->oTiltingPyramidNormalX - prevNormalX) + fabs(pyramid->oTiltingPyramidNormalZ - prevNormalZ) >= 0.0199999f)
 		{
 			CustomStatus.passedEquilibriumSpeed = marioState->forwardVel;
-			CustomStatus.framePassedEquilibriumPoint = game->getCurrentFrame() - 1;
+			CustomStatus.framePassedEquilibriumPoint = GetCurrentFrame() - 1;
 		}
 
 		CustomStatus.finalXzSum = fabs(pyramid->oTiltingPyramidNormalX) + fabs(pyramid->oTiltingPyramidNormalZ);

@@ -83,7 +83,9 @@ public:
 class M64 : public M64Base
 {
 public:
-	const char* fileName;
+	const char* fileName = "";
+
+	M64() {}
 
 	M64(const char* fileName) : fileName(fileName) {}
 

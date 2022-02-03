@@ -6,14 +6,39 @@
 #include <libloaderapi.h>
 #include <vector>
 
-#include "Magic.hpp"
-#include "Slot.hpp"
 #include "Inputs.hpp"
 
 #ifndef GAME_H
 #define GAME_H
 
 using namespace std;
+
+class SegVal {
+public:
+	string name;
+	intptr_t virtual_address;
+	int64_t virtual_size;
+
+	SegVal(string nm, intptr_t virt_addr, int64_t virt_size) {
+		name = nm;
+		virtual_address = virt_addr;
+		virtual_size = virt_size;
+	}
+};
+
+class Slot
+{
+public:
+	std::vector<uint8_t> buf1;
+	std::vector<uint8_t> buf2;
+
+	Slot() {}
+
+	Slot(size_t size1, size_t size2) {
+		buf1 = std::vector<uint8_t>(size1, 0);
+		buf2 = std::vector<uint8_t>(size2, 0);
+	}
+};
 
 class Game
 {

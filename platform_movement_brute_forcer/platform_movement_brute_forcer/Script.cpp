@@ -74,6 +74,16 @@ bool Script::validate()
 	return validated;
 }
 
+Inputs TopLevelScript::GetInputs(uint64_t frame)
+{
+	if (BaseStatus.m64Diff.frames.count(frame))
+		return BaseStatus.m64Diff.frames[frame];
+	else if (_m64.frames.count(frame))
+		return _m64.frames[frame];
+
+	return Inputs(0, 0, 0);
+}
+
 void Script::CopyVec3f(Vec3f dest, Vec3f source)
 {
 	dest[0] = source[0];
@@ -81,9 +91,14 @@ void Script::CopyVec3f(Vec3f dest, Vec3f source)
 	dest[2] = source[2];
 }
 
+uint64_t Script::GetCurrentFrame()
+{
+	return game->getCurrentFrame();
+}
+
 void Script::AdvanceFrameRead()
 {
-	SetInputs(GetInputs(game->getCurrentFrame()));
+	SetInputs(GetInputs(GetCurrentFrame()));
 	game->advance_frame();
 	BaseStatus.nFrameAdvances++;
 }
@@ -91,10 +106,10 @@ void Script::AdvanceFrameRead()
 void Script::AdvanceFrameWrite(Inputs inputs)
 {
 	//Save inputs to diff
-	BaseStatus.m64Diff.frames[game->getCurrentFrame()] = inputs;
+	BaseStatus.m64Diff.frames[GetCurrentFrame()] = inputs;
 
 	//Erase all saves after this point
-	uint64_t currentFrame = game->getCurrentFrame();
+	uint64_t currentFrame = GetCurrentFrame();
 	auto firstInvalidFrame = saveBank.upper_bound(currentFrame);
 	saveBank.erase(firstInvalidFrame, saveBank.end());
 
@@ -115,7 +130,7 @@ void Script::Apply(const M64Diff& m64Diff)
 	Load(firstFrame);
 
 	//Erase all saves after this point
-	uint64_t currentFrame = game->getCurrentFrame();
+	uint64_t currentFrame = GetCurrentFrame();
 	auto firstInvalidFrame = saveBank.upper_bound(currentFrame);
 	saveBank.erase(firstInvalidFrame, saveBank.end());
 
@@ -133,7 +148,7 @@ void Script::Apply(const M64Diff& m64Diff)
 		game->advance_frame();
 		BaseStatus.nFrameAdvances++;
 
-		currentFrame = game->getCurrentFrame();
+		currentFrame = GetCurrentFrame();
 	}
 }
 
@@ -167,18 +182,18 @@ std::pair<uint64_t, Slot*> Script::GetLatestSave(Script* script, uint64_t frame)
 void Script::Load(uint64_t frame)
 {
 	//Load most recent save at or before frame. Check child saves before parent.
-	if (frame < game->getCurrentFrame())
+	if (frame < GetCurrentFrame())
 	{
 		game->load_state(GetLatestSave(this, frame).second);
 		BaseStatus.nLoads++;
 	}
 
 	//If save is before target frame, play back until frame is reached
-	uint64_t currentFrame = game->getCurrentFrame();
+	uint64_t currentFrame = GetCurrentFrame();
 	while (currentFrame < frame)
 	{
 		AdvanceFrameRead();
-		currentFrame = game->getCurrentFrame();
+		currentFrame = GetCurrentFrame();
 	}
 }
 
@@ -189,26 +204,27 @@ void Script::Rollback(uint64_t frame)
 	saveBank.erase(saveBank.upper_bound(frame), saveBank.end());
 
 	//Load most recent save at or before frame. Check child saves before parent.
-	if (frame < game->getCurrentFrame())
+	if (frame < GetCurrentFrame())
 	{
 		game->load_state(GetLatestSave(this, frame).second);
 		BaseStatus.nLoads++;
 	}
 
 	//If save is before target frame, play back until frame is reached
-	uint64_t currentFrame = game->getCurrentFrame();
+	uint64_t currentFrame = GetCurrentFrame();
 	while (currentFrame < frame)
 	{
 		AdvanceFrameRead();
-		currentFrame = game->getCurrentFrame();
+		currentFrame = GetCurrentFrame();
 	}
 }
 
 void Script::Save()
 {
+	//TODO: timing should be done in Game object not here
 	auto start = std::chrono::high_resolution_clock::now();
 
-	uint64_t currentFrame = game->getCurrentFrame();
+	uint64_t currentFrame = GetCurrentFrame();
 	saveBank[currentFrame] = game->alloc_slot();
 	game->save_state(&saveBank[currentFrame]);
 	BaseStatus.nSaves++;
@@ -216,7 +232,6 @@ void Script::Save()
 	auto finish = std::chrono::high_resolution_clock::now();
 	auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(finish - start).count();
 
-	//TODO: time in game class
 	if (!game->nAllocSlots)
 		game->_avgAllocSlotTime = duration;
 	else
@@ -233,7 +248,7 @@ void Script::Save(uint64_t frame)
 
 void Script::OptionalSave()
 {
-	uint64_t currentFrame = game->getCurrentFrame();
+	uint64_t currentFrame = GetCurrentFrame();
 	if (game->shouldSave(currentFrame - GetLatestSave(this, currentFrame).first))
 		Save();
 }
@@ -254,21 +269,21 @@ void Script::SetInputs(Inputs inputs)
 void Script::Revert(uint64_t frame, const M64Diff& m64)
 {
 	//Check if script altered state
-	bool desync = m64.frames.size() && (m64.frames.begin()->first < game->getCurrentFrame());
+	bool desync = m64.frames.size() && (m64.frames.begin()->first < GetCurrentFrame());
 
 	//Load most recent save at or before frame. Check child saves before parent.
-	if (desync || frame < game->getCurrentFrame())
+	if (desync || frame < GetCurrentFrame())
 	{
 		game->load_state(GetLatestSave(this, frame).second);
 		BaseStatus.nLoads++;
 	}
 
 	//If save is before target frame, play back until frame is reached
-	uint64_t currentFrame = game->getCurrentFrame();
+	uint64_t currentFrame = GetCurrentFrame();
 	while (currentFrame < frame)
 	{
 		AdvanceFrameRead();
-		currentFrame = game->getCurrentFrame();
+		currentFrame = GetCurrentFrame();
 	}
 }
 

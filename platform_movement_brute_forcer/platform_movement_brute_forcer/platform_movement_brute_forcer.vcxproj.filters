@@ -19,6 +19,15 @@
     <Filter Include="Source Files\Scripts\BitFsPyramidOscillation">
       <UniqueIdentifier>{2d92ff06-1518-4003-82ad-e5003b9669a0}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Header Files\Scripts">
+      <UniqueIdentifier>{850642c9-945a-4738-94d7-17ab69412baf}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\Types">
+      <UniqueIdentifier>{4f4db43d-80c9-4e63-8fe1-68a9f1f0a10f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\Scripts\General">
+      <UniqueIdentifier>{e78ff415-5841-4829-8b34-ba2e6401414a}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Game.cpp">
@@ -30,20 +39,11 @@
     <ClCompile Include="Trig.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Magic.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="Script.cpp">
       <Filter>Source Files\Scripts</Filter>
     </ClCompile>
     <ClCompile Include="Inputs.cpp">
       <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="GetMinimumDownhillWalkingAngle.cpp">
-      <Filter>Source Files\Scripts</Filter>
-    </ClCompile>
-    <ClCompile Include="TryHackedWalkOutOfBounds.cpp">
-      <Filter>Source Files\Scripts</Filter>
     </ClCompile>
     <ClCompile Include="BitFsPyramidOscillation.cpp">
       <Filter>Source Files\Scripts\BitFsPyramidOscillation</Filter>
@@ -60,6 +60,12 @@
     <ClCompile Include="BitFsPyramidOscillation_TurnAroundAndRunDownhill.cpp">
       <Filter>Source Files\Scripts\BitFsPyramidOscillation</Filter>
     </ClCompile>
+    <ClCompile Include="GetMinimumDownhillWalkingAngle.cpp">
+      <Filter>Source Files\Scripts\General</Filter>
+    </ClCompile>
+    <ClCompile Include="TryHackedWalkOutOfBounds.cpp">
+      <Filter>Source Files\Scripts\General</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Inputs.hpp">
@@ -68,35 +74,32 @@
     <ClInclude Include="Game.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Macros.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Magic.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Script.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Slot.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="Trig.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Types.hpp">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="Script.hpp">
+      <Filter>Header Files\Scripts</Filter>
     </ClInclude>
-    <ClInclude Include="UltraTypes.hpp">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="Script_BitFsPyramidOscillation.hpp">
+      <Filter>Header Files\Scripts</Filter>
+    </ClInclude>
+    <ClInclude Include="Script_General.hpp">
+      <Filter>Header Files\Scripts</Filter>
     </ClInclude>
     <ClInclude Include="Camera.hpp">
-      <Filter>Header Files</Filter>
+      <Filter>Header Files\Types</Filter>
     </ClInclude>
     <ClInclude Include="Sm64.hpp">
-      <Filter>Header Files</Filter>
+      <Filter>Header Files\Types</Filter>
+    </ClInclude>
+    <ClInclude Include="UltraTypes.hpp">
+      <Filter>Header Files\Types</Filter>
+    </ClInclude>
+    <ClInclude Include="Types.hpp">
+      <Filter>Header Files\Types</Filter>
     </ClInclude>
     <ClInclude Include="ObjectFields.hpp">
-      <Filter>Header Files</Filter>
+      <Filter>Header Files\Types</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

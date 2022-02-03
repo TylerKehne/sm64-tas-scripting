@@ -50,7 +50,7 @@ bool BitFsPyramidOscillation::execution()
 	auto stick = Inputs::GetClosestInputByYawExact(0x2000, 32, camera->yaw, initAngleStatus.downhillRotation);
 	AdvanceFrameWrite(Inputs(0, stick.first, stick.second));
 
-	uint64_t preTurnFrame = game->getCurrentFrame();
+	uint64_t preTurnFrame = GetCurrentFrame();
 	OptionalSave();
 
 	auto initRunStatus = Modify<BitFsPyramidOscillation_RunDownhill>();
@@ -76,7 +76,7 @@ bool BitFsPyramidOscillation::execution()
 			auto status = Execute<BitFsPyramidOscillation_TurnThenRunDownhill>(CustomStatus.maxSpeed[i & 1], CustomStatus.initialXzSum);
 
 			//Keep iterating until we get a valid result, then keep iterating until we stop getting better results
-			//Once we get a valid result, we expect successive iterations to be worse, but that isn't always true
+			//Once we get a valid result, we expect successive iterations to be worse (less space to accelerate), but that isn't always true
 			if (!status.validated)
 			{
 				if (turnRunStatus.passedEquilibriumSpeed == 0.0)
@@ -91,7 +91,7 @@ bool BitFsPyramidOscillation::execution()
 				break;
 		}
 
-		if (turnRunStatus.validated)//turnRunStatus.passedEquilibriumSpeed > CustomStatus.maxPassedEquilibriumSpeed[i & 1])
+		if (turnRunStatus.passedEquilibriumSpeed > CustomStatus.maxPassedEquilibriumSpeed[i & 1])
 		{
 			CustomStatus.finalXzSum = turnRunStatus.finalXzSum;
 			CustomStatus.maxSpeed[i & 1] = turnRunStatus.maxSpeed;

@@ -71,7 +71,7 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::execution()
 	}
 
 	ScriptStatus<BitFsPyramidOscillation_TurnAroundAndRunDownhill> runDownhillStatus;
-	uint64_t initFrame = game->getCurrentFrame();
+	uint64_t initFrame = GetCurrentFrame();
 	//This should never reach 50 frames, but just in case
 	for (int i = 0; i < 50; i++)
 	{
@@ -111,7 +111,7 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::execution()
 		//We want to record if these flags are set without any additional running frames
 		//This tells the caller that the angle paramter is definitely not in the valid range
 		//After the first frame it's more ambiguous, so don't record
-		if (game->getCurrentFrame() != initFrame)
+		if (GetCurrentFrame() != initFrame)
 		{
 			CustomStatus.tooDownhill = runDownhillStatus.tooDownhill;
 			CustomStatus.tooUphill = runDownhillStatus.tooUphill;

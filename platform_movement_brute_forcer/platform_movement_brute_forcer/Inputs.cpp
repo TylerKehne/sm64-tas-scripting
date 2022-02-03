@@ -1,8 +1,8 @@
 #include "Inputs.hpp"
 #include <cstdio>
 #include <iostream>
-#include "Magic.hpp"
 #include "Game.hpp"
+#include "Trig.hpp"
 
 std::map<int16_t, std::map<float, std::pair<int8_t, int8_t>>> yawMagToInputs;
 std::map<int8_t, std::map<int8_t, std::pair<int16_t, float>>> inputsToYawMag;

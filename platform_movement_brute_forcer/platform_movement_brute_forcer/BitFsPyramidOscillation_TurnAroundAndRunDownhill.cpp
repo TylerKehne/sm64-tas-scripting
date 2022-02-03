@@ -55,7 +55,7 @@ bool BitFsPyramidOscillation_TurnAroundAndRunDownhill::execution()
 	} while (marioState->action == ACT_TURNING_AROUND);
 
 	//Wind back 1f and run downhill optimally
-	Rollback(game->getCurrentFrame() - 1);
+	Rollback(GetCurrentFrame() - 1);
 
 	auto status = Modify<BitFsPyramidOscillation_RunDownhill>(_roughTargetAngle);
 

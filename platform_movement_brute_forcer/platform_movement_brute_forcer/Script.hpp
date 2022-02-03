@@ -44,12 +44,12 @@ public:
 };
 
 /// <summary>
-/// Execute a state-changing operation on the game-> Parameters should correspond to the script's class constructor.
+/// Execute a state-changing operation on the game. Parameters should correspond to the script's class constructor.
 /// </summary>
 class Script
 {
 public:
-	class CustomScriptStatus {};
+	virtual class CustomScriptStatus {};
 	CustomScriptStatus CustomStatus = {};
 	BaseScriptStatus BaseStatus;
 	Script* _parentScript;
@@ -62,35 +62,31 @@ public:
 		if (_parentScript)
 		{
 			game = _parentScript->game;
-			_initialFrame = game->getCurrentFrame();
+			_initialFrame = GetCurrentFrame();
 		}
 	}
 
-	template<std::derived_from<Script> TScript, typename... Us>
-	requires (std::constructible_from<TScript, Us...>)
-	static ScriptStatus<TScript> Main(Us&&... params)
-	{
-		TScript script = TScript(std::forward<Us>(params)...);
+	//TODO: move this method to some utility class
+	static void CopyVec3f(Vec3f dest, Vec3f source);
 
-		if (script.verify() && script.execute())
-			script.validate();
+	virtual Inputs GetInputs(uint64_t frame);
 
-		return ScriptStatus<TScript>(script.BaseStatus, script.CustomStatus);
-	}
+protected:
+	uint32_t _initialFrame = 0;
 
 	template<std::derived_from<Script> TScript, typename... Us>
-	requires (std::constructible_from<TScript, Script*, Us...>)
+		requires (std::constructible_from<TScript, Script*, Us...>)
 	ScriptStatus<TScript> Execute(Us&&... params)
 	{
 		//Save state if performant
-		uint64_t initialFrame = game->getCurrentFrame();
+		uint64_t initialFrame = GetCurrentFrame();
 		OptionalSave();
 
 		TScript script = TScript(this, std::forward<Us>(params)...);
 
 		if (script.verify() && script.execute())
 			script.validate();
-		
+
 		//Load if necessary
 		Revert(initialFrame, script.BaseStatus.m64Diff);
 
@@ -102,7 +98,7 @@ public:
 	}
 
 	template<std::derived_from<Script> TScript, typename... Us>
-	requires (std::constructible_from<TScript, Script*, Us...>)
+		requires (std::constructible_from<TScript, Script*, Us...>)
 	ScriptStatus<TScript> Modify(Us&&... params)
 	{
 		ScriptStatus<TScript> status = Execute<TScript>(std::forward<Us>(params)...);
@@ -113,7 +109,7 @@ public:
 	}
 
 	template<std::derived_from<Script> TScript, typename... Us>
-	requires (std::constructible_from<TScript, Script*, Us...>)
+		requires (std::constructible_from<TScript, Script*, Us...>)
 	ScriptStatus<TScript> Test(Us&&... params)
 	{
 		ScriptStatus<TScript> status = Execute<TScript>(std::forward<Us>(params)...);
@@ -123,22 +119,17 @@ public:
 		return status;
 	}
 
-	static void CopyVec3f(Vec3f dest, Vec3f source);
-
-	virtual Inputs GetInputs(uint64_t frame);
-
-protected:
-	uint32_t _initialFrame = 0;
-
 	bool verify();
 	bool execute();
 	bool validate();
 
+	//TODO: move this method to some utility class
 	template <typename T> int sign(T val)
 	{
 		return (T(0) < val) - (val < T(0));
 	}
 
+	uint64_t GetCurrentFrame();
 	void Apply(const M64Diff& m64Diff);
 	void AdvanceFrameRead();
 	void AdvanceFrameWrite(Inputs inputs);
@@ -158,211 +149,37 @@ private:
 	void Revert(uint64_t frame, const M64Diff& m64);
 };
 
-class MainScript : public Script
+class TopLevelScript : public Script
 {
 public:
-	MainScript(M64* m64, Game* game) : Script(NULL), _m64(m64) { this->game = game; }
+	TopLevelScript(M64& m64, Game* game) : Script(NULL), _m64(m64) { this->game = game; }
 
-	bool verification();
-	bool execution();
-	bool validation();
-
-	Inputs GetInputs(uint64_t frame);
-
-private:
-	M64* _m64;
-};
-
-class BitFsPyramidOscillation_RunDownhill : public Script
-{
-public:
-	class CustomScriptStatus
+	template<std::derived_from<TopLevelScript> TTopLevelScript, std::derived_from<Game> TGame, typename... Ts>
+		requires (std::constructible_from<TGame, Ts...>)
+	static ScriptStatus<TTopLevelScript> Main(M64& m64, Ts&&... params)
 	{
-	public:
-		class FrameInputStatus
-		{
-		public:
-			bool isAngleDownhill = false;
-			bool isAngleOptimal = false;
-		};
+		TGame game = TGame(std::forward<Ts>(params)...);
 
-		std::map<uint64_t, FrameInputStatus> frameStatuses;
-		float maxSpeed = 0;
-		float passedEquilibriumSpeed = 0;
-		int64_t framePassedEquilibriumPoint = -1;
-		float finalXzSum = 0;
-	};
-	CustomScriptStatus CustomStatus = CustomScriptStatus();
+		TTopLevelScript script = TTopLevelScript(m64, &game);
 
-	BitFsPyramidOscillation_RunDownhill(Script* parentScript, int16_t roughTargetAngle = 0)
-		: Script(parentScript), _roughTargetAngle(roughTargetAngle) {}
+		if (script.verify() && script.execute())
+			script.validate();
 
-	bool verification();
-	bool execution();
-	bool validation();
+		return ScriptStatus<TTopLevelScript>(script.BaseStatus, script.CustomStatus);
+	}
 
-private:
-	int _targetXDirection = 0;
-	int _targetZDirection = 0;
-	int16_t _roughTargetAngle = 0;
+	virtual bool verification() = 0;
+	virtual bool execution() = 0;
+	virtual bool validation() = 0;
+
+	Inputs GetInputs(uint64_t frame) override;
+
+protected:
+	M64& _m64;
 };
 
-class GetMinimumDownhillWalkingAngle: public Script
-{
-public:
-	class CustomScriptStatus
-	{
-	public:
-		bool isSlope = false;
-		int32_t angleFacing = 0;
-		int32_t angleNotFacing = 0;
-		int32_t angleFacingAnalogBack = 0;
-		int32_t angleNotFacingAnalogBack = 0;
-		Rotation downhillRotation = Rotation::NONE;
-	};
-	CustomScriptStatus CustomStatus = CustomScriptStatus();
-
-	GetMinimumDownhillWalkingAngle(Script* parentScript, int16_t targetAngle)
-		: Script(parentScript), _targetAngle(targetAngle), _faceAngle(targetAngle) {}
-	GetMinimumDownhillWalkingAngle(Script* parentScript, int16_t targetAngle, int16_t faceAngle)
-		: Script(parentScript), _targetAngle(targetAngle), _faceAngle(faceAngle) {}
-
-	bool verification();
-	bool execution();
-	bool validation();
-
-private:
-	int16_t _faceAngle;
-	int16_t _targetAngle;
-};
-
-class TryHackedWalkOutOfBounds : public Script
-{
-public:
-	class CustomScriptStatus
-	{
-	public:
-		Vec3f startPos;
-		Vec3f endPos;
-		float startSpeed;
-		float endSpeed;
-		uint32_t endAction;
-		uint16_t floorAngle;
-	};
-	CustomScriptStatus CustomStatus = CustomScriptStatus();
-
-	TryHackedWalkOutOfBounds(Script* parentScript, float speed) : Script(parentScript), _speed(speed) {}
-
-	bool verification();
-	bool execution();
-	bool validation();
-
-private:
-	float _speed;
-};
-
-class BitFsPyramidOscillation : public Script
-{
-public:
-	class CustomScriptStatus
-	{
-	public:
-		float initialXzSum = 0;
-		float finalXzSum = 0;
-		float maxSpeed[2] = { 0, 0 };
-		float maxPassedEquilibriumSpeed[2] = {0, 0};
-	};
-	CustomScriptStatus CustomStatus = CustomScriptStatus();
-
-	BitFsPyramidOscillation(Script* parentScript) : Script(parentScript) {}
-
-	bool verification();
-	bool execution();
-	bool validation();
-};
-
-class BitFsPyramidOscillation_TurnThenRunDownhill : public Script
-{
-public:
-	class CustomScriptStatus
-	{
-	public:
-		float initialXzSum = 0;
-		float finalXzSum = 0;
-		float maxSpeed = 0;
-		float passedEquilibriumSpeed = 0;
-		int64_t framePassedEquilibriumPoint = -1;
-	};
-	CustomScriptStatus CustomStatus = CustomScriptStatus();
-
-	BitFsPyramidOscillation_TurnThenRunDownhill(Script* parentScript, float prevMaxSpeed, float minXzSum)
-		: Script(parentScript), _prevMaxSpeed(prevMaxSpeed), _minXzSum(minXzSum) {}
-
-	bool verification();
-	bool execution();
-	bool validation();
-
-private:
-	float _prevMaxSpeed = 0;
-	float _minXzSum = 0;
-};
-
-class BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle : public Script
-{
-public:
-	class CustomScriptStatus
-	{
-	public:
-		float initialXzSum = 0;
-		float finalXzSum = 0;
-		float maxSpeed = 0;
-		float passedEquilibriumSpeed = 0;
-		int64_t framePassedEquilibriumPoint = -1;
-		bool tooSlowForTurnAround = false;
-		bool tooUphill = false;
-		bool tooDownhill = false;
-	};
-	CustomScriptStatus CustomStatus = CustomScriptStatus();
-
-	BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle(Script* parentScript, int16_t angle, float prevMaxSpeed, float minXzSum)
-		: Script(parentScript), _angle(angle), _prevMaxSpeed(prevMaxSpeed), _minXzSum(minXzSum) {}
-
-	bool verification();
-	bool execution();
-	bool validation();
-
-private:
-	int16_t _angle;
-	float _prevMaxSpeed = 0;
-	float _minXzSum = 0;
-};
-
-class BitFsPyramidOscillation_TurnAroundAndRunDownhill : public Script
-{
-public:
-	class CustomScriptStatus
-	{
-	public:
-		float maxSpeed = 0;
-		float passedEquilibriumSpeed = 0;
-		int64_t framePassedEquilibriumPoint = -1;
-		float finalXzSum = 0;
-		bool tooDownhill = false;
-		bool tooUphill = false;
-	};
-	CustomScriptStatus CustomStatus = CustomScriptStatus();
-
-	BitFsPyramidOscillation_TurnAroundAndRunDownhill(Script* parentScript, int16_t roughTargetAngle = 0, float minXzSum = 0)
-		: Script(parentScript), _roughTargetAngle(roughTargetAngle), _minXzSum(minXzSum) {}
-
-	bool verification();
-	bool execution();
-	bool validation();
-
-private:
-	int16_t _roughTargetAngle = 0;
-	float _minXzSum = 0;
-};
+#include "Script_General.hpp"
+#include "Script_BitFsPyramidOscillation.hpp"
 
 #endif
 
