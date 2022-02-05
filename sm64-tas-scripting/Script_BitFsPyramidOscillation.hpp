@@ -57,11 +57,11 @@ public:
 	class CustomScriptStatus
 	{
 	public:
+		int64_t framePassedEquilibriumPoint = -1;
 		float initialXzSum = 0;
 		float finalXzSum = 0;
 		float maxSpeed = 0;
 		float passedEquilibriumSpeed = 0;
-		int64_t framePassedEquilibriumPoint = -1;
 		bool tooSlowForTurnAround = false;
 		bool tooUphill = false;
 		bool tooDownhill = false;
@@ -87,9 +87,9 @@ public:
 	class CustomScriptStatus
 	{
 	public:
+		int64_t framePassedEquilibriumPoint = -1;
 		float maxSpeed = 0;
 		float passedEquilibriumSpeed = 0;
-		int64_t framePassedEquilibriumPoint = -1;
 		float finalXzSum = 0;
 		bool tooDownhill = false;
 		bool tooUphill = false;
@@ -122,9 +122,9 @@ public:
 		};
 
 		std::map<uint64_t, FrameInputStatus> frameStatuses;
+		int64_t framePassedEquilibriumPoint = -1;
 		float maxSpeed = 0;
 		float passedEquilibriumSpeed = 0;
-		int64_t framePassedEquilibriumPoint = -1;
 		float finalXzSum = 0;
 	};
 	CustomScriptStatus CustomStatus = CustomScriptStatus();

@@ -16,17 +16,12 @@ bool BitFsPyramidOscillation_TurnAroundAndRunDownhill::verification()
 	if (!floorObject)
 		return false;
 
-	const BehaviorScript* behavior = floorObject->behavior;
 	const BehaviorScript* pyramidBehavior = (const BehaviorScript*)(game->addr("bhvBitfsTiltingInvertedPyramid"));
-	if (behavior != pyramidBehavior)
+	if (floorObject->behavior != pyramidBehavior)
 		return false;
 
 	//Check that Mario can enter walking action
-	uint32_t action = marioState->action;
-	if (action != ACT_WALKING)
-		return false;
-
-	return true;
+	return marioState->action == ACT_WALKING;
 }
 
 bool BitFsPyramidOscillation_TurnAroundAndRunDownhill::execution()
@@ -72,8 +67,5 @@ bool BitFsPyramidOscillation_TurnAroundAndRunDownhill::execution()
 
 bool BitFsPyramidOscillation_TurnAroundAndRunDownhill::validation()
 {
-	if (!BaseStatus.m64Diff.frames.size())
-		return false;
-
-	return true;
+	return !BaseStatus.m64Diff.frames.empty();
 }

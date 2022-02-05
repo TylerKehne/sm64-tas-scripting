@@ -121,7 +121,7 @@ void Script::AdvanceFrameWrite(Inputs inputs)
 
 void Script::Apply(const M64Diff& m64Diff)
 {
-	if (!m64Diff.frames.size())
+	if (m64Diff.frames.empty())
 		return;
 
 	uint64_t firstFrame = m64Diff.frames.begin()->first;
