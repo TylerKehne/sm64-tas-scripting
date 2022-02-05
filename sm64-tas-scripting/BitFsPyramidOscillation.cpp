@@ -4,6 +4,8 @@
 #include "Camera.hpp"
 #include "ObjectFields.hpp"
 
+#include <array>
+
 bool BitFsPyramidOscillation::verification()
 {
 	//Check if Mario is on the pyramid platform
@@ -17,25 +19,20 @@ bool BitFsPyramidOscillation::verification()
 	if (!floorObject)
 		return false;
 
-	const BehaviorScript* behavior = floorObject->behavior;
 	const BehaviorScript* pyramidBehavior = (const BehaviorScript*)(game->addr("bhvBitfsTiltingInvertedPyramid"));
-	if (behavior != pyramidBehavior)
+	if (floorObject->behavior != pyramidBehavior)
 		return false;
 
 	//Check that Mario is idle
-	uint32_t action = marioState->action;
-	if (action != ACT_IDLE)
+	if (marioState->action != ACT_IDLE)
 		return false;
 
 	//Check that pyramid is at equilibrium
-	vector<float> normal = { floorObject->oTiltingPyramidNormalX, floorObject->oTiltingPyramidNormalY, floorObject->oTiltingPyramidNormalZ };
+	array<float, 3> normal = { floorObject->oTiltingPyramidNormalX, floorObject->oTiltingPyramidNormalY, floorObject->oTiltingPyramidNormalZ };
 	AdvanceFrameRead();
-	vector<float> normal2 = { floorObject->oTiltingPyramidNormalX, floorObject->oTiltingPyramidNormalY, floorObject->oTiltingPyramidNormalZ };
+	array<float, 3> normal2 = { floorObject->oTiltingPyramidNormalX, floorObject->oTiltingPyramidNormalY, floorObject->oTiltingPyramidNormalZ };
 
-	if (normal != normal2)
-		return false;
-
-	return true;
+	return normal == normal2;
 }
 
 bool BitFsPyramidOscillation::execution()
