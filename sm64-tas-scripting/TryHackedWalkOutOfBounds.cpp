@@ -32,7 +32,7 @@ bool TryHackedWalkOutOfBounds::execution()
 
 bool TryHackedWalkOutOfBounds::validation()
 {
-	float hDistMoved = sqrtf(pow(CustomStatus.endPos[0] - CustomStatus.endPos[0], 2) + pow(CustomStatus.endPos[2] - CustomStatus.endPos[2], 2));
+	float hDistMoved = sqrtf(pow(CustomStatus.endPos[0] - CustomStatus.startPos[0], 2) + pow(CustomStatus.endPos[2] - CustomStatus.startPos[2], 2));
 	if (hDistMoved >= abs(_speed * 0.01f))
 		return false;
 
