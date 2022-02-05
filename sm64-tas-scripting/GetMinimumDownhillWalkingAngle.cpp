@@ -77,8 +77,5 @@ bool GetMinimumDownhillWalkingAngle::execution()
 
 bool GetMinimumDownhillWalkingAngle::validation()
 {
-	if (!CustomStatus.isSlope)
-		return false;
-
-	return true;
+	return CustomStatus.isSlope;
 }

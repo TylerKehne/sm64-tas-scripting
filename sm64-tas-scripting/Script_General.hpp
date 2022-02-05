@@ -11,12 +11,12 @@ public:
 	class CustomScriptStatus
 	{
 	public:
-		bool isSlope = false;
+		Rotation downhillRotation = Rotation::NONE;
 		int32_t angleFacing = 0;
 		int32_t angleNotFacing = 0;
 		int32_t angleFacingAnalogBack = 0;
 		int32_t angleNotFacingAnalogBack = 0;
-		Rotation downhillRotation = Rotation::NONE;
+		bool isSlope = false;
 	};
 	CustomScriptStatus CustomStatus = CustomScriptStatus();
 

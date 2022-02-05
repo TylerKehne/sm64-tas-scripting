@@ -262,7 +262,7 @@ int M64::load()
 
 	try {
 		if ((err = fopen_s(&f, fileName, "rb")) != 0) {
-			std::cerr << "Bad open: " << err << std::endl;
+			std::cerr << "Bad open of file " << fileName << " Error: " << err << std::endl;
 			exit(EXIT_FAILURE);
 		}
 
@@ -327,7 +327,7 @@ int M64::save(long initFrame)
 
 	try {
 		if ((err = fopen_s(&f, fileName, "r+b")) != 0) {
-			std::cerr << "Bad open: " << err << std::endl;
+			std::cerr << "Bad open of file " << fileName << " Error: " << err << std::endl;
 			exit(EXIT_FAILURE);
 		}
 
