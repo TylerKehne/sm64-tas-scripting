@@ -53,9 +53,6 @@ std::pair< std::map<int16_t, std::map<float, std::pair<int8_t, int8_t>>>, std::m
 	return { yawMagToInputs, inputsToYawMag };
 }
 
-//std::map<int16_t, std::map<float, std::pair<int8_t, int8_t>>> yawMagToInputs;
-//std::map<int8_t, std::map<int8_t, std::pair<int16_t, float>>> inputsToYawMag;
-
 const auto static[yawMagToInputs, inputsToYawMag] = PopulateInputMappings();
 
 std::pair<int8_t, int8_t> Inputs::GetClosestInputByYawHau(int16_t intendedYaw, float intendedMag, int16_t cameraYaw, Rotation bias)
@@ -63,7 +60,7 @@ std::pair<int8_t, int8_t> Inputs::GetClosestInputByYawHau(int16_t intendedYaw, f
 	//intendedYaw = baseIntendedYaw + cameraYaw
 
 	if (intendedMag == 0.0f)
-		return std::pair(0, 0);
+		return { 0, 0 };
 
 	int16_t minIntendedYaw = intendedYaw - (intendedYaw & 15);
 	int16_t maxIntendedYaw = minIntendedYaw + 15;
@@ -71,7 +68,7 @@ std::pair<int8_t, int8_t> Inputs::GetClosestInputByYawHau(int16_t intendedYaw, f
 	int16_t minBaseIntendedYaw = minIntendedYaw - cameraYaw;
 	int16_t maxBaseIntendedYaw = maxIntendedYaw - cameraYaw;
 
-	std::pair<int8_t, int8_t> closestInput = std::pair(0, 0);
+	std::pair<int8_t, int8_t> closestInput = { 0, 0 };
 	float closestMagDistance = INFINITY;
 
 	bool foundMatchingYawHau = false;
@@ -161,7 +158,7 @@ std::pair<int8_t, int8_t> Inputs::GetClosestInputByYawExact(int16_t intendedYaw,
 	//intendedYaw = baseIntendedYaw + cameraYaw
 
 	if (intendedMag == 0.0f)
-		return std::pair(0, 0);
+		return { 0, 0 };
 
 	int16_t baseIntendedYaw = intendedYaw - cameraYaw;
 
@@ -253,7 +250,7 @@ std::pair<int16_t, float> Inputs::GetIntendedYawMagFromInput(int8_t stickX, int8
 	int16_t baseIntendedYaw = inputsToYawMag.at(stickX).at(stickY).first;
 	float intendedMag = inputsToYawMag.at(stickX).at(stickY).second;
 
-	return std::pair<int16_t, float>(baseIntendedYaw + cameraYaw, intendedMag);
+	return { baseIntendedYaw + cameraYaw, intendedMag };
 }
 
 int M64::load()
