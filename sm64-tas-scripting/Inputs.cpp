@@ -3,11 +3,13 @@
 #include <iostream>
 #include "Game.hpp"
 #include "Trig.hpp"
+#include <unordered_map>
 
-std::pair< std::map<int16_t, std::map<float, std::pair<int8_t, int8_t>>>, std::map<int8_t, std::map<int8_t, std::pair<int16_t, float>>>> PopulateInputMappings()
+std::pair< std::unordered_map<int16_t, std::map<float, std::pair<int8_t, int8_t>>>, 
+	std::unordered_map<int8_t, std::unordered_map<int8_t, std::pair<int16_t, float>>>> PopulateInputMappings()
 {
-	std::map<int16_t, std::map<float, std::pair<int8_t, int8_t>>> yawMagToInputs;
-	std::map<int8_t, std::map<int8_t, std::pair<int16_t, float>>> inputsToYawMag;
+	std::unordered_map<int16_t, std::map<float, std::pair<int8_t, int8_t>>> yawMagToInputs;
+	std::unordered_map<int8_t, std::unordered_map<int8_t, std::pair<int16_t, float>>> inputsToYawMag;
 	for (int16_t stickX = -128; stickX <= 127; stickX++)
 	{
 		for (int16_t stickY = -128; stickY <= 127; stickY++)
@@ -41,13 +43,13 @@ std::pair< std::map<int16_t, std::map<float, std::pair<int8_t, int8_t>>>, std::m
 			if (intendedMag > 0.0f)
 			{
 				baseIntendedYaw = atan2s(-adjustedStickY, adjustedStickX);
-				if (yawMagToInputs.count(baseIntendedYaw) == 0)
-					yawMagToInputs[baseIntendedYaw] = std::map<float, std::pair<int8_t, int8_t>>{ { intendedMag, std::pair<int8_t, int8_t>(stickX, stickY) } };
-				else if (yawMagToInputs[baseIntendedYaw].count(intendedMag) == 0)
-					yawMagToInputs[baseIntendedYaw][intendedMag] = std::pair<int8_t, int8_t>(stickX, stickY);
+				if (!yawMagToInputs.contains(baseIntendedYaw))
+					yawMagToInputs[baseIntendedYaw] = std::map<float, std::pair<int8_t, int8_t>>{ { intendedMag, {stickX, stickY} } };
+				else if (!yawMagToInputs[baseIntendedYaw].contains(intendedMag))
+					yawMagToInputs[baseIntendedYaw][intendedMag] = { stickX, stickY };
 			}
 
-			inputsToYawMag[stickX][stickY] = std::pair<int16_t, float>(baseIntendedYaw, intendedMag);
+			inputsToYawMag[stickX][stickY] = { baseIntendedYaw, intendedMag };
 		}
 	}
 	return { yawMagToInputs, inputsToYawMag };
