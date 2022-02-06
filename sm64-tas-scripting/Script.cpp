@@ -271,11 +271,8 @@ void Script::Save()
 {
 	//If save memory is full, remove the earliest save and try again
 	uint64_t currentFrame = GetCurrentFrame();
-	while (true)
+	while (!game->save_state(&saveBank[currentFrame]))
 	{
-		if (game->save_state(&saveBank[currentFrame]))
-			break;
-
 		saveBank.erase(currentFrame);
 		RemoveEarliestSave(this);
 	}
