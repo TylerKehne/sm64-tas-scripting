@@ -39,14 +39,12 @@ public:
 class Game
 {
 public:
-	double _avgFrameAdvanceTime = 0;
-	double _avgLoadStateTime = 0;
-	double _avgSaveStateTime = 0;
-	double _avgAllocSlotTime = 0;
+	uint64_t _totalFrameAdvanceTime = 0;
+	uint64_t _totalLoadStateTime = 0;
+	uint64_t _totalSaveStateTime = 0;
 	uint64_t nFrameAdvances = 0;
 	uint64_t nLoadStates = 0;
 	uint64_t nSaveStates = 0;
-	uint64_t nAllocSlots = 0;
 
 	std::string version;
 	HMODULE dll;

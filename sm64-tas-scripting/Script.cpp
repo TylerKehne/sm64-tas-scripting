@@ -221,22 +221,11 @@ void Script::Rollback(uint64_t frame)
 
 void Script::Save()
 {
-	//TODO: timing should be done in Game object not here
-	auto start = std::chrono::high_resolution_clock::now();
 
 	uint64_t currentFrame = GetCurrentFrame();
 	game->save_state(&saveBank[currentFrame]);
 	BaseStatus.nSaves++;
 
-	auto finish = std::chrono::high_resolution_clock::now();
-	auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(finish - start).count();
-
-	if (!game->nAllocSlots)
-		game->_avgAllocSlotTime = duration;
-	else
-		game->_avgAllocSlotTime = (game->_avgAllocSlotTime * game->nAllocSlots + duration) / (game->nAllocSlots + 1);
-		
-	game->nAllocSlots++;
 }
 
 void Script::Save(uint64_t frame)
