@@ -225,7 +225,6 @@ void Script::Save()
 	auto start = std::chrono::high_resolution_clock::now();
 
 	uint64_t currentFrame = GetCurrentFrame();
-	saveBank[currentFrame] = game->alloc_slot();
 	game->save_state(&saveBank[currentFrame]);
 	BaseStatus.nSaves++;
 

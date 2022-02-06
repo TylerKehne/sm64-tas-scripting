@@ -34,10 +34,6 @@ public:
 
 	Slot() {}
 
-	Slot(size_t size1, size_t size2) {
-		buf1 = std::vector<uint8_t>(size1, 0);
-		buf2 = std::vector<uint8_t>(size2, 0);
-	}
 };
 
 class Game
@@ -86,12 +82,10 @@ public:
 
 		segment = SEGMENTS.at(version);
 
-		startSave = alloc_slot();
 		save_state(&startSave);
 	}
 
 	void advance_frame();
-	Slot alloc_slot();
 	void save_state(Slot* slot);
 	void load_state(Slot* slot);
 	intptr_t addr(const char* symbol);

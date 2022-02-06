@@ -28,11 +28,10 @@ void Game::advance_frame() {
 
 }
 
-Slot Game::alloc_slot() {
-	return Slot(segment[0].virtual_size, segment[1].virtual_size);
-}
 
 void Game::save_state(Slot* slot) {
+	slot->buf1.resize(segment[0].virtual_size);
+	slot->buf2.resize(segment[1].virtual_size);
 	auto start = std::chrono::high_resolution_clock::now();
 
 	int64_t *temp = reinterpret_cast<int64_t*>(dll) + segment[0].virtual_address / sizeof(int64_t);
