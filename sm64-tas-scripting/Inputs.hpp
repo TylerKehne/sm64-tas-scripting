@@ -65,7 +65,6 @@ public:
 	Inputs(uint16_t buttons, int8_t stick_x, int8_t stick_y)
 		: buttons(buttons), stick_x(stick_x), stick_y(stick_y) {}
 
-	static void PopulateInputMappings();
 	static std::pair<int8_t, int8_t> GetClosestInputByYawHau(int16_t intendedYaw, float intendedMag, int16_t cameraYaw, Rotation bias = Rotation::NONE);
 	static std::pair<int8_t, int8_t> GetClosestInputByYawExact(int16_t intendedYaw, float intendedMag, int16_t cameraYaw, Rotation bias = Rotation::NONE);
 	static std::pair<int16_t, float> GetIntendedYawMagFromInput(int8_t stickX, int8_t stickY, int16_t cameraYaw);

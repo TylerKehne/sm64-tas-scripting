@@ -44,12 +44,11 @@ public:
 };
 
 int main(int argc, char* argv[]) {
-	M64 m64 = M64("C:\\Users\\Tyler\\Downloads\\TestWrite4.m64");
+
+	M64 m64 = M64("FILL\\IN\\PATH\\TestWrite4.m64");
 	m64.load();
 
-	Inputs::PopulateInputMappings();
-
-	auto status = TopLevelScript::Main<MainScript, Game>(m64, "jp", ".\\sm64_jp.dll");
+	auto status = TopLevelScript::Main<MainScript, Game>(m64, "jp", "FILL\\IN\\PATH\\sm64_jp.dll");
 
 	m64.save();
 
