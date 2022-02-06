@@ -179,6 +179,54 @@ std::pair<uint64_t, Slot*> Script::GetLatestSave(Script* script, uint64_t frame)
 	return std::pair<uint64_t, Slot*>((*save).first, &(*save).second);
 }
 
+bool Script::RemoveEarliestSave(Script* script, uint64_t earliestFrame)
+{
+	auto save = !script->saveBank.empty() ? script->saveBank.begin() : script->saveBank.end();
+	Script* parentScript = script->_parentScript;
+
+	//Keep track of the earliest save frame as we go up the hierarchy
+	if (save != script->saveBank.end())
+	{
+		if (!earliestFrame)
+			earliestFrame = (*save).first;
+		else 
+			earliestFrame = earliestFrame < (*save).first ? earliestFrame : (*save).first; //Remove from parent if tied
+	}
+
+	//Remove save from the parent if there is an earlier one
+	if (parentScript)
+	{
+		if (save == script->saveBank.end())
+			return RemoveEarliestSave(parentScript, earliestFrame);
+
+		if (!RemoveEarliestSave(parentScript, earliestFrame))
+		{
+			//Parent has no earlier saves, so remove from this script if it has the earliest save
+			if (earliestFrame == (*save).first)
+			{
+				script->saveBank.erase(earliestFrame);
+					return true;
+			}
+
+			return false;
+		}	
+
+		return true;
+	}
+
+	if (save == script->saveBank.end())
+		return false;
+
+	//This is the top level script, so remove from this script if it has the earliest save
+	if (earliestFrame == (*save).first)
+	{
+		script->saveBank.erase(earliestFrame);
+		return true;
+	}
+
+	return false;
+}
+
 void Script::Load(uint64_t frame)
 {
 	//Load most recent save at or before frame. Check child saves before parent.
@@ -221,11 +269,18 @@ void Script::Rollback(uint64_t frame)
 
 void Script::Save()
 {
-
+	//If save memory is full, remove the earliest save and try again
 	uint64_t currentFrame = GetCurrentFrame();
-	game->save_state(&saveBank[currentFrame]);
-	BaseStatus.nSaves++;
+	while (true)
+	{
+		if (game->save_state(&saveBank[currentFrame]))
+			break;
 
+		saveBank.erase(currentFrame);
+		RemoveEarliestSave(this);
+	}
+	
+	BaseStatus.nSaves++;
 }
 
 void Script::Save(uint64_t frame)

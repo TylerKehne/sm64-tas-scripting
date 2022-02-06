@@ -145,6 +145,7 @@ protected:
 
 private:
 	std::pair<uint64_t, Slot*> GetLatestSave(Script* script, uint64_t frame);
+	bool RemoveEarliestSave(Script* script, uint64_t earliestFrame = 0);
 	void SetInputs(Inputs inputs);
 	void Revert(uint64_t frame, const M64Diff& m64);
 };
