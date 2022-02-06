@@ -45,10 +45,10 @@ void Game::save_state(Slot* slot) {
 	slot->buf2.resize(segment[1].virtual_size);
 
 	int64_t *temp = reinterpret_cast<int64_t*>(dll) + segment[0].virtual_address / sizeof(int64_t);
-	memmove(slot->buf1.data(), temp, segment[0].virtual_size);
+	memcpy(slot->buf1.data(), temp, segment[0].virtual_size);
 
 	temp = reinterpret_cast<int64_t*>(dll) + segment[1].virtual_address / sizeof(int64_t);
-	memmove(slot->buf2.data(), temp, segment[1].virtual_size);
+	memcpy(slot->buf2.data(), temp, segment[1].virtual_size);
 
 	_totalSaveStateTime += get_time() - start;
 
@@ -60,10 +60,10 @@ void Game::load_state(Slot* slot) {
 	auto start = get_time();
 
 	int64_t *temp = reinterpret_cast<int64_t*>(dll) + segment[0].virtual_address / sizeof(int64_t);
-	memmove(temp, slot->buf1.data(), segment[0].virtual_size);
+	memcpy(temp, slot->buf1.data(), segment[0].virtual_size);
 
 	temp = reinterpret_cast<int64_t*>(dll) + segment[1].virtual_address / sizeof(int64_t);
-	memmove(temp, slot->buf2.data(), segment[1].virtual_size);
+	memcpy(temp, slot->buf2.data(), segment[1].virtual_size);
 
 	_totalLoadStateTime = get_time() - start;
 
@@ -82,9 +82,9 @@ uint32_t Game::getCurrentFrame()
 
 bool Game::shouldSave(uint64_t framesSinceLastSave)
 {
-	double estTimeToSave = ((double)_totalSaveStateTime) / nSaveStates;
-	double estTimeToLoadFromRecent = (((double)_totalFrameAdvanceTime)/ nFrameAdvances) * framesSinceLastSave;
+	double estTimeToSave = _totalSaveStateTime / nSaveStates;
+	double estTimeToLoadFromRecent = (_totalFrameAdvanceTime/ nFrameAdvances) * framesSinceLastSave;
 
 	//TODO: Reduce number of automatic load states in script
-	return estTimeToSave <= 2 * estTimeToLoadFromRecent;
+	return estTimeToSave <= 3 * estTimeToLoadFromRecent;
 }
