@@ -181,7 +181,7 @@ std::pair<uint64_t, Slot*> Script::GetLatestSave(Script* script, uint64_t frame)
 
 bool Script::RemoveEarliestSave(Script* script, uint64_t earliestFrame)
 {
-	auto save = !script->saveBank.empty() ? script->saveBank.begin() : script->saveBank.end();
+	auto save = script->saveBank.begin();
 	Script* parentScript = script->_parentScript;
 
 	//Keep track of the earliest save frame as we go up the hierarchy
