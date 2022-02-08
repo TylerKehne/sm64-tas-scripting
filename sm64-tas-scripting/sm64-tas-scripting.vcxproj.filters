@@ -66,6 +66,15 @@
     <ClCompile Include="TryHackedWalkOutOfBounds.cpp">
       <Filter>Source Files\Scripts\General</Filter>
     </ClCompile>
+    <ClCompile Include="math.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="pyramid.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="surface.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Inputs.hpp">
@@ -100,6 +109,15 @@
     </ClInclude>
     <ClInclude Include="ObjectFields.hpp">
       <Filter>Header Files\Types</Filter>
+    </ClInclude>
+    <ClInclude Include="math.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="pyramid.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="surface.hpp">
+      <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>
