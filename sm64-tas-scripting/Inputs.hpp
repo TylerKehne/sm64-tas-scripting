@@ -1,5 +1,4 @@
 #pragma once
-#include <windows.h>
 #include <stdint.h>
 #include <vector>
 #include <map>
