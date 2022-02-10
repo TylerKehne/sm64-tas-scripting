@@ -44,9 +44,7 @@ bool GetMinimumDownhillWalkingAngle::execution()
 	*/
 
 	Object* marioObj = marioState->marioObj;
-
-	int pyramidID = 84;
-    Object* pyramidPlatform = (Object*)(game->addr("gObjectPool") + 1392*pyramidID);
+	Object* pyramidPlatform = marioState->floor->object;
 
 	short floorAngle = 0;
 
