@@ -20,6 +20,9 @@ bool BitFsPyramidOscillation_TurnAroundAndRunDownhill::verification()
 	if (floorObject->behavior != pyramidBehavior)
 		return false;
 
+	if (marioState->forwardVel < 16.0f)
+		return false;
+
 	//Check that Mario can enter walking action
 	return marioState->action == ACT_WALKING;
 }
@@ -31,10 +34,28 @@ bool BitFsPyramidOscillation_TurnAroundAndRunDownhill::execution()
 	Camera* camera = *(Camera**)(game->addr("gCamera"));
 	Object* pyramid = marioState->floor->object;
 
+	//Turn around
 	do
 	{
 		auto inputs = Inputs::GetClosestInputByYawHau(marioState->faceAngle[1] + 0x8000, 32, camera->yaw);
 		AdvanceFrameWrite(Inputs(0, inputs.first, inputs.second));
+
+		//If double turnaround glitch occurs, run for one extra frame in current direction to change animation
+		if (marioState->action == ACT_WALKING && marioState->prevAction == ACT_TURNING_AROUND)
+		{
+			Rollback(GetCurrentFrame() - 1);
+			inputs = Inputs::GetClosestInputByYawHau(marioState->faceAngle[1], 32, camera->yaw);
+			AdvanceFrameWrite(Inputs(0, inputs.first, inputs.second));
+
+			if ((marioState->action != ACT_WALKING)
+				|| marioState->floor->object == NULL
+				|| marioState->floor->object->behavior != pyramidBehavior)
+				return false;
+
+			//Try and turn around again
+			inputs = Inputs::GetClosestInputByYawHau(marioState->faceAngle[1] + 0x8000, 32, camera->yaw);
+			AdvanceFrameWrite(Inputs(0, inputs.first, inputs.second));
+		}
 
 		if (marioState->action != ACT_TURNING_AROUND && marioState->action != ACT_FINISH_TURNING_AROUND)
 		{

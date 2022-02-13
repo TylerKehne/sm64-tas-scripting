@@ -61,7 +61,7 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::execution()
 			return false;
 		}
 
-	} while (marioState->faceAngle[1] != actualIntendedYaw);
+	} while (marioState->faceAngle[1] != actualIntendedYaw || marioState->action == ACT_FINISH_TURNING_AROUND);
 
 	if (marioState->action != ACT_WALKING)
 	{
@@ -83,6 +83,7 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::execution()
 
 		//We've gone too far uphill, terminate
 		if (status.tooUphill)
+			break;
 
 		//Extra running frames are no longer helping, terminate
 		//Note that this requires a previous valid status to trigger
