@@ -6,6 +6,21 @@
 
 bool GetMinimumDownhillWalkingAngle::verification()
 {
+	//Check if Mario is on the pyramid platform
+	MarioState* marioState = *(MarioState**)(game->addr("gMarioState"));
+
+	Surface* floor = marioState->floor;
+	if (!floor)
+		return false;
+
+	Object* floorObject = floor->object;
+	if (!floorObject)
+		return false;
+
+	const BehaviorScript* pyramidBehavior = (const BehaviorScript*)(game->addr("bhvBitfsTiltingInvertedPyramid"));
+	if (floorObject->behavior != pyramidBehavior)
+		return false;
+
 	return true;
 }
 
