@@ -1,18 +1,14 @@
 #include "SharedLib.hpp"
 
 #include <codecvt>
-#include <errhandlingapi.h>
 #include <exception>
 #include <fstream>
 #include <iostream>
-#include <libloaderapi.h>
 #include <memory>
 #include <stdexcept>
 #include <string>
 #include <system_error>
 #include <unordered_map>
-#include <winnt.h>
-
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -121,14 +117,14 @@ std::unordered_map<std::string, SectionInfo> SharedLib::readSections() {
     numSections = header.e_shnum;
     // read section headers
     file.seekg(header.e_shoff, ios_base::beg);
-    sections = std::make_unique<Elf64_Shdr[]>(header.e_shnum);
+    sections.reset(new Elf64_Shdr[header.e_shnum]);
     file.read(reinterpret_cast<char *>(sections.get()),
               header.e_shnum * sizeof(Elf64_Shdr));
 
     const Elf64_Shdr &strtab_sect = sections[header.e_shstrndx];
 
     file.seekg(strtab_sect.sh_offset, ios_base::beg);
-    strTable = std::make_unique<char[]>(strtab_sect.sh_size);
+    strTable.reset(new char[strtab_sect.sh_size]);
     file.read(strTable.get(), strtab_sect.sh_size);
   }
 
