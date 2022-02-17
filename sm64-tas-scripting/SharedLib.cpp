@@ -10,7 +10,6 @@
 #include <system_error>
 #include <cstddef>
 
-
 #if defined(_WIN32)
 #include <windows.h>
 
