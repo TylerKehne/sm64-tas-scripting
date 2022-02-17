@@ -75,6 +75,12 @@
     <ClCompile Include="surface.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="BrakeToIdle.cpp">
+      <Filter>Source Files\Scripts\General</Filter>
+    </ClCompile>
+    <ClCompile Include="BitFsPyramidOscillation_Iteration.cpp">
+      <Filter>Source Files\Scripts\BitFsPyramidOscillation</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Inputs.hpp">

@@ -50,7 +50,8 @@ bool BitFsPyramidOscillation::execution()
 	uint64_t preTurnFrame = GetCurrentFrame();
 	OptionalSave();
 
-	auto initRunStatus = Modify<BitFsPyramidOscillation_RunDownhill>();
+	//Initial run downhill
+	auto initRunStatus = Modify<BitFsPyramidOscillation_RunDownhill>(0);
 	if (!initRunStatus.validated)
 		return false;
 
@@ -61,38 +62,45 @@ bool BitFsPyramidOscillation::execution()
 		CustomStatus.maxSpeed[0] = initRunStatus.maxSpeed;
 
 	//We want to turn uphill as late as possible, and also turn around as late as possible, without sacrificing XZ sum
-	uint64_t minFrame = initRunStatus.m64Diff.frames.begin()->first;
+	uint64_t minFrame = initRunStatus.framePassedEquilibriumPoint == -1 ? initRunStatus.m64Diff.frames.begin()->first : initRunStatus.framePassedEquilibriumPoint;
 	uint64_t maxFrame = initRunStatus.m64Diff.frames.rbegin()->first;
-	for (int i = 0; i < 12; i++)
+	vector<std::pair<int64_t, int64_t>> oscillationMinMaxFrames;
+	for (int i = 0; i < 20; i++)
 	{
-		ScriptStatus<BitFsPyramidOscillation_TurnThenRunDownhill> turnRunStatus;
-		float speedBeforeTurning = 0;
-		for (uint64_t frame = maxFrame; frame >= minFrame; frame--)
+		oscillationMinMaxFrames.push_back({ minFrame, maxFrame });
+
+		//Start at the latest ppossible frame and work backwards. Stop when the max speed at the equilibrium point stops increasing.
+		auto turnRunStatus = Execute<BitFsPyramidOscillation_Iteration>(minFrame, maxFrame, CustomStatus.maxSpeed[i & 1], CustomStatus.initialXzSum, false);
+
+		//If path was affected by ACT_FINISH_TURNING_AROUND taking too long to expire, retry the PREVIOUS oscillation with braking + quickturn
+		//Then run another oscillation, compare the speeds, and continue with the diff that has the higher speed
+		if (i > 0 && (turnRunStatus.finishTurnaroundFailedToExpire || !turnRunStatus.validated))
 		{
-			Load(frame);
-			speedBeforeTurning = marioState->forwardVel;
-			auto status = Execute<BitFsPyramidOscillation_TurnThenRunDownhill>(CustomStatus.maxSpeed[i & 1], CustomStatus.initialXzSum);
-
-			//Keep iterating until we get a valid result, then keep iterating until we stop getting better results
-			//Once we get a valid result, we expect successive iterations to be worse (less space to accelerate), but that isn't always true
-			if (!status.validated)
+			M64Diff nonBrakeDiff = BaseStatus.m64Diff;
+			int64_t minFrameBrake = oscillationMinMaxFrames[i - 1].first;
+			int64_t maxFrameBrake = oscillationMinMaxFrames[i - 1].second;
+			auto turnRunStatusBrake = Modify<BitFsPyramidOscillation_Iteration>(minFrameBrake, maxFrameBrake, CustomStatus.maxSpeed[(i & 1) ^ 1], CustomStatus.initialXzSum, true);
+			if (turnRunStatusBrake.validated)
 			{
-				if (turnRunStatus.passedEquilibriumSpeed == 0.0)
-					continue;
+				int64_t minFrame2 = turnRunStatusBrake.framePassedEquilibriumPoint;
+				int64_t maxFrame2 = turnRunStatusBrake.m64Diff.frames.rbegin()->first;
+				auto turnRunStatus2 = Execute<BitFsPyramidOscillation_Iteration>(minFrame2, maxFrame2, CustomStatus.maxSpeed[i & 1], CustomStatus.initialXzSum, false);
+				if (turnRunStatus2.passedEquilibriumSpeed > turnRunStatus.passedEquilibriumSpeed)
+				{
+					oscillationMinMaxFrames[i - 1] = { minFrameBrake, maxFrameBrake };
+					oscillationMinMaxFrames[i] = { minFrame2, maxFrame2 };
+					CustomStatus.maxSpeed[(i & 1)] = turnRunStatusBrake.speedBeforeTurning;
+					turnRunStatus = turnRunStatus2;
+				}
 				else
-					break;
+					Apply(nonBrakeDiff);
 			}
-
-			if (status.passedEquilibriumSpeed > turnRunStatus.passedEquilibriumSpeed && status.maxSpeed > CustomStatus.maxSpeed[i & 1])
-				turnRunStatus = status;
-			else if (status.maxSpeed == 0.0)
-				break;
 		}
 
 		if (turnRunStatus.passedEquilibriumSpeed > CustomStatus.maxPassedEquilibriumSpeed[i & 1])
 		{
 			CustomStatus.finalXzSum = turnRunStatus.finalXzSum;
-			CustomStatus.maxSpeed[(i & 1) ^ 1] = speedBeforeTurning;
+			CustomStatus.maxSpeed[(i & 1) ^ 1] = turnRunStatus.speedBeforeTurning;
 			CustomStatus.maxPassedEquilibriumSpeed[i & 1] = turnRunStatus.passedEquilibriumSpeed;
 			Apply(turnRunStatus.m64Diff);
 			minFrame = turnRunStatus.framePassedEquilibriumPoint;
