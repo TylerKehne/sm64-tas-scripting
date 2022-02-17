@@ -16,6 +16,7 @@ public:
 		int32_t angleNotFacing = 0;
 		int32_t angleFacingAnalogBack = 0;
 		int32_t angleNotFacingAnalogBack = 0;
+		int32_t floorAngle = 0;
 		bool isSlope = false;
 	};
 	CustomScriptStatus CustomStatus = CustomScriptStatus();
@@ -57,6 +58,23 @@ public:
 
 private:
 	float _speed;
+};
+
+class BrakeToIdle : public Script
+{
+public:
+	class CustomScriptStatus
+	{
+	public:
+		int32_t decelerationFrames = -1;
+	};
+	CustomScriptStatus CustomStatus = CustomScriptStatus();
+
+	BrakeToIdle(Script* parentScript) : Script(parentScript) {}
+
+	bool verification();
+	bool execution();
+	bool validation();
 };
 
 #endif

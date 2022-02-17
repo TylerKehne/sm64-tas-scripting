@@ -26,14 +26,18 @@ public:
 	}
 };
 
+class Game;
+
 class Slot
 {
 public:
 	std::vector<uint8_t> buf1;
 	std::vector<uint8_t> buf2;
+	Game* game = NULL;
 
 	Slot() {}
 
+	~Slot();
 };
 
 class Game
@@ -84,11 +88,17 @@ public:
 	}
 
 	void advance_frame();
-	void save_state(Slot* slot);
+	bool save_state(Slot* slot);
 	void load_state(Slot* slot);
 	intptr_t addr(const char* symbol);
 	uint32_t getCurrentFrame();
 	bool shouldSave(uint64_t framesSinceLastSave);
+
+private:
+	friend class Slot;
+
+	const int64_t _saveMemLimit = 1024 * 1024 * 1024; //1 GB
+	int64_t _currentSaveMem = 0;
 };
 
 

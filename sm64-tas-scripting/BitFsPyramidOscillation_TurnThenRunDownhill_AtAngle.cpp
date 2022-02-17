@@ -61,7 +61,10 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::execution()
 			return false;
 		}
 
-	} while (marioState->faceAngle[1] != actualIntendedYaw);
+		//Check if we need extra frames to wait for ACT_FINISH_TURNING_AROUND to expire
+		if (marioState->faceAngle[1] == actualIntendedYaw && marioState->action == ACT_FINISH_TURNING_AROUND)
+			CustomStatus.finishTurnaroundFailedToExpire = true;
+	} while (marioState->faceAngle[1] != actualIntendedYaw || marioState->action == ACT_FINISH_TURNING_AROUND);
 
 	if (marioState->action != ACT_WALKING)
 	{
@@ -75,7 +78,7 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::execution()
 	for (int i = 0; i < 50; i++)
 	{
 		//Immediately turn around and run downhill optimally
-		auto status = Execute<BitFsPyramidOscillation_TurnAroundAndRunDownhill>(roughTargetAngle);
+		auto status = Execute<BitFsPyramidOscillation_TurnAroundAndRunDownhill>(_brake, roughTargetAngle);
 
 		//Something weird happened, terminate
 		if (!status.validated)
@@ -83,6 +86,7 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::execution()
 
 		//We've gone too far uphill, terminate
 		if (status.tooUphill)
+			break;
 
 		//Extra running frames are no longer helping, terminate
 		//Note that this requires a previous valid status to trigger
@@ -123,6 +127,7 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::execution()
 	CustomStatus.maxSpeed = runDownhillStatus.maxSpeed;
 	CustomStatus.passedEquilibriumSpeed = runDownhillStatus.passedEquilibriumSpeed;
 	CustomStatus.finalXzSum = runDownhillStatus.finalXzSum;
+	CustomStatus.finishTurnaroundFailedToExpire |= runDownhillStatus.finishTurnaroundFailedToExpire;
 
 	Apply(runDownhillStatus.m64Diff);
 

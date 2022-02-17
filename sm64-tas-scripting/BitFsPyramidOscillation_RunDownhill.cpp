@@ -45,8 +45,7 @@ bool BitFsPyramidOscillation_RunDownhill::execution()
 		float prevNormalZ = pyramid->oTiltingPyramidNormalZ;
 
 		//Turnaround face angle is not guaranteed to be closer to one orientation or the other, so rely on caller to specify a close-enough target orientation
-		int16_t targetAngle = marioState->action == ACT_TURNING_AROUND ? _roughTargetAngle : marioState->faceAngle[1];
-		auto status = Test<GetMinimumDownhillWalkingAngle>(targetAngle, marioState->faceAngle[1]);
+		auto status = Test<GetMinimumDownhillWalkingAngle>(_roughTargetAngle, marioState->faceAngle[1]);
 
 		//Terminate if unable to locate a downhill angle
 		if (!status.executed)

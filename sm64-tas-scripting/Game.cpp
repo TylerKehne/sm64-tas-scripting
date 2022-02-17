@@ -20,6 +20,12 @@ static inline uint64_t get_time() {
 }
 #endif
 
+Slot::~Slot()
+{
+	if (game)
+		game->_currentSaveMem -= buf1.size() + buf2.size();
+}
+
 void Game::advance_frame() {
 	auto start = get_time();
 
@@ -39,10 +45,17 @@ void Game::advance_frame() {
 }
 
 
-void Game::save_state(Slot* slot) {
+bool Game::save_state(Slot* slot) {
+	int64_t additionalMem = segment[0].virtual_size + segment[1].virtual_size;
+	if (_currentSaveMem + additionalMem > _saveMemLimit)
+		return false;
+
 	auto start = get_time();
+
 	slot->buf1.resize(segment[0].virtual_size);
 	slot->buf2.resize(segment[1].virtual_size);
+	slot->game = this;
+	
 
 	int64_t *temp = reinterpret_cast<int64_t*>(dll) + segment[0].virtual_address / sizeof(int64_t);
 	memcpy(slot->buf1.data(), temp, segment[0].virtual_size);
@@ -52,8 +65,10 @@ void Game::save_state(Slot* slot) {
 
 	_totalSaveStateTime += get_time() - start;
 
+	_currentSaveMem += additionalMem;
 	nSaveStates++;
 
+	return true;
 }
 
 void Game::load_state(Slot* slot) {

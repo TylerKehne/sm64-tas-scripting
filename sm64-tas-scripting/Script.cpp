@@ -162,21 +162,69 @@ Inputs Script::GetInputs(uint64_t frame)
 	return Inputs(0, 0, 0);
 }
 
-std::pair<uint64_t, Slot*> Script::GetLatestSave(Script* script, uint64_t frame)
+std::pair<uint64_t, Slot*> Script::GetLatestSave(uint64_t frame)
 {
-	auto save = script->saveBank.size() ? std::prev(script->saveBank.upper_bound(frame)) : script->saveBank.end();
-	if (save == script->saveBank.end())
+	auto save = saveBank.size() ? std::prev(saveBank.upper_bound(frame)) : saveBank.end();
+	if (save == saveBank.end())
 	{
-		Script* parentScript = script->_parentScript;
+		Script* parentScript = _parentScript;
 		//Don't search past start of m64 diff to avoid desync
-		uint64_t earlyFrame = script->BaseStatus.m64Diff.frames.size() ? min(script->BaseStatus.m64Diff.frames.begin()->first, frame) : frame;
+		uint64_t earlyFrame = !BaseStatus.m64Diff.frames.empty() ? min(BaseStatus.m64Diff.frames.begin()->first, frame) : frame;
 		if (parentScript)
-			return GetLatestSave(parentScript, earlyFrame);
+			return parentScript->GetLatestSave(earlyFrame);
 		else
-			return std::pair<uint64_t, Slot*>(0, &game->startSave);
+			return { 0, &game->startSave };
 	}
 
-	return std::pair<uint64_t, Slot*>((*save).first, &(*save).second);
+	return { (*save).first,& (*save).second};
+}
+
+bool Script::RemoveEarliestSave(uint64_t earliestFrame)
+{
+	auto save = saveBank.begin();
+	Script* parentScript = _parentScript;
+
+	//Keep track of the earliest save frame as we go up the hierarchy
+	if (save != saveBank.end())
+	{
+		if (!earliestFrame)
+			earliestFrame = (*save).first;
+		else 
+			earliestFrame = earliestFrame < (*save).first ? earliestFrame : (*save).first; //Remove from parent if tied
+	}
+
+	//Remove save from the parent if there is an earlier one
+	if (parentScript)
+	{
+		if (save == saveBank.end())
+			return parentScript->RemoveEarliestSave(earliestFrame);
+
+		if (!parentScript->RemoveEarliestSave(earliestFrame))
+		{
+			//Parent has no earlier saves, so remove from this script if it has the earliest save
+			if (earliestFrame == (*save).first)
+			{
+				saveBank.erase(earliestFrame);
+				return true;
+			}
+
+			return false;
+		}	
+
+		return true;
+	}
+
+	if (save == saveBank.end())
+		return false;
+
+	//This is the top level script, so remove from this script if it has the earliest save
+	if (earliestFrame == (*save).first)
+	{
+		saveBank.erase(earliestFrame);
+		return true;
+	}
+
+	return false;
 }
 
 void Script::Load(uint64_t frame)
@@ -184,7 +232,7 @@ void Script::Load(uint64_t frame)
 	//Load most recent save at or before frame. Check child saves before parent.
 	if (frame < GetCurrentFrame())
 	{
-		game->load_state(GetLatestSave(this, frame).second);
+		game->load_state(GetLatestSave(frame).second);
 		BaseStatus.nLoads++;
 	}
 
@@ -206,7 +254,7 @@ void Script::Rollback(uint64_t frame)
 	//Load most recent save at or before frame. Check child saves before parent.
 	if (frame < GetCurrentFrame())
 	{
-		game->load_state(GetLatestSave(this, frame).second);
+		game->load_state(GetLatestSave(frame).second);
 		BaseStatus.nLoads++;
 	}
 
@@ -221,11 +269,15 @@ void Script::Rollback(uint64_t frame)
 
 void Script::Save()
 {
-
+	//If save memory is full, remove the earliest save and try again
 	uint64_t currentFrame = GetCurrentFrame();
-	game->save_state(&saveBank[currentFrame]);
+	while (!game->save_state(&saveBank[currentFrame]))
+	{
+		saveBank.erase(currentFrame);
+		RemoveEarliestSave();
+	}
+	
 	BaseStatus.nSaves++;
-
 }
 
 void Script::Save(uint64_t frame)
@@ -237,7 +289,7 @@ void Script::Save(uint64_t frame)
 void Script::OptionalSave()
 {
 	uint64_t currentFrame = GetCurrentFrame();
-	if (game->shouldSave(currentFrame - GetLatestSave(this, currentFrame).first))
+	if (game->shouldSave(currentFrame - GetLatestSave(currentFrame).first))
 		Save();
 }
 
@@ -262,7 +314,7 @@ void Script::Revert(uint64_t frame, const M64Diff& m64)
 	//Load most recent save at or before frame. Check child saves before parent.
 	if (desync || frame < GetCurrentFrame())
 	{
-		game->load_state(GetLatestSave(this, frame).second);
+		game->load_state(GetLatestSave(frame).second);
 		BaseStatus.nLoads++;
 	}
 

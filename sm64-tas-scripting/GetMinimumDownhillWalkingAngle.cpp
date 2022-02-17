@@ -1,17 +1,35 @@
 #include "Script.hpp"
 #include "Types.hpp"
 #include "Sm64.hpp"
+#include "pyramid.hpp"
+#include "surface.hpp"
 
 bool GetMinimumDownhillWalkingAngle::verification()
 {
+	//Check if Mario is on the pyramid platform
+	MarioState* marioState = *(MarioState**)(game->addr("gMarioState"));
+
+	Surface* floor = marioState->floor;
+	if (!floor)
+		return false;
+
+	Object* floorObject = floor->object;
+	if (!floorObject)
+		return false;
+
+	const BehaviorScript* pyramidBehavior = (const BehaviorScript*)(game->addr("bhvBitfsTiltingInvertedPyramid"));
+	if (floorObject->behavior != pyramidBehavior)
+		return false;
+
 	return true;
 }
 
 bool GetMinimumDownhillWalkingAngle::execution()
 {
 	MarioState* marioState = *(MarioState**)(game->addr("gMarioState"));
+	/*
 	s32(*mario_floor_is_slope)(struct MarioState*) = (s32(*)(struct MarioState*))(game->addr("mario_floor_is_slope"));
-
+	
 	bool hackedWalkValidated = false;
 
 	//Walk OOB to get Mario's floor after surface updates + platform displacement with no QStep interference
@@ -37,6 +55,15 @@ bool GetMinimumDownhillWalkingAngle::execution()
 	}
 
 	if (!hackedWalkValidated)
+		return false;
+	*/
+
+	Object* marioObj = marioState->marioObj;
+	Object* pyramidPlatform = marioState->floor->object;
+
+	short floorAngle = 0;
+
+	if (!simulate_platform_tilt(marioObj, pyramidPlatform, &floorAngle, &CustomStatus.isSlope))
 		return false;
 
 	//m->floorAngle - m->faceAngle[1] >= -0x3FFF && m->floorAngle - m->faceAngle[1] <= 0x3FFF
@@ -71,6 +98,8 @@ bool GetMinimumDownhillWalkingAngle::execution()
 		CustomStatus.angleNotFacingAnalogBack = _faceAngle + 0x471D * sign(notFacingDYaw);
 	else
 		CustomStatus.angleNotFacingAnalogBack = CustomStatus.angleNotFacing;
+
+	CustomStatus.floorAngle = floorAngle;
 
 	return true;
 }
