@@ -63,7 +63,8 @@ bool GetMinimumDownhillWalkingAngle::execution()
 
 	short floorAngle = 0;
 
-	simulate_platform_tilt(marioObj, pyramidPlatform, &floorAngle, &CustomStatus.isSlope);
+	if (!simulate_platform_tilt(marioObj, pyramidPlatform, &floorAngle, &CustomStatus.isSlope))
+		return false;
 
 	//m->floorAngle - m->faceAngle[1] >= -0x3FFF && m->floorAngle - m->faceAngle[1] <= 0x3FFF
 	int32_t lowerAngle = floorAngle + 0x3FFF;
@@ -97,6 +98,8 @@ bool GetMinimumDownhillWalkingAngle::execution()
 		CustomStatus.angleNotFacingAnalogBack = _faceAngle + 0x471D * sign(notFacingDYaw);
 	else
 		CustomStatus.angleNotFacingAnalogBack = CustomStatus.angleNotFacing;
+
+	CustomStatus.floorAngle = floorAngle;
 
 	return true;
 }

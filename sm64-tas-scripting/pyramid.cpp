@@ -6,7 +6,7 @@
 #include "Trig.hpp"
 #include "Types.hpp"
 
-void simulate_platform_tilt(struct Object* marioObj, struct Object* pyramidPlatform, short* floorAngle, bool* isSlope) {
+bool simulate_platform_tilt(struct Object* marioObj, struct Object* pyramidPlatform, short* floorAngle, bool* isSlope) {
     Vec3f marioPos = { marioObj->oPosX, marioObj->oPosY, marioObj->oPosZ };
     struct Surface* pyramidSurfaces;
     int numSurfaces = get_surfaces(pyramidPlatform, &pyramidSurfaces);
@@ -31,11 +31,14 @@ void simulate_platform_tilt(struct Object* marioObj, struct Object* pyramidPlatf
         //Probably a better way of handling this
         *floorAngle = 0;
         *isSlope = false;
+        return false;
     }
     else {
         *floorAngle = atan2s(floor->normal.z, floor->normal.x);
         *isSlope = floor_is_slope(floor);
     }
+
+    return true;
 }
 
 void bhv_tilting_inverted_pyramid_loop(Vec3f& platNormal, Vec3f& platPos, Vec3f& marioPos, bool onPlatform, Mat4& transform) {

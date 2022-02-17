@@ -144,9 +144,11 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="BitFsPyramidOscillation.cpp" />
+    <ClCompile Include="BitFsPyramidOscillation_Iteration.cpp" />
     <ClCompile Include="BitFsPyramidOscillation_TurnAroundAndRunDownhill.cpp" />
     <ClCompile Include="BitFsPyramidOscillation_TurnThenRunDownhill.cpp" />
     <ClCompile Include="BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle.cpp" />
+    <ClCompile Include="BrakeToIdle.cpp" />
     <ClCompile Include="Game.cpp" />
     <ClCompile Include="GetMinimumDownhillWalkingAngle.cpp" />
     <ClCompile Include="Inputs.cpp" />

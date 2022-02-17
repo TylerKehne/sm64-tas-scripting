@@ -86,7 +86,7 @@ std::pair<int8_t, int8_t> Inputs::GetClosestInputByYawHau(int16_t intendedYaw, f
 					return yawMagToInputs.at(yaw).at(intendedMag);
 
 				auto upper = yawMagToInputs.at(yaw).upper_bound(intendedMag);
-				auto lower = upper = std::prev(upper);
+				auto lower = std::prev(upper);
 				float magDistance = INFINITY;
 				if (upper == yawMagToInputs.at(yaw).end())
 				{
@@ -95,6 +95,15 @@ std::pair<int8_t, int8_t> Inputs::GetClosestInputByYawHau(int16_t intendedYaw, f
 					{
 						closestMagDistance = magDistance;
 						closestInput = (*lower).second;
+					}
+				}
+				else if (lower == yawMagToInputs.at(yaw).end())
+				{
+					magDistance = (*upper).first - intendedMag;
+					if (magDistance < closestMagDistance)
+					{
+						closestMagDistance = magDistance;
+						closestInput = (*upper).second;
 					}
 				}
 				else
@@ -188,6 +197,15 @@ std::pair<int8_t, int8_t> Inputs::GetClosestInputByYawExact(int16_t intendedYaw,
 				{
 					closestMagDistance = magDistance;
 					closestInput = (*lower).second;
+				}
+			}
+			else if (lower == yawMagToInputs.at(yaw).end())
+			{
+				magDistance = (*upper).first - intendedMag;
+				if (magDistance < closestMagDistance)
+				{
+					closestMagDistance = magDistance;
+					closestInput = (*upper).second;
 				}
 			}
 			else

@@ -35,43 +35,57 @@ bool BitFsPyramidOscillation_TurnAroundAndRunDownhill::execution()
 	Object* pyramid = marioState->floor->object;
 
 	//Turn around
-	do
+	if (_brake)
 	{
-		auto inputs = Inputs::GetClosestInputByYawHau(marioState->faceAngle[1] + 0x8000, 32, camera->yaw);
-		AdvanceFrameWrite(Inputs(0, inputs.first, inputs.second));
-
-		//If double turnaround glitch occurs, run for one extra frame in current direction to change animation
-		if (marioState->action == ACT_WALKING && marioState->prevAction == ACT_TURNING_AROUND)
-		{
-			Rollback(GetCurrentFrame() - 1);
-			inputs = Inputs::GetClosestInputByYawHau(marioState->faceAngle[1], 32, camera->yaw);
-			AdvanceFrameWrite(Inputs(0, inputs.first, inputs.second));
-
-			if ((marioState->action != ACT_WALKING)
-				|| marioState->floor->object == NULL
-				|| marioState->floor->object->behavior != pyramidBehavior)
-				return false;
-
-			//Try and turn around again
-			inputs = Inputs::GetClosestInputByYawHau(marioState->faceAngle[1] + 0x8000, 32, camera->yaw);
-			AdvanceFrameWrite(Inputs(0, inputs.first, inputs.second));
-		}
-
-		if (marioState->action != ACT_TURNING_AROUND && marioState->action != ACT_FINISH_TURNING_AROUND)
+		//Works with short oscialltion cycles, but takes an extra turnaround frame
+		auto status = Modify<BrakeToIdle>();
+		if (!status.validated)
 		{
 			CustomStatus.tooDownhill = (marioState->action == ACT_LAVA_BOOST);
 			return false;
 		}
-
-		if (marioState->floor->object == NULL || marioState->floor->object->behavior != pyramidBehavior)
+	}
+	else
+	{
+		do
 		{
-			CustomStatus.tooDownhill = (marioState->floor->object == NULL);
-			return false;
-		}
-	} while (marioState->action == ACT_TURNING_AROUND);
+			auto inputs = Inputs::GetClosestInputByYawHau(marioState->faceAngle[1] + 0x8000, 32, camera->yaw);
+			AdvanceFrameWrite(Inputs(0, inputs.first, inputs.second));
 
-	//Wind back 1f and run downhill optimally
-	Rollback(GetCurrentFrame() - 1);
+			//If double turnaround glitch occurs, run for one extra frame in current direction to change animation
+			if (marioState->action == ACT_WALKING && marioState->prevAction == ACT_TURNING_AROUND)
+			{
+				CustomStatus.finishTurnaroundFailedToExpire = true;
+
+				Rollback(GetCurrentFrame() - 1);
+				inputs = Inputs::GetClosestInputByYawHau(marioState->faceAngle[1], 32, camera->yaw);
+				AdvanceFrameWrite(Inputs(0, inputs.first, inputs.second));
+
+				if ((marioState->action != ACT_WALKING)
+					|| marioState->floor->object == NULL
+					|| marioState->floor->object->behavior != pyramidBehavior)
+					return false;
+
+				//Try and turn around again
+				inputs = Inputs::GetClosestInputByYawHau(marioState->faceAngle[1] + 0x8000, 32, camera->yaw);
+				AdvanceFrameWrite(Inputs(0, inputs.first, inputs.second));
+			}
+
+			if (marioState->action != ACT_TURNING_AROUND && marioState->action != ACT_FINISH_TURNING_AROUND)
+			{
+				CustomStatus.tooDownhill = (marioState->action == ACT_LAVA_BOOST);
+				return false;
+			}
+
+			if (marioState->floor->object == NULL || marioState->floor->object->behavior != pyramidBehavior)
+			{
+				CustomStatus.tooDownhill = (marioState->floor->object == NULL);
+				return false;
+			}
+		} while (marioState->action == ACT_TURNING_AROUND);
+
+		Rollback(GetCurrentFrame() - 1);
+	}
 
 	auto status = Modify<BitFsPyramidOscillation_RunDownhill>(_roughTargetAngle);
 
