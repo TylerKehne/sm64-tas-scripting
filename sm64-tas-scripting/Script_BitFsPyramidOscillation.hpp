@@ -129,6 +129,7 @@ public:
 		float finalXzSum = 0;
 		bool tooDownhill = false;
 		bool tooUphill = false;
+		bool finishTurnaroundFailedToExpire = false;
 	};
 	CustomScriptStatus CustomStatus = CustomScriptStatus();
 

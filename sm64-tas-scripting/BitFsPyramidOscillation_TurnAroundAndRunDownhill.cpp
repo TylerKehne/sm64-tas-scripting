@@ -55,6 +55,8 @@ bool BitFsPyramidOscillation_TurnAroundAndRunDownhill::execution()
 			//If double turnaround glitch occurs, run for one extra frame in current direction to change animation
 			if (marioState->action == ACT_WALKING && marioState->prevAction == ACT_TURNING_AROUND)
 			{
+				CustomStatus.finishTurnaroundFailedToExpire = true;
+
 				Rollback(GetCurrentFrame() - 1);
 				inputs = Inputs::GetClosestInputByYawHau(marioState->faceAngle[1], 32, camera->yaw);
 				AdvanceFrameWrite(Inputs(0, inputs.first, inputs.second));

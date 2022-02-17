@@ -127,6 +127,7 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::execution()
 	CustomStatus.maxSpeed = runDownhillStatus.maxSpeed;
 	CustomStatus.passedEquilibriumSpeed = runDownhillStatus.passedEquilibriumSpeed;
 	CustomStatus.finalXzSum = runDownhillStatus.finalXzSum;
+	CustomStatus.finishTurnaroundFailedToExpire |= runDownhillStatus.finishTurnaroundFailedToExpire;
 
 	Apply(runDownhillStatus.m64Diff);
 
