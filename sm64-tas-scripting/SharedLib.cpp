@@ -1,17 +1,14 @@
 #include "SharedLib.hpp"
 
 #include <codecvt>
-#include <errhandlingapi.h>
 #include <exception>
 #include <fstream>
 #include <iostream>
-#include <libloaderapi.h>
 #include <memory>
 #include <stdexcept>
 #include <string>
 #include <system_error>
-#include <unordered_map>
-#include <winnt.h>
+#include <cstddef>
 
 
 #if defined(_WIN32)
@@ -50,16 +47,65 @@ void* SharedLib::get(const char* symbol) {
 }
 std::unordered_map<std::string, SectionInfo> SharedLib::readSections() {
   using std::ios_base;
-  
   std::unordered_map<std::string, SectionInfo> sectionMap;
-  std::ifstream file(libFileName);
   
+  std::ifstream file(libFileName);
+  uint16_t numSections;
+  std::unique_ptr<IMAGE_SECTION_HEADER[]> sections;
+  std::unique_ptr<char[]> strTable;
+  // Unlike Linux ELF, the PE format is incredibly convoluted.
+  // I could use a library, but all the ones I've found are humongous.
   {
-    file.seekg(0x40, ios_base::beg);
-    IMAGE_FILE_HEADER header;
-    file.read(reinterpret_cast<char*>(&header), sizeof(header));
-    
+    // Locate PE signature offset
+    file.seekg(0x3C, ios_base::beg);
+    uint32_t nextOffset;
+    file.read(reinterpret_cast<char*>(&nextOffset), sizeof(uint32_t));
+    // PE signature is 4 bytes, so skip those
+    file.seekg(nextOffset + 4, ios_base::beg);
+    IMAGE_FILE_HEADER fileHeader;
+    // Read out file header
+    file.read(reinterpret_cast<char*>(&fileHeader), sizeof(IMAGE_FILE_HEADER));
+    numSections = fileHeader.NumberOfSections;
+    // calculate string table offset
+    // According to MS it's deprecated, but the DLLs still use it
+    nextOffset = 
+      fileHeader.PointerToSymbolTable + 
+      sizeof(IMAGE_SYMBOL) * fileHeader.NumberOfSymbols;
+    // Jump past optional header
+    file.seekg(fileHeader.SizeOfOptionalHeader, ios_base::cur);
+    // Read out sections
+    sections.reset(new IMAGE_SECTION_HEADER[fileHeader.NumberOfSections]);
+    file.read(reinterpret_cast<char*>(sections.get()), fileHeader.NumberOfSections * sizeof(IMAGE_SECTION_HEADER));
+    // Read string table size
+    uint32_t strTableSize;
+    file.seekg(nextOffset, ios_base::beg);
+    file.read(reinterpret_cast<char*>(&strTableSize), sizeof(uint32_t));
+    // Read out string table
+    file.seekg(nextOffset, ios_base::beg);
+    strTable.reset(new char[strTableSize]);
+    file.read(strTable.get(), strTableSize);
   }
+  std::string name;  
+  for (size_t i = 0; i < numSections; i++) {
+    // Copy the name into a std::string
+    for (size_t j = 0; j < 8; j++) {
+      if (sections[i].Name[j] == '\0') {
+        name = std::string(reinterpret_cast<char*>(static_cast<BYTE*>(sections[i].Name)), j);
+        break;
+      }
+    }
+    // If the name begins with /, it's an offset into the string table, so find it
+    if (name[0] == '/') {
+      uint32_t off = strtoul(name.c_str() + 1, nullptr, 10);
+      name = std::string(&strTable[off]);
+    }
+    // MS also put the section size in a union
+    sectionMap[name] = SectionInfo {
+      reinterpret_cast<char*>(handle) + sections[i].VirtualAddress,
+      sections[i].Misc.VirtualSize
+    };
+  }
+  return sectionMap;
 }
 #elif defined(__linux__)
 
@@ -108,6 +154,7 @@ std::unordered_map<std::string, SectionInfo> SharedLib::readSections() {
   }
 
   std::ifstream file(libFileName);
+  file.seekg(0, ios_base::beg);
   std::unique_ptr<Elf64_Shdr[]> sections;
   std::unique_ptr<char[]> strTable;
   uint16_t numSections;
