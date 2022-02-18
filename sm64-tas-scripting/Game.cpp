@@ -1,12 +1,14 @@
-#include <windows.h>
 #include <stdlib.h>
 #include <chrono>
 
 #include "Game.hpp"
 
-
+#ifdef _MSC_VER
 #include <intrin.h>
-#pragma intrinsic(__rdtsc)
+#else
+// Provides __rdtsc outside MSVC
+#include <x86intrin.h>
+#endif
 
 
 #if 1
@@ -29,9 +31,9 @@ Slot::~Slot()
 void Game::advance_frame() {
 	auto start = get_time();
 
-	FARPROC processID = GetProcAddress(dll, "sm64_update");
+	void* processID = dll.get("sm64_update");
 
-	typedef void(__stdcall* pICFUNC)();
+  using pICFUNC = void(TAS_FW_STDCALL*)();
 
 	pICFUNC sm64_update;
 	sm64_update = pICFUNC(processID);
@@ -46,22 +48,22 @@ void Game::advance_frame() {
 
 
 bool Game::save_state(Slot* slot) {
-	int64_t additionalMem = segment[0].virtual_size + segment[1].virtual_size;
+	int64_t additionalMem = segment[0].length + segment[1].length;
 	if (_currentSaveMem + additionalMem > _saveMemLimit)
 		return false;
 
 	auto start = get_time();
 
-	slot->buf1.resize(segment[0].virtual_size);
-	slot->buf2.resize(segment[1].virtual_size);
+	slot->buf1.resize(segment[0].length);
+	slot->buf2.resize(segment[1].length);
 	slot->game = this;
 	
 
-	int64_t *temp = reinterpret_cast<int64_t*>(dll) + segment[0].virtual_address / sizeof(int64_t);
-	memcpy(slot->buf1.data(), temp, segment[0].virtual_size);
+	int64_t *temp = reinterpret_cast<int64_t*>(segment[0].address);
+	memcpy(slot->buf1.data(), temp, segment[0].length);
 
-	temp = reinterpret_cast<int64_t*>(dll) + segment[1].virtual_address / sizeof(int64_t);
-	memcpy(slot->buf2.data(), temp, segment[1].virtual_size);
+	temp = reinterpret_cast<int64_t*>(segment[1].address);
+	memcpy(slot->buf2.data(), temp, segment[1].length);
 
 	_totalSaveStateTime += get_time() - start;
 
@@ -74,11 +76,11 @@ bool Game::save_state(Slot* slot) {
 void Game::load_state(Slot* slot) {
 	auto start = get_time();
 
-	int64_t *temp = reinterpret_cast<int64_t*>(dll) + segment[0].virtual_address / sizeof(int64_t);
-	memcpy(temp, slot->buf1.data(), segment[0].virtual_size);
+	int64_t *temp = reinterpret_cast<int64_t*>(segment[0].address);
+	memcpy(temp, slot->buf1.data(), segment[0].length);
 
-	temp = reinterpret_cast<int64_t*>(dll) + segment[1].virtual_address / sizeof(int64_t);
-	memcpy(temp, slot->buf2.data(), segment[1].virtual_size);
+	temp = reinterpret_cast<int64_t*>(segment[0].address);
+	memcpy(temp, slot->buf2.data(), segment[1].length);
 
 	_totalLoadStateTime = get_time() - start;
 
@@ -87,7 +89,7 @@ void Game::load_state(Slot* slot) {
 }
 
 intptr_t Game::addr(const char* symbol) {
-	return reinterpret_cast<intptr_t>(GetProcAddress(dll, symbol));
+	return reinterpret_cast<intptr_t>(dll.get(symbol));
 }
 
 uint32_t Game::getCurrentFrame()
@@ -97,8 +99,9 @@ uint32_t Game::getCurrentFrame()
 
 bool Game::shouldSave(uint64_t framesSinceLastSave)
 {
-	double estTimeToSave = _totalSaveStateTime / nSaveStates;
-	double estTimeToLoadFromRecent = (_totalFrameAdvanceTime/ nFrameAdvances) * framesSinceLastSave;
+	// Fix clang-tidy warning here
+  uint64_t estTimeToSave = _totalSaveStateTime / nSaveStates;
+	uint64_t estTimeToLoadFromRecent = (_totalFrameAdvanceTime / nFrameAdvances) * framesSinceLastSave;
 
 	//TODO: Reduce number of automatic load states in script
 	return estTimeToSave <= 3 * estTimeToLoadFromRecent;

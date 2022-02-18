@@ -43,3 +43,5 @@ sm64-tas-scripting/sm64-tas-scripting/.vs/
 sm64-tas-scripting/Debug/
 sm64-tas-scripting/x64/
 .vs/
+
+build/

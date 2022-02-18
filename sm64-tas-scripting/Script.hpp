@@ -39,7 +39,7 @@ template<std::derived_from<Script> TScript> class ScriptStatus
 public:
 	ScriptStatus<TScript>() : BaseScriptStatus(), TScript::CustomScriptStatus() {}
 
-	ScriptStatus<TScript>(BaseScriptStatus baseStatus, TScript::CustomScriptStatus customStatus)
+	ScriptStatus<TScript>(BaseScriptStatus baseStatus, typename TScript::CustomScriptStatus customStatus)
 		: BaseScriptStatus(baseStatus), TScript::CustomScriptStatus(customStatus) {}
 };
 
@@ -49,7 +49,7 @@ public:
 class Script
 {
 public:
-	virtual class CustomScriptStatus {};
+	class CustomScriptStatus {};
 	CustomScriptStatus CustomStatus = {};
 	BaseScriptStatus BaseStatus;
 	Script* _parentScript;
@@ -169,9 +169,9 @@ public:
 		return ScriptStatus<TTopLevelScript>(script.BaseStatus, script.CustomStatus);
 	}
 
-	virtual bool verification() = 0;
-	virtual bool execution() = 0;
-	virtual bool validation() = 0;
+	virtual bool verification() override = 0;
+	virtual bool execution() override = 0;
+	virtual bool validation() override = 0;
 
 	Inputs GetInputs(uint64_t frame) override;
 
@@ -183,4 +183,3 @@ protected:
 #include "Script_BitFsPyramidOscillation.hpp"
 
 #endif
-

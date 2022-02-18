@@ -6,7 +6,10 @@
 
 #if defined(_WIN32)
   #include <windows.h>
+  
+  #define TAS_FW_STDCALL __stdcall
 #elif defined(__linux__)
+  #define TAS_FW_STDCALL
 #endif
 
 struct SectionInfo {
@@ -26,5 +29,8 @@ public:
   ~SharedLib();
   
   void* get(const char* symbol);
+  
+  // Reads out a list of sections.
+  // Do cache the results, as this WILL re-read the file each time it's run.
   std::unordered_map<std::string, SectionInfo> readSections();
 };

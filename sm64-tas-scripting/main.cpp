@@ -1,4 +1,3 @@
-#include <winsock.h>
 #include <iostream>
 #include <fstream>
 #include <iostream>
@@ -43,12 +42,12 @@ public:
 	}
 };
 
-int main(int argc, char* argv[]) {
+int main(int argc, const char* argv[]) {
 
-	M64 m64 = M64("FILL\\IN\\PATH\\TestWrite4.m64");
+	M64 m64 = M64(argv[1]);
 	m64.load();
 
-	auto status = TopLevelScript::Main<MainScript, Game>(m64, "jp", "FILL\\IN\\PATH\\sm64_jp.dll");
+	auto status = TopLevelScript::Main<MainScript, Game>(m64, argv[2]);
 
 	m64.save();
 
