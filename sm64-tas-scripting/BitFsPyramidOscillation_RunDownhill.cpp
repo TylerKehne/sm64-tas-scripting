@@ -3,6 +3,8 @@
 #include "Sm64.hpp"
 #include "Camera.hpp"
 
+#include <cmath>
+
 bool BitFsPyramidOscillation_RunDownhill::verification()
 {
 	//Check if Mario is on the pyramid platform

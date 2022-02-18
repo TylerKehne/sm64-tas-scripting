@@ -1,9 +1,19 @@
 #include "Inputs.hpp"
-#include <cstdio>
-#include <iostream>
+#include <system_error>
 #include "Game.hpp"
 #include "Trig.hpp"
+
+#define __STDC_LIB_EXT1__
+
+#include <cstdio>
+#include <cmath>
+#include <limits>
+#include <iostream>
 #include <unordered_map>
+
+static uint16_t byteswap(uint16_t x) {
+  return (x >> 8) | (x << 8);
+}
 
 std::pair< std::unordered_map<int16_t, std::map<float, std::pair<int8_t, int8_t>>>, 
 	std::unordered_map<int8_t, std::unordered_map<int8_t, std::pair<int16_t, float>>>> PopulateInputMappings()
@@ -71,7 +81,7 @@ std::pair<int8_t, int8_t> Inputs::GetClosestInputByYawHau(int16_t intendedYaw, f
 	int16_t maxBaseIntendedYaw = maxIntendedYaw - cameraYaw;
 
 	std::pair<int8_t, int8_t> closestInput = { 0, 0 };
-	float closestMagDistance = INFINITY;
+	float closestMagDistance = std::numeric_limits<float>::infinity();
 
 	bool foundMatchingYawHau = false;
 	int hauOffset = 0;
@@ -87,7 +97,7 @@ std::pair<int8_t, int8_t> Inputs::GetClosestInputByYawHau(int16_t intendedYaw, f
 
 				auto upper = yawMagToInputs.at(yaw).upper_bound(intendedMag);
 				auto lower = std::prev(upper);
-				float magDistance = INFINITY;
+				float magDistance = std::numeric_limits<float>::infinity();
 				if (upper == yawMagToInputs.at(yaw).end())
 				{
 					magDistance = intendedMag - (*lower).first;
@@ -174,7 +184,7 @@ std::pair<int8_t, int8_t> Inputs::GetClosestInputByYawExact(int16_t intendedYaw,
 	int16_t baseIntendedYaw = intendedYaw - cameraYaw;
 
 	std::pair<int8_t, int8_t> closestInput = std::pair(0, 0);
-	float closestMagDistance = INFINITY;
+	float closestMagDistance = std::numeric_limits<float>::infinity();
 
 	bool foundMatchingYaw = false;
 	int offset = 0;
@@ -189,7 +199,7 @@ std::pair<int8_t, int8_t> Inputs::GetClosestInputByYawExact(int16_t intendedYaw,
 
 			auto upper = yawMagToInputs.at(yaw).upper_bound(intendedMag);
 			auto lower = std::prev(upper);
-			float magDistance = INFINITY;
+			float magDistance = std::numeric_limits<float>::infinity();
 			if (upper == yawMagToInputs.at(yaw).end())
 			{
 				magDistance = intendedMag - (*lower).first;
@@ -283,10 +293,9 @@ int M64::load()
 	size_t err;
 
 	try {
-		if ((err = fopen_s(&f, fileName, "rb")) != 0) {
-			std::cerr << "Bad open of file " << fileName << " Error: " << err << std::endl;
-			exit(EXIT_FAILURE);
-		}
+    if ((f = fopen(fileName, "rb")) == nullptr) {
+      throw std::system_error(errno, std::generic_category());
+    }
 
 		fseek(f, 0x400, SEEK_SET);
 
@@ -300,7 +309,7 @@ int M64::load()
 				break;
 			}
 
-			buttons = ntohs(bigEndianButtons);
+			buttons = byteswap(bigEndianButtons);
 
 			fread(&stick_x, sizeof(int8_t), 1, f);
 
@@ -348,10 +357,14 @@ int M64::save(long initFrame)
 	uint64_t lastFrame = frames.rbegin()->first;
 
 	try {
-		if ((err = fopen_s(&f, fileName, "r+b")) != 0) {
-			std::cerr << "Bad open of file " << fileName << " Error: " << err << std::endl;
-			exit(EXIT_FAILURE);
-		}
+		// if ((err = fopen_s(&f, fileName, "r+b")) != 0) {
+		// 	std::cerr << "Bad open of file " << fileName << " Error: " << err << std::endl;
+		// 	exit(EXIT_FAILURE);
+		// }
+    
+    if ((f = fopen(fileName, "wb")) == nullptr) {
+      throw std::system_error(errno, std::generic_category());
+    }
 
 		//Write number of frames
 		fseek(f, 0xC, SEEK_SET);
@@ -369,7 +382,7 @@ int M64::save(long initFrame)
 			
 			if (frames.count(i))
 			{
-				bigEndianButtons = htons(frames[i].buttons);
+				bigEndianButtons = byteswap(frames[i].buttons);
 				stickX = frames[i].stick_x;
 				stickY = frames[i].stick_y;
 			}

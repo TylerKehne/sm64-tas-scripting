@@ -1,4 +1,5 @@
 #include "Script.hpp"
+#include <cmath>
 
 bool BrakeToIdle::verification()
 {

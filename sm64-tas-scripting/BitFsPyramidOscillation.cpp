@@ -5,6 +5,7 @@
 #include "ObjectFields.hpp"
 
 #include <array>
+#include <cmath>
 
 bool BitFsPyramidOscillation::verification()
 {
