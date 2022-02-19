@@ -12,7 +12,7 @@ bool TryHackedWalkOutOfBounds::verification()
 
 bool TryHackedWalkOutOfBounds::execution()
 {
-	MarioState* marioState = *(MarioState**)(game->addr("gMarioState"));
+	MarioState* marioState = (MarioState*) (game->addr("gMarioStates"));
 	Camera* camera = *(Camera**)(game->addr("gCamera"));
 
 	CustomStatus.startSpeed = _speed;

@@ -3,7 +3,7 @@
 bool BitFsPyramidOscillation_Iteration::verification()
 {
 	//Verify Mario is running on the platform
-	MarioState* marioState = *(MarioState**)(game->addr("gMarioState"));
+	MarioState* marioState = (MarioState*) (game->addr("gMarioStates"));
 
 	Surface* floor = marioState->floor;
 	if (!floor)
@@ -27,7 +27,7 @@ bool BitFsPyramidOscillation_Iteration::verification()
 
 bool BitFsPyramidOscillation_Iteration::execution()
 {
-	MarioState* marioState = *(MarioState**)(game->addr("gMarioState"));
+	MarioState* marioState = (MarioState*) (game->addr("gMarioStates"));
 	Camera* camera = *(Camera**)(game->addr("gCamera"));
 	Object* pyramid = marioState->floor->object;
 

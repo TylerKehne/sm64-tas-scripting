@@ -7,7 +7,7 @@
 bool GetMinimumDownhillWalkingAngle::verification()
 {
 	//Check if Mario is on the pyramid platform
-	MarioState* marioState = *(MarioState**)(game->addr("gMarioState"));
+	MarioState* marioState = (MarioState*) (game->addr("gMarioStates"));
 
 	Surface* floor = marioState->floor;
 	if (!floor)
@@ -26,7 +26,7 @@ bool GetMinimumDownhillWalkingAngle::verification()
 
 bool GetMinimumDownhillWalkingAngle::execution()
 {
-	MarioState* marioState = *(MarioState**)(game->addr("gMarioState"));
+	MarioState* marioState = (MarioState*) (game->addr("gMarioStates"));
 	/*
 	s32(*mario_floor_is_slope)(struct MarioState*) = (s32(*)(struct MarioState*))(game->addr("mario_floor_is_slope"));
 	
