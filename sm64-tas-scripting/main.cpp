@@ -45,18 +45,18 @@ public:
 
 int main(int argc, const char* argv[]) {
   namespace fs = std::filesystem;
-  /*
   if (argc < 3) {
     std::cout << "Requires 2 arguments:\n";
     std::cout << argv[0] << " <m64 file> <libsm64 path>\n";
     return 1;
-  }*/
-
-	M64 m64 = M64(argv[2]);
-	m64.load();
+  }
   
   auto lib_path = fs::absolute(fs::path(argv[1]));
+  auto m64_path = fs::absolute(fs::path(argv[2]));
 
+	M64 m64 = M64(m64_path);
+	m64.load();
+  
 	auto status = TopLevelScript::Main<MainScript, Game>(m64, lib_path);
 
 	m64.save();

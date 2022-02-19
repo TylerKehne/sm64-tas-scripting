@@ -293,7 +293,7 @@ int M64::load()
 	size_t err;
 
 	try {
-    if ((f = fopen(fileName, "rb")) == nullptr) {
+    if ((f = fopen(fileName.c_str(), "rb")) == nullptr) {
       throw std::system_error(errno, std::generic_category());
     }
 
@@ -362,7 +362,7 @@ int M64::save(long initFrame)
 		// 	exit(EXIT_FAILURE);
 		// }
     
-    if ((f = fopen(fileName, "wb")) == nullptr) {
+    if ((f = fopen(fileName.c_str(), "wb")) == nullptr) {
       throw std::system_error(errno, std::generic_category());
     }
 

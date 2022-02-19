@@ -1,6 +1,7 @@
 #pragma once
 #include <stdint.h>
 #include <vector>
+#include <filesystem>
 #include <map>
 
 #ifndef INPUTS_H
@@ -81,11 +82,11 @@ public:
 class M64 : public M64Base
 {
 public:
-	const char* fileName = "";
+	std::filesystem::path fileName;
 
 	M64() {}
 
-	M64(const char* fileName) : fileName(fileName) {}
+	M64(const std::filesystem::path& fileName) : fileName(fileName) {}
 
 	int load();
 	int save(long initFrame = 0);
