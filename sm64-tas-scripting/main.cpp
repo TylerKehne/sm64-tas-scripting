@@ -24,7 +24,7 @@ public:
 
 	bool execution()
 	{
-		Load(3562);
+		Load(3564);
 		Save();
 		auto status = Script::Modify<BitFsPyramidOscillation>();
 		return true;
@@ -49,10 +49,10 @@ int main(int argc, const char* argv[]) {
     return 1;
   }
 
-	M64 m64 = M64(argv[1]);
+	M64 m64 = M64(argv[2]);
 	m64.load();
 
-	auto status = TopLevelScript::Main<MainScript, Game>(m64, argv[2]);
+	auto status = TopLevelScript::Main<MainScript, Game>(m64, argv[1]);
 
 	m64.save();
 
