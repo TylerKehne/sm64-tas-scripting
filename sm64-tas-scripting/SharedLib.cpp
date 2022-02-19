@@ -13,13 +13,9 @@
 #if defined(_WIN32)
 #include <windows.h>
 
-SharedLib::SharedLib(const char *fileName)
-    : libFileName(fileName), handle([fileName]() -> HMODULE {
-        // Strings are UTF-8, so we need to convert to UTF-16 for proper Win32
-        // handling
-        std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> converter;
-        std::wstring wideName = converter.from_bytes(fileName);
-        HMODULE res = LoadLibraryW(wideName.c_str());
+SharedLib::SharedLib(const std::filesystem::path& fileName)
+    : libFileName(fileName.string()), handle([&]() -> HMODULE {
+        HMODULE res = LoadLibraryW(fileName.c_str());
         if (res == nullptr) {
           DWORD lastError = GetLastError();
           throw std::system_error(lastError, std::system_category());
@@ -112,9 +108,9 @@ std::unordered_map<std::string, SectionInfo> SharedLib::readSections() {
 #include <elf.h>
 #include <link.h>
 
-SharedLib::SharedLib(const char *fileName)
-    : libFileName(fileName), handle([fileName]() -> void * {
-        void *res = dlopen(fileName, RTLD_NOW);
+SharedLib::SharedLib(const std::filesystem::path& fileName)
+    : libFileName(fileName.string()), handle([&]() -> void * {
+        void *res = dlopen(fileName.c_str(), RTLD_NOW);
         if (res == nullptr) {
           throw std::runtime_error(dlerror());
         }

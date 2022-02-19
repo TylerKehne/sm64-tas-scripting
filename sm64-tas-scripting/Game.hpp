@@ -51,7 +51,7 @@ public:
   std::vector<SegVal> segment;
   Slot startSave = Slot();
 
-  Game(const char* dll_path) : dll(dll_path) {
+  Game(const std::filesystem::path& dllPath) : dll(dllPath) {
     // constructor of SharedLib will throw if it can't load
     void* processID = dll.get("sm64_init");
 
@@ -59,8 +59,7 @@ public:
     // looks cleaner
     using pICFUNC = int(TAS_FW_STDCALL*)();
 
-    pICFUNC sm64_init;
-    sm64_init = pICFUNC(processID);
+    pICFUNC sm64_init = pICFUNC(processID);
 
     sm64_init();
     

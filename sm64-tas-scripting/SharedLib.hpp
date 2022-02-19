@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <string>
+#include <filesystem>
 #include <unordered_map>
 
 #if defined(_WIN32)
@@ -25,7 +26,7 @@ class SharedLib {
   void* handle;
 #endif
 public:
-  SharedLib(const char* fileName);
+  SharedLib(const std::filesystem::path& path);
   ~SharedLib();
   
   void* get(const char* symbol);
