@@ -66,8 +66,8 @@ public:
     
     auto sects = dll.readSections();
     segment = std::vector<SegVal> {
-      SegVal::fromSectionData(".data", sects[".data"]),
-      SegVal::fromSectionData(".bss", sects[".bss"]),
+      SegVal {".data", sects[".data"].address, sects[".data"].length},
+      SegVal {".bss", sects[".bss"].address, sects[".bss"].length},
     };
 
     save_state(&startSave);

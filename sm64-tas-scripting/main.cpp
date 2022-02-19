@@ -43,16 +43,17 @@ public:
 };
 
 int main(int argc, const char* argv[]) {
+  /*
   if (argc < 3) {
     std::cout << "Requires 2 arguments:\n";
     std::cout << argv[0] << " <m64 file> <libsm64 path>\n";
     return 1;
-  }
+  }*/
 
-	M64 m64 = M64(argv[2]);
+	M64 m64 = M64(R"(C:\Users\jacky\Documents\Code\sm64-tas-scripting\local\TestWrite5.m64)");
 	m64.load();
 
-	auto status = TopLevelScript::Main<MainScript, Game>(m64, argv[1]);
+	auto status = TopLevelScript::Main<MainScript, Game>(m64, R"(C:\Users\jacky\Documents\Code\sm64-tas-scripting\local\sm64_jp.dll)");
 
 	m64.save();
 

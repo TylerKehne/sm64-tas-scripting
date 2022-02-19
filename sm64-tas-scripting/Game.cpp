@@ -74,13 +74,10 @@ bool Game::save_state(Slot* slot) {
 }
 
 void Game::load_state(Slot* slot) {
-	auto start = get_time();
+	uint64_t start = get_time();
 
-	int64_t *temp = reinterpret_cast<int64_t*>(segment[0].address);
-	memcpy(temp, slot->buf1.data(), segment[0].length);
-
-	temp = reinterpret_cast<int64_t*>(segment[0].address);
-	memcpy(temp, slot->buf2.data(), segment[1].length);
+	memcpy(segment[0].address, slot->buf1.data(), segment[0].length);
+	memcpy(segment[1].address, slot->buf2.data(), segment[1].length);
 
 	_totalLoadStateTime = get_time() - start;
 
