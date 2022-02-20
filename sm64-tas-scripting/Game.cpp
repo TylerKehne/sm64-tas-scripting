@@ -96,9 +96,8 @@ uint32_t Game::getCurrentFrame()
 
 bool Game::shouldSave(uint64_t framesSinceLastSave)
 {
-	// Fix clang-tidy warning here
-  uint64_t estTimeToSave = _totalSaveStateTime / nSaveStates;
-	uint64_t estTimeToLoadFromRecent = (_totalFrameAdvanceTime / nFrameAdvances) * framesSinceLastSave;
+  double estTimeToSave = double(_totalSaveStateTime) / nSaveStates;
+	double estTimeToLoadFromRecent = (double(_totalFrameAdvanceTime) / nFrameAdvances) * framesSinceLastSave;
 
 	//TODO: Reduce number of automatic load states in script
 	return estTimeToSave <= 3 * estTimeToLoadFromRecent;
