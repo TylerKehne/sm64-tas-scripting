@@ -295,13 +295,13 @@ void Script::OptionalSave()
 
 void Script::SetInputs(Inputs inputs)
 {
-	uint16_t* buttonDllAddr = (uint16_t*)game->addr("gControllerPads");
+	uint16_t* buttonDllAddr = (uint16_t*) game->addr("gControllerPads");
 	buttonDllAddr[0] = inputs.buttons;
 
-	int8_t* xStickDllAddr = (int8_t*)(game->addr("gControllerPads") + 2);
+	int8_t* xStickDllAddr = (int8_t*) game->addr("gControllerPads") + 2;
 	xStickDllAddr[0] = inputs.stick_x;
 
-	int8_t* yStickDllAddr = (int8_t*)(game->addr("gControllerPads") + 3);
+	int8_t* yStickDllAddr = (int8_t*) game->addr("gControllerPads") + 3;
 	yStickDllAddr[0] = inputs.stick_y;
 }
 
@@ -326,4 +326,3 @@ void Script::Revert(uint64_t frame, const M64Diff& m64)
 		currentFrame = GetCurrentFrame();
 	}
 }
-

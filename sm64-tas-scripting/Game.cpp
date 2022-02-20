@@ -85,8 +85,8 @@ void Game::load_state(Slot* slot) {
 
 }
 
-intptr_t Game::addr(const char* symbol) {
-	return reinterpret_cast<intptr_t>(dll.get(symbol));
+void* Game::addr(const char* symbol) {
+	return dll.get(symbol);
 }
 
 uint32_t Game::getCurrentFrame()

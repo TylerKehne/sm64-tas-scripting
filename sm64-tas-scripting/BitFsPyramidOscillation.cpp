@@ -39,7 +39,7 @@ bool BitFsPyramidOscillation::verification()
 bool BitFsPyramidOscillation::execution()
 {
 	const BehaviorScript* pyramidBehavior = (const BehaviorScript*)(game->addr("bhvBitfsTiltingInvertedPyramid"));
-	MarioState* marioState = (MarioState*) (game->addr("gMarioStates"));
+	MarioState* marioState = *(MarioState**) (game->addr("gMarioState"));
 	Camera* camera = *(Camera**)(game->addr("gCamera"));
 	Object* pyramid = marioState->floor->object;
 

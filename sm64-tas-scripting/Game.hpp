@@ -75,7 +75,7 @@ public:
   void advance_frame();
   bool save_state(Slot* slot);
   void load_state(Slot* slot);
-  intptr_t addr(const char* symbol);
+  void* addr(const char* symbol);
   uint32_t getCurrentFrame();
   bool shouldSave(uint64_t framesSinceLastSave);
 
