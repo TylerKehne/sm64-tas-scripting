@@ -37,9 +37,9 @@ template <std::derived_from<Script> TScript>
 class ScriptStatus : public BaseScriptStatus, public TScript::CustomScriptStatus
 {
 public:
-	ScriptStatus<TScript>() : BaseScriptStatus(), TScript::CustomScriptStatus() {}
+	ScriptStatus() : BaseScriptStatus(), TScript::CustomScriptStatus() {}
 
-	ScriptStatus<TScript>(
+	ScriptStatus(
 		BaseScriptStatus baseStatus,
 		typename TScript::CustomScriptStatus customStatus) :
 		BaseScriptStatus(baseStatus), TScript::CustomScriptStatus(customStatus)

@@ -2,43 +2,72 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS true)
 
 cmake_minimum_required(VERSION 3.18 FATAL_ERROR)
 project(sm64-tas-scripting
-  DESCRIPTION "TASing framework for SM64"
-  LANGUAGES CXX
+	DESCRIPTION "TASing framework for SM64"
+	LANGUAGES CXX
 )
+
+# Conan package manager config
+if(NOT EXISTS "${CMAKE_BINARY_DIR}/conan.cmake")
+	message(STATUS "Downloading conan.cmake from https://github.com/conan-io/cmake-conan")
+	file(DOWNLOAD "https://raw.githubusercontent.com/conan-io/cmake-conan/v0.16.1/conan.cmake"
+		"${CMAKE_BINARY_DIR}/conan.cmake"
+		EXPECTED_HASH SHA256=396e16d0f5eabdc6a14afddbcfff62a54a7ee75c6da23f32f7a31bc85db23484
+		TLS_VERIFY ON)
+endif()
+include("${CMAKE_BINARY_DIR}/conan.cmake")
+
+conan_cmake_configure(
+	REQUIRES "mtap/0.2" "nlohmann_json/3.10.5"
+	GENERATORS cmake_find_package
+)
+conan_cmake_autodetect(SM64_TASFW_SETTINGS)
+conan_cmake_install(PATH_OR_REFERENCE .
+	BUILD missing
+	SETTINGS ${SM64_TASFW_SETTINGS}
+	SETTINGS "compiler.cppstd=20"
+	INSTALL_FOLDER "${CMAKE_BINARY_DIR}/CMakeFiles/conan_deps"
+)
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_BINARY_DIR}/CMakeFiles/conan_deps")
+
+# Import Conan packages
+find_package(nlohmann_json)
+find_package(mtap)
+
 # TODO: separate library files into a separate target
 add_executable(main
-  "sm64-tas-scripting/BitFsPyramidOscillation.cpp"
-  "sm64-tas-scripting/BitFsPyramidOscillation_Iteration.cpp"
-  "sm64-tas-scripting/BitFsPyramidOscillation_RunDownhill.cpp"
-  "sm64-tas-scripting/BitFsPyramidOscillation_TurnAroundAndRunDownhill.cpp"
-  "sm64-tas-scripting/BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle.cpp"
-  "sm64-tas-scripting/BitFsPyramidOscillation_TurnThenRunDownhill.cpp"
-  "sm64-tas-scripting/BrakeToIdle.cpp"
-  "sm64-tas-scripting/Camera.hpp"
-  "sm64-tas-scripting/Game.cpp"
-  "sm64-tas-scripting/Game.hpp"
-  "sm64-tas-scripting/GetMinimumDownhillWalkingAngle.cpp"
-  "sm64-tas-scripting/Inputs.cpp"
-  "sm64-tas-scripting/Inputs.hpp"
-  "sm64-tas-scripting/main.cpp"
-  "sm64-tas-scripting/math.cpp"
-  "sm64-tas-scripting/math.hpp"
-  "sm64-tas-scripting/ObjectFields.hpp"
-  "sm64-tas-scripting/pyramid.cpp"
-  "sm64-tas-scripting/pyramid.hpp"
-  "sm64-tas-scripting/Script_BitFsPyramidOscillation.hpp"
-  "sm64-tas-scripting/Script.cpp"
-  "sm64-tas-scripting/Script_General.hpp"
-  "sm64-tas-scripting/Script.hpp"
-  "sm64-tas-scripting/SharedLib.cpp"
-  "sm64-tas-scripting/SharedLib.hpp"
-  "sm64-tas-scripting/Sm64.hpp"
-  "sm64-tas-scripting/surface.cpp"
-  "sm64-tas-scripting/surface.hpp"
-  "sm64-tas-scripting/Trig.cpp"
-  "sm64-tas-scripting/Trig.hpp"
-  "sm64-tas-scripting/TryHackedWalkOutOfBounds.cpp"
-  "sm64-tas-scripting/Types.hpp"
-  "sm64-tas-scripting/UltraTypes.hpp"
+	"sm64-tas-scripting/BitFsPyramidOscillation.cpp"
+	"sm64-tas-scripting/BitFsPyramidOscillation_Iteration.cpp"
+	"sm64-tas-scripting/BitFsPyramidOscillation_RunDownhill.cpp"
+	"sm64-tas-scripting/BitFsPyramidOscillation_TurnAroundAndRunDownhill.cpp"
+	"sm64-tas-scripting/BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle.cpp"
+	"sm64-tas-scripting/BitFsPyramidOscillation_TurnThenRunDownhill.cpp"
+	"sm64-tas-scripting/BrakeToIdle.cpp"
+	"sm64-tas-scripting/Camera.hpp"
+	"sm64-tas-scripting/Game.cpp"
+	"sm64-tas-scripting/Game.hpp"
+	"sm64-tas-scripting/GetMinimumDownhillWalkingAngle.cpp"
+	"sm64-tas-scripting/Inputs.cpp"
+	"sm64-tas-scripting/Inputs.hpp"
+	"sm64-tas-scripting/main.cpp"
+	"sm64-tas-scripting/math.cpp"
+	"sm64-tas-scripting/math.hpp"
+	"sm64-tas-scripting/ObjectFields.hpp"
+	"sm64-tas-scripting/pyramid.cpp"
+	"sm64-tas-scripting/pyramid.hpp"
+	"sm64-tas-scripting/Script_BitFsPyramidOscillation.hpp"
+	"sm64-tas-scripting/Script.cpp"
+	"sm64-tas-scripting/Script_General.hpp"
+	"sm64-tas-scripting/Script.hpp"
+	"sm64-tas-scripting/SharedLib.cpp"
+	"sm64-tas-scripting/SharedLib.hpp"
+	"sm64-tas-scripting/Sm64.hpp"
+	"sm64-tas-scripting/surface.cpp"
+	"sm64-tas-scripting/surface.hpp"
+	"sm64-tas-scripting/Trig.cpp"
+	"sm64-tas-scripting/Trig.hpp"
+	"sm64-tas-scripting/TryHackedWalkOutOfBounds.cpp"
+	"sm64-tas-scripting/Types.hpp"
+	"sm64-tas-scripting/UltraTypes.hpp"
 )
 target_compile_features(main PUBLIC cxx_std_20)
+target_link_libraries(main nlohmann_json::nlohmann_json mtap::mtap)
