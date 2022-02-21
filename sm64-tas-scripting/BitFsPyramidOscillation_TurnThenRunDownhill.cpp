@@ -32,7 +32,7 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill::execution()
 	Object* pyramid = marioState->floor->object;
 
 	//Record initial XZ sum, don't want to decrease this
-	CustomStatus.initialXzSum = fabs(pyramid->oTiltingPyramidNormalX) + fabs(pyramid->oTiltingPyramidNormalZ);
+	CustomStatus.initialXzSum = _oscillationParams.initialXzSum;
 
 	//Get range of target turning around angles to test
 	auto hillStatus = Test<GetMinimumDownhillWalkingAngle>(marioState->faceAngle[1]);
@@ -44,7 +44,7 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill::execution()
 	ScriptStatus<BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle> runStatus;
 	for (int32_t angle = midHau; angle * -downhillRotation >= extremeDownhillHau * -downhillRotation; angle += 512 * downhillRotation)
 	{
-		auto status = Execute<BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle>(angle, _prevMaxSpeed, _minXzSum, _brake);
+		auto status = Execute<BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle>(_oscillationParams, angle);
 
 		if (!status.validated)
 		{
@@ -60,7 +60,7 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill::execution()
 
 	for (int32_t angle = midHau - 512 * downhillRotation; angle * -downhillRotation <= extremeUphillHau * -downhillRotation; angle -= 512 * downhillRotation)
 	{
-		auto status = Execute<BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle>(angle, _prevMaxSpeed, _minXzSum, _brake);
+		auto status = Execute<BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle>(_oscillationParams, angle);
 
 		if (!status.validated)
 		{
@@ -91,12 +91,6 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill::execution()
 bool BitFsPyramidOscillation_TurnThenRunDownhill::validation()
 {
 	if (BaseStatus.m64Diff.frames.empty())
-		return false;
-
-	if (CustomStatus.finalXzSum < _minXzSum - 0.00001)
-		return false;
-
-	if (CustomStatus.framePassedEquilibriumPoint == -1)
 		return false;
 
 	return true;
