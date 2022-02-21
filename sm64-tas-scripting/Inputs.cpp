@@ -16,6 +16,19 @@ static uint16_t byteswap(uint16_t x)
 	return (x >> 8) | (x << 8);
 }
 
+#if defined(_WIN32)
+#define PT_LPSTR(strlit) L##strlit
+static FILE* pt_fopen(const wchar_t* str, const wchar_t* mode) {
+	return _wfopen(str, mode);
+}
+#elif defined(__linux__)
+#define PT_LPTSTR(strlit) strlit
+static FILE* pt_fopen(const std::filesystem::path::value_type* str, const std::filesystem::path::value_type* mode) {
+	return fopen(str, mode);
+}
+#endif
+
+
 std::pair<
 	std::unordered_map<int16_t, std::map<float, std::pair<int8_t, int8_t>>>,
 	std::unordered_map<
@@ -310,7 +323,7 @@ int M64::load()
 
 	try
 	{
-		if ((f = fopen(fileName.c_str(), "rb")) == nullptr)
+		if ((f = pt_fopen(fileName.c_str(), PT_LPTSTR("rb"))) == nullptr)
 		{
 			throw std::system_error(errno, std::generic_category());
 		}
@@ -385,7 +398,7 @@ int M64::save(long initFrame)
 		// std::endl; 	exit(EXIT_FAILURE);
 		// }
 
-		if ((f = fopen(fileName.c_str(), "wb")) == nullptr)
+		if ((f = pt_fopen(fileName.c_str(), PT_LPTSTR("wb"))) == nullptr)
 		{
 			throw std::system_error(errno, std::generic_category());
 		}
