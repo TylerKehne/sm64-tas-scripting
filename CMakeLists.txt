@@ -6,7 +6,7 @@ project(sm64-tas-scripting
 	LANGUAGES CXX
 )
 
-# Conan package manager config
+# Download conan-cmake
 if(NOT EXISTS "${CMAKE_BINARY_DIR}/conan.cmake")
 	message(STATUS "Downloading conan.cmake from https://github.com/conan-io/cmake-conan")
 	file(DOWNLOAD "https://raw.githubusercontent.com/conan-io/cmake-conan/v0.16.1/conan.cmake"
@@ -16,25 +16,44 @@ if(NOT EXISTS "${CMAKE_BINARY_DIR}/conan.cmake")
 endif()
 include("${CMAKE_BINARY_DIR}/conan.cmake")
 
+# Dependency config
 conan_cmake_configure(
 	REQUIRES "mtap/0.2" "nlohmann_json/3.10.5"
 	GENERATORS cmake_find_package
 )
-conan_cmake_autodetect(SM64_TASFW_SETTINGS)
-conan_cmake_install(PATH_OR_REFERENCE .
-	BUILD missing
-	SETTINGS ${SM64_TASFW_SETTINGS}
-	SETTINGS "compiler.cppstd=20"
-	INSTALL_FOLDER "${CMAKE_BINARY_DIR}/CMakeFiles/conan_deps"
-)
+
+# Setup packages using conan-cmake
+if(GENERATOR_IS_MULTI_CONFIG)
+	foreach (TYPE ${CMAKE_CONFIGURATION_TYPES})
+		conan_cmake_autodetect(SM64_TASFW_SETTINGS BUILD_TYPE ${TYPE})
+		conan_cmake_install(PATH_OR_REFERENCE .
+			BUILD missing
+			SETTINGS ${SM64_TASFW_SETTINGS}
+			SETTINGS "compiler.cppstd=20"
+			INSTALL_FOLDER "${CMAKE_BINARY_DIR}/CMakeFiles/conan_deps"
+		)
+	endforeach()
+else()
+	conan_cmake_autodetect(SM64_TASFW_SETTINGS)
+	conan_cmake_install(PATH_OR_REFERENCE .
+		BUILD missing
+		SETTINGS ${SM64_TASFW_SETTINGS}
+		SETTINGS "compiler.cppstd=20"
+		INSTALL_FOLDER "${CMAKE_BINARY_DIR}/CMakeFiles/conan_deps"
+	)
+endif()
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_BINARY_DIR}/CMakeFiles/conan_deps")
+list(APPEND CMAKE_PREFIX_PATH "${CMAKE_BINARY_DIR}/CMakeFiles/conan_deps")
 
 # Import Conan packages
-find_package(nlohmann_json)
-find_package(mtap)
+foreach(PACKAGE IN ITEMS nlohmann_json mtap)
+	find_package(${PACKAGE} REQUIRED)
+endforeach()
 
 # TODO: separate library files into a separate target
 add_executable(main
+	"sm64-tas-scripting/BitFsConfig.cpp"
+	"sm64-tas-scripting/BitFsConfig.hpp"
 	"sm64-tas-scripting/BitFsPyramidOscillation.cpp"
 	"sm64-tas-scripting/BitFsPyramidOscillation_Iteration.cpp"
 	"sm64-tas-scripting/BitFsPyramidOscillation_RunDownhill.cpp"
@@ -71,3 +90,6 @@ add_executable(main
 )
 target_compile_features(main PUBLIC cxx_std_20)
 target_link_libraries(main nlohmann_json::nlohmann_json mtap::mtap)
+
+set(SM64_TASFW_CONFIG "SM64_TASFW_CONFIG_PATH=\"${CMAKE_CURRENT_LIST_DIR}/local/config.json\"")
+target_compile_definitions(main PRIVATE $<$<CONFIG:Debug>:${SM64_TASFW_CONFIG}>)

@@ -10,6 +10,14 @@
 #include "Script.hpp"
 #include "Trig.hpp"
 #include "Types.hpp"
+#include "BitFsConfig.hpp"
+
+#ifdef SM64_TASFW_CONFIG_PATH
+#define SM64_TASFW_HAS_DEFAULT_CONFIG true
+#else
+#define SM64_TASFW_CONFIG_PATH ""
+#define SM64_TASFW_HAS_DEFAULT_CONFIG false
+#endif
 
 using namespace std;
 
@@ -44,16 +52,29 @@ public:
 
 int main(int argc, const char* argv[])
 {
-	namespace fs = std::filesystem;
-	if (argc < 3)
-	{
-		std::cout << "Requires 2 arguments:\n";
-		std::cout << argv[0] << " <m64 file> <libsm64 path>\n";
-		return 1;
+	std::filesystem::path cfgPath;
+	if constexpr (!SM64_TASFW_HAS_DEFAULT_CONFIG) {
+		if (argc != 2)
+		{
+			std::cout << "Usage:\n";
+			std::cout << argv[0] << " <config file>\n";
+			return 1;
+		}
+		cfgPath = argv[1];
 	}
-
-	auto lib_path = fs::absolute(fs::path(argv[1]));
-	auto m64_path = fs::absolute(fs::path(argv[2]));
+	else {
+		if (argc > 2) {
+			std::cout << "Usage:\n";
+			std::cout << argv[0] << " [config file]\n";
+			return 1;
+		}
+		cfgPath = (argc == 2)? argv[1] : SM64_TASFW_CONFIG_PATH;
+	}
+	
+	BitFs_ConfigData cfg = BitFs_ConfigData::load(cfgPath);
+	
+	auto lib_path = cfg.libSM64;
+	auto m64_path = cfg.m64File;
 
 	M64 m64 = M64(m64_path);
 	m64.load();
