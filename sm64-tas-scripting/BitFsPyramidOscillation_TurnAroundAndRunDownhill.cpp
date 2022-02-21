@@ -36,8 +36,8 @@ bool BitFsPyramidOscillation_TurnAroundAndRunDownhill::execution()
 	Camera* camera				 = *(Camera**) (game->addr("gCamera"));
 	Object* pyramid				 = marioState->floor->object;
 
-	// Turn around
-	if (_brake)
+	//Turn around
+	if (_oscillationParams.brake)
 	{
 		// Works with short oscialltion cycles, but takes an extra turnaround
 		// frame
@@ -101,15 +101,13 @@ bool BitFsPyramidOscillation_TurnAroundAndRunDownhill::execution()
 		Rollback(GetCurrentFrame() - 1);
 	}
 
-	auto status = Modify<BitFsPyramidOscillation_RunDownhill>(_roughTargetAngle);
+	auto status = Modify<BitFsPyramidOscillation_RunDownhill>(_oscillationParams);
 
 	CustomStatus.framePassedEquilibriumPoint = status.framePassedEquilibriumPoint;
-	CustomStatus.maxSpeed										 = status.maxSpeed;
-	CustomStatus.passedEquilibriumSpeed			 = status.passedEquilibriumSpeed;
-	CustomStatus.finalXzSum									 = status.finalXzSum;
-
-	if (status.validated && status.finalXzSum < _minXzSum - 0.00001)
-		CustomStatus.tooUphill = true;
+	CustomStatus.maxSpeed = status.maxSpeed;
+	CustomStatus.passedEquilibriumSpeed = status.passedEquilibriumSpeed;
+	CustomStatus.finalXzSum = status.finalXzSum;
+	CustomStatus.tooUphill = status.tooUphill;
 
 	return true;
 }

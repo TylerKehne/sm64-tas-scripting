@@ -73,8 +73,8 @@ bool GetMinimumDownhillWalkingAngle::execution()
 	int32_t lowerAngle = floorAngle + 0x3FFF;
 	int32_t upperAngle = floorAngle - 0x3FFF;
 
-	int32_t lowerAngleDiff = abs(lowerAngle - _targetAngle);
-	int32_t upperAngleDiff = abs(upperAngle - _targetAngle);
+	int32_t lowerAngleDiff = abs(int16_t(lowerAngle - _targetAngle));
+	int32_t upperAngleDiff = abs(int16_t(upperAngle - _targetAngle));
 
 	if (lowerAngleDiff <= upperAngleDiff)
 	{
