@@ -5,24 +5,42 @@
 #ifndef SCRIPT_BITFS_PYRAMID_OSCILLATION_H
 	#define SCRIPT_BITFS_PYRAMID_OSCILLATION_H
 
+class BitFsPyramidOscillation_ParamsDto
+{
+public:
+	int quadrant = 1;
+	float targetXzSum = 0;
+	float prevMaxSpeed = 0;
+	bool brake = false;
+	int16_t roughTargetNormal = 0;
+	float initialXzSum = 0;
+	int16_t roughTargetAngle = 0;
+
+};
+
 class BitFsPyramidOscillation : public Script
 {
 public:
 	class CustomScriptStatus
 	{
 	public:
-		float initialXzSum								 = 0;
-		float finalXzSum									 = 0;
-		float maxSpeed[2]									 = {0, 0};
-		float maxPassedEquilibriumSpeed[2] = {0, 0};
+		float initialXzSum = 0;
+		float finalXzSum[2] = { 0, 0 };
+		float maxSpeed[2] = { 0, 0 };
+		float maxPassedEquilibriumSpeed[2] = { 0, 0 };
 	};
 	CustomScriptStatus CustomStatus = CustomScriptStatus();
 
-	BitFsPyramidOscillation(Script* parentScript) : Script(parentScript) {}
+	BitFsPyramidOscillation(Script* parentScript, float targetXzSum, int quadrant)
+		: Script(parentScript), _targetXzSum(targetXzSum), _quadrant(quadrant) {}
 
 	bool verification();
 	bool execution();
 	bool validation();
+
+private:
+	float _targetXzSum = 0;
+	int _quadrant = 1;
 };
 
 // Find the optimal result of BitFsPyramidOscillation_TurnThenRunDownhill over a
@@ -43,28 +61,17 @@ public:
 	};
 	CustomScriptStatus CustomStatus = CustomScriptStatus();
 
-	BitFsPyramidOscillation_Iteration(
-		Script* parentScript, int32_t minFrame, int32_t maxFrame,
-		float prevMaxSpeed, float minXzSum, bool brake) :
-		Script(parentScript),
-		_prevMaxSpeed(prevMaxSpeed),
-		_minXzSum(minXzSum),
-		_brake(brake),
-		_minFrame(minFrame),
-		_maxFrame(maxFrame)
-	{
-	}
+	BitFsPyramidOscillation_Iteration(Script* parentScript, BitFsPyramidOscillation_ParamsDto oscillationParams, int32_t minFrame, int32_t maxFrame)
+		: Script(parentScript), _oscillationParams(oscillationParams), _minFrame(minFrame), _maxFrame(maxFrame) {}
 
 	bool verification();
 	bool execution();
 	bool validation();
 
 private:
-	int32_t _minFrame		= -1;
-	int32_t _maxFrame		= -1;
-	float _prevMaxSpeed = 0;
-	float _minXzSum			= 0;
-	bool _brake					= false;
+	int32_t _minFrame = -1;
+	int32_t _maxFrame = -1;
+	BitFsPyramidOscillation_ParamsDto _oscillationParams;
 };
 
 class BitFsPyramidOscillation_TurnThenRunDownhill : public Script
@@ -82,23 +89,15 @@ public:
 	};
 	CustomScriptStatus CustomStatus = CustomScriptStatus();
 
-	BitFsPyramidOscillation_TurnThenRunDownhill(
-		Script* parentScript, float prevMaxSpeed, float minXzSum, bool brake) :
-		Script(parentScript),
-		_prevMaxSpeed(prevMaxSpeed),
-		_minXzSum(minXzSum),
-		_brake(brake)
-	{
-	}
+	BitFsPyramidOscillation_TurnThenRunDownhill(Script* parentScript, BitFsPyramidOscillation_ParamsDto oscillationParams)
+		: Script(parentScript), _oscillationParams(oscillationParams) {}
 
 	bool verification();
 	bool execution();
 	bool validation();
 
 private:
-	float _prevMaxSpeed = 0;
-	float _minXzSum			= 0;
-	bool _brake					= false;
+	BitFsPyramidOscillation_ParamsDto _oscillationParams;
 };
 
 class BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle : public Script
@@ -120,15 +119,8 @@ public:
 	CustomScriptStatus CustomStatus = CustomScriptStatus();
 
 	BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle(
-		Script* parentScript, int16_t angle, float prevMaxSpeed, float minXzSum,
-		bool brake) :
-		Script(parentScript),
-		_angle(angle),
-		_prevMaxSpeed(prevMaxSpeed),
-		_minXzSum(minXzSum),
-		_brake(brake)
-	{
-	}
+		Script* parentScript, BitFsPyramidOscillation_ParamsDto oscillationParams, int16_t angle)
+		: Script(parentScript), _oscillationParams(oscillationParams), _angle(angle){}
 
 	bool verification();
 	bool execution();
@@ -136,9 +128,7 @@ public:
 
 private:
 	int16_t _angle;
-	float _prevMaxSpeed = 0;
-	float _minXzSum			= 0;
-	bool _brake					= false;
+	BitFsPyramidOscillation_ParamsDto _oscillationParams;
 };
 
 class BitFsPyramidOscillation_TurnAroundAndRunDownhill : public Script
@@ -158,23 +148,15 @@ public:
 	CustomScriptStatus CustomStatus = CustomScriptStatus();
 
 	BitFsPyramidOscillation_TurnAroundAndRunDownhill(
-		Script* parentScript, bool brake, int16_t roughTargetAngle = 0,
-		float minXzSum = 0) :
-		Script(parentScript),
-		_roughTargetAngle(roughTargetAngle),
-		_minXzSum(minXzSum),
-		_brake(brake)
-	{
-	}
+		Script* parentScript, BitFsPyramidOscillation_ParamsDto oscillationParams)
+		: Script(parentScript), _oscillationParams(oscillationParams) {}
 
 	bool verification();
 	bool execution();
 	bool validation();
 
 private:
-	int16_t _roughTargetAngle = 0;
-	float _minXzSum						= 0;
-	bool _brake								= false;
+	BitFsPyramidOscillation_ParamsDto _oscillationParams;
 };
 
 class BitFsPyramidOscillation_RunDownhill : public Script
@@ -192,26 +174,22 @@ public:
 
 		std::map<uint64_t, FrameInputStatus> frameStatuses;
 		int64_t framePassedEquilibriumPoint = -1;
-		float maxSpeed											= 0;
-		float passedEquilibriumSpeed				= 0;
-		float finalXzSum										= 0;
+		float maxSpeed = 0;
+		float passedEquilibriumSpeed = 0;
+		float finalXzSum = 0;
+		bool tooUphill = false;
 	};
 	CustomScriptStatus CustomStatus = CustomScriptStatus();
 
-	BitFsPyramidOscillation_RunDownhill(
-		Script* parentScript, int16_t roughTargetAngle) :
-		Script(parentScript), _roughTargetAngle(roughTargetAngle)
-	{
-	}
+	BitFsPyramidOscillation_RunDownhill(Script* parentScript, BitFsPyramidOscillation_ParamsDto oscillationParams)
+		: Script(parentScript), _oscillationParams(oscillationParams) {}
 
 	bool verification();
 	bool execution();
 	bool validation();
 
 private:
-	int _targetXDirection			= 0;
-	int _targetZDirection			= 0;
-	int16_t _roughTargetAngle = 0;
+	BitFsPyramidOscillation_ParamsDto _oscillationParams;
 };
 
 #endif
