@@ -2,7 +2,7 @@
 #include "Types.hpp"
 
 #ifndef MATH_H
-#define MATH_H
+	#define MATH_H
 
 void linear_mtxf_mul_vec3f(Mat4& m, Vec3f& dst, Vec3f& v);
 void mtxf_align_terrain_normal(Mat4& dest, Vec3f& upDir, Vec3f& pos, s16 yaw);

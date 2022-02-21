@@ -1,3 +1,7 @@
 {
-  "clangd.arguments": ["--compile-commands-dir=build"]
+  "clangd.arguments": [
+    "--compile-commands-dir=build"
+  ],
+  "editor.insertSpaces": false,
+	"editor.tabSize": 2
 }

@@ -1,11 +1,11 @@
-#include "Script.hpp"
-#include "Types.hpp"
-#include "Sm64.hpp"
 #include "Camera.hpp"
+#include "Script.hpp"
+#include "Sm64.hpp"
+#include "Types.hpp"
 
 bool BitFsPyramidOscillation_TurnAroundAndRunDownhill::verification()
 {
-	//Check if Mario is on the pyramid platform
+	// Check if Mario is on the pyramid platform
 	MarioState* marioState = (MarioState*) (game->addr("gMarioStates"));
 
 	Surface* floor = marioState->floor;
@@ -16,28 +16,31 @@ bool BitFsPyramidOscillation_TurnAroundAndRunDownhill::verification()
 	if (!floorObject)
 		return false;
 
-	const BehaviorScript* pyramidBehavior = (const BehaviorScript*)(game->addr("bhvBitfsTiltingInvertedPyramid"));
+	const BehaviorScript* pyramidBehavior =
+		(const BehaviorScript*) (game->addr("bhvBitfsTiltingInvertedPyramid"));
 	if (floorObject->behavior != pyramidBehavior)
 		return false;
 
 	if (marioState->forwardVel < 16.0f)
 		return false;
 
-	//Check that Mario can enter walking action
+	// Check that Mario can enter walking action
 	return marioState->action == ACT_WALKING;
 }
 
 bool BitFsPyramidOscillation_TurnAroundAndRunDownhill::execution()
 {
-	const BehaviorScript* pyramidBehavior = (const BehaviorScript*)(game->addr("bhvBitfsTiltingInvertedPyramid"));
+	const BehaviorScript* pyramidBehavior =
+		(const BehaviorScript*) (game->addr("bhvBitfsTiltingInvertedPyramid"));
 	MarioState* marioState = (MarioState*) (game->addr("gMarioStates"));
-	Camera* camera = *(Camera**)(game->addr("gCamera"));
-	Object* pyramid = marioState->floor->object;
+	Camera* camera				 = *(Camera**) (game->addr("gCamera"));
+	Object* pyramid				 = marioState->floor->object;
 
-	//Turn around
+	// Turn around
 	if (_brake)
 	{
-		//Works with short oscialltion cycles, but takes an extra turnaround frame
+		// Works with short oscialltion cycles, but takes an extra turnaround
+		// frame
 		auto status = Modify<BrakeToIdle>();
 		if (!status.validated)
 		{
@@ -49,35 +52,46 @@ bool BitFsPyramidOscillation_TurnAroundAndRunDownhill::execution()
 	{
 		do
 		{
-			auto inputs = Inputs::GetClosestInputByYawHau(marioState->faceAngle[1] + 0x8000, 32, camera->yaw);
+			auto inputs = Inputs::GetClosestInputByYawHau(
+				marioState->faceAngle[1] + 0x8000, 32, camera->yaw);
 			AdvanceFrameWrite(Inputs(0, inputs.first, inputs.second));
 
-			//If double turnaround glitch occurs, run for one extra frame in current direction to change animation
-			if (marioState->action == ACT_WALKING && marioState->prevAction == ACT_TURNING_AROUND)
+			// If double turnaround glitch occurs, run for one extra frame in
+			// current direction to change animation
+			if (
+				marioState->action == ACT_WALKING &&
+				marioState->prevAction == ACT_TURNING_AROUND)
 			{
 				CustomStatus.finishTurnaroundFailedToExpire = true;
 
 				Rollback(GetCurrentFrame() - 1);
-				inputs = Inputs::GetClosestInputByYawHau(marioState->faceAngle[1], 32, camera->yaw);
+				inputs = Inputs::GetClosestInputByYawHau(
+					marioState->faceAngle[1], 32, camera->yaw);
 				AdvanceFrameWrite(Inputs(0, inputs.first, inputs.second));
 
-				if ((marioState->action != ACT_WALKING)
-					|| marioState->floor->object == NULL
-					|| marioState->floor->object->behavior != pyramidBehavior)
+				if (
+					(marioState->action != ACT_WALKING) ||
+					marioState->floor->object == NULL ||
+					marioState->floor->object->behavior != pyramidBehavior)
 					return false;
 
-				//Try and turn around again
-				inputs = Inputs::GetClosestInputByYawHau(marioState->faceAngle[1] + 0x8000, 32, camera->yaw);
+				// Try and turn around again
+				inputs = Inputs::GetClosestInputByYawHau(
+					marioState->faceAngle[1] + 0x8000, 32, camera->yaw);
 				AdvanceFrameWrite(Inputs(0, inputs.first, inputs.second));
 			}
 
-			if (marioState->action != ACT_TURNING_AROUND && marioState->action != ACT_FINISH_TURNING_AROUND)
+			if (
+				marioState->action != ACT_TURNING_AROUND &&
+				marioState->action != ACT_FINISH_TURNING_AROUND)
 			{
 				CustomStatus.tooDownhill = (marioState->action == ACT_LAVA_BOOST);
 				return false;
 			}
 
-			if (marioState->floor->object == NULL || marioState->floor->object->behavior != pyramidBehavior)
+			if (
+				marioState->floor->object == NULL ||
+				marioState->floor->object->behavior != pyramidBehavior)
 			{
 				CustomStatus.tooDownhill = (marioState->floor->object == NULL);
 				return false;
@@ -90,9 +104,9 @@ bool BitFsPyramidOscillation_TurnAroundAndRunDownhill::execution()
 	auto status = Modify<BitFsPyramidOscillation_RunDownhill>(_roughTargetAngle);
 
 	CustomStatus.framePassedEquilibriumPoint = status.framePassedEquilibriumPoint;
-	CustomStatus.maxSpeed = status.maxSpeed;
-	CustomStatus.passedEquilibriumSpeed = status.passedEquilibriumSpeed;
-	CustomStatus.finalXzSum = status.finalXzSum;
+	CustomStatus.maxSpeed										 = status.maxSpeed;
+	CustomStatus.passedEquilibriumSpeed			 = status.passedEquilibriumSpeed;
+	CustomStatus.finalXzSum									 = status.finalXzSum;
 
 	if (status.validated && status.finalXzSum < _minXzSum - 0.00001)
 		CustomStatus.tooUphill = true;

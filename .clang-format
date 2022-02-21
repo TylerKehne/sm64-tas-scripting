@@ -1,0 +1,55 @@
+---
+Language: Cpp
+BasedOnStyle: Chromium
+
+UseTab: Always
+TabWidth: 2
+IndentWidth: 2
+
+AccessModifierOffset: -2
+AlignAfterOpenBracket: AlwaysBreak
+AlignConsecutiveAssignments: Consecutive
+AlignEscapedNewlines: Left
+AlignOperands: DontAlign
+
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLambdasOnASingleLine: Inline
+
+BinPackArguments: true
+BinPackParameters: true
+
+BreakBeforeBraces: Allman
+BreakBeforeTernaryOperators: false
+
+BreakStringLiterals: false
+BreakInheritanceList: AfterColon
+BreakConstructorInitializers: AfterColon
+
+ContinuationIndentWidth: 2
+ConstructorInitializerIndentWidth: 2
+
+Cpp11BracedListStyle: true
+IncludeCategories:
+  # POSIX
+  - Regex: '^<[^.]+\.h>'
+    Priority: 1
+  - Regex: "^<([^.]+)>$"
+    Priority: 2
+  - Regex: "^<([^.].h(pp|xx|h))>$"
+    Priority: 3
+IndentPPDirectives: BeforeHash
+IndentCaseLabels: false
+IndentRequires: true
+
+NamespaceIndentation: All
+PointerAlignment: Left
+
+SpaceAfterCStyleCast: true
+SpaceBeforeCtorInitializerColon: true
+SpaceBeforeCpp11BracedList: true
+SpaceBeforeRangeBasedForLoopColon: false
+SpaceAroundPointerQualifiers: Before
+
+LambdaBodyIndentation: OuterScope
+
+Standard: Cpp11

@@ -3,7 +3,7 @@
 #include "Script.hpp"
 
 #ifndef SCRIPT_GENERAL_H
-#define SCRIPT_GENERAL_H
+	#define SCRIPT_GENERAL_H
 
 class GetMinimumDownhillWalkingAngle : public Script
 {
@@ -11,20 +11,25 @@ public:
 	class CustomScriptStatus
 	{
 	public:
-		Rotation downhillRotation = Rotation::NONE;
-		int32_t angleFacing = 0;
-		int32_t angleNotFacing = 0;
-		int32_t angleFacingAnalogBack = 0;
+		Rotation downhillRotation				 = Rotation::NONE;
+		int32_t angleFacing							 = 0;
+		int32_t angleNotFacing					 = 0;
+		int32_t angleFacingAnalogBack		 = 0;
 		int32_t angleNotFacingAnalogBack = 0;
-		int32_t floorAngle = 0;
-		bool isSlope = false;
+		int32_t floorAngle							 = 0;
+		bool isSlope										 = false;
 	};
 	CustomScriptStatus CustomStatus = CustomScriptStatus();
 
-	GetMinimumDownhillWalkingAngle(Script* parentScript, int16_t targetAngle)
-		: Script(parentScript), _targetAngle(targetAngle), _faceAngle(targetAngle) {}
-	GetMinimumDownhillWalkingAngle(Script* parentScript, int16_t targetAngle, int16_t faceAngle)
-		: Script(parentScript), _targetAngle(targetAngle), _faceAngle(faceAngle) {}
+	GetMinimumDownhillWalkingAngle(Script* parentScript, int16_t targetAngle) :
+		Script(parentScript), _targetAngle(targetAngle), _faceAngle(targetAngle)
+	{
+	}
+	GetMinimumDownhillWalkingAngle(
+		Script* parentScript, int16_t targetAngle, int16_t faceAngle) :
+		Script(parentScript), _targetAngle(targetAngle), _faceAngle(faceAngle)
+	{
+	}
 
 	bool verification();
 	bool execution();
@@ -50,7 +55,10 @@ public:
 	};
 	CustomScriptStatus CustomStatus = CustomScriptStatus();
 
-	TryHackedWalkOutOfBounds(Script* parentScript, float speed) : Script(parentScript), _speed(speed) {}
+	TryHackedWalkOutOfBounds(Script* parentScript, float speed) :
+		Script(parentScript), _speed(speed)
+	{
+	}
 
 	bool verification();
 	bool execution();
