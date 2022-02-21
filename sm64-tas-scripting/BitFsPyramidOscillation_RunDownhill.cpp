@@ -35,8 +35,8 @@ bool BitFsPyramidOscillation_RunDownhill::execution()
 	Camera* camera = *(Camera**)(game->addr("gCamera"));
 	Object* pyramid = marioState->floor->object;
 
-	_targetXDirection = sign(gSineTable[(uint16_t)_roughTargetAngle >> 4]);
-	_targetZDirection = sign(gCosineTable[(uint16_t)_roughTargetAngle >> 4]);
+	int targetXDirection = sign(gSineTable[(uint16_t)(_oscillationParams.roughTargetAngle) >> 4]);
+	int targetZDirection = sign(gCosineTable[(uint16_t)(_oscillationParams.roughTargetAngle) >> 4]);
 
 	//This shouldn't go on forever, but set a max frame number just in case
 	for (int n = 0; n < 1000; n++)
@@ -45,7 +45,7 @@ bool BitFsPyramidOscillation_RunDownhill::execution()
 		float prevNormalZ = pyramid->oTiltingPyramidNormalZ;
 
 		//Turnaround face angle is not guaranteed to be closer to one orientation or the other, so rely on caller to specify a close-enough target orientation
-		auto status = Test<GetMinimumDownhillWalkingAngle>(_roughTargetAngle, marioState->faceAngle[1]);
+		auto status = Test<GetMinimumDownhillWalkingAngle>(_oscillationParams.roughTargetAngle, marioState->faceAngle[1]);
 
 		//Terminate if unable to locate a downhill angle
 		if (!status.executed)
@@ -88,20 +88,40 @@ bool BitFsPyramidOscillation_RunDownhill::execution()
 		if (marioState->forwardVel > CustomStatus.maxSpeed)
 			CustomStatus.maxSpeed = marioState->forwardVel;
 
-		//Record initial tilt change direction and check if equilibrium point has been passed
-		int xTiltDirection = Script::sign(pyramid->oTiltingPyramidNormalX - prevNormalX);
-		int zTiltDirection = Script::sign(pyramid->oTiltingPyramidNormalZ - prevNormalZ);
+		//Check if equilibrium point has been passed
+		//The axis we want to check is determined by whichever normal component is lesser
+		int tiltDirection, targetTiltDirection;
+		float normalDiff;
+		if (fabs(pyramid->oTiltingPyramidNormalX) < fabs(pyramid->oTiltingPyramidNormalZ))
+		{
+			tiltDirection = Script::sign(pyramid->oTiltingPyramidNormalX - prevNormalX);
+			targetTiltDirection = targetXDirection;
+			normalDiff = fabs(pyramid->oTiltingPyramidNormalX - prevNormalX);
+		}
+		else
+		{
+			tiltDirection = Script::sign(pyramid->oTiltingPyramidNormalZ - prevNormalZ);
+			targetTiltDirection = targetZDirection;
+			normalDiff = fabs(pyramid->oTiltingPyramidNormalZ - prevNormalZ);
+		}
+
 		if (
 			CustomStatus.framePassedEquilibriumPoint == -1
-			&& xTiltDirection == _targetXDirection
-			&& zTiltDirection == _targetZDirection
-			&& fabs(pyramid->oTiltingPyramidNormalX - prevNormalX) + fabs(pyramid->oTiltingPyramidNormalZ - prevNormalZ) >= 0.0199999f)
+			&& tiltDirection == targetTiltDirection
+			&& normalDiff >= 0.0099999f)
 		{
 			CustomStatus.passedEquilibriumSpeed = marioState->forwardVel;
 			CustomStatus.framePassedEquilibriumPoint = GetCurrentFrame() - 1;
-		}
+			CustomStatus.finalXzSum = 
+				pyramid->oTiltingPyramidNormalX * (_oscillationParams.quadrant < 3 ? 1 : -1)
+				+ pyramid->oTiltingPyramidNormalZ * (_oscillationParams.quadrant == 1 || _oscillationParams.quadrant == 4 ? 1 : -1);
 
-		CustomStatus.finalXzSum = fabs(pyramid->oTiltingPyramidNormalX) + fabs(pyramid->oTiltingPyramidNormalZ);
+			if (CustomStatus.finalXzSum < _oscillationParams.targetXzSum - 0.00001 && CustomStatus.finalXzSum < _oscillationParams.initialXzSum + 0.01f)
+			{
+				CustomStatus.tooUphill = true;
+				return true;
+			}
+		}
 	}
 
 	return true;
@@ -111,8 +131,6 @@ bool BitFsPyramidOscillation_RunDownhill::validation()
 {
 	if (!BaseStatus.m64Diff.frames.size())
 		return false;
-
-	
 
 	return true;
 }

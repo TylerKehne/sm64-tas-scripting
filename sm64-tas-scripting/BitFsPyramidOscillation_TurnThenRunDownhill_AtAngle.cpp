@@ -32,12 +32,11 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::execution()
 	Camera* camera = *(Camera**)(game->addr("gCamera"));
 	Object* pyramid = marioState->floor->object;
 
-	//Record initial XZ sum, don't want to decrease this
-	CustomStatus.initialXzSum = fabs(pyramid->oTiltingPyramidNormalX) + fabs(pyramid->oTiltingPyramidNormalZ);
+	CustomStatus.initialXzSum = _oscillationParams.initialXzSum;
+	_oscillationParams.roughTargetAngle = marioState->faceAngle[1] + 0x8000;
 
 	//Keep running until target angle is reached
 	int16_t actualIntendedYaw = 0;
-	int16_t roughTargetAngle = marioState->faceAngle[1] + 0x8000;
 	do
 	{
 		//Don't want to turn around early, so cap intended yaw diff at 2048
@@ -75,10 +74,10 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::execution()
 	ScriptStatus<BitFsPyramidOscillation_TurnAroundAndRunDownhill> runDownhillStatus;
 	uint64_t initFrame = GetCurrentFrame();
 	//This should never reach 50 frames, but just in case
-	for (int i = 0; i < 50; i++)
+	for (int i = 0; i < 100; i++)
 	{
 		//Immediately turn around and run downhill optimally
-		auto status = Execute<BitFsPyramidOscillation_TurnAroundAndRunDownhill>(_brake, roughTargetAngle);
+		auto status = Execute<BitFsPyramidOscillation_TurnAroundAndRunDownhill>(_oscillationParams);
 
 		//Something weird happened, terminate
 		if (!status.validated)
@@ -88,16 +87,11 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::execution()
 		if (status.tooUphill)
 			break;
 
-		//Extra running frames are no longer helping, terminate
-		//Note that this requires a previous valid status to trigger
-		//This is the value we want to maximize
-		if (status.passedEquilibriumSpeed < runDownhillStatus.passedEquilibriumSpeed)
-			break;
-
 		//Route is only valid if it got more speed than the last time
 		//We aren't trying to maxmimize this, but this ensures route won't be too close to the lava
-		//Also make sure equillibrium point has been passed
-		if (status.maxSpeed >= _prevMaxSpeed && status.framePassedEquilibriumPoint != -1)
+		//Also make sure equilibrium point has been passed
+		if (status.maxSpeed >= _oscillationParams.prevMaxSpeed
+			&& status.passedEquilibriumSpeed > runDownhillStatus.passedEquilibriumSpeed)
 			runDownhillStatus = status;
 		//This also indicates running frames aren't helping and we can terminate, except when past the threshold
 		//In that case, we don't mind if this goes down.
@@ -139,7 +133,7 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::validation()
 	if (BaseStatus.m64Diff.frames.empty())
 		return false;
 
-	if (CustomStatus.finalXzSum < _minXzSum - 0.00001)
+	if (CustomStatus.tooUphill || CustomStatus.tooDownhill)
 		return false;
 
 	if (CustomStatus.framePassedEquilibriumPoint == -1)
