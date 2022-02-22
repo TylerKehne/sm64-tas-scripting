@@ -9,7 +9,6 @@ import shutil
 import tarfile
 import urllib.request as request
 import tempfile as tmp
-import contextlib
 from pathlib import Path
 
 def download(package_name, tar_url):
@@ -34,7 +33,7 @@ def install(package_name, tar_url):
 	# Search local cache for package
 	search = subp.run(["conan", "search", package_name, "--raw"], capture_output=True, check=True, encoding="utf-8")
 	if search.stdout == "":
-		print(f"{package_name} is not present. Downloading from GitHub...")
+		print(f"{package_name} is not present. Downloading from GitHub...", flush=True)
 		download(package_name, tar_url)
 	else:
 		print(f"{package_name} is already installed.")
