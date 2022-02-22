@@ -16,6 +16,9 @@ if(NOT EXISTS "${CMAKE_BINARY_DIR}/conan.cmake")
 endif()
 include("${CMAKE_BINARY_DIR}/conan.cmake")
 
+# Install local packages
+execute_process(COMMAND python3 ${CMAKE_CURRENT_LIST_DIR}/scripts/conan_installer.py)
+
 # Dependency config
 conan_cmake_configure(
 	REQUIRES "mtap/0.2" "nlohmann_json/3.10.5"
