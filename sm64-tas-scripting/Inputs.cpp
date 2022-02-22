@@ -17,7 +17,7 @@ static uint16_t byteswap(uint16_t x)
 }
 
 #if defined(_WIN32)
-#define PT_LPSTR(strlit) L##strlit
+#define PT_LPTSTR(strlit) L##strlit
 static FILE* pt_fopen(const wchar_t* str, const wchar_t* mode) {
 	return _wfopen(str, mode);
 }
