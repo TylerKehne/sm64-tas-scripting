@@ -16,6 +16,22 @@ if(NOT EXISTS "${CMAKE_BINARY_DIR}/conan.cmake")
 endif()
 include("${CMAKE_BINARY_DIR}/conan.cmake")
 
+# Check build type
+# https://www.kitware.com/cmake-and-the-default-build-type/
+set(SM64_TASFW_DEFAULT_BUILD "Release")
+if (EXISTS "${CMAKE_PROJECT_DIR}/.git")
+	set(SM64_TASFW_DEFAULT_BUILD "Debug")
+endif()
+
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+  message(STATUS "Setting build type to '${SM64_TASFW_DEFAULT_BUILD}' as none was specified.")
+  set(CMAKE_BUILD_TYPE "${SM64_TASFW_DEFAULT_BUILD}" CACHE
+      STRING "Choose the type of build." FORCE)
+  # Set the possible values of build type for cmake-gui
+  set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS
+    "Debug" "Release" "MinSizeRel" "RelWithDebInfo")
+endif()
+
 # Install local packages
 execute_process(COMMAND python3 ${CMAKE_CURRENT_LIST_DIR}/scripts/conan_installer.py)
 
