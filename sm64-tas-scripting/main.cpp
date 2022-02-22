@@ -34,7 +34,7 @@ public:
 	{
 		Load(3564);
 		Save();
-		auto status = Script::Modify<BitFsPyramidOscillation>(1.0f, 2);
+		auto status = Script::Modify<BitFsPyramidOscillation>(0.74f, 4);
 		return true;
 	}
 
