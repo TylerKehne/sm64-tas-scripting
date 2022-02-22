@@ -1,4 +1,6 @@
 #include "Inputs.hpp"
+#include <sys/types.h>
+#include <ios>
 #include <system_error>
 #include "Game.hpp"
 #include "Trig.hpp"
@@ -8,6 +10,7 @@
 #include <cmath>
 #include <cstdio>
 #include <iostream>
+#include <fstream>
 #include <limits>
 #include <unordered_map>
 
@@ -15,18 +18,6 @@ static uint16_t byteswap(uint16_t x)
 {
 	return (x >> 8) | (x << 8);
 }
-
-#if defined(_WIN32)
-#define PT_LPTSTR(strlit) L##strlit
-static FILE* pt_fopen(const wchar_t* str, const wchar_t* mode) {
-	return _wfopen(str, mode);
-}
-#elif defined(__linux__)
-#define PT_LPTSTR(strlit) strlit
-static FILE* pt_fopen(const std::filesystem::path::value_type* str, const std::filesystem::path::value_type* mode) {
-	return fopen(str, mode);
-}
-#endif
 
 
 std::pair<
@@ -312,9 +303,18 @@ std::pair<int16_t, float> Inputs::GetIntendedYawMagFromInput(
 	return {baseIntendedYaw + cameraYaw, intendedMag};
 }
 
+bool Inputs::HauEquals(int16_t angle1, int16_t angle2)
+{
+	int16_t hau1 = angle1 - (angle1 & 15);
+	int16_t hau2 = angle2 - (angle2 & 15);
+
+	return hau1 == hau2;
+}
+
 int M64::load()
 {
-	FILE* f;
+	std::ifstream f(fileName.c_str(), ios_base::binary);
+	f.exceptions(ios_base::failbit | ios_base::badbit);
 
 	uint16_t buttons;
 	int8_t stick_x, stick_y;
@@ -323,46 +323,27 @@ int M64::load()
 
 	try
 	{
-		if ((f = pt_fopen(fileName.c_str(), PT_LPTSTR("rb"))) == nullptr)
-		{
-			throw std::system_error(errno, std::generic_category());
-		}
-
-		fseek(f, 0x400, SEEK_SET);
+		f.seekg(0x400, ios_base::beg);
 
 		uint64_t index = 0;
 		while (true)
 		{
 			uint16_t bigEndianButtons;
-
-			fread(&bigEndianButtons, sizeof(uint16_t), 1, f);
-
-			if (feof(f) != 0 || ferror(f) != 0)
-			{
-				break;
-			}
+			
+			f.read(reinterpret_cast<char*>(&bigEndianButtons), sizeof(uint16_t));
+			if (f.eof()) break;
 
 			buttons = byteswap(bigEndianButtons);
 
-			fread(&stick_x, sizeof(int8_t), 1, f);
+			f.read(reinterpret_cast<char*>(&stick_x), sizeof(uint8_t));
+			if (f.eof()) break;
 
-			if (feof(f) != 0 || ferror(f) != 0)
-			{
-				break;
-			}
-
-			fread(&stick_y, sizeof(int8_t), 1, f);
-
-			if (feof(f) != 0 || ferror(f) != 0)
-			{
-				break;
-			}
+			f.read(reinterpret_cast<char*>(&stick_y), sizeof(uint8_t));
+			if (f.eof()) break;
 
 			frames[index] = Inputs(buttons, stick_x, stick_y);
 			index++;
 		}
-
-		fclose(f);
 	}
 	catch (std::invalid_argument& e)
 	{
@@ -373,17 +354,12 @@ int M64::load()
 	return 1;
 }
 
-bool Inputs::HauEquals(int16_t angle1, int16_t angle2)
-{
-	int16_t hau1 = angle1 - (angle1 & 15);
-	int16_t hau2 = angle2 - (angle2 & 15);
 
-	return hau1 == hau2;
-}
 
 int M64::save(long initFrame)
 {
-	FILE* f;
+	std::ofstream f(fileName, ios_base::binary);
+	f.exceptions(ios_base::failbit | ios_base::badbit);
 
 	uint16_t buttons;
 	int8_t stick_x, stick_y;
@@ -393,25 +369,14 @@ int M64::save(long initFrame)
 
 	try
 	{
-		// if ((err = fopen_s(&f, fileName, "r+b")) != 0) {
-		// 	std::cerr << "Bad open of file " << fileName << " Error: " << err <<
-		// std::endl; 	exit(EXIT_FAILURE);
-		// }
-
-		if ((f = pt_fopen(fileName.c_str(), PT_LPTSTR("wb"))) == nullptr)
-		{
-			throw std::system_error(errno, std::generic_category());
-		}
 
 		// Write number of frames
-		fseek(f, 0xC, SEEK_SET);
-		int32_t nFrames[1] = {-1};	// To-Do: maybe change to size
-		fwrite(nFrames, sizeof(int32_t), 1, f);
-		if (ferror(f) != 0)
-			return 0;
+		f.seekp(0xC, ios_base::beg);
+		int32_t nFrames[1] = {-1};
+		f.write(reinterpret_cast<char*>(nFrames), sizeof(int32_t));
 
 		// Write frames
-		fseek(f, 0x400 + 4 * initFrame, SEEK_SET);
+		f.seekp(0x400 + 4 * initFrame, ios_base::beg);
 		for (int i = 0; i <= lastFrame; i++)
 		{
 			uint16_t bigEndianButtons = 0;
@@ -425,12 +390,10 @@ int M64::save(long initFrame)
 				stickY					 = frames[i].stick_y;
 			}
 
-			fwrite(&bigEndianButtons, sizeof(uint16_t), 1, f);
-			fwrite(&stickX, sizeof(int8_t), 1, f);
-			fwrite(&stickY, sizeof(int8_t), 1, f);
+			f.write(reinterpret_cast<char*>(bigEndianButtons), sizeof(uint16_t));
+			f.write(reinterpret_cast<char*>(&stickX), sizeof(uint8_t));
+			f.write(reinterpret_cast<char*>(&stickY), sizeof(uint8_t));
 		}
-
-		fclose(f);
 	}
 	catch (std::invalid_argument& e)
 	{
@@ -440,3 +403,4 @@ int M64::save(long initFrame)
 
 	return 1;
 }
+ 
