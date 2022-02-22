@@ -54,7 +54,7 @@ public:
 static std::filesystem::path get_own_path() {
 	auto buffer = std::unique_ptr<wchar_t[]>(new wchar_t[MAX_PATH]());
 	GetModuleFileNameW(0, buffer.get(), MAX_PATH);
-	return buffer.get()
+	return buffer.get();
 }
 #elif defined(__linux__)
 #include <linux/limits.h>
