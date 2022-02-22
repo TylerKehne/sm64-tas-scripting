@@ -1,8 +1,14 @@
+
 #include <cstdint>
+#include <cstddef>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <memory>
+#include <optional>
 #include <iostream>
+
+#include <mtap/mtap.hpp>
 
 #include "Camera.hpp"
 #include "Game.hpp"
@@ -11,13 +17,6 @@
 #include "Trig.hpp"
 #include "Types.hpp"
 #include "BitFsConfig.hpp"
-
-#ifdef SM64_TASFW_CONFIG_PATH
-#define SM64_TASFW_HAS_DEFAULT_CONFIG true
-#else
-#define SM64_TASFW_CONFIG_PATH ""
-#define SM64_TASFW_HAS_DEFAULT_CONFIG false
-#endif
 
 using namespace std;
 
@@ -50,28 +49,40 @@ public:
 	}
 };
 
+#if defined(_WIN32)
+#include <windows.h>
+static std::filesystem::path get_own_path() {
+	auto buffer = std::unique_ptr<wchar_t[]>(new wchar_t[MAX_PATH]());
+	GetModuleFileNameW(0, buffer.get(), MAX_PATH);
+	return buffer.get()
+}
+#elif defined(__linux__)
+#include <linux/limits.h>
+static std::filesystem::path get_own_path() {
+	auto buffer = std::unique_ptr<char[]>(new char[PATH_MAX + 1]());
+	(void) readlink("/proc/self/exe", buffer.get(), PATH_MAX);
+	return buffer.get();
+}
+#endif
+
 int main(int argc, const char* argv[])
 {
-	std::filesystem::path cfgPath;
-	if constexpr (!SM64_TASFW_HAS_DEFAULT_CONFIG) {
-		if (argc != 2)
-		{
-			std::cout << "Usage:\n";
-			std::cout << argv[0] << " <config file>\n";
-			return 1;
-		}
-		cfgPath = argv[1];
-	}
-	else {
-		if (argc > 2) {
-			std::cout << "Usage:\n";
-			std::cout << argv[0] << " [config file]\n";
-			return 1;
-		}
-		cfgPath = (argc == 2)? argv[1] : SM64_TASFW_CONFIG_PATH;
+	namespace fs = std::filesystem;
+	using mtap::option;
+	std::optional<fs::path> cfgPath;
+	
+	mtap::parser {
+		option<"-c", 1>([&](std::string_view value) {
+			cfgPath = value;
+		})
+	}.parse(argc, argv);
+	if (!cfgPath) {
+		std::cerr << "Self path: " << get_own_path() << '\n';
+		cfgPath = get_own_path().parent_path() / "config.json";
 	}
 	
-	BitFs_ConfigData cfg = BitFs_ConfigData::load(cfgPath);
+	
+	BitFs_ConfigData cfg = BitFs_ConfigData::load(*cfgPath);
 	
 	auto lib_path = cfg.libSM64;
 	auto m64_path = cfg.m64File;
