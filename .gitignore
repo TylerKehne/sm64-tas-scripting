@@ -45,4 +45,5 @@ sm64-tas-scripting/x64/
 .vs/
 
 build/
+out/
 local/

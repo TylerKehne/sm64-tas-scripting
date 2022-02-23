@@ -114,7 +114,7 @@ add_executable(main
 	"sm64-tas-scripting/UltraTypes.hpp"
 )
 target_compile_features(main PUBLIC cxx_std_20)
-target_link_libraries(main nlohmann_json::nlohmann_json mtap::mtap)
+target_link_libraries(main ${CMAKE_DL_LIBS} nlohmann_json::nlohmann_json mtap::mtap)
 
 set(SM64_TASFW_CONFIG "SM64_TASFW_CONFIG_PATH=\"${CMAKE_CURRENT_LIST_DIR}/local/config.json\"")
 target_compile_definitions(main PRIVATE $<$<CONFIG:Debug>:${SM64_TASFW_CONFIG}>)
