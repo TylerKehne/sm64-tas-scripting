@@ -1,6 +1,7 @@
 #include <filesystem>
 #include <nlohmann/json.hpp>
-#include <filesystem>
+
+const std::filesystem::path& getPathToSelf();
 
 struct BitFs_ConfigData {
 	std::filesystem::path libSM64;
