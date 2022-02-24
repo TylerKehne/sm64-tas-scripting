@@ -323,13 +323,20 @@ int M64::load()
 
 	try
 	{
+		int length = f.tellg();
+		if (length == 0)
+		{
+			std::cerr << "empty M64\n";
+			return 0;
+		}
 		f.seekg(0x400, ios_base::beg);
 
 		uint64_t index = 0;
 		while (true)
 		{
 			uint16_t bigEndianButtons;
-			
+			if (f.peek() == EOF)
+				break;
 			f.read(reinterpret_cast<char*>(&bigEndianButtons), sizeof(uint16_t));
 			if (f.eof()) break;
 
@@ -365,6 +372,8 @@ int M64::save(long initFrame)
 	int8_t stick_x, stick_y;
 
 	size_t err;
+	if (frames.empty())
+		return 1;
 	uint64_t lastFrame = frames.rbegin()->first;
 
 	try
