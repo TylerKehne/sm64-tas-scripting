@@ -323,6 +323,7 @@ int M64::load()
 
 	try
 	{
+		f.seekg(0, ios::end);
 		int length = f.tellg();
 		if (length == 0)
 		{
@@ -365,6 +366,8 @@ int M64::load()
 
 int M64::save(long initFrame)
 {
+	if (frames.empty())
+		return 1;
 	std::ofstream f(fileName, ios_base::binary);
 	f.exceptions(ios_base::failbit | ios_base::badbit);
 
@@ -372,8 +375,7 @@ int M64::save(long initFrame)
 	int8_t stick_x, stick_y;
 
 	size_t err;
-	if (frames.empty())
-		return 1;
+
 	uint64_t lastFrame = frames.rbegin()->first;
 
 	try
