@@ -1,22 +1,20 @@
 
-#include <cstdint>
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <memory>
 #include <optional>
-#include <iostream>
 
-#include <mtap/mtap.hpp>
-
+#include "BitFsConfig.hpp"
 #include "Camera.hpp"
 #include "Game.hpp"
 #include "Inputs.hpp"
 #include "Script.hpp"
 #include "Trig.hpp"
 #include "Types.hpp"
-#include "BitFsConfig.hpp"
 
 using namespace std;
 
@@ -50,15 +48,17 @@ public:
 };
 
 #if defined(_WIN32)
-#include <windows.h>
-static std::filesystem::path get_own_path() {
+	#include <windows.h>
+static std::filesystem::path get_own_path()
+{
 	auto buffer = std::unique_ptr<wchar_t[]>(new wchar_t[MAX_PATH]());
 	GetModuleFileNameW(0, buffer.get(), MAX_PATH);
 	return buffer.get();
 }
 #elif defined(__linux__)
-#include <linux/limits.h>
-static std::filesystem::path get_own_path() {
+	#include <linux/limits.h>
+static std::filesystem::path get_own_path()
+{
 	auto buffer = std::unique_ptr<char[]>(new char[PATH_MAX + 1]());
 	(void) readlink("/proc/self/exe", buffer.get(), PATH_MAX);
 	return buffer.get();
@@ -68,22 +68,12 @@ static std::filesystem::path get_own_path() {
 int main(int argc, const char* argv[])
 {
 	namespace fs = std::filesystem;
-	using mtap::option;
-	std::optional<fs::path> cfgPath;
-	
-	mtap::parser {
-		option<"-c", 1>([&](std::string_view value) {
-			cfgPath = value;
-		})
-	}.parse(argc, argv);
-	if (!cfgPath) {
-		std::cerr << "Self path: " << get_own_path() << '\n';
-		cfgPath = get_own_path().parent_path() / "config.json";
-	}
-	
-	
-	BitFs_ConfigData cfg = BitFs_ConfigData::load(*cfgPath);
-	
+	fs::path cfgPath =
+		((argc >= 2) ? fs::path(argv[1]) :
+									 get_own_path().parent_path() / "config.json");
+
+	BitFs_ConfigData cfg = BitFs_ConfigData::load(cfgPath);
+
 	auto lib_path = cfg.libSM64;
 	auto m64_path = cfg.m64File;
 

@@ -333,7 +333,7 @@ static void get_object_vertices(
 
 static short surface_has_force(short surfaceType)
 {
-	short hasForce = FALSE;
+	short hasForce = false;
 
 	switch (surfaceType)
 	{
@@ -344,7 +344,7 @@ static short surface_has_force(short surfaceType)
 	case SURFACE_MOVING_QUICKSAND:
 	case SURFACE_HORIZONTAL_WIND:
 	case SURFACE_INSTANT_MOVING_QUICKSAND:
-		hasForce = TRUE;
+		hasForce = true;
 		break;
 
 	default:
