@@ -29,7 +29,7 @@ public:
 
 	bool execution()
 	{
-		Load(3564);
+		Load(3536);
 		Save();
 		auto status = Script::Modify<BitFsPyramidOscillation>(0.74f, 4);
 		return true;
