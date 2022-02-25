@@ -31,14 +31,14 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 endif()
 
 # Install local packages
-find_package(Python COMPONENTS Interpreter)
-if (${Python_VERSION} VERSION_LESS "3.7.0")
-	message(FATAL_ERROR "Upgrade Python (min version 3.7.0)")
-endif()
-execute_process(COMMAND ${Python_EXECUTABLE} ${CMAKE_CURRENT_LIST_DIR}/scripts/conan_installer.py RESULT_VARIABLE RTC)
-if (NOT ${RTC} EQUAL 0)
-	message(FATAL_ERROR "Local installer failed")
-endif()
+# find_package(Python COMPONENTS Interpreter)
+# if (${Python_VERSION} VERSION_LESS "3.7.0")
+# 	message(FATAL_ERROR "Upgrade Python (min version 3.7.0)")
+# endif()
+# execute_process(COMMAND ${Python_EXECUTABLE} ${CMAKE_CURRENT_LIST_DIR}/scripts/conan_installer.py RESULT_VARIABLE RTC)
+# if (NOT ${RTC} EQUAL 0)
+# 	message(FATAL_ERROR "Local installer failed")
+# endif()
 
 # Dependency config
 conan_cmake_configure(
