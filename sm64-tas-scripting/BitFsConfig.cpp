@@ -1,6 +1,7 @@
 #include "BitFsConfig.hpp"
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <stdexcept>
 #include <string>
 #include <system_error>
@@ -31,6 +32,7 @@ const std::filesystem::path& getPathToSelf()
 		if (res < 0) {
 			throw std::system_error(res, std::generic_category());
 		}
+		std::cout << "Retrieved self path: " << buffer.get() << '\n';
 		return buffer.get();
 	}();
 	return cached;
@@ -38,7 +40,7 @@ const std::filesystem::path& getPathToSelf()
 #endif
 
 static std::filesystem::path resolvePathwithSelf(const std::filesystem::path& path) {
-	return std::filesystem::canonical(getPathToSelf() / path);
+	return std::filesystem::canonical(getPathToSelf().parent_path() / path);
 }
 
 BitFs_ConfigData BitFs_ConfigData::load(const std::filesystem::path& path)
@@ -63,5 +65,5 @@ BitFs_ConfigData BitFs_ConfigData::load(const std::filesystem::path& path)
 	// Additional entries may be added
 	return BitFs_ConfigData {
 		.libSM64 = resolvePathwithSelf(json.at("libsm64").get<std::string>()),
-		.m64File = resolvePathwithSelf(json.at("libsm64").get<std::string>())};
+		.m64File = resolvePathwithSelf(json.at("m64_file").get<std::string>())};
 }

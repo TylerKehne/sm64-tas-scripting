@@ -336,7 +336,7 @@ int M64::load()
 		while (true)
 		{
 			uint16_t bigEndianButtons;
-			if (f.peek() == EOF)
+			if (f.peek() == std::ifstream::traits_type::eof())
 				break;
 			f.read(reinterpret_cast<char*>(&bigEndianButtons), sizeof(uint16_t));
 			if (f.eof()) break;
@@ -368,7 +368,7 @@ int M64::save(long initFrame)
 {
 	if (frames.empty())
 		return 1;
-	std::ofstream f(fileName, ios_base::binary);
+	std::ofstream f(fileName, ios_base::in | ios_base::out | ios_base::binary);
 	f.exceptions(ios_base::failbit | ios_base::badbit);
 
 	uint16_t buttons;
@@ -380,11 +380,10 @@ int M64::save(long initFrame)
 
 	try
 	{
-
 		// Write number of frames
 		f.seekp(0xC, ios_base::beg);
-		int32_t nFrames[1] = {-1};
-		f.write(reinterpret_cast<char*>(nFrames), sizeof(int32_t));
+		uint32_t value = std::numeric_limits<uint32_t>::max();
+		f.write(reinterpret_cast<char*>(&value), sizeof(uint32_t));
 
 		// Write frames
 		f.seekp(0x400 + 4 * initFrame, ios_base::beg);
@@ -401,7 +400,7 @@ int M64::save(long initFrame)
 				stickY					 = frames[i].stick_y;
 			}
 
-			f.write(reinterpret_cast<char*>(bigEndianButtons), sizeof(uint16_t));
+			f.write(reinterpret_cast<char*>(&bigEndianButtons), sizeof(uint16_t));
 			f.write(reinterpret_cast<char*>(&stickX), sizeof(uint8_t));
 			f.write(reinterpret_cast<char*>(&stickY), sizeof(uint8_t));
 		}
