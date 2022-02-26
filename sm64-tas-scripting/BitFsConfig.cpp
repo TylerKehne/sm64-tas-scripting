@@ -52,9 +52,13 @@ BitFs_ConfigData BitFs_ConfigData::load(const std::filesystem::path& path)
 	nlohmann::json json;
 	{
 		std::ifstream stream(path);
-		if (!stream.good())
+		if (!stream.is_open() || !stream.good())
 		{
-			throw std::runtime_error("The config file doesn't exist");
+			throw std::runtime_error("The config file cannot be read.");
+		}
+		if (stream.peek() == decltype(stream)::traits_type::eof())
+		{
+			throw std::runtime_error("The config file is empty.");
 		}
 		stream >> json;
 	}
