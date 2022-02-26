@@ -1,10 +1,11 @@
-#include "Script.hpp"
-#include "Types.hpp"
-#include "Sm64.hpp"
 #include "Camera.hpp"
 #include "ObjectFields.hpp"
+#include "Script.hpp"
+#include "Sm64.hpp"
+#include "Types.hpp"
 
 #include <array>
+#include <cmath>
 
 int16_t getRoughTargetNormal(int quadrant, int iteration, int16_t initWalkingAngle)
 {
@@ -16,8 +17,8 @@ int16_t getRoughTargetNormal(int quadrant, int iteration, int16_t initWalkingAng
 
 bool BitFsPyramidOscillation::verification()
 {
-	//Check if Mario is on the pyramid platform
-	MarioState* marioState = *(MarioState**)(game->addr("gMarioState"));
+	// Check if Mario is on the pyramid platform
+	MarioState* marioState = (MarioState*) (game->addr("gMarioStates"));
 
 	Surface* floor = marioState->floor;
 	if (!floor)
@@ -27,11 +28,12 @@ bool BitFsPyramidOscillation::verification()
 	if (!floorObject)
 		return false;
 
-	const BehaviorScript* pyramidBehavior = (const BehaviorScript*)(game->addr("bhvBitfsTiltingInvertedPyramid"));
+	const BehaviorScript* pyramidBehavior =
+		(const BehaviorScript*) (game->addr("bhvBitfsTiltingInvertedPyramid"));
 	if (floorObject->behavior != pyramidBehavior)
 		return false;
 
-	//Check that Mario is idle
+	// Check that Mario is idle
 	if (marioState->action != ACT_IDLE)
 		return false;
 
@@ -40,10 +42,11 @@ bool BitFsPyramidOscillation::verification()
 
 bool BitFsPyramidOscillation::execution()
 {
-	const BehaviorScript* pyramidBehavior = (const BehaviorScript*)(game->addr("bhvBitfsTiltingInvertedPyramid"));
-	MarioState* marioState = *(MarioState**)(game->addr("gMarioState"));
-	Camera* camera = *(Camera**)(game->addr("gCamera"));
-	Object* pyramid = marioState->floor->object;
+	const BehaviorScript* pyramidBehavior =
+		(const BehaviorScript*) (game->addr("bhvBitfsTiltingInvertedPyramid"));
+	MarioState* marioState = *(MarioState**) (game->addr("gMarioState"));
+	Camera* camera				 = *(Camera**) (game->addr("gCamera"));
+	Object* pyramid				 = marioState->floor->object;
 
 	int16_t initAngle = -32768;
 	auto initAngleStatus = Test<GetMinimumDownhillWalkingAngle>(initAngle);
@@ -66,8 +69,10 @@ bool BitFsPyramidOscillation::execution()
 	if (!initRunStatus.validated)
 		return false;
 
-	//Record initial XZ sum, don't want to decrease this (TODO: optimize angle of first frame and record this before run downhill)
-	CustomStatus.initialXzSum = fabs(pyramid->oTiltingPyramidNormalX) + fabs(pyramid->oTiltingPyramidNormalZ);
+	// Record initial XZ sum, don't want to decrease this (TODO: optimize angle
+	// of first frame and record this before run downhill)
+	CustomStatus.initialXzSum = fabs(pyramid->oTiltingPyramidNormalX) +
+		fabs(pyramid->oTiltingPyramidNormalZ);
 
 	//We want to turn uphill as late as possible, and also turn around as late as possible, without sacrificing XZ sum
 	uint64_t minFrame = initRunStatus.framePassedEquilibriumPoint == -1 ? initRunStatus.m64Diff.frames.begin()->first : initRunStatus.framePassedEquilibriumPoint;
@@ -106,9 +111,10 @@ bool BitFsPyramidOscillation::execution()
 				auto turnRunStatus2 = Execute<BitFsPyramidOscillation_Iteration>(oscillationParams, minFrame2, maxFrame2);
 				if (turnRunStatus2.passedEquilibriumSpeed > turnRunStatus.passedEquilibriumSpeed)
 				{
-					oscillationMinMaxFrames[i - 1] = { minFrameBrake, maxFrameBrake };
-					oscillationMinMaxFrames[i] = { minFrame2, maxFrame2 };
-					CustomStatus.maxSpeed[(i & 1)] = turnRunStatusBrake.speedBeforeTurning;
+					oscillationMinMaxFrames[i - 1] = {minFrameBrake, maxFrameBrake};
+					oscillationMinMaxFrames[i]		 = {minFrame2, maxFrame2};
+					CustomStatus.maxSpeed[(i & 1)] =
+						turnRunStatusBrake.speedBeforeTurning;
 					turnRunStatus = turnRunStatus2;
 				}
 				else
@@ -124,7 +130,8 @@ bool BitFsPyramidOscillation::execution()
 		{
 			CustomStatus.finalXzSum[i & 1] = turnRunStatus.finalXzSum;
 			CustomStatus.maxSpeed[(i & 1) ^ 1] = turnRunStatus.speedBeforeTurning;
-			CustomStatus.maxPassedEquilibriumSpeed[i & 1] = turnRunStatus.passedEquilibriumSpeed;
+			CustomStatus.maxPassedEquilibriumSpeed[i & 1] =
+				turnRunStatus.passedEquilibriumSpeed;
 			Apply(turnRunStatus.m64Diff);
 			minFrame = turnRunStatus.framePassedEquilibriumPoint;
 			maxFrame = turnRunStatus.m64Diff.frames.rbegin()->first;

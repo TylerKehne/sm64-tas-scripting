@@ -1,9 +1,10 @@
+#include <cmath>
 #include "Script.hpp"
 
 bool BitFsPyramidOscillation_TurnThenRunDownhill::verification()
 {
-	//Verify Mario is running on the platform
-	MarioState* marioState = *(MarioState**)(game->addr("gMarioState"));
+	// Verify Mario is running on the platform
+	MarioState* marioState = (MarioState*) (game->addr("gMarioStates"));
 
 	Surface* floor = marioState->floor;
 	if (!floor)
@@ -13,11 +14,12 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill::verification()
 	if (!floorObject)
 		return false;
 
-	const BehaviorScript* pyramidBehavior = (const BehaviorScript*)(game->addr("bhvBitfsTiltingInvertedPyramid"));
+	const BehaviorScript* pyramidBehavior =
+		(const BehaviorScript*) (game->addr("bhvBitfsTiltingInvertedPyramid"));
 	if (floorObject->behavior != pyramidBehavior)
 		return false;
 
-	//Check that Mario can enter walking action
+	// Check that Mario can enter walking action
 	uint32_t action = marioState->action;
 	if (action != ACT_WALKING && action != ACT_FINISH_TURNING_AROUND)
 		return false;
@@ -42,7 +44,9 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill::execution()
 	int32_t midHau = (extremeDownhillHau + extremeUphillHau) / 2;
 
 	ScriptStatus<BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle> runStatus;
-	for (int32_t angle = midHau; angle * -downhillRotation >= extremeDownhillHau * -downhillRotation; angle += 512 * downhillRotation)
+	for (int32_t angle = midHau;
+			 angle * -downhillRotation >= extremeDownhillHau * -downhillRotation;
+			 angle += 512 * downhillRotation)
 	{
 		auto status = Execute<BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle>(_oscillationParams, angle);
 
@@ -58,7 +62,9 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill::execution()
 			runStatus = status;
 	}
 
-	for (int32_t angle = midHau - 512 * downhillRotation; angle * -downhillRotation <= extremeUphillHau * -downhillRotation; angle -= 512 * downhillRotation)
+	for (int32_t angle = midHau - 512 * downhillRotation;
+			 angle * -downhillRotation <= extremeUphillHau * -downhillRotation;
+			 angle -= 512 * downhillRotation)
 	{
 		auto status = Execute<BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle>(_oscillationParams, angle);
 
@@ -78,10 +84,12 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill::execution()
 		return false;
 
 	CustomStatus.finalXzSum = runStatus.finalXzSum;
-	CustomStatus.framePassedEquilibriumPoint = runStatus.framePassedEquilibriumPoint;
-	CustomStatus.maxSpeed = runStatus.maxSpeed;
+	CustomStatus.framePassedEquilibriumPoint =
+		runStatus.framePassedEquilibriumPoint;
+	CustomStatus.maxSpeed								= runStatus.maxSpeed;
 	CustomStatus.passedEquilibriumSpeed = runStatus.passedEquilibriumSpeed;
-	CustomStatus.finishTurnaroundFailedToExpire = runStatus.finishTurnaroundFailedToExpire;
+	CustomStatus.finishTurnaroundFailedToExpire =
+		runStatus.finishTurnaroundFailedToExpire;
 
 	Apply(runStatus.m64Diff);
 

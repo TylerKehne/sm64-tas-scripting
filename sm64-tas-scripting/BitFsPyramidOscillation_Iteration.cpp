@@ -2,8 +2,8 @@
 
 bool BitFsPyramidOscillation_Iteration::verification()
 {
-	//Verify Mario is running on the platform
-	MarioState* marioState = *(MarioState**)(game->addr("gMarioState"));
+	// Verify Mario is running on the platform
+	MarioState* marioState = (MarioState*) (game->addr("gMarioStates"));
 
 	Surface* floor = marioState->floor;
 	if (!floor)
@@ -13,11 +13,12 @@ bool BitFsPyramidOscillation_Iteration::verification()
 	if (!floorObject)
 		return false;
 
-	const BehaviorScript* pyramidBehavior = (const BehaviorScript*)(game->addr("bhvBitfsTiltingInvertedPyramid"));
+	const BehaviorScript* pyramidBehavior =
+		(const BehaviorScript*) (game->addr("bhvBitfsTiltingInvertedPyramid"));
 	if (floorObject->behavior != pyramidBehavior)
 		return false;
 
-	//Check that Mario can enter walking action
+	// Check that Mario can enter walking action
 	uint32_t action = marioState->action;
 	if (action != ACT_WALKING && action != ACT_FINISH_TURNING_AROUND)
 		return false;
@@ -27,9 +28,9 @@ bool BitFsPyramidOscillation_Iteration::verification()
 
 bool BitFsPyramidOscillation_Iteration::execution()
 {
-	MarioState* marioState = *(MarioState**)(game->addr("gMarioState"));
-	Camera* camera = *(Camera**)(game->addr("gCamera"));
-	Object* pyramid = marioState->floor->object;
+	MarioState* marioState = (MarioState*) (game->addr("gMarioStates"));
+	Camera* camera				 = *(Camera**) (game->addr("gCamera"));
+	Object* pyramid				 = marioState->floor->object;
 
 	ScriptStatus<BitFsPyramidOscillation_TurnThenRunDownhill> turnRunStatus;
 	for (uint64_t frame = _maxFrame; frame >= _minFrame; frame--)
@@ -39,8 +40,10 @@ bool BitFsPyramidOscillation_Iteration::execution()
 		CustomStatus.initialXzSum = _oscillationParams.initialXzSum;
 		auto status = Execute<BitFsPyramidOscillation_TurnThenRunDownhill>(_oscillationParams);
 
-		//Keep iterating until we get a valid result, then keep iterating until we stop getting better results
-		//Once we get a valid result, we expect successive iterations to be worse (less space to accelerate), but that isn't always true
+		// Keep iterating until we get a valid result, then keep iterating until
+		// we stop getting better results Once we get a valid result, we expect
+		// successive iterations to be worse (less space to accelerate), but
+		// that isn't always true
 		if (!status.validated)
 		{
 			if (turnRunStatus.passedEquilibriumSpeed == 0.0f)
@@ -61,8 +64,10 @@ bool BitFsPyramidOscillation_Iteration::execution()
 	CustomStatus.finalXzSum = turnRunStatus.finalXzSum;
 	CustomStatus.maxSpeed = turnRunStatus.maxSpeed;
 	CustomStatus.passedEquilibriumSpeed = turnRunStatus.passedEquilibriumSpeed;
-	CustomStatus.framePassedEquilibriumPoint = turnRunStatus.framePassedEquilibriumPoint;
-	CustomStatus.finishTurnaroundFailedToExpire = turnRunStatus.finishTurnaroundFailedToExpire;
+	CustomStatus.framePassedEquilibriumPoint =
+		turnRunStatus.framePassedEquilibriumPoint;
+	CustomStatus.finishTurnaroundFailedToExpire =
+		turnRunStatus.finishTurnaroundFailedToExpire;
 
 	Apply(turnRunStatus.m64Diff);
 
