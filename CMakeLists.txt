@@ -6,15 +6,6 @@ project(sm64-tas-scripting
 	LANGUAGES CXX
 )
 
-# Download conan-cmake
-if(NOT EXISTS "${CMAKE_BINARY_DIR}/conan.cmake")
-	message(STATUS "Downloading conan.cmake from https://github.com/conan-io/cmake-conan")
-	file(DOWNLOAD "https://raw.githubusercontent.com/conan-io/cmake-conan/0.17.0/conan.cmake"
-		"${CMAKE_BINARY_DIR}/conan.cmake"
-		TLS_VERIFY ON)
-endif()
-include("${CMAKE_BINARY_DIR}/conan.cmake")
-
 # Check build type
 # https://www.kitware.com/cmake-and-the-default-build-type/
 set(SM64_TASFW_DEFAULT_BUILD "Release")
@@ -29,6 +20,15 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS
     "Debug" "Release" "MinSizeRel" "RelWithDebInfo")
 endif()
+
+# Download conan-cmake
+if(NOT EXISTS "${CMAKE_BINARY_DIR}/conan.cmake")
+	message(STATUS "Downloading conan.cmake from https://github.com/conan-io/cmake-conan")
+	file(DOWNLOAD "https://raw.githubusercontent.com/conan-io/cmake-conan/0.17.0/conan.cmake"
+		"${CMAKE_BINARY_DIR}/conan.cmake"
+		TLS_VERIFY ON)
+endif()
+include("${CMAKE_BINARY_DIR}/conan.cmake")
 
 # Install local packages
 # find_package(Python COMPONENTS Interpreter)
@@ -46,10 +46,14 @@ conan_cmake_configure(
 	GENERATORS cmake_find_package
 )
 
+# Check if generator is multi-config
+get_property(is_multiconfig GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+
 # Setup packages using conan-cmake
-message("Generator is multi-config: ${GENERATOR_IS_MULTI_CONFIG}")
-if(GENERATOR_IS_MULTI_CONFIG)
+message("Generator is multi-config: ${is_multiconfig}")
+if(${is_multiconfig})
 	foreach (TYPE ${CMAKE_CONFIGURATION_TYPES})
+		message(STATUS "Installing Conan data for build type ${TYPE}")
 		conan_cmake_autodetect(SM64_TASFW_SETTINGS BUILD_TYPE ${TYPE})
 		conan_cmake_install(PATH_OR_REFERENCE .
 			BUILD missing
@@ -71,7 +75,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_BINARY_DIR}/CMakeFiles/conan_deps")
 list(APPEND CMAKE_PREFIX_PATH "${CMAKE_BINARY_DIR}/CMakeFiles/conan_deps")
 
 # Import Conan packages
-foreach(PACKAGE IN ITEMS nlohmann_json mtap)
+foreach(PACKAGE IN ITEMS nlohmann_json)
 	find_package(${PACKAGE} REQUIRED)
 endforeach()
 
