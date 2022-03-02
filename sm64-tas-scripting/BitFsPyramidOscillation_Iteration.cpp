@@ -44,7 +44,7 @@ bool BitFsPyramidOscillation_Iteration::execution()
 		// we stop getting better results Once we get a valid result, we expect
 		// successive iterations to be worse (less space to accelerate), but
 		// that isn't always true
-		if (!status.validated)
+		if (!status.asserted)
 		{
 			if (turnRunStatus.passedEquilibriumSpeed == 0.0f)
 				continue;
@@ -58,7 +58,7 @@ bool BitFsPyramidOscillation_Iteration::execution()
 			break;
 	}
 
-	if (!turnRunStatus.validated)
+	if (!turnRunStatus.asserted)
 		return false;
 
 	CustomStatus.finalXzSum = turnRunStatus.finalXzSum;
@@ -74,7 +74,7 @@ bool BitFsPyramidOscillation_Iteration::execution()
 	return true;
 }
 
-bool BitFsPyramidOscillation_Iteration::validation()
+bool BitFsPyramidOscillation_Iteration::assertion()
 {
 	if (BaseStatus.m64Diff.frames.empty())
 		return false;

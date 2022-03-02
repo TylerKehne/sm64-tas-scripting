@@ -66,7 +66,7 @@ bool BitFsPyramidOscillation::execution()
 	oscillationParams.roughTargetNormal = getRoughTargetNormal(_quadrant, -1, initAngle);
 	oscillationParams.roughTargetAngle = initAngleStatus.angleFacing;
 	auto initRunStatus = Modify<BitFsPyramidOscillation_RunDownhill>(oscillationParams);
-	if (!initRunStatus.validated)
+	if (!initRunStatus.asserted)
 		return false;
 
 	// Record initial XZ sum, don't want to decrease this (TODO: optimize angle
@@ -93,7 +93,7 @@ bool BitFsPyramidOscillation::execution()
 
 		//If path was affected by ACT_FINISH_TURNING_AROUND taking too long to expire, retry the PREVIOUS oscillation with braking + quickturn
 		//Then run another oscillation, compare the speeds, and continue with the diff that has the higher speed
-		if (i > 0 && (turnRunStatus.finishTurnaroundFailedToExpire || !turnRunStatus.validated))
+		if (i > 0 && (turnRunStatus.finishTurnaroundFailedToExpire || !turnRunStatus.asserted))
 		{
 			M64Diff nonBrakeDiff = BaseStatus.m64Diff;
 			int64_t minFrameBrake = oscillationMinMaxFrames[i - 1].first;
@@ -104,7 +104,7 @@ bool BitFsPyramidOscillation::execution()
 			oscillationParamsPrev.brake = true;
 			oscillationParamsPrev.initialXzSum = CustomStatus.finalXzSum[i & 1];
 			auto turnRunStatusBrake = Modify<BitFsPyramidOscillation_Iteration>(oscillationParamsPrev, minFrameBrake, maxFrameBrake);
-			if (turnRunStatusBrake.validated)
+			if (turnRunStatusBrake.asserted)
 			{
 				int64_t minFrame2 = turnRunStatusBrake.framePassedEquilibriumPoint;
 				int64_t maxFrame2 = turnRunStatusBrake.m64Diff.frames.rbegin()->first;
@@ -123,7 +123,7 @@ bool BitFsPyramidOscillation::execution()
 		}
 
 		//Terminate when path fails to increase speed and XZ sum target has been reached in both directions
-		if (turnRunStatus.validated
+		if (turnRunStatus.asserted
 			&& (turnRunStatus.passedEquilibriumSpeed > CustomStatus.maxPassedEquilibriumSpeed[i & 1]
 				|| CustomStatus.finalXzSum[(i & 1) ^ 1] < _targetXzSum
 				|| CustomStatus.finalXzSum[(i & 1)] < _targetXzSum))
@@ -144,7 +144,7 @@ bool BitFsPyramidOscillation::execution()
 	return true;
 }
 
-bool BitFsPyramidOscillation::validation()
+bool BitFsPyramidOscillation::assertion()
 {
 	if (!BaseStatus.m64Diff.frames.size())
 		return false;

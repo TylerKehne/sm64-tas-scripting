@@ -42,7 +42,7 @@ bool BitFsPyramidOscillation_TurnAroundAndRunDownhill::execution()
 		// Works with short oscialltion cycles, but takes an extra turnaround
 		// frame
 		auto status = Modify<BrakeToIdle>();
-		if (!status.validated)
+		if (!status.asserted)
 		{
 			CustomStatus.tooDownhill = (marioState->action == ACT_LAVA_BOOST);
 			return false;
@@ -112,7 +112,7 @@ bool BitFsPyramidOscillation_TurnAroundAndRunDownhill::execution()
 	return true;
 }
 
-bool BitFsPyramidOscillation_TurnAroundAndRunDownhill::validation()
+bool BitFsPyramidOscillation_TurnAroundAndRunDownhill::assertion()
 {
 	return !BaseStatus.m64Diff.frames.empty();
 }

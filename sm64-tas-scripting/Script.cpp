@@ -54,30 +54,30 @@ bool Script::execute()
 	return executed;
 }
 
-bool Script::validate()
+bool Script::assert()
 {
-	bool validated = false;
+	bool asserted = false;
 
 	auto start = std::chrono::high_resolution_clock::now();
 	try
 	{
-		validated = validation();
+		asserted = assertion();
 	}
 	catch (exception& e)
 	{
-		BaseStatus.validationThrew = true;
+		BaseStatus.assertionThrew = true;
 
-		// Revert state only if validation throws exception
+		// Revert state only if assertion throws exception
 		Load(_initialFrame);
 	}
 	auto finish = std::chrono::high_resolution_clock::now();
 
-	BaseStatus.validationDuration =
+	BaseStatus.assertionDuration =
 		std::chrono::duration_cast<std::chrono::milliseconds>(finish - start)
 			.count();
 
-	BaseStatus.validated = validated;
-	return validated;
+	BaseStatus.asserted = asserted;
+	return asserted;
 }
 
 Inputs TopLevelScript::GetInputs(uint64_t frame)

@@ -32,7 +32,7 @@ bool GetMinimumDownhillWalkingAngle::execution()
 	s32(*mario_floor_is_slope)(struct MarioState*) = (s32(*)(struct
 	MarioState*))(game->addr("mario_floor_is_slope"));
 
-	bool hackedWalkValidated = false;
+	bool hackedWalkasserted = false;
 
 	//Walk OOB to get Mario's floor after surface updates + platform
 	displacement with no QStep interference int16_t floorAngle = 0; for (float
@@ -40,9 +40,9 @@ bool GetMinimumDownhillWalkingAngle::execution()
 	{
 			auto status = Test<TryHackedWalkOutOfBounds>(walkSpeed);
 
-			if (status.validated)
+			if (status.asserted)
 			{
-					hackedWalkValidated = true;
+					hackedWalkasserted = true;
 					floorAngle = status.floorAngle;
 					CustomStatus.isSlope = mario_floor_is_slope(marioState);
 					break;
@@ -55,7 +55,7 @@ bool GetMinimumDownhillWalkingAngle::execution()
 	is impossible if (status.endAction | ACT_FLAG_INVULNERABLE) return false;
 	}
 
-	if (!hackedWalkValidated)
+	if (!hackedWalkasserted)
 			return false;
 	*/
 
@@ -109,7 +109,7 @@ bool GetMinimumDownhillWalkingAngle::execution()
 	return true;
 }
 
-bool GetMinimumDownhillWalkingAngle::validation()
+bool GetMinimumDownhillWalkingAngle::assertion()
 {
 	return CustomStatus.isSlope;
 }

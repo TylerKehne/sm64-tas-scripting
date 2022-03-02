@@ -42,7 +42,7 @@ bool BrakeToIdle::execution()
 
 	// Quickturn uphill
 	auto status = Test<GetMinimumDownhillWalkingAngle>(marioState->faceAngle[1]);
-	if (!status.validated)
+	if (!status.asserted)
 		return false;
 
 	// Get closest cardinal controller input to uphill angle
@@ -66,7 +66,7 @@ bool BrakeToIdle::execution()
 	return true;
 }
 
-bool BrakeToIdle::validation()
+bool BrakeToIdle::assertion()
 {
 	MarioState* marioState = (MarioState*) (game->addr("gMarioStates"));
 	if (marioState->action != ACT_IDLE)

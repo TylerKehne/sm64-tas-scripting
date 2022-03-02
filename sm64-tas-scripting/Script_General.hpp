@@ -33,7 +33,7 @@ public:
 
 	bool verification();
 	bool execution();
-	bool validation();
+	bool assertion();
 
 private:
 	int16_t _faceAngle;
@@ -62,7 +62,7 @@ public:
 
 	bool verification();
 	bool execution();
-	bool validation();
+	bool assertion();
 
 private:
 	float _speed;
@@ -82,7 +82,7 @@ public:
 
 	bool verification();
 	bool execution();
-	bool validation();
+	bool assertion();
 };
 
 #endif

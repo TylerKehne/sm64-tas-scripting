@@ -50,7 +50,7 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill::execution()
 	{
 		auto status = Execute<BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle>(_oscillationParams, angle);
 
-		if (!status.validated)
+		if (!status.asserted)
 		{
 			if (status.tooDownhill)
 				break;
@@ -68,7 +68,7 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill::execution()
 	{
 		auto status = Execute<BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle>(_oscillationParams, angle);
 
-		if (!status.validated)
+		if (!status.asserted)
 		{
 			if (status.tooUphill)
 				break;
@@ -80,7 +80,7 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill::execution()
 			runStatus = status;
 	}
 
-	if (!runStatus.validated)
+	if (!runStatus.asserted)
 		return false;
 
 	CustomStatus.finalXzSum = runStatus.finalXzSum;
@@ -93,10 +93,10 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill::execution()
 
 	Apply(runStatus.m64Diff);
 
-	return runStatus.validated;
+	return runStatus.asserted;
 }
 
-bool BitFsPyramidOscillation_TurnThenRunDownhill::validation()
+bool BitFsPyramidOscillation_TurnThenRunDownhill::assertion()
 {
 	if (BaseStatus.m64Diff.frames.empty())
 		return false;

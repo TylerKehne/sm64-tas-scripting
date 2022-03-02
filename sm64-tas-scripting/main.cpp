@@ -35,7 +35,7 @@ public:
 		return true;
 	}
 
-	bool validation()
+	bool assertion()
 	{
 		// Save m64Diff to M64
 		for (auto& [frame, inputs]: BaseStatus.m64Diff.frames)

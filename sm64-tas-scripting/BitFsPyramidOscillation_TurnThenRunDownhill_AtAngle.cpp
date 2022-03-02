@@ -93,7 +93,7 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::execution()
 		auto status = Execute<BitFsPyramidOscillation_TurnAroundAndRunDownhill>(_oscillationParams);
 
 		// Something weird happened, terminate
-		if (!status.validated)
+		if (!status.asserted)
 			break;
 
 		// We've gone too far uphill, terminate
@@ -117,7 +117,7 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::execution()
 		AdvanceFrameWrite(Inputs(0, inputs.first, inputs.second));
 	}
 
-	if (!runDownhillStatus.validated)
+	if (!runDownhillStatus.asserted)
 	{
 		// We want to record if these flags are set without any additional
 		// running frames This tells the caller that the angle paramter is
@@ -146,7 +146,7 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::execution()
 	return true;
 }
 
-bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::validation()
+bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::assertion()
 {
 	if (BaseStatus.m64Diff.frames.empty())
 		return false;

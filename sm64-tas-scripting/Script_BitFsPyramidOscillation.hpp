@@ -36,7 +36,7 @@ public:
 
 	bool verification();
 	bool execution();
-	bool validation();
+	bool assertion();
 
 private:
 	float _targetXzSum = 0;
@@ -66,7 +66,7 @@ public:
 
 	bool verification();
 	bool execution();
-	bool validation();
+	bool assertion();
 
 private:
 	int32_t _minFrame = -1;
@@ -94,7 +94,7 @@ public:
 
 	bool verification();
 	bool execution();
-	bool validation();
+	bool assertion();
 
 private:
 	BitFsPyramidOscillation_ParamsDto _oscillationParams;
@@ -124,7 +124,7 @@ public:
 
 	bool verification();
 	bool execution();
-	bool validation();
+	bool assertion();
 
 private:
 	int16_t _angle;
@@ -153,7 +153,7 @@ public:
 
 	bool verification();
 	bool execution();
-	bool validation();
+	bool assertion();
 
 private:
 	BitFsPyramidOscillation_ParamsDto _oscillationParams;
@@ -186,7 +186,7 @@ public:
 
 	bool verification();
 	bool execution();
-	bool validation();
+	bool assertion();
 
 private:
 	BitFsPyramidOscillation_ParamsDto _oscillationParams;

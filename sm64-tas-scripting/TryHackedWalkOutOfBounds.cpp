@@ -33,7 +33,7 @@ bool TryHackedWalkOutOfBounds::execution()
 	return true;
 }
 
-bool TryHackedWalkOutOfBounds::validation()
+bool TryHackedWalkOutOfBounds::assertion()
 {
 	float hDistMoved = sqrtf(
 		pow(CustomStatus.endPos[0] - CustomStatus.startPos[0], 2) +
