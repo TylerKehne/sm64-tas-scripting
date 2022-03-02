@@ -1,15 +1,9 @@
 #pragma once
 #include <unordered_map>
-#include "Camera.hpp"
-#include "Game.hpp"
-#include "Inputs.hpp"
-#include "ObjectFields.hpp"
-#include "Sm64.hpp"
-#include "Trig.hpp"
-#include "Types.hpp"
+#include <tasfw/Game.hpp>
+#include <tasfw/Inputs.hpp>
+#include <sm64/Types.hpp>
 
-#ifndef SCRIPT_H
-	#define SCRIPT_H
 
 class Script;
 
@@ -194,8 +188,3 @@ public:
 protected:
 	M64& _m64;
 };
-
-	#include "Script_BitFsPyramidOscillation.hpp"
-	#include "Script_General.hpp"
-
-#endif

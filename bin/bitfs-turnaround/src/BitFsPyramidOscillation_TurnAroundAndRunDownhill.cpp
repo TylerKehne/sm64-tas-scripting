@@ -1,7 +1,9 @@
-#include "Camera.hpp"
-#include "Script.hpp"
-#include "Sm64.hpp"
-#include "Types.hpp"
+#include "ScriptDefs.hpp"
+
+#include <sm64/Camera.hpp>
+#include <tasfw/Script.hpp>
+#include <sm64/Sm64.hpp>
+#include <sm64/Types.hpp>
 
 bool BitFsPyramidOscillation_TurnAroundAndRunDownhill::verification()
 {

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "UltraTypes.hpp"
+#include <sm64/UltraTypes.hpp>
 
 typedef f32 Vec2f[2];
 typedef f32 Vec3f[3];	 // X, Y, Z, where Y is up

@@ -1,6 +1,6 @@
 #pragma once
-#include "Types.hpp"
-#include "UltraTypes.hpp"
+#include <sm64/Types.hpp>
+#include <sm64/UltraTypes.hpp>
 
 /**
  * The main camera struct. Gets updated by the active camera mode and the

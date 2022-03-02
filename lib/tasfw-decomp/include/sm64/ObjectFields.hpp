@@ -1,5 +1,5 @@
 #pragma once
-#include "Types.hpp"
+#include <sm64/Types.hpp>
 
 #ifndef OBJECT_FIELDS_H
 	#define OBJECT_FIELDS_H

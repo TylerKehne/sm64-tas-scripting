@@ -1,4 +1,4 @@
-#include "surface.hpp"
+#include <sm64/Surface.hpp>
 #include <cmath>
 
 void find_floor(

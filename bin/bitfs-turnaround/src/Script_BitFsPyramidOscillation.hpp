@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Script.hpp"
+#include <tasfw/Script.hpp>
 
 #ifndef SCRIPT_BITFS_PYRAMID_OSCILLATION_H
 	#define SCRIPT_BITFS_PYRAMID_OSCILLATION_H

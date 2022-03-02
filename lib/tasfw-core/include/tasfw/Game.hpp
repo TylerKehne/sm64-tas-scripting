@@ -5,8 +5,8 @@
 #include <unordered_map>
 #include <vector>
 
-#include "Inputs.hpp"
-#include "SharedLib.hpp"
+#include <tasfw/Inputs.hpp>
+#include <tasfw/SharedLib.hpp>
 
 #ifndef GAME_H
 	#define GAME_H

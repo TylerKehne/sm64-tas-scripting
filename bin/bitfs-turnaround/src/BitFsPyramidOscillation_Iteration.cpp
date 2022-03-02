@@ -1,4 +1,6 @@
-#include "Script.hpp"
+#include "ScriptDefs.hpp"
+#include <sm64/Camera.hpp>
+#include <tasfw/Script.hpp>
 
 bool BitFsPyramidOscillation_Iteration::verification()
 {

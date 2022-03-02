@@ -1,7 +1,10 @@
-#include "Camera.hpp"
-#include "Script.hpp"
-#include "Sm64.hpp"
-#include "Types.hpp"
+#include <sm64/Camera.hpp>
+#include <sm64/Sm64.hpp>
+#include <sm64/Types.hpp>
+
+#include <tasfw/Script.hpp>
+
+#include "ScriptDefs.hpp"
 
 #include <cmath>
 

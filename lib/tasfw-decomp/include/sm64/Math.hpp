@@ -1,5 +1,5 @@
 #pragma once
-#include "Types.hpp"
+#include <sm64/Types.hpp>
 
 #ifndef MATH_H
 	#define MATH_H

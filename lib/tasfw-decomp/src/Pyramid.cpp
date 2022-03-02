@@ -1,10 +1,10 @@
-#include "pyramid.hpp"
+#include <sm64/Pyramid.hpp>
 #include <cmath>
-#include "ObjectFields.hpp"
-#include "Trig.hpp"
-#include "Types.hpp"
-#include "math.hpp"
-#include "surface.hpp"
+#include <sm64/ObjectFields.hpp>
+#include <sm64/Trig.hpp>
+#include <sm64/Types.hpp>
+#include <sm64/Math.hpp>
+#include <sm64/Surface.hpp>
 
 bool simulate_platform_tilt(
 	struct Object* marioObj, struct Object* pyramidPlatform, short* floorAngle,

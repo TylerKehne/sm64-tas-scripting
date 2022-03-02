@@ -1,9 +1,6 @@
 #pragma once
 
-#include "Script.hpp"
-
-#ifndef SCRIPT_GENERAL_H
-	#define SCRIPT_GENERAL_H
+#include <tasfw/Script.hpp>
 
 class GetMinimumDownhillWalkingAngle : public Script
 {
@@ -84,5 +81,3 @@ public:
 	bool execution();
 	bool validation();
 };
-
-#endif

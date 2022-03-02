@@ -1,14 +1,11 @@
-#include "Inputs.hpp"
+#include <tasfw/Inputs.hpp>
 #include <sys/types.h>
 #include <ios>
 #include <system_error>
-#include "Game.hpp"
-#include "Trig.hpp"
-
-#define __STDC_LIB_EXT1__
+#include <tasfw/Game.hpp>
+#include <sm64/Trig.hpp>
 
 #include <cmath>
-#include <cstdio>
 #include <iostream>
 #include <fstream>
 #include <limits>

@@ -8,13 +8,15 @@
 #include <memory>
 #include <optional>
 
+#include <tasfw/Game.hpp>
+#include <tasfw/Inputs.hpp>
+#include <tasfw/Script.hpp>
+#include <sm64/Camera.hpp>
+#include <sm64/Trig.hpp>
+#include <sm64/Types.hpp>
+
 #include "BitFsConfig.hpp"
-#include "Camera.hpp"
-#include "Game.hpp"
-#include "Inputs.hpp"
-#include "Script.hpp"
-#include "Trig.hpp"
-#include "Types.hpp"
+#include "ScriptDefs.hpp"
 
 using namespace std;
 

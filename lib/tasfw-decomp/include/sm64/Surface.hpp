@@ -1,5 +1,5 @@
 #pragma once
-#include "Types.hpp"
+#include <sm64/Types.hpp>
 
 #ifndef SURFACE_H
 	#define SURFACE_H

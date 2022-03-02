@@ -1,5 +1,8 @@
+#include "ScriptDefs.hpp"
+
 #include <cmath>
-#include "Script.hpp"
+#include <tasfw/Script.hpp>
+#include <sm64/Camera.hpp>
 
 bool BitFsPyramidOscillation_TurnThenRunDownhill::verification()
 {
