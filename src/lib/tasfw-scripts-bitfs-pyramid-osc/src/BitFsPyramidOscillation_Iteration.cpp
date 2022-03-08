@@ -1,5 +1,7 @@
-#include "ScriptDefs.hpp"
+#include <tasfw/scripts/BitFSPyramidOscillation.hpp>
+
 #include <sm64/Camera.hpp>
+#include <sm64/Sm64.hpp>
 #include <tasfw/Script.hpp>
 
 bool BitFsPyramidOscillation_Iteration::verification()
@@ -31,16 +33,17 @@ bool BitFsPyramidOscillation_Iteration::verification()
 bool BitFsPyramidOscillation_Iteration::execution()
 {
 	MarioState* marioState = (MarioState*) (game->addr("gMarioStates"));
-	Camera* camera				 = *(Camera**) (game->addr("gCamera"));
-	Object* pyramid				 = marioState->floor->object;
+	Camera* camera		   = *(Camera**) (game->addr("gCamera"));
+	Object* pyramid		   = marioState->floor->object;
 
 	ScriptStatus<BitFsPyramidOscillation_TurnThenRunDownhill> turnRunStatus;
 	for (uint64_t frame = _maxFrame; frame >= _minFrame; frame--)
 	{
 		Load(frame);
 		CustomStatus.speedBeforeTurning = marioState->forwardVel;
-		CustomStatus.initialXzSum = _oscillationParams.initialXzSum;
-		auto status = Execute<BitFsPyramidOscillation_TurnThenRunDownhill>(_oscillationParams);
+		CustomStatus.initialXzSum		= _oscillationParams.initialXzSum;
+		auto status = Execute<BitFsPyramidOscillation_TurnThenRunDownhill>(
+			_oscillationParams);
 
 		// Keep iterating until we get a valid result, then keep iterating until
 		// we stop getting better results Once we get a valid result, we expect
@@ -54,7 +57,8 @@ bool BitFsPyramidOscillation_Iteration::execution()
 				break;
 		}
 
-		if (status.passedEquilibriumSpeed > turnRunStatus.passedEquilibriumSpeed)
+		if (status.passedEquilibriumSpeed >
+			turnRunStatus.passedEquilibriumSpeed)
 			turnRunStatus = status;
 		else if (status.maxSpeed == 0.0f)
 			break;
@@ -63,8 +67,8 @@ bool BitFsPyramidOscillation_Iteration::execution()
 	if (!turnRunStatus.validated)
 		return false;
 
-	CustomStatus.finalXzSum = turnRunStatus.finalXzSum;
-	CustomStatus.maxSpeed = turnRunStatus.maxSpeed;
+	CustomStatus.finalXzSum				= turnRunStatus.finalXzSum;
+	CustomStatus.maxSpeed				= turnRunStatus.maxSpeed;
 	CustomStatus.passedEquilibriumSpeed = turnRunStatus.passedEquilibriumSpeed;
 	CustomStatus.framePassedEquilibriumPoint =
 		turnRunStatus.framePassedEquilibriumPoint;

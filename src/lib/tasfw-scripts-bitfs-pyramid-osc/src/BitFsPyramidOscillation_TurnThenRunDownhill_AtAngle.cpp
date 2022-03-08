@@ -1,8 +1,10 @@
-#include "ScriptDefs.hpp"
+#include <tasfw/scripts/BitFSPyramidOscillation.hpp>
+#include <tasfw/scripts/General.hpp>
 
 #include <cmath>
 #include <tasfw/Script.hpp>
 #include <sm64/Camera.hpp>
+#include <sm64/Sm64.hpp>
 
 bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::verification()
 {

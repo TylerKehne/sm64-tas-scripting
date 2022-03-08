@@ -1,10 +1,12 @@
-#include "ScriptDefs.hpp"
+#include <tasfw/scripts/BitFSPyramidOscillation.hpp>
+#include <tasfw/scripts/General.hpp>
 
 #include <sm64/Camera.hpp>
 #include <sm64/Sm64.hpp>
 #include <sm64/Types.hpp>
 #include <sm64/Trig.hpp>
 #include <tasfw/Script.hpp>
+#include <sm64/ObjectFields.hpp>
 
 #include <cmath>
 

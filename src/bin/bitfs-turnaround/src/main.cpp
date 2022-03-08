@@ -15,8 +15,10 @@
 #include <sm64/Trig.hpp>
 #include <sm64/Types.hpp>
 
+#include <tasfw/scripts/General.hpp>
+#include <tasfw/scripts/BitFSPyramidOscillation.hpp>
+
 #include "BitFsConfig.hpp"
-#include "ScriptDefs.hpp"
 
 using namespace std;
 
