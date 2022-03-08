@@ -88,9 +88,9 @@ foreach(PACKAGE IN ITEMS nlohmann_json)
 endforeach()
 
 # Library components
-add_subdirectory(lib/tasfw-decomp)
-add_subdirectory(lib/tasfw-core)
+add_subdirectory(src/lib/tasfw-decomp)
+add_subdirectory(src/lib/tasfw-core)
 
-add_subdirectory(bin/bitfs-turnaround)
+add_subdirectory(src/bin/bitfs-turnaround)
 
 set(target_list tasfw-core tasfw-decomp bitfs-turn)
