@@ -1,0 +1,4 @@
+{
+	"libsm64": "/path/to/libsm64.so",
+	"m64_file": "/path/to/m64_file.m64"
+}

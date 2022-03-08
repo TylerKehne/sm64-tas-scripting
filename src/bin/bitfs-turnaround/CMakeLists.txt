@@ -16,3 +16,9 @@ target_link_libraries(bitfs-turn PRIVATE
 
 include(MatchArchFlag)
 match_arch_and_ipo(bitfs-turn)
+
+add_custom_command(TARGET bitfs-turn POST_BUILD
+	COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/config.json "$<TARGET_FILE_DIR:bitfs-turn>/config.json"
+	COMMENT "Copying config.json for bitfs-turn"
+	VERBATIM
+)
