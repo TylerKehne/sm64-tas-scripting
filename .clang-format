@@ -3,10 +3,10 @@ Language: Cpp
 BasedOnStyle: Chromium
 
 UseTab: Always
-TabWidth: 2
-IndentWidth: 2
+TabWidth: 4
+IndentWidth: 4
 
-AccessModifierOffset: -2
+AccessModifierOffset: -4
 AlignAfterOpenBracket: AlwaysBreak
 AlignConsecutiveAssignments: Consecutive
 AlignEscapedNewlines: Left
@@ -25,8 +25,8 @@ BreakStringLiterals: false
 BreakInheritanceList: AfterColon
 BreakConstructorInitializers: AfterColon
 
-ContinuationIndentWidth: 2
-ConstructorInitializerIndentWidth: 2
+ContinuationIndentWidth: 4
+ConstructorInitializerIndentWidth: 4
 
 Cpp11BracedListStyle: true
 IncludeCategories:

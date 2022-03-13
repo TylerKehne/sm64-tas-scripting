@@ -3,5 +3,5 @@
     "--compile-commands-dir=build"
   ],
   "editor.insertSpaces": false,
-	"editor.tabSize": 2
+	"editor.tabSize": 4
 }
