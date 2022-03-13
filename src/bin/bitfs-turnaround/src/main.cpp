@@ -29,7 +29,7 @@ class MainScript : public TopLevelScript
 public:
 	MainScript(M64& m64, Game* game) : TopLevelScript(m64, game) {}
 
-	bool verification() { return true; }
+	bool validation() { return true; }
 
 	bool execution()
 	{
@@ -39,7 +39,7 @@ public:
 		return true;
 	}
 
-	bool validation()
+	bool assertion()
 	{
 		// Save m64Diff to M64
 		for (auto& [frame, inputs]: BaseStatus.m64Diff.frames)

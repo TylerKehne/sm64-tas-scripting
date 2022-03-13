@@ -34,9 +34,9 @@ public:
 	BitFsPyramidOscillation(Script* parentScript, float targetXzSum, int quadrant)
 		: Script(parentScript), _targetXzSum(targetXzSum), _quadrant(quadrant) {}
 
-	bool verification();
-	bool execution();
 	bool validation();
+	bool execution();
+	bool assertion();
 
 private:
 	float _targetXzSum = 0;
@@ -64,9 +64,9 @@ public:
 	BitFsPyramidOscillation_Iteration(Script* parentScript, BitFsPyramidOscillation_ParamsDto oscillationParams, int32_t minFrame, int32_t maxFrame)
 		: Script(parentScript), _oscillationParams(oscillationParams), _minFrame(minFrame), _maxFrame(maxFrame) {}
 
-	bool verification();
-	bool execution();
 	bool validation();
+	bool execution();
+	bool assertion();
 
 private:
 	int32_t _minFrame = -1;
@@ -92,9 +92,9 @@ public:
 	BitFsPyramidOscillation_TurnThenRunDownhill(Script* parentScript, BitFsPyramidOscillation_ParamsDto oscillationParams)
 		: Script(parentScript), _oscillationParams(oscillationParams) {}
 
-	bool verification();
-	bool execution();
 	bool validation();
+	bool execution();
+	bool assertion();
 
 private:
 	BitFsPyramidOscillation_ParamsDto _oscillationParams;
@@ -122,9 +122,9 @@ public:
 		Script* parentScript, BitFsPyramidOscillation_ParamsDto oscillationParams, int16_t angle)
 		: Script(parentScript), _oscillationParams(oscillationParams), _angle(angle){}
 
-	bool verification();
-	bool execution();
 	bool validation();
+	bool execution();
+	bool assertion();
 
 private:
 	int16_t _angle;
@@ -151,9 +151,9 @@ public:
 		Script* parentScript, BitFsPyramidOscillation_ParamsDto oscillationParams)
 		: Script(parentScript), _oscillationParams(oscillationParams) {}
 
-	bool verification();
-	bool execution();
 	bool validation();
+	bool execution();
+	bool assertion();
 
 private:
 	BitFsPyramidOscillation_ParamsDto _oscillationParams;
@@ -184,9 +184,9 @@ public:
 	BitFsPyramidOscillation_RunDownhill(Script* parentScript, BitFsPyramidOscillation_ParamsDto oscillationParams)
 		: Script(parentScript), _oscillationParams(oscillationParams) {}
 
-	bool verification();
-	bool execution();
 	bool validation();
+	bool execution();
+	bool assertion();
 
 private:
 	BitFsPyramidOscillation_ParamsDto _oscillationParams;

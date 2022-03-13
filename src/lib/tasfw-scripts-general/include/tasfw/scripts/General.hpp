@@ -28,9 +28,9 @@ public:
 	{
 	}
 
-	bool verification();
-	bool execution();
 	bool validation();
+	bool execution();
+	bool assertion();
 
 private:
 	int16_t _faceAngle;
@@ -57,9 +57,9 @@ public:
 	{
 	}
 
-	bool verification();
-	bool execution();
 	bool validation();
+	bool execution();
+	bool assertion();
 
 private:
 	float _speed;
@@ -77,7 +77,7 @@ public:
 
 	BrakeToIdle(Script* parentScript) : Script(parentScript) {}
 
-	bool verification();
-	bool execution();
 	bool validation();
+	bool execution();
+	bool assertion();
 };

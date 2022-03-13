@@ -19,7 +19,7 @@ int16_t getRoughTargetNormal(
 	return iteration & 1 ? baseAngle + 0x8000 : baseAngle;
 }
 
-bool BitFsPyramidOscillation::verification()
+bool BitFsPyramidOscillation::validation()
 {
 	// Check if Mario is on the pyramid platform
 	MarioState* marioState = (MarioState*) (game->addr("gMarioStates"));
@@ -74,7 +74,7 @@ bool BitFsPyramidOscillation::execution()
 	oscillationParams.roughTargetAngle = initAngleStatus.angleFacing;
 	auto initRunStatus =
 		Modify<BitFsPyramidOscillation_RunDownhill>(oscillationParams);
-	if (!initRunStatus.validated)
+	if (!initRunStatus.asserted)
 		return false;
 
 	// Record initial XZ sum, don't want to decrease this (TODO: optimize angle
@@ -111,7 +111,7 @@ bool BitFsPyramidOscillation::execution()
 		// diff that has the higher speed
 		if (i > 0 &&
 			(turnRunStatus.finishTurnaroundFailedToExpire ||
-			 !turnRunStatus.validated))
+			 !turnRunStatus.asserted))
 		{
 			M64Diff nonBrakeDiff	   = BaseStatus.m64Diff;
 			int64_t minFrameBrake	   = oscillationMinMaxFrames[i - 1].first;
@@ -125,7 +125,7 @@ bool BitFsPyramidOscillation::execution()
 			oscillationParamsPrev.initialXzSum = CustomStatus.finalXzSum[i & 1];
 			auto turnRunStatusBrake = Modify<BitFsPyramidOscillation_Iteration>(
 				oscillationParamsPrev, minFrameBrake, maxFrameBrake);
-			if (turnRunStatusBrake.validated)
+			if (turnRunStatusBrake.asserted)
 			{
 				int64_t minFrame2 =
 					turnRunStatusBrake.framePassedEquilibriumPoint;
@@ -151,7 +151,7 @@ bool BitFsPyramidOscillation::execution()
 
 		// Terminate when path fails to increase speed and XZ sum target has
 		// been reached in both directions
-		if (turnRunStatus.validated &&
+		if (turnRunStatus.asserted &&
 			(turnRunStatus.passedEquilibriumSpeed >
 				 CustomStatus.maxPassedEquilibriumSpeed[i & 1] ||
 			 CustomStatus.finalXzSum[(i & 1) ^ 1] < _targetXzSum ||
@@ -174,7 +174,7 @@ bool BitFsPyramidOscillation::execution()
 	return true;
 }
 
-bool BitFsPyramidOscillation::validation()
+bool BitFsPyramidOscillation::assertion()
 {
 	if (!BaseStatus.m64Diff.frames.size())
 		return false;
