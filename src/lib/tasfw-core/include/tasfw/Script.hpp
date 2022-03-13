@@ -10,15 +10,15 @@ class Script;
 class BaseScriptStatus
 {
 public:
-	bool verified									= false;
+	bool validated									= false;
 	bool executed									= false;
-	bool validated								= false;
-	bool verificationThrew				= false;
+	bool asserted								= false;
+	bool validationThrew				= false;
 	bool executionThrew						= false;
-	bool validationThrew					= false;
-	uint64_t verificationDuration = 0;
+	bool assertionThrew					= false;
+	uint64_t validationDuration = 0;
 	uint64_t executionDuration		= 0;
-	uint64_t validationDuration		= 0;
+	uint64_t assertionDuration		= 0;
 	uint64_t nLoads								= 0;
 	uint64_t nSaves								= 0;
 	uint64_t nFrameAdvances				= 0;
@@ -85,8 +85,8 @@ protected:
 
 		TScript script = TScript(this, std::forward<Us>(params)...);
 
-		if (script.verify() && script.execute())
-			script.validate();
+		if (script.checkPreconditions() && script.execute())
+			script.checkPostconditions();
 
 		// Load if necessary
 		Revert(initialFrame, script.BaseStatus.m64Diff);
@@ -104,7 +104,7 @@ protected:
 	{
 		ScriptStatus<TScript> status =
 			Execute<TScript>(std::forward<Us>(params)...);
-		if (status.validated)
+		if (status.asserted)
 			Apply(status.m64Diff);
 
 		return status;
@@ -122,9 +122,9 @@ protected:
 		return status;
 	}
 
-	bool verify();
+	bool checkPreconditions();
 	bool execute();
-	bool validate();
+	bool checkPostconditions();
 
 	// TODO: move this method to some utility class
 	template <typename T>
@@ -143,9 +143,9 @@ protected:
 	void Load(uint64_t frame);
 	void Rollback(uint64_t frame);
 
-	virtual bool verification() = 0;
+	virtual bool validation() = 0;
 	virtual bool execution()		= 0;
-	virtual bool validation()		= 0;
+	virtual bool assertion()		= 0;
 
 private:
 	std::pair<uint64_t, Slot*> GetLatestSave(uint64_t frame);
@@ -172,16 +172,16 @@ public:
 
 		TTopLevelScript script = TTopLevelScript(m64, &game);
 
-		if (script.verify() && script.execute())
-			script.validate();
+		if (script.checkPreconditions() && script.execute())
+			script.checkPostconditions();
 
 		return ScriptStatus<TTopLevelScript>(
 			script.BaseStatus, script.CustomStatus);
 	}
 
-	virtual bool verification() override = 0;
+	virtual bool validation() override = 0;
 	virtual bool execution() override		 = 0;
-	virtual bool validation() override	 = 0;
+	virtual bool assertion() override	 = 0;
 
 	Inputs GetInputs(uint64_t frame) override;
 

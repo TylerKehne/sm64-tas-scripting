@@ -10,7 +10,7 @@
 
 #include <cmath>
 
-bool BitFsPyramidOscillation_RunDownhill::verification()
+bool BitFsPyramidOscillation_RunDownhill::validation()
 {
 	// Check if Mario is on the pyramid platform
 	MarioState* marioState = (MarioState*) (game->addr("gMarioStates"));
@@ -88,7 +88,7 @@ bool BitFsPyramidOscillation_RunDownhill::execution()
 		// Record whether downhill angle attempt was successful + optimal
 		CustomScriptStatus::FrameInputStatus frameStatus;
 
-		if (!status.validated)
+		if (!status.asserted)
 			frameStatus.isAngleDownhill = false;
 		else if (marioState->faceAngle[1] == status.angleFacing)
 			frameStatus.isAngleDownhill = true;
@@ -161,7 +161,7 @@ bool BitFsPyramidOscillation_RunDownhill::execution()
 	return true;
 }
 
-bool BitFsPyramidOscillation_RunDownhill::validation()
+bool BitFsPyramidOscillation_RunDownhill::assertion()
 {
 	if (!BaseStatus.m64Diff.frames.size())
 		return false;

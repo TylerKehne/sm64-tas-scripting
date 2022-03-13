@@ -6,7 +6,7 @@
 #include <sm64/Pyramid.hpp>
 #include <sm64/Surface.hpp>
 
-bool GetMinimumDownhillWalkingAngle::verification()
+bool GetMinimumDownhillWalkingAngle::validation()
 {
 	// Check if Mario is on the pyramid platform
 	MarioState* marioState = (MarioState*) (game->addr("gMarioStates"));
@@ -42,7 +42,7 @@ bool GetMinimumDownhillWalkingAngle::execution()
 	{
 			auto status = Test<TryHackedWalkOutOfBounds>(walkSpeed);
 
-			if (status.validated)
+			if (status.asserted)
 			{
 					hackedWalkValidated = true;
 					floorAngle = status.floorAngle;
@@ -111,7 +111,7 @@ bool GetMinimumDownhillWalkingAngle::execution()
 	return true;
 }
 
-bool GetMinimumDownhillWalkingAngle::validation()
+bool GetMinimumDownhillWalkingAngle::assertion()
 {
 	return CustomStatus.isSlope;
 }
