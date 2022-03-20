@@ -1,8 +1,7 @@
 #pragma once
 
-#include <string.h>
+#include <cstring>
 #include <iostream>
-#include <unordered_map>
 #include <vector>
 
 #include <tasfw/Inputs.hpp>
@@ -12,13 +11,11 @@
 #ifndef GAME_H
 	#define GAME_H
 
-using namespace std;
-
 // structs like this can be aggregate-initialized
 // like SegVal {".data", 0xDEADBEEF, 12345678};
 struct SegVal
 {
-	string name;
+	std::string name;
 	void* address;
 	size_t length;
 
@@ -36,8 +33,8 @@ class Slot
 public:
 	std::vector<uint8_t> buf1;
 	std::vector<uint8_t> buf2;
-	Game* game = NULL;
-	Script* script = NULL;
+	Game* game = nullptr;
+	Script* script = nullptr;
 	int64_t frame = -1;
 
 	Slot() = default;
@@ -121,7 +118,7 @@ public:
 	void load_state(int64_t slotId);
 	void* addr(const char* symbol);
 	uint32_t getCurrentFrame();
-	bool shouldSave(uint64_t framesSinceLastSave);
+	bool shouldSave(uint64_t framesSinceLastSave) const;
 
 private:
 	friend class Slot;

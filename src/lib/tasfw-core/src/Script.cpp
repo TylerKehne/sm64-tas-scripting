@@ -10,7 +10,7 @@ bool Script::checkPreconditions()
 	{
 		validated = validation();
 	}
-	catch (exception& e)
+	catch (std::exception& e)
 	{
 		BaseStatus.validationThrew = true;
 	}
@@ -36,7 +36,7 @@ bool Script::execute()
 	{
 		executed = execution();
 	}
-	catch (exception& e)
+	catch (std::exception& e)
 	{
 		BaseStatus.executionThrew = true;
 	}
@@ -63,7 +63,7 @@ bool Script::checkPostconditions()
 	{
 		asserted = assertion();
 	}
-	catch (exception& e)
+	catch (std::exception& e)
 	{
 		BaseStatus.assertionThrew = true;
 
@@ -82,9 +82,9 @@ bool Script::checkPostconditions()
 
 Inputs TopLevelScript::GetInputs(uint64_t frame)
 {
-	if (BaseStatus.m64Diff.frames.count(frame))
+	if (BaseStatus.m64Diff.frames.contains(frame))
 		return BaseStatus.m64Diff.frames[frame];
-	else if (_m64.frames.count(frame))
+	else if (_m64.frames.contains(frame))
 		return _m64.frames[frame];
 
 	return Inputs(0, 0, 0);
@@ -144,7 +144,7 @@ void Script::Apply(const M64Diff& m64Diff)
 	{
 		// Use default inputs if diff doesn't override them
 		auto inputs = GetInputs(currentFrame);
-		if (m64Diff.frames.count(currentFrame))
+		if (m64Diff.frames.contains(currentFrame))
 		{
 			inputs = m64Diff.frames.at(currentFrame);
 			BaseStatus.m64Diff.frames[currentFrame] = inputs;
@@ -160,7 +160,7 @@ void Script::Apply(const M64Diff& m64Diff)
 
 Inputs Script::GetInputs(uint64_t frame)
 {
-	if (BaseStatus.m64Diff.frames.count(frame))
+	if (BaseStatus.m64Diff.frames.contains(frame))
 		return BaseStatus.m64Diff.frames[frame];
 	else if (_parentScript)
 		return _parentScript->GetInputs(frame);
@@ -171,13 +171,13 @@ Inputs Script::GetInputs(uint64_t frame)
 std::pair<uint64_t, SlotHandle*> Script::GetLatestSave(uint64_t frame)
 {
 	auto save =
-		saveBank.size() ? std::prev(saveBank.upper_bound(frame)) : saveBank.end();
+		saveBank.empty() ? saveBank.end() : std::prev(saveBank.upper_bound(frame));
 	if (save == saveBank.end())
 	{
 		Script* parentScript = _parentScript;
 		// Don't search past start of m64 diff to avoid desync
 		uint64_t earlyFrame = !BaseStatus.m64Diff.frames.empty() ?
-			min(BaseStatus.m64Diff.frames.begin()->first, frame) :
+			std::min(BaseStatus.m64Diff.frames.begin()->first, frame) :
 			frame;
 		if (parentScript)
 			return parentScript->GetLatestSave(earlyFrame);
@@ -253,8 +253,8 @@ void Script::Save()
 	{
 		saveBank.emplace(
 			std::piecewise_construct,
-			forward_as_tuple(currentFrame),
-			forward_as_tuple(game, game->save_state(this, currentFrame)));
+			std::forward_as_tuple(currentFrame),
+			std::forward_as_tuple(game, game->save_state(this, currentFrame)));
 		BaseStatus.nSaves++;
 	}
 }
@@ -294,7 +294,7 @@ void Script::Revert(uint64_t frame, const M64Diff& m64)
 {
 	// Check if script altered state
 	bool desync =
-		m64.frames.size() && (m64.frames.begin()->first < GetCurrentFrame());
+		(!m64.frames.empty()) && (m64.frames.begin()->first < GetCurrentFrame());
 
 	// Load most recent save at or before frame. Check child saves before
 	// parent.

@@ -44,7 +44,7 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill::execution()
 	//Get range of target turning around angles to test
 	auto hillStatus = Test<GetMinimumDownhillWalkingAngle>(marioState->faceAngle[1]);
 	Rotation downhillRotation = hillStatus.downhillRotation == Rotation::CLOCKWISE ? Rotation::CLOCKWISE : Rotation::COUNTERCLOCKWISE;
-	int32_t extremeDownhillHau = hillStatus.angleFacing - (hillStatus.angleFacing & 15);
+	int32_t extremeDownhillHau = hillStatus.angleFacing - (hillStatus.angleFacing & 15U);
 	int32_t extremeUphillHau = extremeDownhillHau - 0x4000 * (int)downhillRotation;
 	int32_t midHau = (extremeDownhillHau + extremeUphillHau) / 2;
 

@@ -163,8 +163,5 @@ bool BitFsPyramidOscillation_RunDownhill::execution()
 
 bool BitFsPyramidOscillation_RunDownhill::assertion()
 {
-	if (!BaseStatus.m64Diff.frames.size())
-		return false;
-
-	return true;
+	return !BaseStatus.m64Diff.frames.empty();
 }

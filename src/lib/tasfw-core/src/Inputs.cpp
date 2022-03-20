@@ -17,7 +17,7 @@
 
 static uint16_t byteswap(uint16_t x)
 {
-	return (x >> 8) | (x << 8);
+	return (x >> 8U) | (x << 8U);
 }
 
 
@@ -394,7 +394,7 @@ int M64::save(long initFrame)
 			int8_t stickX							= 0;
 			int8_t stickY							= 0;
 
-			if (frames.count(i))
+			if (frames.contains(i))
 			{
 				bigEndianButtons = byteswap(frames[i].buttons);
 				stickX					 = frames[i].stick_x;

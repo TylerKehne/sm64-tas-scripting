@@ -73,8 +73,5 @@ bool BrakeToIdle::execution()
 bool BrakeToIdle::assertion()
 {
 	MarioState* marioState = (MarioState*) (game->addr("gMarioStates"));
-	if (marioState->action != ACT_IDLE)
-		return false;
-
-	return true;
+	return marioState->action == ACT_IDLE;
 }
