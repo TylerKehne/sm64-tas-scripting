@@ -21,7 +21,7 @@ bool Script::checkPreconditions()
 			.count();
 
 	// Revert state regardless of validation results
-	Load(_initialFrame);
+	Restore(_initialFrame);
 
 	BaseStatus.validated = validated;
 	return validated;
@@ -48,7 +48,7 @@ bool Script::execute()
 
 	// Revert state if there are any execution errors
 	if (!executed)
-		Load(_initialFrame);
+		Restore(_initialFrame);
 
 	BaseStatus.executed = executed;
 	return executed;
@@ -68,7 +68,7 @@ bool Script::checkPostconditions()
 		BaseStatus.assertionThrew = true;
 
 		// Revert state only if assertion throws exception
-		Load(_initialFrame);
+		Restore(_initialFrame);
 	}
 	auto finish = std::chrono::high_resolution_clock::now();
 
@@ -216,21 +216,33 @@ void Script::Rollback(uint64_t frame)
 		BaseStatus.m64Diff.frames.end());
 	saveBank.erase(saveBank.upper_bound(frame), saveBank.end());
 
-	// Load most recent save at or before frame. Check child saves before
-	// parent.
-	if (frame < GetCurrentFrame())
-	{
-		game->load_state(GetLatestSave(frame).second->slotId);
-		BaseStatus.nLoads++;
-	}
+	Load(frame);
+}
 
-	// If save is before target frame, play back until frame is reached
+// Same as Rollback, but starts from current frame. Useful for scripts that edit past frames
+void Script::RollForward(int64_t frame)
+{
+	// Roll back diff and savebank to current frame. Note that roll forward on diff
+	// includes current frame.
 	uint64_t currentFrame = GetCurrentFrame();
-	while (currentFrame < frame)
-	{
-		AdvanceFrameRead();
-		currentFrame = GetCurrentFrame();
-	}
+	BaseStatus.m64Diff.frames.erase(
+		BaseStatus.m64Diff.frames.lower_bound(currentFrame),
+		BaseStatus.m64Diff.frames.end());
+	saveBank.erase(saveBank.upper_bound(currentFrame), saveBank.end());
+
+	Load(frame);
+}
+
+// Load and clear diff and savebank
+void Script::Restore(int64_t frame)
+{
+	// Clear diff and savebank
+	BaseStatus.m64Diff.frames.erase(
+		BaseStatus.m64Diff.frames.begin(),
+		BaseStatus.m64Diff.frames.end());
+	saveBank.erase(saveBank.begin(), saveBank.end());
+
+	Load(frame);
 }
 
 void Script::Save()
