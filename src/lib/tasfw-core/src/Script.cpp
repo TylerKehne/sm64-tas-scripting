@@ -115,7 +115,7 @@ void Script::AdvanceFrameWrite(Inputs inputs)
 	BaseStatus.m64Diff.frames[GetCurrentFrame()] = inputs;
 
 	// Erase all saves after this point
-	uint64_t currentFrame	 = GetCurrentFrame();
+	uint64_t currentFrame = GetCurrentFrame();
 	auto firstInvalidFrame = saveBank.upper_bound(currentFrame);
 	saveBank.erase(firstInvalidFrame, saveBank.end());
 
@@ -131,12 +131,12 @@ void Script::Apply(const M64Diff& m64Diff)
 		return;
 
 	uint64_t firstFrame = m64Diff.frames.begin()->first;
-	uint64_t lastFrame	= m64Diff.frames.rbegin()->first;
+	uint64_t lastFrame = m64Diff.frames.rbegin()->first;
 
 	Load(firstFrame);
 
 	// Erase all saves after this point
-	uint64_t currentFrame	 = GetCurrentFrame();
+	uint64_t currentFrame = GetCurrentFrame();
 	auto firstInvalidFrame = saveBank.upper_bound(currentFrame);
 	saveBank.erase(firstInvalidFrame, saveBank.end());
 
@@ -146,7 +146,7 @@ void Script::Apply(const M64Diff& m64Diff)
 		auto inputs = GetInputs(currentFrame);
 		if (m64Diff.frames.count(currentFrame))
 		{
-			inputs																	= m64Diff.frames.at(currentFrame);
+			inputs = m64Diff.frames.at(currentFrame);
 			BaseStatus.m64Diff.frames[currentFrame] = inputs;
 		}
 
@@ -168,7 +168,7 @@ Inputs Script::GetInputs(uint64_t frame)
 	return Inputs(0, 0, 0);
 }
 
-std::pair<uint64_t, Slot*> Script::GetLatestSave(uint64_t frame)
+std::pair<uint64_t, SlotHandle*> Script::GetLatestSave(uint64_t frame)
 {
 	auto save =
 		saveBank.size() ? std::prev(saveBank.upper_bound(frame)) : saveBank.end();
@@ -182,62 +182,10 @@ std::pair<uint64_t, Slot*> Script::GetLatestSave(uint64_t frame)
 		if (parentScript)
 			return parentScript->GetLatestSave(earlyFrame);
 		else
-			return {0, &game->startSave};
+			return {0, &game->startSaveHandle};
 	}
 
 	return {(*save).first, &(*save).second};
-}
-
-bool Script::RemoveEarliestSave(uint64_t earliestFrame)
-{
-	auto save						 = saveBank.begin();
-	Script* parentScript = _parentScript;
-
-	// Keep track of the earliest save frame as we go up the hierarchy
-	if (save != saveBank.end())
-	{
-		if (!earliestFrame)
-			earliestFrame = (*save).first;
-		else
-			earliestFrame = earliestFrame < (*save).first ?
-				earliestFrame :
-				(*save).first;	// Remove from parent if tied
-	}
-
-	// Remove save from the parent if there is an earlier one
-	if (parentScript)
-	{
-		if (save == saveBank.end())
-			return parentScript->RemoveEarliestSave(earliestFrame);
-
-		if (!parentScript->RemoveEarliestSave(earliestFrame))
-		{
-			// Parent has no earlier saves, so remove from this script if it has
-			// the earliest save
-			if (earliestFrame == (*save).first)
-			{
-				saveBank.erase(earliestFrame);
-				return true;
-			}
-
-			return false;
-		}
-
-		return true;
-	}
-
-	if (save == saveBank.end())
-		return false;
-
-	// This is the top level script, so remove from this script if it has the
-	// earliest save
-	if (earliestFrame == (*save).first)
-	{
-		saveBank.erase(earliestFrame);
-		return true;
-	}
-
-	return false;
 }
 
 void Script::Load(uint64_t frame)
@@ -246,7 +194,7 @@ void Script::Load(uint64_t frame)
 	// parent.
 	if (frame < GetCurrentFrame())
 	{
-		game->load_state(GetLatestSave(frame).second);
+		game->load_state(GetLatestSave(frame).second->slotId);
 		BaseStatus.nLoads++;
 	}
 
@@ -272,7 +220,7 @@ void Script::Rollback(uint64_t frame)
 	// parent.
 	if (frame < GetCurrentFrame())
 	{
-		game->load_state(GetLatestSave(frame).second);
+		game->load_state(GetLatestSave(frame).second->slotId);
 		BaseStatus.nLoads++;
 	}
 
@@ -287,15 +235,16 @@ void Script::Rollback(uint64_t frame)
 
 void Script::Save()
 {
-	// If save memory is full, remove the earliest save and try again
+	//Desyncs should always clear future saves, so if a save already exists there is no need to overwrite it
 	uint64_t currentFrame = GetCurrentFrame();
-	while (!game->save_state(&saveBank[currentFrame]))
+	if (!saveBank.contains(currentFrame))
 	{
-		saveBank.erase(currentFrame);
-		RemoveEarliestSave();
+		saveBank.emplace(
+			std::piecewise_construct,
+			forward_as_tuple(currentFrame),
+			forward_as_tuple(game, game->save_state(this, currentFrame)));
+		BaseStatus.nSaves++;
 	}
-
-	BaseStatus.nSaves++;
 }
 
 void Script::Save(uint64_t frame)
@@ -311,16 +260,21 @@ void Script::OptionalSave()
 		Save();
 }
 
+void Script::DeleteSave(int64_t frame)
+{
+	saveBank.erase(frame);
+}
+
 void Script::SetInputs(Inputs inputs)
 {
 	uint16_t* buttonDllAddr = (uint16_t*) game->addr("gControllerPads");
-	buttonDllAddr[0]				= inputs.buttons;
+	buttonDllAddr[0] = inputs.buttons;
 
 	int8_t* xStickDllAddr = (int8_t*) game->addr("gControllerPads") + 2;
-	xStickDllAddr[0]			= inputs.stick_x;
+	xStickDllAddr[0] = inputs.stick_x;
 
 	int8_t* yStickDllAddr = (int8_t*) game->addr("gControllerPads") + 3;
-	yStickDllAddr[0]			= inputs.stick_y;
+	yStickDllAddr[0] = inputs.stick_y;
 }
 
 // Load method specifically for Script.Execute(), checks for desyncs
@@ -334,7 +288,7 @@ void Script::Revert(uint64_t frame, const M64Diff& m64)
 	// parent.
 	if (desync || frame < GetCurrentFrame())
 	{
-		game->load_state(GetLatestSave(frame).second);
+		game->load_state(GetLatestSave(frame).second->slotId);
 		BaseStatus.nLoads++;
 	}
 

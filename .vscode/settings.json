@@ -3,5 +3,8 @@
     "--compile-commands-dir=build"
   ],
   "editor.insertSpaces": false,
-	"editor.tabSize": 4
+  "editor.tabSize": 4,
+  "files.associations": {
+    "chrono": "cpp"
+  }
 }
