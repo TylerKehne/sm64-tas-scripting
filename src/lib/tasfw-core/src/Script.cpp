@@ -80,16 +80,6 @@ bool Script::checkPostconditions()
 	return asserted;
 }
 
-Inputs TopLevelScript::GetInputs(uint64_t frame)
-{
-	if (BaseStatus.m64Diff.frames.count(frame))
-		return BaseStatus.m64Diff.frames[frame];
-	else if (_m64.frames.count(frame))
-		return _m64.frames[frame];
-
-	return Inputs(0, 0, 0);
-}
-
 void Script::CopyVec3f(Vec3f dest, Vec3f source)
 {
 	dest[0] = source[0];
@@ -104,7 +94,13 @@ uint64_t Script::GetCurrentFrame()
 
 void Script::AdvanceFrameRead()
 {
-	SetInputs(GetInputs(GetCurrentFrame()));
+	uint64_t dummyCounter = 0;
+	AdvanceFrameRead(dummyCounter);
+}
+
+void Script::AdvanceFrameRead(uint64_t& counter)
+{
+	SetInputs(GetInputsTracked(GetCurrentFrame(), counter));
 	game->advance_frame();
 	BaseStatus.nFrameAdvances++;
 }
@@ -116,8 +112,8 @@ void Script::AdvanceFrameWrite(Inputs inputs)
 
 	// Erase all saves after this point
 	uint64_t currentFrame = GetCurrentFrame();
-	auto firstInvalidFrame = saveBank.upper_bound(currentFrame);
-	saveBank.erase(firstInvalidFrame, saveBank.end());
+	frameCounter.erase(frameCounter.upper_bound(currentFrame), frameCounter.end());
+	saveBank.erase(saveBank.upper_bound(currentFrame), saveBank.end());
 
 	// Set inputs and advance frame
 	SetInputs(inputs);
@@ -137,17 +133,21 @@ void Script::Apply(const M64Diff& m64Diff)
 
 	// Erase all saves after this point
 	uint64_t currentFrame = GetCurrentFrame();
-	auto firstInvalidFrame = saveBank.upper_bound(currentFrame);
-	saveBank.erase(firstInvalidFrame, saveBank.end());
+	frameCounter.erase(frameCounter.upper_bound(currentFrame), frameCounter.end());
+	saveBank.erase(saveBank.upper_bound(currentFrame), saveBank.end());
 
 	while (currentFrame <= lastFrame)
 	{
 		// Use default inputs if diff doesn't override them
-		auto inputs = GetInputs(currentFrame);
+		Inputs inputs;
 		if (m64Diff.frames.count(currentFrame))
 		{
 			inputs = m64Diff.frames.at(currentFrame);
 			BaseStatus.m64Diff.frames[currentFrame] = inputs;
+		}
+		else
+		{
+			inputs = GetInputsTracked(currentFrame);
 		}
 
 		SetInputs(inputs);
@@ -158,12 +158,53 @@ void Script::Apply(const M64Diff& m64Diff)
 	}
 }
 
-Inputs Script::GetInputs(uint64_t frame)
+Inputs Script::GetInputsTracked(uint64_t frame)
+{
+	uint64_t dummyCounter = 0;
+	return GetInputsTracked(frame, dummyCounter);
+}
+
+// Seeks inputs from script hierarchy diffs recursively.
+// If a nonzero counter is provided, save if performant.
+// Return the counter, incremented by the frame counter for the frame with the inputs.
+Inputs Script::GetInputsTracked(uint64_t frame, uint64_t& counter)
 {
 	if (BaseStatus.m64Diff.frames.count(frame))
+	{
+		if (counter != 0 && game->shouldSave(counter + frameCounter[frame]))
+		{
+			Save();
+			counter = 0;
+		}
+		else
+			counter += frameCounter[frame]++;
+
 		return BaseStatus.m64Diff.frames[frame];
+	}	
 	else if (_parentScript)
-		return _parentScript->GetInputs(frame);
+		return _parentScript->GetInputsTracked(frame, counter);
+
+	//This should never happen
+	return Inputs(0, 0, 0);
+}
+
+// Seeks inputs from the top level script or base m64.
+// If a nonzero counter is provided, save if performant.
+// Returns the inputs, and the counter incremented by the frame counter for the frame with the inputs.
+Inputs TopLevelScript::GetInputsTracked(uint64_t frame, uint64_t& counter)
+{
+	if (counter != 0 && game->shouldSave(counter + frameCounter[frame]))
+	{
+		Save();
+		counter = 0;
+	}
+	else
+		counter += frameCounter[frame]++;
+
+	if (BaseStatus.m64Diff.frames.count(frame))
+		return BaseStatus.m64Diff.frames[frame];	
+	else if (_m64.frames.count(frame))
+		return _m64.frames[frame];
 
 	return Inputs(0, 0, 0);
 }
@@ -200,11 +241,9 @@ void Script::Load(uint64_t frame)
 
 	// If save is before target frame, play back until frame is reached
 	uint64_t currentFrame = GetCurrentFrame();
-	while (currentFrame < frame)
-	{
-		AdvanceFrameRead();
-		currentFrame = GetCurrentFrame();
-	}
+	uint64_t frameCounter = 0;
+	while (currentFrame++ < frame)
+		AdvanceFrameRead(frameCounter);
 }
 
 void Script::Rollback(uint64_t frame)
@@ -214,6 +253,7 @@ void Script::Rollback(uint64_t frame)
 	BaseStatus.m64Diff.frames.erase(
 		BaseStatus.m64Diff.frames.lower_bound(frame),
 		BaseStatus.m64Diff.frames.end());
+	frameCounter.erase(frameCounter.upper_bound(frame), frameCounter.end());
 	saveBank.erase(saveBank.upper_bound(frame), saveBank.end());
 
 	Load(frame);
@@ -228,6 +268,7 @@ void Script::RollForward(int64_t frame)
 	BaseStatus.m64Diff.frames.erase(
 		BaseStatus.m64Diff.frames.lower_bound(currentFrame),
 		BaseStatus.m64Diff.frames.end());
+	frameCounter.erase(frameCounter.upper_bound(currentFrame), frameCounter.end());
 	saveBank.erase(saveBank.upper_bound(currentFrame), saveBank.end());
 
 	Load(frame);
@@ -236,10 +277,11 @@ void Script::RollForward(int64_t frame)
 // Load and clear diff and savebank
 void Script::Restore(int64_t frame)
 {
-	// Clear diff and savebank
+	// Clear diff, frame counter and savebank
 	BaseStatus.m64Diff.frames.erase(
 		BaseStatus.m64Diff.frames.begin(),
 		BaseStatus.m64Diff.frames.end());
+	frameCounter.erase(frameCounter.begin(), frameCounter.end());
 	saveBank.erase(saveBank.begin(), saveBank.end());
 
 	Load(frame);
@@ -289,7 +331,7 @@ void Script::SetInputs(Inputs inputs)
 	yStickDllAddr[0] = inputs.stick_y;
 }
 
-// Load method specifically for Script.Execute(), checks for desyncs
+// Load method specifically for Script.Execute() and Script.Modify(), checks for desyncs
 void Script::Revert(uint64_t frame, const M64Diff& m64)
 {
 	// Check if script altered state
@@ -306,9 +348,7 @@ void Script::Revert(uint64_t frame, const M64Diff& m64)
 
 	// If save is before target frame, play back until frame is reached
 	uint64_t currentFrame = GetCurrentFrame();
-	while (currentFrame < frame)
-	{
-		AdvanceFrameRead();
-		currentFrame = GetCurrentFrame();
-	}
+	uint64_t frameCounter = 0;
+	while (currentFrame++ < frame)
+		AdvanceFrameRead(frameCounter);
 }

@@ -8,6 +8,7 @@
 class Script;
 class SlotHandle;
 class Game;
+class TopLevelScript;
 
 class BaseScriptStatus
 {
@@ -57,6 +58,7 @@ public:
 	BaseScriptStatus BaseStatus;
 	Script* _parentScript;
 	std::map<uint64_t, SlotHandle> saveBank;
+	std::map<int64_t, uint64_t> frameCounter;
 	Game* game = NULL;
 
 	Script(Script* parentScript)
@@ -64,7 +66,7 @@ public:
 		_parentScript = parentScript;
 		if (_parentScript)
 		{
-			game					= _parentScript->game;
+			game = _parentScript->game;
 			_initialFrame = GetCurrentFrame();
 		}
 	}
@@ -72,7 +74,7 @@ public:
 	// TODO: move this method to some utility class
 	static void CopyVec3f(Vec3f dest, Vec3f source);
 
-	virtual Inputs GetInputs(uint64_t frame);
+	
 
 protected:
 	uint32_t _initialFrame = 0;
@@ -186,11 +188,15 @@ protected:
 
 private:
 	friend class SlotManager;
+	friend class TopLevelScript;
 
 	std::pair<uint64_t, SlotHandle*> GetLatestSave(uint64_t frame);
 	void DeleteSave(int64_t frame);
 	void SetInputs(Inputs inputs);
 	void Revert(uint64_t frame, const M64Diff& m64);
+	Inputs GetInputsTracked(uint64_t frame);
+	virtual Inputs GetInputsTracked(uint64_t frame, uint64_t& counter);
+	void AdvanceFrameRead(uint64_t& counter);
 };
 
 class TopLevelScript : public Script
@@ -219,11 +225,12 @@ public:
 	}
 
 	virtual bool validation() override = 0;
-	virtual bool execution() override		 = 0;
-	virtual bool assertion() override	 = 0;
-
-	Inputs GetInputs(uint64_t frame) override;
+	virtual bool execution() override = 0;
+	virtual bool assertion() override = 0;
 
 protected:
 	M64& _m64;
+
+private:
+	Inputs GetInputsTracked(uint64_t frame, uint64_t& counter) override;
 };

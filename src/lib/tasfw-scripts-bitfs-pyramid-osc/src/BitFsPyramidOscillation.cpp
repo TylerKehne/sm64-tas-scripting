@@ -54,9 +54,9 @@ bool BitFsPyramidOscillation::execution()
 
 	int16_t initAngle	 = -32768;
 	auto initAngleStatus = Test<GetMinimumDownhillWalkingAngle>(initAngle);
-	auto stick			 = Inputs::GetClosestInputByYawExact(
-				  initAngleStatus.angleFacing, 32, camera->yaw,
-				  initAngleStatus.downhillRotation);
+	auto stick = Inputs::GetClosestInputByYawExact(
+		initAngleStatus.angleFacing, 32, camera->yaw,
+		initAngleStatus.downhillRotation);
 	AdvanceFrameWrite(Inputs(0, stick.first, stick.second));
 
 	uint64_t preTurnFrame = GetCurrentFrame();
