@@ -104,12 +104,45 @@ protected:
 		requires(std::constructible_from<TScript, Script*, Us...>)
 	ScriptStatus<TScript> Modify(Us&&... params)
 	{
-		ScriptStatus<TScript> status =
-			Execute<TScript>(std::forward<Us>(params)...);
-		if (status.asserted)
-			Apply(status.m64Diff);
+		// Save state if performant
+		uint64_t initialFrame = GetCurrentFrame();
+		OptionalSave();
 
-		return status;
+		TScript script = TScript(this, std::forward<Us>(params)...);
+
+		if (script.checkPreconditions() && script.execute())
+			script.checkPostconditions();
+
+		// Revert state if assertion fails, otherwise apply diff
+		if (!script.BaseStatus.asserted || script.BaseStatus.m64Diff.frames.empty())
+			Revert(initialFrame, script.BaseStatus.m64Diff);
+		else
+		{
+			uint64_t firstFrame = script.BaseStatus.m64Diff.frames.begin()->first;
+			uint64_t lastFrame = script.BaseStatus.m64Diff.frames.rbegin()->first;
+
+			// Erase all saves after starting frame of diff
+			auto firstInvalidFrame = saveBank.upper_bound(firstFrame);
+			saveBank.erase(firstInvalidFrame, saveBank.end());
+
+			//Apply diff. State is already synced from child script, so no need to update it
+			int64_t frame = firstFrame;
+			while (frame <= lastFrame)
+			{
+				if (script.BaseStatus.m64Diff.frames.count(frame))
+					BaseStatus.m64Diff.frames[frame] = script.BaseStatus.m64Diff.frames.at(frame);
+				frame++;
+			}
+
+			//Forward state to end of diff
+			Load(lastFrame + 1);
+		}
+
+		BaseStatus.nLoads += script.BaseStatus.nLoads;
+		BaseStatus.nSaves += script.BaseStatus.nSaves;
+		BaseStatus.nFrameAdvances += script.BaseStatus.nFrameAdvances;
+
+		return ScriptStatus<TScript>(script.BaseStatus, script.CustomStatus);
 	}
 
 	template <std::derived_from<Script> TScript, typename... Us>
@@ -148,8 +181,8 @@ protected:
 	void Restore(int64_t frame);
 
 	virtual bool validation() = 0;
-	virtual bool execution()		= 0;
-	virtual bool assertion()		= 0;
+	virtual bool execution() = 0;
+	virtual bool assertion() = 0;
 
 private:
 	friend class SlotManager;

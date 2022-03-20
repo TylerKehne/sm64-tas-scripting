@@ -86,7 +86,7 @@ bool BitFsPyramidOscillation::execution()
 	// as possible, without sacrificing XZ sum
 	uint64_t minFrame = initRunStatus.framePassedEquilibriumPoint == -1 ?
 		initRunStatus.m64Diff.frames.begin()->first :
-		  initRunStatus.framePassedEquilibriumPoint;
+		initRunStatus.framePassedEquilibriumPoint;
 	uint64_t maxFrame = initRunStatus.m64Diff.frames.rbegin()->first;
 	CustomStatus.finalXzSum[1] = initRunStatus.finalXzSum;
 	vector<std::pair<int64_t, int64_t>> oscillationMinMaxFrames;
