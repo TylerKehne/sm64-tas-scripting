@@ -8,6 +8,7 @@
 #include <nlohmann/json.hpp>
 
 #if defined(_WIN32)
+#define NOMINMAX
 	#include <windows.h>
 const std::filesystem::path& getPathToSelf()
 {
