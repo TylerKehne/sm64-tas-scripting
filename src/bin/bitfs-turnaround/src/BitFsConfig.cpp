@@ -8,6 +8,7 @@
 #include <nlohmann/json.hpp>
 
 #if defined(_WIN32)
+#define NOMINMAX
 	#include <windows.h>
 const std::filesystem::path& getPathToSelf()
 {
@@ -17,7 +18,8 @@ const std::filesystem::path& getPathToSelf()
 		if (res == 0) {
 			throw std::system_error(GetLastError(), std::system_category());
 		}
-		return buffer.get();
+		std::filesystem::path path(buffer.get());
+		return path;
 	}();
 	return cached;
 }
@@ -33,7 +35,8 @@ const std::filesystem::path& getPathToSelf()
 			throw std::system_error(res, std::generic_category());
 		}
 		std::cout << "Retrieved self path: " << buffer.get() << '\n';
-		return buffer.get();
+		std::filesystem::path path(buffer.get());
+		return path;
 	}();
 	return cached;
 }

@@ -9,7 +9,7 @@ add_library(tasfw-core
 )
 target_compile_features(tasfw-core PUBLIC cxx_std_20)
 target_include_directories(tasfw-core PUBLIC include)
-target_link_libraries(tasfw-core PUBLIC tasfw::decomp)
+target_link_libraries(tasfw-core PUBLIC tasfw::decomp ${CMAKE_DL_LIBS})
 
 include(MatchArchFlag)
 match_arch_and_ipo(tasfw-core)

@@ -27,7 +27,7 @@ public:
 	uint64_t nFrameAdvances = 0;
 	M64Diff m64Diff = M64Diff();
 
-	BaseScriptStatus() {}
+	BaseScriptStatus() = default;
 };
 
 template <std::derived_from<Script> TScript>
@@ -59,11 +59,10 @@ public:
 	Script* _parentScript;
 	std::map<uint64_t, SlotHandle> saveBank;
 	std::map<int64_t, uint64_t> frameCounter;
-	Game* game = NULL;
+	Game* game = nullptr;
 
-	Script(Script* parentScript)
+	Script(Script* parentScript) : _parentScript(parentScript)
 	{
-		_parentScript = parentScript;
 		if (_parentScript)
 		{
 			game = _parentScript->game;
@@ -202,7 +201,7 @@ private:
 class TopLevelScript : public Script
 {
 public:
-	TopLevelScript(M64& m64, Game* game) : Script(NULL), _m64(m64)
+	TopLevelScript(M64& m64, Game* game) : Script(nullptr), _m64(m64)
 	{
 		this->game = game;
 	}

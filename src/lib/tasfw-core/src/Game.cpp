@@ -69,7 +69,7 @@ int64_t SlotManager::CreateSlot(Script* script, int64_t frame)
 		}
 
 		if (slotsById.size() == 0)
-			throw std::exception("Not enough game slot memory allocated");
+			throw std::runtime_error("Not enough game slot memory allocated");
 
 		// If save memory is full, remove the earliest save and try again
 		EraseOldestSlot();
@@ -143,7 +143,7 @@ void Game::save_state_initial()
 
 	int64_t additionalMem = segment[0].length + segment[1].length;
 	if (_currentSaveMem + additionalMem > _saveMemLimit)
-		throw std::exception("Not enough game slot memory allocated");
+		throw std::runtime_error("Not enough game slot memory allocated");
 
 	startSave.buf1.resize(segment[0].length);
 	startSave.buf2.resize(segment[1].length);
@@ -188,7 +188,7 @@ uint32_t Game::getCurrentFrame()
 	return *(uint32_t*) (addr("gGlobalTimer")) - 1;
 }
 
-bool Game::shouldSave(uint64_t framesSinceLastSave)
+bool Game::shouldSave(uint64_t framesSinceLastSave) const
 {
 	double estTimeToSave = double(_totalSaveStateTime) / nSaveStates;
 	double estTimeToLoadFromRecent =
