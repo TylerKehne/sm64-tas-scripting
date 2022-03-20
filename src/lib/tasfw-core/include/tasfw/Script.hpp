@@ -6,23 +6,25 @@
 
 
 class Script;
+class SlotHandle;
+class Game;
 
 class BaseScriptStatus
 {
 public:
-	bool validated									= false;
-	bool executed									= false;
-	bool asserted								= false;
-	bool validationThrew				= false;
-	bool executionThrew						= false;
-	bool assertionThrew					= false;
+	bool validated = false;
+	bool executed = false;
+	bool asserted = false;
+	bool validationThrew = false;
+	bool executionThrew = false;
+	bool assertionThrew = false;
 	uint64_t validationDuration = 0;
-	uint64_t executionDuration		= 0;
-	uint64_t assertionDuration		= 0;
-	uint64_t nLoads								= 0;
-	uint64_t nSaves								= 0;
-	uint64_t nFrameAdvances				= 0;
-	M64Diff m64Diff								= M64Diff();
+	uint64_t executionDuration = 0;
+	uint64_t assertionDuration = 0;
+	uint64_t nLoads = 0;
+	uint64_t nSaves = 0;
+	uint64_t nFrameAdvances = 0;
+	M64Diff m64Diff = M64Diff();
 
 	BaseScriptStatus() {}
 };
@@ -54,7 +56,7 @@ public:
 	CustomScriptStatus CustomStatus = {};
 	BaseScriptStatus BaseStatus;
 	Script* _parentScript;
-	std::map<uint64_t, Slot> saveBank;
+	std::map<uint64_t, SlotHandle> saveBank;
 	Game* game = NULL;
 
 	Script(Script* parentScript)
@@ -148,8 +150,10 @@ protected:
 	virtual bool assertion()		= 0;
 
 private:
-	std::pair<uint64_t, Slot*> GetLatestSave(uint64_t frame);
-	bool RemoveEarliestSave(uint64_t earliestFrame = 0);
+	friend class SlotManager;
+
+	std::pair<uint64_t, SlotHandle*> GetLatestSave(uint64_t frame);
+	void DeleteSave(int64_t frame);
 	void SetInputs(Inputs inputs);
 	void Revert(uint64_t frame, const M64Diff& m64);
 };

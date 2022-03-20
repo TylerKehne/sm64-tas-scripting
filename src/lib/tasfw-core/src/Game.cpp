@@ -33,6 +33,81 @@ Slot::~Slot()
 		game->_currentSaveMem -= buf1.size() + buf2.size();
 }
 
+SlotHandle::~SlotHandle()
+{
+	if (slotId != -1)
+		game->slotManager.EraseSlot(slotId);
+}
+
+int64_t SlotManager::CreateSlot(Script* script, int64_t frame)
+{
+	while (true)
+	{
+		int64_t additionalMem = _game->segment[0].length + _game->segment[1].length;
+		if (_game->_currentSaveMem + additionalMem <= _game->_saveMemLimit)
+		{
+			//NOTE: IDs/Order will not overflow on realistic timescales
+			int64_t slotId = slotsById.size() == 0 ? 0 : std::prev(slotsById.end())->first + 1;
+			slotsById[slotId] = Slot(_game, script, frame);
+			int64_t slotOrder = slotIdsByLastAccess.size() == 0 ? 0 : std::prev(slotIdsByLastAccess.end())->first + 1;
+			slotIdsByLastAccess[slotOrder] = slotId;
+			slotLastAccessOrderById[slotId] = slotOrder;
+
+			//Save memory into slot
+			slotsById[slotId].buf1.resize(_game->segment[0].length);
+			slotsById[slotId].buf2.resize(_game->segment[1].length);
+
+			int64_t* temp = reinterpret_cast<int64_t*>(_game->segment[0].address);
+			memcpy(slotsById[slotId].buf1.data(), temp, _game->segment[0].length);
+
+			temp = reinterpret_cast<int64_t*>(_game->segment[1].address);
+			memcpy(slotsById[slotId].buf2.data(), temp, _game->segment[1].length);
+
+			_game->_currentSaveMem += additionalMem;
+
+			return slotId;
+		}
+
+		if (slotsById.size() == 0)
+			throw std::exception("Not enough game slot memory allocated");
+
+		// If save memory is full, remove the earliest save and try again
+		EraseOldestSlot();
+	}
+}
+
+void SlotManager::EraseSlot(int64_t slotId)
+{
+	int64_t slotOrder = slotLastAccessOrderById[slotId];
+	slotsById.erase(slotId);
+	slotLastAccessOrderById.erase(slotId);
+	slotIdsByLastAccess.erase(slotOrder);
+}
+
+void SlotManager::UpdateSlot(int64_t slotId)
+{
+	//NOTE: Order will not overflow on realistic timescales
+	int64_t slotOrder = slotLastAccessOrderById[slotId];
+	slotIdsByLastAccess.erase(slotOrder);
+	int64_t newSlotOrder = slotIdsByLastAccess.size() == 0 ? 0 : std::prev(slotIdsByLastAccess.end())->first + 1;
+	slotIdsByLastAccess[newSlotOrder] = slotId;
+	slotLastAccessOrderById[slotId] = newSlotOrder;
+
+	//Load slot memory
+	memcpy(_game->segment[0].address, slotsById[slotId].buf1.data(), _game->segment[0].length);
+	memcpy(_game->segment[1].address, slotsById[slotId].buf2.data(), _game->segment[1].length);
+}
+
+void SlotManager::EraseOldestSlot()
+{
+	int64_t slotId = slotIdsByLastAccess.begin() == slotIdsByLastAccess.end() ? -1 : slotIdsByLastAccess.begin()->first;
+	if (slotId == -1)
+		return;
+
+	//Remove slot handle from script hierarchy, triggering slot deletion
+	slotsById[slotId].script->DeleteSave(slotsById[slotId].frame);
+}
+
 void Game::advance_frame()
 {
 	auto start = get_time();
@@ -51,38 +126,52 @@ void Game::advance_frame()
 	nFrameAdvances++;
 }
 
-bool Game::save_state(Slot* slot)
+int64_t Game::save_state(Script* script, int64_t frame)
 {
-	int64_t additionalMem = segment[0].length + segment[1].length;
-	if (_currentSaveMem + additionalMem > _saveMemLimit)
-		return false;
+	auto start = get_time();
+	int64_t slotId = slotManager.CreateSlot(script, frame);
+	_totalSaveStateTime += get_time() - start;
 
+	nSaveStates++;
+
+	return slotId;
+}
+
+void Game::save_state_initial()
+{
 	auto start = get_time();
 
-	slot->buf1.resize(segment[0].length);
-	slot->buf2.resize(segment[1].length);
-	slot->game = this;
+	int64_t additionalMem = segment[0].length + segment[1].length;
+	if (_currentSaveMem + additionalMem > _saveMemLimit)
+		throw std::exception("Not enough game slot memory allocated");
+
+	startSave.buf1.resize(segment[0].length);
+	startSave.buf2.resize(segment[1].length);
+	startSave.game = this;
 
 	int64_t* temp = reinterpret_cast<int64_t*>(segment[0].address);
-	memcpy(slot->buf1.data(), temp, segment[0].length);
+	memcpy(startSave.buf1.data(), temp, segment[0].length);
 
 	temp = reinterpret_cast<int64_t*>(segment[1].address);
-	memcpy(slot->buf2.data(), temp, segment[1].length);
+	memcpy(startSave.buf2.data(), temp, segment[1].length);
 
 	_totalSaveStateTime += get_time() - start;
 
 	_currentSaveMem += additionalMem;
 	nSaveStates++;
-
-	return true;
 }
 
-void Game::load_state(Slot* slot)
+void Game::load_state(int64_t slotId)
 {
 	uint64_t start = get_time();
 
-	memcpy(segment[0].address, slot->buf1.data(), segment[0].length);
-	memcpy(segment[1].address, slot->buf2.data(), segment[1].length);
+	if (slotId == -1)
+	{
+		memcpy(segment[0].address, startSave.buf1.data(), segment[0].length);
+		memcpy(segment[1].address, startSave.buf2.data(), segment[1].length);
+	}
+	else
+		slotManager.UpdateSlot(slotId);
 
 	_totalLoadStateTime = get_time() - start;
 
