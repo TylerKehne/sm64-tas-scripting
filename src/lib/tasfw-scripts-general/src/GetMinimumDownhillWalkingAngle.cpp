@@ -21,10 +21,7 @@ bool GetMinimumDownhillWalkingAngle::validation()
 
 	const BehaviorScript* pyramidBehavior =
 		(const BehaviorScript*) (game->addr("bhvBitfsTiltingInvertedPyramid"));
-	if (floorObject->behavior != pyramidBehavior)
-		return false;
-
-	return true;
+	return floorObject->behavior == pyramidBehavior;
 }
 
 bool GetMinimumDownhillWalkingAngle::execution()

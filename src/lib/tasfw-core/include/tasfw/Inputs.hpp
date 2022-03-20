@@ -2,7 +2,6 @@
 #include <cstdint>
 #include <filesystem>
 #include <map>
-#include <vector>
 
 #ifndef INPUTS_H
 	#define INPUTS_H
@@ -24,12 +23,14 @@ public:
 
 	Rotation Negate()
 	{
-		if (value == Rotation::CLOCKWISE)
-			return Rotation::COUNTERCLOCKWISE;
-		else if (value == Rotation::COUNTERCLOCKWISE)
-			return Rotation::CLOCKWISE;
-
-		return Rotation::NONE;
+		switch (value) {
+			case Rotation::CLOCKWISE:
+				return Rotation::COUNTERCLOCKWISE;
+			case Rotation::COUNTERCLOCKWISE:
+				return Rotation::CLOCKWISE;
+			case Rotation::NONE:
+				return Rotation::NONE;
+		}
 	}
 
 private:
@@ -38,20 +39,20 @@ private:
 
 enum Buttons
 {
-	C_RIGHT = 1 << 0,
-	C_LEFT	= 1 << 1,
-	C_DOWN	= 1 << 2,
-	C_UP		= 1 << 3,
-	R				= 1 << 4,
-	L				= 1 << 5,
-	D_RIGHT = 1 << 8,
-	D_LEFT	= 1 << 9,
-	D_DOWN	= 1 << 10,
-	D_UP		= 1 << 11,
-	START		= 1 << 12,
-	Z				= 1 << 13,
-	B				= 1 << 14,
-	A				= 1 << 15
+	C_RIGHT = 1U << 0U,
+	C_LEFT	= 1U << 1U,
+	C_DOWN	= 1U << 2U,
+	C_UP		= 1U << 3U,
+	R				= 1U << 4U,
+	L				= 1U << 5U,
+	D_RIGHT = 1U << 8U,
+	D_LEFT	= 1U << 9U,
+	D_DOWN	= 1U << 10U,
+	D_UP		= 1U << 11U,
+	START		= 1U << 12U,
+	Z				= 1U << 13U,
+	B				= 1U << 14U,
+	A				= 1U << 15U
 };
 
 class Inputs
@@ -61,7 +62,7 @@ public:
 	int8_t stick_x	 = 0;
 	int8_t stick_y	 = 0;
 
-	Inputs() {}
+	Inputs() = default;
 
 	Inputs(uint16_t buttons, int8_t stick_x, int8_t stick_y) :
 		buttons(buttons), stick_x(stick_x), stick_y(stick_y)
@@ -84,7 +85,7 @@ class M64Base
 public:
 	std::map<uint64_t, Inputs> frames;
 
-	M64Base() {}
+	M64Base() = default;
 };
 
 class M64 : public M64Base
@@ -92,9 +93,9 @@ class M64 : public M64Base
 public:
 	std::filesystem::path fileName;
 
-	M64() {}
+	M64() = default;
 
-	M64(const std::filesystem::path& fileName) : fileName(fileName) {}
+	M64(std::filesystem::path fileName) : fileName(std::move(fileName)) {}
 
 	int load();
 	int save(long initFrame = 0);
@@ -103,7 +104,7 @@ public:
 class M64Diff : public M64Base
 {
 public:
-	M64Diff() : M64Base() {}
+	M64Diff() = default;
 };
 
 #endif

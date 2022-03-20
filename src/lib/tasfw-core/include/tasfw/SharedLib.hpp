@@ -6,6 +6,7 @@
 #include <unordered_map>
 
 #if defined(_WIN32)
+#define NOMINMAX
 	#include <windows.h>
 
 	#define TAS_FW_STDCALL __stdcall

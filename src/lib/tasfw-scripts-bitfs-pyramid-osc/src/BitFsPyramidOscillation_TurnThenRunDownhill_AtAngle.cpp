@@ -62,7 +62,7 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::execution()
 		if (
 			(marioState->action != ACT_WALKING &&
 			 marioState->action != ACT_FINISH_TURNING_AROUND) ||
-			marioState->floor->object == NULL ||
+			marioState->floor->object == nullptr ||
 			marioState->floor->object->behavior != pyramidBehavior)
 			return false;
 

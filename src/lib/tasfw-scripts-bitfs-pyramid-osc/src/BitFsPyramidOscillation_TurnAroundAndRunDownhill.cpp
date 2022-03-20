@@ -72,7 +72,7 @@ bool BitFsPyramidOscillation_TurnAroundAndRunDownhill::execution()
 				AdvanceFrameWrite(Inputs(0, inputs.first, inputs.second));
 
 				if ((marioState->action != ACT_WALKING) ||
-					marioState->floor->object == NULL ||
+					marioState->floor->object == nullptr ||
 					marioState->floor->object->behavior != pyramidBehavior)
 					return false;
 
@@ -90,10 +90,10 @@ bool BitFsPyramidOscillation_TurnAroundAndRunDownhill::execution()
 				return false;
 			}
 
-			if (marioState->floor->object == NULL ||
+			if (marioState->floor->object == nullptr ||
 				marioState->floor->object->behavior != pyramidBehavior)
 			{
-				CustomStatus.tooDownhill = (marioState->floor->object == NULL);
+				CustomStatus.tooDownhill = (marioState->floor->object == nullptr);
 				return false;
 			}
 		} while (marioState->action == ACT_TURNING_AROUND);

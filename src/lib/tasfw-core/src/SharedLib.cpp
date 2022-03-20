@@ -11,6 +11,7 @@
 #include <unordered_map>
 
 #if defined(_WIN32)
+#define NOMINMAX
 	#include <windows.h>
 
 SharedLib::SharedLib(const std::filesystem::path& fileName) :

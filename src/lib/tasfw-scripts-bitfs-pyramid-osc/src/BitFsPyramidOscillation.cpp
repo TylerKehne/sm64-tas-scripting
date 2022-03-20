@@ -16,7 +16,7 @@ int16_t getRoughTargetNormal(
 	int16_t baseAngle	  = quadrant * 0x4000 - 0x2000 + 0x4000;
 	int16_t initAngleDiff = baseAngle - initWalkingAngle;
 	baseAngle = abs(initAngleDiff) < 0x4000 ? baseAngle + 0x8000 : baseAngle;
-	return iteration & 1 ? baseAngle + 0x8000 : baseAngle;
+	return iteration & 1U ? baseAngle + 0x8000 : baseAngle;
 }
 
 bool BitFsPyramidOscillation::validation()
@@ -89,19 +89,19 @@ bool BitFsPyramidOscillation::execution()
 		initRunStatus.framePassedEquilibriumPoint;
 	uint64_t maxFrame = initRunStatus.m64Diff.frames.rbegin()->first;
 	CustomStatus.finalXzSum[1] = initRunStatus.finalXzSum;
-	vector<std::pair<int64_t, int64_t>> oscillationMinMaxFrames;
+	std::vector<std::pair<int64_t, int64_t>> oscillationMinMaxFrames;
 	for (int i = 0; i < 200; i++)
 	{
-		oscillationMinMaxFrames.push_back({minFrame, maxFrame});
+		oscillationMinMaxFrames.emplace_back(minFrame, maxFrame);
 
 		// Start at the latest ppossible frame and work backwards. Stop when the
 		// max speed at the equilibrium point stops increasing.
 		oscillationParams = baseOscParams;
 		oscillationParams.roughTargetNormal =
 			getRoughTargetNormal(_quadrant, i, initAngle);
-		oscillationParams.prevMaxSpeed = CustomStatus.maxSpeed[i & 1];
+		oscillationParams.prevMaxSpeed = CustomStatus.maxSpeed[i & 1U];
 		oscillationParams.brake		   = false;
-		oscillationParams.initialXzSum = CustomStatus.finalXzSum[(i & 1) ^ 1];
+		oscillationParams.initialXzSum = CustomStatus.finalXzSum[(i & 1U) ^ 1U];
 		auto turnRunStatus = Execute<BitFsPyramidOscillation_Iteration>(
 			oscillationParams, minFrame, maxFrame);
 
@@ -120,9 +120,9 @@ bool BitFsPyramidOscillation::execution()
 			oscillationParamsPrev.roughTargetNormal =
 				getRoughTargetNormal(_quadrant, i - 1, initAngle);
 			oscillationParamsPrev.prevMaxSpeed =
-				CustomStatus.maxSpeed[(i & 1) ^ 1];
+				CustomStatus.maxSpeed[(i & 1U) ^ 1U];
 			oscillationParamsPrev.brake		   = true;
-			oscillationParamsPrev.initialXzSum = CustomStatus.finalXzSum[i & 1];
+			oscillationParamsPrev.initialXzSum = CustomStatus.finalXzSum[i & 1U];
 			auto turnRunStatusBrake = Modify<BitFsPyramidOscillation_Iteration>(
 				oscillationParamsPrev, minFrameBrake, maxFrameBrake);
 			if (turnRunStatusBrake.asserted)
@@ -140,7 +140,7 @@ bool BitFsPyramidOscillation::execution()
 					oscillationMinMaxFrames[i - 1] = {
 						minFrameBrake, maxFrameBrake};
 					oscillationMinMaxFrames[i] = {minFrame2, maxFrame2};
-					CustomStatus.maxSpeed[(i & 1)] =
+					CustomStatus.maxSpeed[(i & 1U)] =
 						turnRunStatusBrake.speedBeforeTurning;
 					turnRunStatus = turnRunStatus2;
 				}
