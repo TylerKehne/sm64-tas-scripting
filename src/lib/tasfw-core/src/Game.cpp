@@ -195,5 +195,5 @@ bool Game::shouldSave(uint64_t framesSinceLastSave) const
 		(double(_totalFrameAdvanceTime) / nFrameAdvances) * framesSinceLastSave;
 
 	// TODO: Reduce number of automatic load states in script
-	return estTimeToSave <= 3 * estTimeToLoadFromRecent;
+	return estTimeToSave <= 2 * estTimeToLoadFromRecent;
 }
