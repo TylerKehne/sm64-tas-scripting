@@ -196,6 +196,7 @@ private:
 	Inputs GetInputsTracked(uint64_t frame);
 	virtual Inputs GetInputsTracked(uint64_t frame, uint64_t& counter);
 	void AdvanceFrameRead(uint64_t& counter);
+	virtual uint64_t GetFrameCounter(int64_t frame);
 };
 
 class TopLevelScript : public Script
@@ -232,4 +233,5 @@ protected:
 
 private:
 	Inputs GetInputsTracked(uint64_t frame, uint64_t& counter) override;
+	uint64_t GetFrameCounter(int64_t frame) override;
 };

@@ -146,9 +146,7 @@ void Script::Apply(const M64Diff& m64Diff)
 			BaseStatus.m64Diff.frames[currentFrame] = inputs;
 		}
 		else
-		{
 			inputs = GetInputsTracked(currentFrame);
-		}
 
 		SetInputs(inputs);
 		game->advance_frame();
@@ -209,6 +207,22 @@ Inputs TopLevelScript::GetInputsTracked(uint64_t frame, uint64_t& counter)
 	return Inputs(0, 0, 0);
 }
 
+uint64_t Script::GetFrameCounter(int64_t frame)
+{
+	if (BaseStatus.m64Diff.frames.contains(frame))
+		return frameCounter[frame];
+	else if (_parentScript)
+		return _parentScript->GetFrameCounter(frame);
+
+	//This should never happen
+	return 0;
+}
+
+uint64_t TopLevelScript::GetFrameCounter(int64_t frame)
+{
+	return frameCounter[frame];
+}
+
 std::pair<uint64_t, SlotHandle*> Script::GetLatestSave(uint64_t frame)
 {
 	auto save =
@@ -218,7 +232,7 @@ std::pair<uint64_t, SlotHandle*> Script::GetLatestSave(uint64_t frame)
 		Script* parentScript = _parentScript;
 		// Don't search past start of m64 diff to avoid desync
 		uint64_t earlyFrame = !BaseStatus.m64Diff.frames.empty() ?
-			std::min(BaseStatus.m64Diff.frames.begin()->first, frame) :
+			(std::min)(BaseStatus.m64Diff.frames.begin()->first, frame) :
 			frame;
 		if (parentScript)
 			return parentScript->GetLatestSave(earlyFrame);
@@ -309,9 +323,21 @@ void Script::Save(uint64_t frame)
 
 void Script::OptionalSave()
 {
-	uint64_t currentFrame = GetCurrentFrame();
-	if (game->shouldSave(currentFrame - GetLatestSave(currentFrame).first))
-		Save();
+	//Integrate frame counter, saving only if threshold is reached
+	int64_t currentFrame = GetCurrentFrame();
+	int64_t latestSaveFrame = GetLatestSave(currentFrame).first;
+	uint64_t frameCounter = 0;
+	for (int64_t frame = latestSaveFrame; frame <= currentFrame; frame++)
+	{
+		if (game->shouldSave(frameCounter))
+		{
+			Save();
+			break;
+		}
+
+		//Increment AFTER save check. We want to know if a save on the NEXT frame is worthwhile based on the counter from this frame
+		frameCounter += GetFrameCounter(frame);
+	}
 }
 
 void Script::DeleteSave(int64_t frame)
