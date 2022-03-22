@@ -94,8 +94,9 @@ uint64_t Script::GetCurrentFrame()
 
 void Script::AdvanceFrameRead()
 {
-	uint64_t dummyCounter = 0;
-	AdvanceFrameRead(dummyCounter);
+	SetInputs(GetInputs(GetCurrentFrame()));
+	game->advance_frame();
+	BaseStatus.nFrameAdvances++;
 }
 
 void Script::AdvanceFrameRead(uint64_t& counter)
@@ -139,14 +140,12 @@ void Script::Apply(const M64Diff& m64Diff)
 	while (currentFrame <= lastFrame)
 	{
 		// Use default inputs if diff doesn't override them
-		Inputs inputs;
+		auto inputs = GetInputs(currentFrame);
 		if (m64Diff.frames.contains(currentFrame))
 		{
 			inputs = m64Diff.frames.at(currentFrame);
 			BaseStatus.m64Diff.frames[currentFrame] = inputs;
 		}
-		else
-			inputs = GetInputsTracked(currentFrame);
 
 		SetInputs(inputs);
 		game->advance_frame();
@@ -156,10 +155,25 @@ void Script::Apply(const M64Diff& m64Diff)
 	}
 }
 
-Inputs Script::GetInputsTracked(uint64_t frame)
+Inputs Script::GetInputs(int64_t frame)
 {
-	uint64_t dummyCounter = 0;
-	return GetInputsTracked(frame, dummyCounter);
+	if (BaseStatus.m64Diff.frames.contains(frame))
+		return BaseStatus.m64Diff.frames[frame];
+	else if (_parentScript)
+		return _parentScript->GetInputs(frame);
+
+	//This should never happen
+	return Inputs(0, 0, 0);
+}
+
+Inputs TopLevelScript::GetInputs(int64_t frame)
+{
+	if (BaseStatus.m64Diff.frames.count(frame))
+		return BaseStatus.m64Diff.frames[frame];
+	else if (_m64.frames.count(frame))
+		return _m64.frames[frame];
+
+	return Inputs(0, 0, 0);
 }
 
 // Seeks inputs from script hierarchy diffs recursively.

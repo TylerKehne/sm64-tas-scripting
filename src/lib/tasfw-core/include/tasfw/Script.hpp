@@ -180,6 +180,7 @@ protected:
 	void Rollback(uint64_t frame);
 	void RollForward(int64_t frame);
 	void Restore(int64_t frame);
+	virtual Inputs GetInputs(int64_t frame);
 
 	virtual bool validation() = 0;
 	virtual bool execution() = 0;
@@ -193,7 +194,6 @@ private:
 	void DeleteSave(int64_t frame);
 	void SetInputs(Inputs inputs);
 	void Revert(uint64_t frame, const M64Diff& m64);
-	Inputs GetInputsTracked(uint64_t frame);
 	virtual Inputs GetInputsTracked(uint64_t frame, uint64_t& counter);
 	void AdvanceFrameRead(uint64_t& counter);
 	virtual uint64_t GetFrameCounter(int64_t frame);
@@ -227,6 +227,8 @@ public:
 	virtual bool validation() override = 0;
 	virtual bool execution() override = 0;
 	virtual bool assertion() override = 0;
+
+	Inputs GetInputs(int64_t frame) override;
 
 protected:
 	M64& _m64;
