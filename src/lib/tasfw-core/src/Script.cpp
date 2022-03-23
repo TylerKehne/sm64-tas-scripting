@@ -260,15 +260,19 @@ std::pair<uint64_t, SlotHandle*> Script::GetLatestSave(uint64_t frame)
 void Script::Load(uint64_t frame)
 {
 	// Load most recent save at or before frame. Check child saves before
-	// parent.
-	if (frame < GetCurrentFrame())
+	// parent. If target frame is in future, check if faster to frame advance or load.
+	int64_t currentFrame = GetCurrentFrame();
+	auto latestSave = GetLatestSave(frame);
+	if (frame < currentFrame)
 	{
-		game->load_state(GetLatestSave(frame).second->slotId);
+		game->load_state(latestSave.second->slotId);
 		BaseStatus.nLoads++;
 	}
+	else if (latestSave.first > frame && game->shouldLoad(latestSave.first - currentFrame))
+		game->load_state(latestSave.second->slotId);
 
 	// If save is before target frame, play back until frame is reached
-	uint64_t currentFrame = GetCurrentFrame();
+	currentFrame = GetCurrentFrame();
 	uint64_t frameCounter = 0;
 	while (currentFrame++ < frame)
 		AdvanceFrameRead(frameCounter);
@@ -375,19 +379,23 @@ void Script::SetInputs(Inputs inputs)
 void Script::Revert(uint64_t frame, const M64Diff& m64)
 {
 	// Check if script altered state
+	int64_t currentFrame = GetCurrentFrame();
 	bool desync =
-		(!m64.frames.empty()) && (m64.frames.begin()->first < GetCurrentFrame());
+		(!m64.frames.empty()) && (m64.frames.begin()->first < currentFrame);
 
 	// Load most recent save at or before frame. Check child saves before
-	// parent.
-	if (desync || frame < GetCurrentFrame())
+	// parent. If target frame is in future, check if faster to frame advance or load.
+	auto latestSave = GetLatestSave(frame);
+	if (desync || frame < currentFrame)
 	{
-		game->load_state(GetLatestSave(frame).second->slotId);
+		game->load_state(latestSave.second->slotId);
 		BaseStatus.nLoads++;
 	}
+	else if (latestSave.first > frame && game->shouldLoad(latestSave.first - currentFrame))
+		game->load_state(latestSave.second->slotId);
 
 	// If save is before target frame, play back until frame is reached
-	uint64_t currentFrame = GetCurrentFrame();
+	currentFrame = GetCurrentFrame();
 	uint64_t frameCounter = 0;
 	while (currentFrame++ < frame)
 		AdvanceFrameRead(frameCounter);

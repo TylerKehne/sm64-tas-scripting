@@ -118,7 +118,8 @@ public:
 	void load_state(int64_t slotId);
 	void* addr(const char* symbol);
 	uint32_t getCurrentFrame();
-	bool shouldSave(uint64_t framesSinceLastSave) const;
+	bool shouldSave(int64_t framesSinceLastSave) const;
+	bool shouldLoad(int64_t framesAhead) const;
 
 private:
 	friend class Slot;

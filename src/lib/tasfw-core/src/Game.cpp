@@ -188,12 +188,27 @@ uint32_t Game::getCurrentFrame()
 	return *(uint32_t*) (addr("gGlobalTimer")) - 1;
 }
 
-bool Game::shouldSave(uint64_t framesSinceLastSave) const
+bool Game::shouldSave(int64_t framesSinceLastSave) const
 {
+	if (nSaveStates == 0 || framesSinceLastSave < 0)
+		return true;
+
 	double estTimeToSave = double(_totalSaveStateTime) / nSaveStates;
 	double estTimeToLoadFromRecent =
 		(double(_totalFrameAdvanceTime) / nFrameAdvances) * framesSinceLastSave;
 
 	// TODO: Reduce number of automatic load states in script
-	return estTimeToSave <= 2 * estTimeToLoadFromRecent;
+	return estTimeToSave < 2 * estTimeToLoadFromRecent;
+}
+
+bool Game::shouldLoad(int64_t framesAhead) const
+{
+	if (nLoadStates == 0 || framesAhead < 0)
+		return true;
+
+	double estTimeToLoad = double(_totalLoadStateTime) / nLoadStates;
+	double estTimeToFrameAdvance =
+		(double(_totalFrameAdvanceTime) / nFrameAdvances) * framesAhead;
+
+	return estTimeToLoad < framesAhead;
 }
