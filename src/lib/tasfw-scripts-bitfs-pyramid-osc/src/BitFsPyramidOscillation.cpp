@@ -52,84 +52,6 @@ bool BitFsPyramidOscillation::execution()
 	Camera* camera		   = *(Camera**) (game->addr("gCamera"));
 	Object* pyramid		   = marioState->floor->object;
 
-	float normal = 0;
-	auto adhocStatus = ExecuteAdhoc([&]()
-		{
-			MarioState* marioState = *(MarioState**)(game->addr("gMarioState"));
-			normal = marioState->floor->normal.y;
-			return true;
-		});
-
-	class CompareJumpStatus : public CompareStatus<CompareJumpStatus>
-	{
-	public:
-		float y = 0;
-
-		const AdhocScriptStatus<CompareJumpStatus>& Comparator(
-			const AdhocScriptStatus<CompareJumpStatus>& a,
-			const AdhocScriptStatus<CompareJumpStatus>& b) const
-		{
-			if (a.y >= b.y)
-				return a;
-
-			return b;
-		}
-
-		bool Terminator(const AdhocScriptStatus<CompareJumpStatus>& status) const override
-		{
-			return status.y >= -2930;
-		}
-	};
-
-	auto compareStatus = Compare<CompareJumpStatus>(
-		[&](CompareJumpStatus& customStatus) {
-			AdvanceFrameWrite(Inputs(Buttons::A, 0, 0));
-			customStatus.y = marioState->pos[1];
-
-			auto compareStatus2 = Compare<CompareJumpStatus>(
-				[&](CompareJumpStatus& customStatus2) {
-					AdvanceFrameWrite(Inputs(Buttons::A, 0, 0));
-					customStatus2.y = marioState->pos[1];
-					return true;
-				},
-				[&](CompareJumpStatus& customStatus2) {
-					AdvanceFrameWrite(Inputs(Buttons::A, 0, 0));
-					AdvanceFrameWrite(Inputs(Buttons::A, 0, 0));
-					customStatus2.y = marioState->pos[1];
-					return true;
-				},
-					[&](CompareJumpStatus& customStatus2) {
-					AdvanceFrameWrite(Inputs(Buttons::A, 0, 0));
-					AdvanceFrameWrite(Inputs(Buttons::A, 0, 0));
-					AdvanceFrameWrite(Inputs(Buttons::A, 0, 0));
-					customStatus2.y = marioState->pos[1];
-					return true;
-				});
-
-			customStatus.y = compareStatus2.y;
-			return true;
-		},
-		[&](CompareJumpStatus& customStatus) {
-			AdvanceFrameWrite(Inputs(Buttons::A, 0, 0));
-			AdvanceFrameWrite(Inputs(Buttons::A, 0, 0));
-			customStatus.y = marioState->pos[1];
-			return true;
-		},
-		[&](CompareJumpStatus& customStatus) {
-			AdvanceFrameWrite(Inputs(Buttons::A, 0, 0));
-			AdvanceFrameWrite(Inputs(Buttons::A, 0, 0));
-			AdvanceFrameWrite(Inputs(Buttons::A, 0, 0));
-			customStatus.y = marioState->pos[1];
-			return true;
-		});
-
-	auto adhocStatus2 = ExecuteAdhoc<CompareJumpStatus>([&](CompareJumpStatus& customStatus)
-		{
-			MarioState* marioState = *(MarioState**)(game->addr("gMarioState"));
-			customStatus.y = marioState->pos[1];
-			return true;
-		});
-
 	int16_t initAngle	 = -32768;
 	auto initAngleStatus = Test<GetMinimumDownhillWalkingAngle>(initAngle);
 	auto stick = Inputs::GetClosestInputByYawExact(
@@ -175,8 +97,7 @@ bool BitFsPyramidOscillation::execution()
 		// Start at the latest ppossible frame and work backwards. Stop when the
 		// max speed at the equilibrium point stops increasing.
 		oscillationParams = baseOscParams;
-		oscillationParams.roughTargetNormal =
-			getRoughTargetNormal(_quadrant, i, initAngle);
+		oscillationParams.roughTargetNormal = getRoughTargetNormal(_quadrant, i, initAngle);
 		oscillationParams.prevMaxSpeed = CustomStatus.maxSpeed[i & 1U];
 		oscillationParams.brake		   = false;
 		oscillationParams.initialXzSum = CustomStatus.finalXzSum[(i & 1U) ^ 1U];
@@ -187,39 +108,29 @@ bool BitFsPyramidOscillation::execution()
 		// expire, retry the PREVIOUS oscillation with braking + quickturn Then
 		// run another oscillation, compare the speeds, and continue with the
 		// diff that has the higher speed
-		if (i > 0 &&
-			(turnRunStatus.finishTurnaroundFailedToExpire ||
-			 !turnRunStatus.asserted))
+		if (i > 0 && (turnRunStatus.finishTurnaroundFailedToExpire || !turnRunStatus.asserted))
 		{
 			M64Diff nonBrakeDiff	   = GetDiff();
 			int64_t minFrameBrake	   = oscillationMinMaxFrames[i - 1].first;
 			int64_t maxFrameBrake	   = oscillationMinMaxFrames[i - 1].second;
 			auto oscillationParamsPrev = baseOscParams;
-			oscillationParamsPrev.roughTargetNormal =
-				getRoughTargetNormal(_quadrant, i - 1, initAngle);
-			oscillationParamsPrev.prevMaxSpeed =
-				CustomStatus.maxSpeed[(i & 1U) ^ 1U];
+			oscillationParamsPrev.roughTargetNormal = getRoughTargetNormal(_quadrant, i - 1, initAngle);
+			oscillationParamsPrev.prevMaxSpeed = CustomStatus.maxSpeed[(i & 1U) ^ 1U];
 			oscillationParamsPrev.brake		   = true;
 			oscillationParamsPrev.initialXzSum = CustomStatus.finalXzSum[i & 1U];
-			auto turnRunStatusBrake = Modify<BitFsPyramidOscillation_Iteration>(
-				oscillationParamsPrev, minFrameBrake, maxFrameBrake);
+			auto turnRunStatusBrake = Modify<BitFsPyramidOscillation_Iteration>(oscillationParamsPrev, minFrameBrake, maxFrameBrake);
 			if (turnRunStatusBrake.asserted)
 			{
-				int64_t minFrame2 =
-					turnRunStatusBrake.framePassedEquilibriumPoint;
-				int64_t maxFrame2 =
-					turnRunStatusBrake.m64Diff.frames.rbegin()->first;
-				auto turnRunStatus2 =
-					Execute<BitFsPyramidOscillation_Iteration>(
-						oscillationParams, minFrame2, maxFrame2);
+				int64_t minFrame2 = turnRunStatusBrake.framePassedEquilibriumPoint;
+				int64_t maxFrame2 = turnRunStatusBrake.m64Diff.frames.rbegin()->first;
+				auto turnRunStatus2 = Execute<BitFsPyramidOscillation_Iteration>(oscillationParams, minFrame2, maxFrame2);
 				if (turnRunStatus2.passedEquilibriumSpeed >
 					turnRunStatus.passedEquilibriumSpeed)
 				{
-					oscillationMinMaxFrames[i - 1] = {
-						minFrameBrake, maxFrameBrake};
 					oscillationMinMaxFrames[i] = {minFrame2, maxFrame2};
-					CustomStatus.maxSpeed[(i & 1U)] =
-						turnRunStatusBrake.speedBeforeTurning;
+					CustomStatus.maxSpeed[(i & 1U)] = turnRunStatusBrake.speedBeforeTurning;
+					CustomStatus.finalXzSum[(i & 1U) ^ 1U] = turnRunStatusBrake.finalXzSum;
+					CustomStatus.maxPassedEquilibriumSpeed[(i & 1U) ^ 1U] = turnRunStatusBrake.passedEquilibriumSpeed;
 					turnRunStatus = turnRunStatus2;
 				}
 				else
@@ -230,20 +141,16 @@ bool BitFsPyramidOscillation::execution()
 		// Terminate when path fails to increase speed and XZ sum target has
 		// been reached in both directions
 		if (turnRunStatus.asserted &&
-			(turnRunStatus.passedEquilibriumSpeed >
-				 CustomStatus.maxPassedEquilibriumSpeed[i & 1] ||
-			 CustomStatus.finalXzSum[(i & 1) ^ 1] < _targetXzSum ||
-			 CustomStatus.finalXzSum[(i & 1)] < _targetXzSum))
+			(turnRunStatus.passedEquilibriumSpeed > CustomStatus.maxPassedEquilibriumSpeed[i & 1]
+				|| CustomStatus.finalXzSum[(i & 1) ^ 1] < _targetXzSum
+				|| CustomStatus.finalXzSum[(i & 1)] < _targetXzSum))
 		{
 			CustomStatus.finalXzSum[i & 1] = turnRunStatus.finalXzSum;
-			CustomStatus.maxSpeed[(i & 1) ^ 1] =
-				turnRunStatus.speedBeforeTurning;
-			CustomStatus.maxPassedEquilibriumSpeed[i & 1] =
-				turnRunStatus.passedEquilibriumSpeed;
+			CustomStatus.maxSpeed[(i & 1) ^ 1] = turnRunStatus.speedBeforeTurning;
+			CustomStatus.maxPassedEquilibriumSpeed[i & 1] = turnRunStatus.passedEquilibriumSpeed;
 			Apply(turnRunStatus.m64Diff);
 			minFrame = turnRunStatus.framePassedEquilibriumPoint;
 			maxFrame = turnRunStatus.m64Diff.frames.rbegin()->first;
-			Save(minFrame);
 		}
 		else
 			break;

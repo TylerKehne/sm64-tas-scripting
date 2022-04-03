@@ -42,8 +42,7 @@ bool BitFsPyramidOscillation_Iteration::execution()
 		Load(frame);
 		CustomStatus.speedBeforeTurning = marioState->forwardVel;
 		CustomStatus.initialXzSum		= _oscillationParams.initialXzSum;
-		auto status = Execute<BitFsPyramidOscillation_TurnThenRunDownhill>(
-			_oscillationParams);
+		auto status = Execute<BitFsPyramidOscillation_TurnThenRunDownhill>(_oscillationParams);
 
 		// Keep iterating until we get a valid result, then keep iterating until
 		// we stop getting better results Once we get a valid result, we expect
