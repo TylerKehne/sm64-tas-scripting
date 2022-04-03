@@ -51,13 +51,13 @@ public:
 	class CustomScriptStatus
 	{
 	public:
-		float initialXzSum									= 0;
-		float finalXzSum										= 0;
-		float maxSpeed											= 0;
-		float passedEquilibriumSpeed				= 0;
+		float initialXzSum = 0;
+		float finalXzSum = 0;
+		float maxSpeed = 0;
+		float passedEquilibriumSpeed = 0;
 		int64_t framePassedEquilibriumPoint = -1;
 		bool finishTurnaroundFailedToExpire = false;
-		float speedBeforeTurning						= 0;
+		float speedBeforeTurning = 0;
 	};
 	CustomScriptStatus CustomStatus = CustomScriptStatus();
 
@@ -80,10 +80,10 @@ public:
 	class CustomScriptStatus
 	{
 	public:
-		float initialXzSum									= 0;
-		float finalXzSum										= 0;
-		float maxSpeed											= 0;
-		float passedEquilibriumSpeed				= 0;
+		float initialXzSum = 0;
+		float finalXzSum = 0;
+		float maxSpeed = 0;
+		float passedEquilibriumSpeed = 0;
 		int64_t framePassedEquilibriumPoint = -1;
 		bool finishTurnaroundFailedToExpire = false;
 	};
@@ -107,13 +107,13 @@ public:
 	{
 	public:
 		int64_t framePassedEquilibriumPoint = -1;
-		float initialXzSum									= 0;
-		float finalXzSum										= 0;
-		float maxSpeed											= 0;
-		float passedEquilibriumSpeed				= 0;
-		bool tooSlowForTurnAround						= false;
-		bool tooUphill											= false;
-		bool tooDownhill										= false;
+		float initialXzSum = 0;
+		float finalXzSum = 0;
+		float maxSpeed = 0;
+		float passedEquilibriumSpeed = 0;
+		bool tooSlowForTurnAround = false;
+		bool tooUphill = false;
+		bool tooDownhill = false;
 		bool finishTurnaroundFailedToExpire = false;
 	};
 	CustomScriptStatus CustomStatus = CustomScriptStatus();
@@ -138,11 +138,11 @@ public:
 	{
 	public:
 		int64_t framePassedEquilibriumPoint = -1;
-		float maxSpeed											= 0;
-		float passedEquilibriumSpeed				= 0;
-		float finalXzSum										= 0;
-		bool tooDownhill										= false;
-		bool tooUphill											= false;
+		float maxSpeed = 0;
+		float passedEquilibriumSpeed = 0;
+		float finalXzSum = 0;
+		bool tooDownhill = false;
+		bool tooUphill = false;
 		bool finishTurnaroundFailedToExpire = false;
 	};
 	CustomScriptStatus CustomStatus = CustomScriptStatus();
@@ -169,7 +169,7 @@ public:
 		{
 		public:
 			bool isAngleDownhill = false;
-			bool isAngleOptimal	 = false;
+			bool isAngleOptimal = false;
 		};
 
 		std::map<uint64_t, FrameInputStatus> frameStatuses;

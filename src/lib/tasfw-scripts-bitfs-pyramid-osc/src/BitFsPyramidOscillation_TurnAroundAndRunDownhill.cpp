@@ -116,5 +116,5 @@ bool BitFsPyramidOscillation_TurnAroundAndRunDownhill::execution()
 
 bool BitFsPyramidOscillation_TurnAroundAndRunDownhill::assertion()
 {
-	return !BaseStatus.m64Diff.frames.empty();
+	return !IsDiffEmpty();
 }
