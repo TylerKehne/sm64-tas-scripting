@@ -163,5 +163,5 @@ bool BitFsPyramidOscillation_RunDownhill::execution()
 
 bool BitFsPyramidOscillation_RunDownhill::assertion()
 {
-	return !BaseStatus.m64Diff.frames.empty();
+	return !IsDiffEmpty();
 }

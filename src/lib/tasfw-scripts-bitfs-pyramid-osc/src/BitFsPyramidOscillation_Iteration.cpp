@@ -82,5 +82,5 @@ bool BitFsPyramidOscillation_Iteration::execution()
 
 bool BitFsPyramidOscillation_Iteration::assertion()
 {
-	return !BaseStatus.m64Diff.frames.empty();
+	return !IsDiffEmpty();
 }

@@ -42,7 +42,8 @@ public:
 	bool assertion()
 	{
 		// Save m64Diff to M64
-		for (auto& [frame, inputs]: BaseStatus.m64Diff.frames)
+		M64Diff diff = GetDiff();
+		for (auto& [frame, inputs]: diff.frames)
 		{
 			_m64.frames[frame] = inputs;
 		}

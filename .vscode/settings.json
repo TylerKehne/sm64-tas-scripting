@@ -5,6 +5,11 @@
   "editor.insertSpaces": false,
   "editor.tabSize": 4,
   "files.associations": {
-    "chrono": "cpp"
+    "chrono": "cpp",
+    "vector": "cpp",
+    "xtree": "cpp",
+    "algorithm": "cpp",
+    "xhash": "cpp",
+    "utility": "cpp"
   }
 }

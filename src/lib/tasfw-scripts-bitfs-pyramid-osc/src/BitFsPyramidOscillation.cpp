@@ -52,6 +52,63 @@ bool BitFsPyramidOscillation::execution()
 	Camera* camera		   = *(Camera**) (game->addr("gCamera"));
 	Object* pyramid		   = marioState->floor->object;
 
+	float normal = 0;
+	auto adhocStatus = ExecuteAdhoc([&]()
+		{
+			MarioState* marioState = *(MarioState**)(game->addr("gMarioState"));
+			normal = marioState->floor->normal.y;
+			return true;
+		});
+
+	class CompareJumpStatus : public CompareStatus<CompareJumpStatus>
+	{
+	public:
+		float y = 0;
+
+		const AdhocScriptStatus<CompareJumpStatus>& Comparator(
+			const AdhocScriptStatus<CompareJumpStatus>& a,
+			const AdhocScriptStatus<CompareJumpStatus>& b) const
+		{
+			if (a.y >= b.y)
+				return a;
+
+			return b;
+		}
+
+		bool Terminator(const AdhocScriptStatus<CompareJumpStatus>& status) const override
+		{
+			return status.y >= -2930;
+		}
+	};
+
+	auto compareStatus = Compare<CompareJumpStatus>(
+		[&](CompareJumpStatus& customStatus) {
+			AdvanceFrameWrite(Inputs(Buttons::A, 0, 0));
+			customStatus.y = marioState->pos[1];
+			return true;
+		},
+		[&](CompareJumpStatus& customStatus) {
+			AdvanceFrameWrite(Inputs(Buttons::A, 0, 0));
+			AdvanceFrameWrite(Inputs(Buttons::A, 0, 0));
+			customStatus.y = marioState->pos[1];
+			return true;
+		},
+		[&](CompareJumpStatus& customStatus) {
+			AdvanceFrameWrite(Inputs(Buttons::A, 0, 0));
+			AdvanceFrameWrite(Inputs(Buttons::A, 0, 0));
+			AdvanceFrameWrite(Inputs(Buttons::A, 0, 0));
+			customStatus.y = marioState->pos[1];
+			return true;
+		}
+	);
+
+	auto adhocStatus2 = ExecuteAdhoc<CompareJumpStatus>([&](CompareJumpStatus& customStatus)
+		{
+			MarioState* marioState = *(MarioState**)(game->addr("gMarioState"));
+			customStatus.y = marioState->pos[1];
+			return true;
+		});
+
 	int16_t initAngle	 = -32768;
 	auto initAngleStatus = Test<GetMinimumDownhillWalkingAngle>(initAngle);
 	auto stick = Inputs::GetClosestInputByYawExact(
@@ -113,7 +170,7 @@ bool BitFsPyramidOscillation::execution()
 			(turnRunStatus.finishTurnaroundFailedToExpire ||
 			 !turnRunStatus.asserted))
 		{
-			M64Diff nonBrakeDiff	   = BaseStatus.m64Diff;
+			M64Diff nonBrakeDiff	   = GetDiff();
 			int64_t minFrameBrake	   = oscillationMinMaxFrames[i - 1].first;
 			int64_t maxFrameBrake	   = oscillationMinMaxFrames[i - 1].second;
 			auto oscillationParamsPrev = baseOscParams;
@@ -176,7 +233,7 @@ bool BitFsPyramidOscillation::execution()
 
 bool BitFsPyramidOscillation::assertion()
 {
-	if (!BaseStatus.m64Diff.frames.size())
+	if (IsDiffEmpty())
 		return false;
 
 	if (CustomStatus.finalXzSum[0] < _targetXzSum ||

@@ -4,11 +4,11 @@
 #include <tasfw/Inputs.hpp>
 #include <sm64/Types.hpp>
 
-
 class Script;
 class SlotHandle;
 class Game;
 class TopLevelScript;
+class BaseScriptStatus;
 
 class BaseScriptStatus
 {
@@ -36,13 +36,61 @@ class ScriptStatus : public BaseScriptStatus, public TScript::CustomScriptStatus
 public:
 	ScriptStatus() : BaseScriptStatus(), TScript::CustomScriptStatus() {}
 
-	ScriptStatus(
-		BaseScriptStatus baseStatus,
-		typename TScript::CustomScriptStatus customStatus) :
-		BaseScriptStatus(baseStatus), TScript::CustomScriptStatus(customStatus)
+	ScriptStatus(BaseScriptStatus baseStatus, typename TScript::CustomScriptStatus customStatus)
+		: BaseScriptStatus(baseStatus), TScript::CustomScriptStatus(customStatus) { }
+};
+
+class AdhocBaseScriptStatus
+{
+public:
+	bool executed = false;
+	bool executionThrew = false;
+	uint64_t executionDuration = 0;
+	uint64_t nLoads = 0;
+	uint64_t nSaves = 0;
+	uint64_t nFrameAdvances = 0;
+	M64Diff m64Diff = M64Diff();
+
+	AdhocBaseScriptStatus() = default;
+
+	AdhocBaseScriptStatus(BaseScriptStatus baseStatus)
 	{
+		executed = baseStatus.executed;
+		executionThrew = baseStatus.executionThrew;
+		executionDuration = baseStatus.executionDuration;
+		nLoads = baseStatus.nLoads;
+		nSaves = baseStatus.nSaves;
+		nFrameAdvances = baseStatus.nFrameAdvances;
+		m64Diff = baseStatus.m64Diff;
 	}
 };
+
+template <class TAdhocCustomScriptStatus>
+class AdhocScriptStatus : public AdhocBaseScriptStatus, public TAdhocCustomScriptStatus
+{
+public:
+	AdhocScriptStatus() : AdhocBaseScriptStatus(), TAdhocCustomScriptStatus() {}
+
+	AdhocScriptStatus(AdhocBaseScriptStatus baseStatus, typename TAdhocCustomScriptStatus customStatus)
+	: AdhocBaseScriptStatus(baseStatus), TAdhocCustomScriptStatus(customStatus) { }
+};
+
+template <class TCompareStatus>
+class CompareStatus
+{
+public:
+	virtual const AdhocScriptStatus<TCompareStatus>& Comparator(
+		const AdhocScriptStatus<TCompareStatus>& a,
+		const AdhocScriptStatus<TCompareStatus>& b) const  = 0;
+
+	virtual bool Terminator(const AdhocScriptStatus<TCompareStatus>& status) const { return false; }
+};
+
+template <typename F, typename R = std::invoke_result_t<F>>
+concept AdhocScript = std::same_as<R, bool>;
+
+template <typename F, typename T>
+concept AdhocCustomStatusScript = std::same_as<std::invoke_result_t<F, T&>, bool>;
 
 /// <summary>
 /// Execute a state-changing operation on the game. Parameters should correspond
@@ -51,14 +99,10 @@ public:
 class Script
 {
 public:
-	class CustomScriptStatus
-	{
-	};
+	class CustomScriptStatus {};
 	CustomScriptStatus CustomStatus = {};
-	BaseScriptStatus BaseStatus;
-	Script* _parentScript;
-	std::map<uint64_t, SlotHandle> saveBank;
-	std::map<int64_t, uint64_t> frameCounter;
+
+	// TODO: make private
 	Game* game = nullptr;
 
 	Script(Script* parentScript) : _parentScript(parentScript)
@@ -72,8 +116,6 @@ public:
 
 	// TODO: move this method to some utility class
 	static void CopyVec3f(Vec3f dest, Vec3f source);
-
-	
 
 protected:
 	uint32_t _initialFrame = 0;
@@ -92,13 +134,13 @@ protected:
 			script.checkPostconditions();
 
 		// Load if necessary
-		Revert(initialFrame, script.BaseStatus.m64Diff);
+		Revert(initialFrame, script.BaseStatus[0].m64Diff);
 
-		BaseStatus.nLoads += script.BaseStatus.nLoads;
-		BaseStatus.nSaves += script.BaseStatus.nSaves;
-		BaseStatus.nFrameAdvances += script.BaseStatus.nFrameAdvances;
+		BaseStatus[_adhocLevel].nLoads += script.BaseStatus[0].nLoads;
+		BaseStatus[_adhocLevel].nSaves += script.BaseStatus[0].nSaves;
+		BaseStatus[_adhocLevel].nFrameAdvances += script.BaseStatus[0].nFrameAdvances;
 
-		return ScriptStatus<TScript>(script.BaseStatus, script.CustomStatus);
+		return ScriptStatus<TScript>(script.BaseStatus[0], script.CustomStatus);
 	}
 
 	template <std::derived_from<Script> TScript, typename... Us>
@@ -115,35 +157,16 @@ protected:
 			script.checkPostconditions();
 
 		// Revert state if assertion fails, otherwise apply diff
-		if (!script.BaseStatus.asserted || script.BaseStatus.m64Diff.frames.empty())
-			Revert(initialFrame, script.BaseStatus.m64Diff);
+		if (!script.BaseStatus[0].asserted || script.BaseStatus[0].m64Diff.frames.empty())
+			Revert(initialFrame, script.BaseStatus[0].m64Diff);
 		else
-		{
-			uint64_t firstFrame = script.BaseStatus.m64Diff.frames.begin()->first;
-			uint64_t lastFrame = script.BaseStatus.m64Diff.frames.rbegin()->first;
+			ApplyChildDiff(script.BaseStatus[0], initialFrame);
 
-			// Erase all saves after starting frame of diff
-			auto firstInvalidFrame = saveBank.upper_bound(firstFrame);
-			saveBank.erase(firstInvalidFrame, saveBank.end());
+		BaseStatus[_adhocLevel].nLoads += script.BaseStatus[0].nLoads;
+		BaseStatus[_adhocLevel].nSaves += script.BaseStatus[0].nSaves;
+		BaseStatus[_adhocLevel].nFrameAdvances += script.BaseStatus[0].nFrameAdvances;
 
-			//Apply diff. State is already synced from child script, so no need to update it
-			int64_t frame = firstFrame;
-			while (frame <= lastFrame)
-			{
-				if (script.BaseStatus.m64Diff.frames.count(frame))
-					BaseStatus.m64Diff.frames[frame] = script.BaseStatus.m64Diff.frames.at(frame);
-				frame++;
-			}
-
-			//Forward state to end of diff
-			Load(lastFrame + 1);
-		}
-
-		BaseStatus.nLoads += script.BaseStatus.nLoads;
-		BaseStatus.nSaves += script.BaseStatus.nSaves;
-		BaseStatus.nFrameAdvances += script.BaseStatus.nFrameAdvances;
-
-		return ScriptStatus<TScript>(script.BaseStatus, script.CustomStatus);
+		return ScriptStatus<TScript>(script.BaseStatus[0], script.CustomStatus);
 	}
 
 	template <std::derived_from<Script> TScript, typename... Us>
@@ -158,9 +181,111 @@ protected:
 		return status;
 	}
 
-	bool checkPreconditions();
-	bool execute();
-	bool checkPostconditions();
+	AdhocBaseScriptStatus ExecuteAdhoc(AdhocScript auto adhocScript)
+	{
+		// Save state if performant
+		int64_t initialFrame = GetCurrentFrame();
+		OptionalSave();
+
+		BaseScriptStatus status = ExecuteAdhocBase(adhocScript);
+		Revert(initialFrame, status.m64Diff);
+
+		return AdhocBaseScriptStatus(status);
+	}
+
+	template <class TAdhocCustomScriptStatus, AdhocCustomStatusScript<TAdhocCustomScriptStatus> F>
+	AdhocScriptStatus<TAdhocCustomScriptStatus> ExecuteAdhoc(F adhocScript)
+	{
+		// Save state if performant
+		int64_t initialFrame = GetCurrentFrame();
+		OptionalSave();
+
+		TAdhocCustomScriptStatus customStatus = TAdhocCustomScriptStatus();
+		BaseScriptStatus baseStatus = ExecuteAdhocBase([&]() { return adhocScript(customStatus); });
+		Revert(initialFrame, baseStatus.m64Diff);
+
+		return AdhocScriptStatus<TAdhocCustomScriptStatus>(baseStatus, customStatus);
+	}
+
+	AdhocBaseScriptStatus ModifyAdhoc(AdhocScript auto adhocScript)
+	{
+		// Save state if performant
+		int64_t initialFrame = GetCurrentFrame();
+		OptionalSave();
+
+		auto status = ExecuteAdhocBase(adhocScript);
+
+		// Revert state if assertion fails, otherwise apply diff
+		if (!status.asserted || status.m64Diff.frames.empty())
+			Revert(initialFrame, status.m64Diff);
+		else
+			ApplyChildDiff(status, initialFrame);
+
+		return AdhocBaseScriptStatus(status);
+	}
+
+	template <class TAdhocCustomScriptStatus, AdhocCustomStatusScript<TAdhocCustomScriptStatus> F>
+	AdhocScriptStatus<TAdhocCustomScriptStatus> ModifyAdhoc(F adhocScript)
+	{
+		// Save state if performant
+		int64_t initialFrame = GetCurrentFrame();
+		OptionalSave();
+
+		TAdhocCustomScriptStatus customStatus = TAdhocCustomScriptStatus();
+		BaseScriptStatus baseStatus = ExecuteAdhocBase([&]() { return adhocScript(customStatus); });
+		
+		// Revert state if assertion fails, otherwise apply diff
+		if (!baseStatus.asserted || baseStatus.m64Diff.frames.empty())
+			Revert(initialFrame, baseStatus.m64Diff);
+		else
+			ApplyChildDiff(baseStatus, initialFrame);
+
+		return AdhocScriptStatus<TAdhocCustomScriptStatus>(baseStatus, customStatus);
+	}
+
+	AdhocBaseScriptStatus TestAdhoc(AdhocScript auto&& adhocScript)
+	{
+		auto status = ExecuteAdhoc(std::forward<AdhocScript auto>(adhocScript));
+		status.m64Diff = M64Diff();
+
+		return status;
+	}
+
+	template <class TAdhocCustomScriptStatus, AdhocCustomStatusScript<TAdhocCustomScriptStatus> F>
+	AdhocScriptStatus<TAdhocCustomScriptStatus> TestAdhoc(F&& adhocScript)
+	{
+		auto status = ExecuteAdhoc<TAdhocCustomScriptStatus>(std::forward<F>(adhocScript));
+		status.m64Diff = M64Diff();
+
+		return status;
+	}
+
+	//Leaf method for comparing ad-hoc scripts. This is the one the user will call.
+	template <class TCompareStatus,
+		AdhocCustomStatusScript<TCompareStatus> F,
+		AdhocCustomStatusScript<TCompareStatus> G,
+		AdhocCustomStatusScript<TCompareStatus>... H>
+	requires(std::derived_from<TCompareStatus, CompareStatus<TCompareStatus>>)
+	AdhocScriptStatus<TCompareStatus> Compare(F&& adhocScript1, G&& adhocScript2, H&&... adhocScripts)
+	{
+		auto status1 = ExecuteAdhoc<TCompareStatus>(std::forward<F>(adhocScript1));
+		if (status1.executed && status1.Terminator(status1))
+			return status1;
+
+		auto status2 = ExecuteAdhoc<TCompareStatus>(std::forward<G>(adhocScript2));
+		if (status1.executed && status2.Terminator(status2))
+			return status1;
+
+		if (!status1.executed)
+		{
+			if (!status2.executed)
+				return Compare<TCompareStatus>(status1, std::forward<H>(adhocScripts)...);
+
+			return Compare<TCompareStatus>(status2, std::forward<H>(adhocScripts)...);
+		}
+
+		return Compare<TCompareStatus>(status1.Comparator(status1, status2), std::forward<H>(adhocScripts)...);
+	}
 
 	// TODO: move this method to some utility class
 	template <typename T>
@@ -170,6 +295,8 @@ protected:
 	}
 
 	uint64_t GetCurrentFrame();
+	bool IsDiffEmpty();
+	M64Diff GetDiff();
 	void Apply(const M64Diff& m64Diff);
 	void AdvanceFrameRead();
 	void AdvanceFrameWrite(Inputs inputs);
@@ -190,13 +317,94 @@ private:
 	friend class SlotManager;
 	friend class TopLevelScript;
 
+	int64_t _adhocLevel = 0;
+	std::vector<BaseScriptStatus> BaseStatus = { BaseScriptStatus() };
+	std::vector<std::map<uint64_t, SlotHandle>> saveBank = { std::map<uint64_t, SlotHandle>() };
+	std::vector<std::map<int64_t, uint64_t>> frameCounter = { std::map<int64_t, uint64_t>() };
+	Script* _parentScript;
+
+	bool checkPreconditions();
+	bool execute();
+	bool checkPostconditions();
+
 	std::pair<uint64_t, SlotHandle*> GetLatestSave(uint64_t frame);
-	void DeleteSave(int64_t frame);
+	void DeleteSave(int64_t frame, int64_t adhocLevel);
 	void SetInputs(Inputs inputs);
 	void Revert(uint64_t frame, const M64Diff& m64);
 	virtual Inputs GetInputsTracked(uint64_t frame, uint64_t& counter);
 	void AdvanceFrameRead(uint64_t& counter);
 	virtual uint64_t GetFrameCounter(int64_t frame);
+	void ApplyChildDiff(const BaseScriptStatus& status, int64_t initialFrame);
+
+	template <typename F>
+	BaseScriptStatus ExecuteAdhocBase(F adhocScript)
+	{
+		//Increment adhoc level
+		_adhocLevel++;
+		BaseStatus.emplace_back();
+		saveBank.emplace_back();
+		frameCounter.emplace_back();
+
+		BaseStatus[_adhocLevel].validated = true;
+
+		auto start = std::chrono::high_resolution_clock::now();
+		try
+		{
+			BaseStatus[_adhocLevel].executed = adhocScript();
+		}
+		catch (std::exception& e)
+		{
+			BaseStatus[_adhocLevel].executionThrew = true;
+		}
+		auto finish = std::chrono::high_resolution_clock::now();
+
+		BaseStatus[_adhocLevel].executionDuration =
+			std::chrono::duration_cast<std::chrono::milliseconds>(finish - start)
+			.count();
+
+		BaseStatus[_adhocLevel].asserted = BaseStatus[_adhocLevel].executed;
+
+		//Decrement adhoc level, revert state and return status
+		BaseScriptStatus status = BaseStatus[_adhocLevel];
+		BaseStatus.pop_back();
+		saveBank.pop_back();
+		frameCounter.pop_back();
+		_adhocLevel--;
+
+		BaseStatus[_adhocLevel].nLoads += status.nLoads;
+		BaseStatus[_adhocLevel].nSaves += status.nSaves;
+		BaseStatus[_adhocLevel].nFrameAdvances += status.nFrameAdvances;
+
+		return status;
+	}
+
+	//Root method for Compare() template recursion. This will be called when there are no scripts left to compare the incumbent to.
+	template <class TCompareStatus>
+		requires(std::derived_from<TCompareStatus, CompareStatus<TCompareStatus>>)
+	AdhocScriptStatus<TCompareStatus> Compare(const AdhocScriptStatus<TCompareStatus>& status1)
+	{
+		return status1;
+	}
+
+	//Main recursive method for comparing ad hoc scripts. Only the root and leaf use different methods
+	template <class TCompareStatus, AdhocCustomStatusScript<TCompareStatus> F, AdhocCustomStatusScript<TCompareStatus>... G>
+		requires(std::derived_from<TCompareStatus, CompareStatus<TCompareStatus>>)
+	AdhocScriptStatus<TCompareStatus> Compare(const AdhocScriptStatus<TCompareStatus>& status1, F&& adhocScript2, G&&... adhocScripts)
+	{
+		auto status2 = ExecuteAdhoc<TCompareStatus>(std::forward<F>(adhocScript2));
+		if (status2.executed && status2.Terminator(status2))
+			return status2;
+
+		if (!status1.executed)
+		{
+			if (!status2.executed)
+				return Compare<TCompareStatus>(status1, std::forward<G>(adhocScripts)...);
+
+			return Compare<TCompareStatus>(status2, std::forward<G>(adhocScripts)...);
+		}
+
+		return Compare<TCompareStatus>(status1.Comparator(status1, status2), std::forward<G>(adhocScripts)...);
+	}
 };
 
 class TopLevelScript : public Script
@@ -207,9 +415,7 @@ public:
 		this->game = game;
 	}
 
-	template <
-		std::derived_from<TopLevelScript> TTopLevelScript,
-		std::derived_from<Game> TGame, typename... Ts>
+	template <std::derived_from<TopLevelScript> TTopLevelScript, std::derived_from<Game> TGame, typename... Ts>
 		requires(std::constructible_from<TGame, Ts...>)
 	static ScriptStatus<TTopLevelScript> Main(M64& m64, Ts&&... params)
 	{
@@ -221,7 +427,7 @@ public:
 			script.checkPostconditions();
 
 		return ScriptStatus<TTopLevelScript>(
-			script.BaseStatus, script.CustomStatus);
+			script.BaseStatus[0], script.CustomStatus);
 	}
 
 	virtual bool validation() override = 0;

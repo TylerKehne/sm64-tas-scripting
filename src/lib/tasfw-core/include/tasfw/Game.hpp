@@ -35,11 +35,13 @@ public:
 	std::vector<uint8_t> buf2;
 	Game* game = nullptr;
 	Script* script = nullptr;
+	int64_t adhocLevel = -1;
 	int64_t frame = -1;
 
 	Slot() = default;
 
-	Slot(Game* game, Script* script, int64_t frame) : game(game), script(script), frame(frame) { }
+	Slot(Game* game, Script* script, int64_t frame, int64_t adhocLevel)
+		: game(game), script(script), frame(frame), adhocLevel(adhocLevel) { }
 
 	~Slot();
 };
@@ -68,7 +70,7 @@ private:
 
 	SlotManager(Game* game) : _game(game) { }
 
-	int64_t CreateSlot(Script* script, int64_t frame);
+	int64_t CreateSlot(Script* script, int64_t frame, int64_t adhocLevel);
 	void EraseOldestSlot();
 	void EraseSlot(int64_t slotId);
 	void UpdateSlot(int64_t slotId);
@@ -114,7 +116,7 @@ public:
 
 	void advance_frame();
 	void save_state_initial();
-	int64_t save_state(Script* script, int64_t frame);
+	int64_t save_state(Script* script, int64_t frame, int64_t adhocLevel);
 	void load_state(int64_t slotId);
 	void* addr(const char* symbol);
 	uint32_t getCurrentFrame();

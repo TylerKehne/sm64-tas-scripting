@@ -103,7 +103,7 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill::execution()
 
 bool BitFsPyramidOscillation_TurnThenRunDownhill::assertion()
 {
-	if (BaseStatus.m64Diff.frames.empty())
+	if (IsDiffEmpty())
 		return false;
 
 	return true;

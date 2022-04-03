@@ -39,7 +39,7 @@ SlotHandle::~SlotHandle()
 		game->slotManager.EraseSlot(slotId);
 }
 
-int64_t SlotManager::CreateSlot(Script* script, int64_t frame)
+int64_t SlotManager::CreateSlot(Script* script, int64_t frame, int64_t adhocLevel)
 {
 	while (true)
 	{
@@ -48,7 +48,7 @@ int64_t SlotManager::CreateSlot(Script* script, int64_t frame)
 		{
 			//NOTE: IDs/Order will not overflow on realistic timescales
 			int64_t slotId = slotsById.size() == 0 ? 0 : std::prev(slotsById.end())->first + 1;
-			slotsById[slotId] = Slot(_game, script, frame);
+			slotsById[slotId] = Slot(_game, script, frame, adhocLevel);
 			int64_t slotOrder = slotIdsByLastAccess.size() == 0 ? 0 : std::prev(slotIdsByLastAccess.end())->first + 1;
 			slotIdsByLastAccess[slotOrder] = slotId;
 			slotLastAccessOrderById[slotId] = slotOrder;
@@ -105,7 +105,7 @@ void SlotManager::EraseOldestSlot()
 		return;
 
 	//Remove slot handle from script hierarchy, triggering slot deletion
-	slotsById[slotId].script->DeleteSave(slotsById[slotId].frame);
+	slotsById[slotId].script->DeleteSave(slotsById[slotId].frame, slotsById[slotId].adhocLevel);
 }
 
 void Game::advance_frame()
@@ -126,10 +126,10 @@ void Game::advance_frame()
 	nFrameAdvances++;
 }
 
-int64_t Game::save_state(Script* script, int64_t frame)
+int64_t Game::save_state(Script* script, int64_t frame, int64_t adhocLevel)
 {
 	auto start = get_time();
-	int64_t slotId = slotManager.CreateSlot(script, frame);
+	int64_t slotId = slotManager.CreateSlot(script, frame, adhocLevel);
 	_totalSaveStateTime += get_time() - start;
 
 	nSaveStates++;

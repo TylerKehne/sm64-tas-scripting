@@ -153,7 +153,7 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::execution()
 
 bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::assertion()
 {
-	if (BaseStatus.m64Diff.frames.empty())
+	if (IsDiffEmpty())
 		return false;
 
 	if (CustomStatus.tooUphill || CustomStatus.tooDownhill)
