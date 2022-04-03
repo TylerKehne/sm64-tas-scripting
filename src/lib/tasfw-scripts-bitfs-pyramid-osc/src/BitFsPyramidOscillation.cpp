@@ -85,6 +85,28 @@ bool BitFsPyramidOscillation::execution()
 		[&](CompareJumpStatus& customStatus) {
 			AdvanceFrameWrite(Inputs(Buttons::A, 0, 0));
 			customStatus.y = marioState->pos[1];
+
+			auto compareStatus2 = Compare<CompareJumpStatus>(
+				[&](CompareJumpStatus& customStatus2) {
+					AdvanceFrameWrite(Inputs(Buttons::A, 0, 0));
+					customStatus2.y = marioState->pos[1];
+					return true;
+				},
+				[&](CompareJumpStatus& customStatus2) {
+					AdvanceFrameWrite(Inputs(Buttons::A, 0, 0));
+					AdvanceFrameWrite(Inputs(Buttons::A, 0, 0));
+					customStatus2.y = marioState->pos[1];
+					return true;
+				},
+					[&](CompareJumpStatus& customStatus2) {
+					AdvanceFrameWrite(Inputs(Buttons::A, 0, 0));
+					AdvanceFrameWrite(Inputs(Buttons::A, 0, 0));
+					AdvanceFrameWrite(Inputs(Buttons::A, 0, 0));
+					customStatus2.y = marioState->pos[1];
+					return true;
+				});
+
+			customStatus.y = compareStatus2.y;
 			return true;
 		},
 		[&](CompareJumpStatus& customStatus) {
@@ -99,8 +121,7 @@ bool BitFsPyramidOscillation::execution()
 			AdvanceFrameWrite(Inputs(Buttons::A, 0, 0));
 			customStatus.y = marioState->pos[1];
 			return true;
-		}
-	);
+		});
 
 	auto adhocStatus2 = ExecuteAdhoc<CompareJumpStatus>([&](CompareJumpStatus& customStatus)
 		{

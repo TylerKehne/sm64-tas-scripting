@@ -118,8 +118,6 @@ public:
 	static void CopyVec3f(Vec3f dest, Vec3f source);
 
 protected:
-	uint32_t _initialFrame = 0;
-
 	template <std::derived_from<Script> TScript, typename... Us>
 		requires(std::constructible_from<TScript, Script*, Us...>)
 	ScriptStatus<TScript> Execute(Us&&... params)
@@ -183,9 +181,7 @@ protected:
 
 	AdhocBaseScriptStatus ExecuteAdhoc(AdhocScript auto adhocScript)
 	{
-		// Save state if performant
 		int64_t initialFrame = GetCurrentFrame();
-		OptionalSave();
 
 		BaseScriptStatus status = ExecuteAdhocBase(adhocScript);
 		Revert(initialFrame, status.m64Diff);
@@ -196,9 +192,7 @@ protected:
 	template <class TAdhocCustomScriptStatus, AdhocCustomStatusScript<TAdhocCustomScriptStatus> F>
 	AdhocScriptStatus<TAdhocCustomScriptStatus> ExecuteAdhoc(F adhocScript)
 	{
-		// Save state if performant
 		int64_t initialFrame = GetCurrentFrame();
-		OptionalSave();
 
 		TAdhocCustomScriptStatus customStatus = TAdhocCustomScriptStatus();
 		BaseScriptStatus baseStatus = ExecuteAdhocBase([&]() { return adhocScript(customStatus); });
@@ -209,9 +203,7 @@ protected:
 
 	AdhocBaseScriptStatus ModifyAdhoc(AdhocScript auto adhocScript)
 	{
-		// Save state if performant
 		int64_t initialFrame = GetCurrentFrame();
-		OptionalSave();
 
 		auto status = ExecuteAdhocBase(adhocScript);
 
@@ -227,9 +219,7 @@ protected:
 	template <class TAdhocCustomScriptStatus, AdhocCustomStatusScript<TAdhocCustomScriptStatus> F>
 	AdhocScriptStatus<TAdhocCustomScriptStatus> ModifyAdhoc(F adhocScript)
 	{
-		// Save state if performant
 		int64_t initialFrame = GetCurrentFrame();
-		OptionalSave();
 
 		TAdhocCustomScriptStatus customStatus = TAdhocCustomScriptStatus();
 		BaseScriptStatus baseStatus = ExecuteAdhocBase([&]() { return adhocScript(customStatus); });
@@ -273,8 +263,8 @@ protected:
 			return status1;
 
 		auto status2 = ExecuteAdhoc<TCompareStatus>(std::forward<G>(adhocScript2));
-		if (status1.executed && status2.Terminator(status2))
-			return status1;
+		if (status2.executed && status2.Terminator(status2))
+			return status2;
 
 		if (!status1.executed)
 		{
@@ -285,6 +275,66 @@ protected:
 		}
 
 		return Compare<TCompareStatus>(status1.Comparator(status1, status2), std::forward<H>(adhocScripts)...);
+	}
+
+	//Leaf method for comparing ad-hoc scripts and applying the result. This is the one the user will call.
+	template <class TCompareStatus,
+		AdhocCustomStatusScript<TCompareStatus> F,
+		AdhocCustomStatusScript<TCompareStatus> G,
+		AdhocCustomStatusScript<TCompareStatus>... H>
+		requires(std::derived_from<TCompareStatus, CompareStatus<TCompareStatus>>)
+	AdhocScriptStatus<TCompareStatus> ModifyCompare(F&& adhocScript1, G&& adhocScript2, H&&... adhocScripts)
+	{
+		int64_t initialFrame = GetCurrentFrame();
+		auto status1 = ExecuteAdhocNoRevert<TCompareStatus>(std::forward<F>(adhocScript1));
+		if (status1.executed && status1.Terminator(status1))
+		{
+			// Revert state if diff is empty, otherwise apply diff
+			if (status1.m64Diff.frames.empty())
+				Revert(initialFrame, status1.m64Diff);
+			else
+				ApplyChildDiff(status1, initialFrame);
+
+			return status1;
+		}
+
+		//Revert state before executing new script
+		Revert(initialFrame, status1.m64Diff);
+		auto status2 = ExecuteAdhocNoRevert<TCompareStatus>(std::forward<G>(adhocScript2));
+		if (status2.executed && status2.Terminator(status2))
+		{
+			// Revert state if diff is empty, otherwise apply diff
+			if (status2.m64Diff.frames.empty())
+				Revert(initialFrame, status2.m64Diff);
+			else
+				ApplyChildDiff(status2, initialFrame);
+
+			return status2;
+		}	
+
+		if (!status1.executed)
+		{
+			if (!status2.executed)
+				return ModifyCompare<TCompareStatus>(initialFrame, status1, std::forward<H>(adhocScripts)...);
+
+			return ModifyCompare<TCompareStatus>(initialFrame, status2, std::forward<H>(adhocScripts)...);
+		}
+
+		return ModifyCompare<TCompareStatus>(initialFrame, status1.Comparator(status1, status2), std::forward<H>(adhocScripts)...);
+	}
+
+	//Same as Compare(), but with no diff returned
+	template <class TCompareStatus,
+		AdhocCustomStatusScript<TCompareStatus> F,
+		AdhocCustomStatusScript<TCompareStatus> G,
+		AdhocCustomStatusScript<TCompareStatus>... H>
+		requires(std::derived_from<TCompareStatus, CompareStatus<TCompareStatus>>)
+	AdhocScriptStatus<TCompareStatus> TestCompare(F&& adhocScript1, G&& adhocScript2, H&&... adhocScripts)
+	{
+		auto status = Compare<TCompareStatus>(std::forward<F>(adhocScript1), std::forward<G>(adhocScript2), std::forward<H>(adhocScripts)...);
+		status.m64Diff = M64Diff();
+
+		return status;
 	}
 
 	// TODO: move this method to some utility class
@@ -318,6 +368,7 @@ private:
 	friend class TopLevelScript;
 
 	int64_t _adhocLevel = 0;
+	int32_t _initialFrame = 0;
 	std::vector<BaseScriptStatus> BaseStatus = { BaseScriptStatus() };
 	std::vector<std::map<uint64_t, SlotHandle>> saveBank = { std::map<uint64_t, SlotHandle>() };
 	std::vector<std::map<int64_t, uint64_t>> frameCounter = { std::map<int64_t, uint64_t>() };
@@ -339,6 +390,9 @@ private:
 	template <typename F>
 	BaseScriptStatus ExecuteAdhocBase(F adhocScript)
 	{
+		//Save state if performant
+		OptionalSave();
+
 		//Increment adhoc level
 		_adhocLevel++;
 		BaseStatus.emplace_back();
@@ -404,6 +458,63 @@ private:
 		}
 
 		return Compare<TCompareStatus>(status1.Comparator(status1, status2), std::forward<G>(adhocScripts)...);
+	}
+
+	//Only to be used by ModifyCompare(). Will desync if used alone, as it assumes the caller will call Revert().
+	template <class TAdhocCustomScriptStatus, AdhocCustomStatusScript<TAdhocCustomScriptStatus> F>
+	AdhocScriptStatus<TAdhocCustomScriptStatus> ExecuteAdhocNoRevert(F adhocScript)
+	{
+		// Save state if performant
+		OptionalSave();
+
+		TAdhocCustomScriptStatus customStatus = TAdhocCustomScriptStatus();
+		BaseScriptStatus baseStatus = ExecuteAdhocBase([&]() { return adhocScript(customStatus); });
+
+		return AdhocScriptStatus<TAdhocCustomScriptStatus>(baseStatus, customStatus);
+	}
+
+	//Root method for ModifyCompare() template recursion. This will be called when there are no scripts left to compare the incumbent to.
+	template <class TCompareStatus>
+		requires(std::derived_from<TCompareStatus, CompareStatus<TCompareStatus>>)
+	AdhocScriptStatus<TCompareStatus> ModifyCompare(int64_t initialFrame, const AdhocScriptStatus<TCompareStatus>& status1)
+	{
+		// Revert state if execution failed or diff is empty, otherwise apply diff
+		if (!status1.executed && status1.m64Diff.frames.empty())
+			Revert(initialFrame, status1.m64Diff);
+		else
+			ApplyChildDiff(status1, initialFrame);
+
+		return status1;
+	}
+
+	//Main recursive method for ModifyCompare(). Only the root and leaf use different methods
+	template <class TCompareStatus, AdhocCustomStatusScript<TCompareStatus> F, AdhocCustomStatusScript<TCompareStatus>... G>
+		requires(std::derived_from<TCompareStatus, CompareStatus<TCompareStatus>>)
+	AdhocScriptStatus<TCompareStatus> ModifyCompare(int64_t initialFrame, const AdhocScriptStatus<TCompareStatus>& status1, F&& adhocScript2, G&&... adhocScripts)
+	{
+		//Revert state before executing new script
+		Revert(initialFrame, status1.m64Diff);
+		auto status2 = ExecuteAdhoc<TCompareStatus>(std::forward<F>(adhocScript2));
+		if (status2.executed && status2.Terminator(status2))
+		{
+			// Revert state if execution failed or diff is empty, otherwise apply diff
+			if (!status2.executed && status2.m64Diff.frames.empty())
+				Revert(initialFrame, status2.m64Diff);
+			else
+				ApplyChildDiff(status2, initialFrame);
+
+			return status2;
+		}
+
+		if (!status1.executed)
+		{
+			if (!status2.executed)
+				return ModifyCompare<TCompareStatus>(initialFrame, status1, std::forward<G>(adhocScripts)...);
+
+			return ModifyCompare<TCompareStatus>(initialFrame, status2, std::forward<G>(adhocScripts)...);
+		}
+
+		return ModifyCompare<TCompareStatus>(initialFrame, status1.Comparator(status1, status2), std::forward<G>(adhocScripts)...);
 	}
 };
 
