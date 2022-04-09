@@ -200,6 +200,7 @@ private:
 	uint64_t GetFrameCounter(int64_t frame) override;
 };
 
+//Include template method implementations
 #include "tasfw/Script.t.hpp"
 
 #endif
