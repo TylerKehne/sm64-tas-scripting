@@ -1,7 +1,7 @@
 #pragma once
-
-#ifndef SCRIPT_T
-#define SCRIPT_T
+#ifndef SCRIPT_H
+#error "Script.t.hpp should only be included by Script.hpp"
+#else
 
 template <std::derived_from<Script> TScript, typename... Us>
 	requires(std::constructible_from<TScript, Script*, Us...>)
@@ -366,6 +366,5 @@ static ScriptStatus<TTopLevelScript> TopLevelScript::Main(M64& m64, Ts&&... para
 	return ScriptStatus<TTopLevelScript>(
 		script.BaseStatus[0], script.CustomStatus);
 }
-
 
 #endif
