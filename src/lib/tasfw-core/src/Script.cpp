@@ -286,24 +286,41 @@ uint64_t TopLevelScript::GetFrameCounter(int64_t frame)
 	return frameCounter[0][frame];
 }
 
-std::pair<uint64_t, SlotHandle*> Script::GetLatestSave(uint64_t frame)
+std::pair<int64_t, SlotHandle*> Script::GetLatestSave(int64_t frame)
 {
 	//Check ad-hoc script hierarchy first, then current script
 	int64_t earlyFrame = frame;
+	std::pair<int64_t, SlotHandle*> save = { -1, nullptr };
 	for (int64_t adhocLevel = _adhocLevel; adhocLevel >= 0; adhocLevel--)
 	{
-		auto save = saveBank[adhocLevel].empty() ? saveBank[adhocLevel].end() : std::prev(saveBank[adhocLevel].upper_bound(earlyFrame));
-		if (save != saveBank[adhocLevel].end())
-			return {(*save).first, &(*save).second};
+		auto parentSave = saveBank[adhocLevel].empty() ? saveBank[adhocLevel].end() : std::prev(saveBank[adhocLevel].upper_bound(earlyFrame));
 
+		//Select the more recent save
+		if (parentSave != saveBank[adhocLevel].end() && (*parentSave).first > save.first)
+			save = { (*parentSave).first, &(*parentSave).second };
+			
 		// Don't search past start of m64 diff to avoid desync
 		earlyFrame = !BaseStatus[adhocLevel].m64Diff.frames.empty() ?
 			(std::min)(BaseStatus[adhocLevel].m64Diff.frames.begin()->first, (uint64_t)earlyFrame) : frame;
+
+		//If save is not before the start of the diff, we have the best possible save, so return it
+		if (save.first != -1 && save.first >= earlyFrame)
+			return save;
 	}
 
 	//Then check parent script
 	if (_parentScript)
-		return _parentScript->GetLatestSave(earlyFrame);
+	{
+		auto ancestorSave = _parentScript->GetLatestSave(earlyFrame);
+
+		//Select the more recent save
+		if (ancestorSave.first > save.first)
+			return ancestorSave;
+	}
+		
+	//Return most recent save if it exists
+	if (save.first != -1)
+		return save;
 
 	//Default to initial save
 	return {0, &game->startSaveHandle};
@@ -320,7 +337,7 @@ void Script::Load(uint64_t frame)
 		game->load_state(latestSave.second->slotId);
 		BaseStatus[_adhocLevel].nLoads++;
 	}
-	else if (latestSave.first > frame && game->shouldLoad(latestSave.first - currentFrame))
+	else if (latestSave.first > currentFrame && game->shouldLoad(latestSave.first - currentFrame))
 		game->load_state(latestSave.second->slotId);
 
 	// If save is before target frame, play back until frame is reached
@@ -383,12 +400,6 @@ void Script::Save()
 			std::forward_as_tuple(game, game->save_state(this, currentFrame, _adhocLevel)));
 		BaseStatus[_adhocLevel].nSaves++;
 	}
-}
-
-void Script::Save(uint64_t frame)
-{
-	Load(frame);
-	Save();
 }
 
 void Script::OptionalSave()

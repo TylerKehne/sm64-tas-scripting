@@ -100,7 +100,7 @@ void SlotManager::UpdateSlot(int64_t slotId)
 
 void SlotManager::EraseOldestSlot()
 {
-	int64_t slotId = slotIdsByLastAccess.begin() == slotIdsByLastAccess.end() ? -1 : slotIdsByLastAccess.begin()->first;
+	int64_t slotId = slotIdsByLastAccess.begin() == slotIdsByLastAccess.end() ? -1 : slotIdsByLastAccess.begin()->second;
 	if (slotId == -1)
 		return;
 
@@ -210,5 +210,5 @@ bool Game::shouldLoad(int64_t framesAhead) const
 	double estTimeToFrameAdvance =
 		(double(_totalFrameAdvanceTime) / nFrameAdvances) * framesAhead;
 
-	return estTimeToLoad < framesAhead;
+	return estTimeToLoad < estTimeToFrameAdvance;
 }

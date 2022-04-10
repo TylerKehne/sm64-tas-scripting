@@ -111,7 +111,6 @@ protected:
 	void AdvanceFrameWrite(Inputs inputs);
 	void OptionalSave();
 	void Save();
-	void Save(uint64_t frame);
 	void Load(uint64_t frame);
 	void Rollback(uint64_t frame);
 	void RollForward(int64_t frame);
@@ -129,7 +128,7 @@ private:
 	int64_t _adhocLevel = 0;
 	int32_t _initialFrame = 0;
 	std::vector<BaseScriptStatus> BaseStatus = { BaseScriptStatus() };
-	std::vector<std::map<uint64_t, SlotHandle>> saveBank = { std::map<uint64_t, SlotHandle>() };
+	std::vector<std::map<int64_t, SlotHandle>> saveBank = { std::map<int64_t, SlotHandle>() };
 	std::vector<std::map<int64_t, uint64_t>> frameCounter = { std::map<int64_t, uint64_t>() };
 	Script* _parentScript;
 
@@ -137,7 +136,7 @@ private:
 	bool execute();
 	bool checkPostconditions();
 
-	std::pair<uint64_t, SlotHandle*> GetLatestSave(uint64_t frame);
+	std::pair<int64_t, SlotHandle*> GetLatestSave(int64_t frame);
 	void DeleteSave(int64_t frame, int64_t adhocLevel);
 	void SetInputs(Inputs inputs);
 	void Revert(uint64_t frame, const M64Diff& m64);
