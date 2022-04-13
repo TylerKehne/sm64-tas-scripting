@@ -124,19 +124,23 @@ protected:
 private:
 	friend class SlotManager;
 	friend class TopLevelScript;
+	friend class CachedSave;
 
 	int64_t _adhocLevel = 0;
 	int32_t _initialFrame = 0;
 	std::vector<BaseScriptStatus> BaseStatus = { BaseScriptStatus() };
-	std::vector<std::map<int64_t, SlotHandle>> saveBank = { std::map<int64_t, SlotHandle>() };
-	std::vector<std::map<int64_t, uint64_t>> frameCounter = { std::map<int64_t, uint64_t>() };
+	std::vector<std::map<int64_t, SlotHandle>> saveBank = { std::map<int64_t, SlotHandle>() }; // contains handles to savestates
+	std::vector<std::map<int64_t, uint64_t>> frameCounter = { std::map<int64_t, uint64_t>() }; // tracks opportunity cost of having to frame advance from an earlier save
+	std::vector<std::map<int64_t, CachedSave>> saveCache = { std::map<int64_t, CachedSave>() }; // cached references to ancestor saves to save recursion time
+	std::vector<std::map<int64_t, Inputs>> inputsCache = { std::map<int64_t, Inputs>() }; // cached ancestor inputs to save recursion time
 	Script* _parentScript;
 
 	bool checkPreconditions();
 	bool execute();
 	bool checkPostconditions();
 
-	std::pair<int64_t, SlotHandle*> GetLatestSave(int64_t frame);
+	CachedSave GetLatestSave(int64_t frame);
+	CachedSave GetLatestSaveAndCache(int64_t frame);
 	void DeleteSave(int64_t frame, int64_t adhocLevel);
 	void SetInputs(Inputs inputs);
 	void Revert(uint64_t frame, const M64Diff& m64);

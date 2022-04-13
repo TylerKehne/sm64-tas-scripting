@@ -108,6 +108,39 @@ void SlotManager::EraseOldestSlot()
 	slotsById[slotId].script->DeleteSave(slotsById[slotId].frame, slotsById[slotId].adhocLevel);
 }
 
+CachedSave::CachedSave(Script* script)
+{
+	if (script)
+	{
+		this->script = script;
+		isStartSave = true;
+		frame = 0;
+		adhocLevel = -1;
+	}
+}
+
+SlotHandle* CachedSave::GetSlotHandle()
+{
+	if (!script)
+		return nullptr;
+
+	if (isStartSave)
+		return &(script->game->startSaveHandle);
+
+	if (script->saveBank.size() <= adhocLevel)
+		return nullptr;
+
+	if (!script->saveBank[adhocLevel].contains(frame))
+		return nullptr;
+
+	return &script->saveBank[adhocLevel].find(frame)->second;
+}
+
+bool CachedSave::IsValid()
+{
+	return GetSlotHandle() != nullptr;
+}
+
 void Game::advance_frame()
 {
 	auto start = get_time();

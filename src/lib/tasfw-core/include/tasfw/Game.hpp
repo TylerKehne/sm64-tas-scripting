@@ -53,6 +53,11 @@ public:
 	int64_t slotId = -1;
 
 	SlotHandle(Game* game, int64_t slotId) : game(game), slotId(slotId) { }
+	//SlotHandle(const SlotHandle&) = delete;
+	//SlotHandle& operator= (const SlotHandle&) = delete;
+
+	//SlotHandle(SlotHandle&&) = default;
+	//SlotHandle& operator = (SlotHandle&&) = default;
 
 	~SlotHandle();
 };
@@ -74,6 +79,24 @@ private:
 	void EraseOldestSlot();
 	void EraseSlot(int64_t slotId);
 	void UpdateSlot(int64_t slotId);
+};
+
+class CachedSave
+{
+public:
+	Script* script = nullptr; //ancestor script that won't go out of scope
+	int64_t frame = -1;
+	int64_t adhocLevel = -1;
+	bool isStartSave = false;
+
+	CachedSave() = default;
+
+	CachedSave(Script* script);
+
+	CachedSave(Script* script, int64_t frame, int64_t adhocLevel) : script(script), frame(frame), adhocLevel(adhocLevel) { }
+
+	SlotHandle* GetSlotHandle();
+	bool IsValid();
 };
 
 class Game

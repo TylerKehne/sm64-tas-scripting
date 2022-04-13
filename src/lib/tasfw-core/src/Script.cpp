@@ -286,26 +286,42 @@ uint64_t TopLevelScript::GetFrameCounter(int64_t frame)
 	return frameCounter[0][frame];
 }
 
-std::pair<int64_t, SlotHandle*> Script::GetLatestSave(int64_t frame)
+CachedSave Script::GetLatestSave(int64_t frame)
 {
 	//Check ad-hoc script hierarchy first, then current script
 	int64_t earlyFrame = frame;
-	std::pair<int64_t, SlotHandle*> save = { -1, nullptr };
+	CachedSave bestSave;
 	for (int64_t adhocLevel = _adhocLevel; adhocLevel >= 0; adhocLevel--)
 	{
-		auto parentSave = saveBank[adhocLevel].empty() ? saveBank[adhocLevel].end() : std::prev(saveBank[adhocLevel].upper_bound(earlyFrame));
+		//Get most recent save in script
+
+		auto save = saveBank[adhocLevel].empty() ? saveBank[adhocLevel].end() : std::prev(saveBank[adhocLevel].upper_bound(earlyFrame));
 
 		//Select the more recent save
-		if (parentSave != saveBank[adhocLevel].end() && (*parentSave).first > save.first)
-			save = { (*parentSave).first, &(*parentSave).second };
-			
+		if (save != saveBank[adhocLevel].end() && save->first >= bestSave.frame)
+			bestSave = CachedSave(this, save->first, adhocLevel);
+
+		//Check for cached save
+		auto cachedSave = saveCache[adhocLevel].empty() ? saveCache[adhocLevel].end() : std::prev(saveCache[adhocLevel].upper_bound(earlyFrame));
+		if (cachedSave != saveCache[adhocLevel].end())
+		{
+			//This is the purpose of caching saves: end recursion when a cached save is found. Boosts performance.
+			if (cachedSave->second.IsValid())
+			{
+				if (cachedSave->first >= bestSave.frame)
+					return cachedSave->second;
+			}
+			else
+				saveCache[adhocLevel].erase(cachedSave->first); // Delete stale cached save	
+		}
+
 		// Don't search past start of m64 diff to avoid desync
 		earlyFrame = !BaseStatus[adhocLevel].m64Diff.frames.empty() ?
 			(std::min)(BaseStatus[adhocLevel].m64Diff.frames.begin()->first, (uint64_t)earlyFrame) : frame;
 
 		//If save is not before the start of the diff, we have the best possible save, so return it
-		if (save.first != -1 && save.first >= earlyFrame)
-			return save;
+		if (bestSave.frame >= 0 && bestSave.frame >= earlyFrame)
+			return bestSave;
 	}
 
 	//Then check parent script
@@ -314,16 +330,23 @@ std::pair<int64_t, SlotHandle*> Script::GetLatestSave(int64_t frame)
 		auto ancestorSave = _parentScript->GetLatestSave(earlyFrame);
 
 		//Select the more recent save
-		if (ancestorSave.first > save.first)
+		if (ancestorSave.frame >= bestSave.frame)
 			return ancestorSave;
 	}
 		
 	//Return most recent save if it exists
-	if (save.first != -1)
-		return save;
+	if (bestSave.frame >= 0)
+		return bestSave;
 
 	//Default to initial save
-	return {0, &game->startSaveHandle};
+	return CachedSave(this);
+}
+
+CachedSave Script::GetLatestSaveAndCache(int64_t frame)
+{
+	CachedSave save = GetLatestSave(frame);
+	saveCache[_adhocLevel][save.frame] = save; // Cache save to save recursion time later
+	return save;
 }
 
 void Script::Load(uint64_t frame)
@@ -331,14 +354,14 @@ void Script::Load(uint64_t frame)
 	// Load most recent save at or before frame. Check child saves before
 	// parent. If target frame is in future, check if faster to frame advance or load.
 	int64_t currentFrame = GetCurrentFrame();
-	auto latestSave = GetLatestSave(frame);
+	auto latestSave = GetLatestSaveAndCache(frame);
 	if (frame < currentFrame)
 	{
-		game->load_state(latestSave.second->slotId);
+		game->load_state(latestSave.GetSlotHandle()->slotId);
 		BaseStatus[_adhocLevel].nLoads++;
 	}
-	else if (latestSave.first > currentFrame && game->shouldLoad(latestSave.first - currentFrame))
-		game->load_state(latestSave.second->slotId);
+	else if (latestSave.frame > currentFrame && game->shouldLoad(latestSave.frame - currentFrame))
+		game->load_state(latestSave.GetSlotHandle()->slotId);
 
 	// If save is before target frame, play back until frame is reached
 	currentFrame = GetCurrentFrame();
@@ -391,7 +414,7 @@ void Script::Restore(int64_t frame)
 void Script::Save()
 {
 	//Desyncs should always clear future saves, so if a save already exists there is no need to overwrite it
-	uint64_t currentFrame = GetCurrentFrame();
+	int64_t currentFrame = GetCurrentFrame();
 	if (!saveBank[_adhocLevel].contains(currentFrame))
 	{
 		saveBank[_adhocLevel].emplace(
@@ -406,7 +429,7 @@ void Script::OptionalSave()
 {
 	//Integrate frame counter, saving only if threshold is reached
 	int64_t currentFrame = GetCurrentFrame();
-	int64_t latestSaveFrame = GetLatestSave(currentFrame).first;
+	int64_t latestSaveFrame = GetLatestSaveAndCache(currentFrame).frame;
 	uint64_t frameCounter = 0;
 	for (int64_t frame = latestSaveFrame; frame <= currentFrame; frame++)
 	{
@@ -448,14 +471,14 @@ void Script::Revert(uint64_t frame, const M64Diff& m64)
 
 	// Load most recent save at or before frame. Check child saves before
 	// parent. If target frame is in future, check if faster to frame advance or load.
-	auto latestSave = GetLatestSave(frame);
+	auto latestSave = GetLatestSaveAndCache(frame);
 	if (desync || frame < currentFrame)
 	{
-		game->load_state(latestSave.second->slotId);
+		game->load_state(latestSave.GetSlotHandle()->slotId);
 		BaseStatus[_adhocLevel].nLoads++;
 	}
-	else if (latestSave.first > frame && game->shouldLoad(latestSave.first - currentFrame))
-		game->load_state(latestSave.second->slotId);
+	else if (latestSave.frame > frame && game->shouldLoad(latestSave.frame - currentFrame))
+		game->load_state(latestSave.GetSlotHandle()->slotId);
 
 	// If save is before target frame, play back until frame is reached
 	currentFrame = GetCurrentFrame();

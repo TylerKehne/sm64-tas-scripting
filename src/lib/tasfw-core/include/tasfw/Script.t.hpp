@@ -305,6 +305,8 @@ BaseScriptStatus Script::ExecuteAdhocBase(F adhocScript)
 	BaseStatus.emplace_back();
 	saveBank.emplace_back();
 	frameCounter.emplace_back();
+	saveCache.emplace_back();
+	inputsCache.emplace_back();
 
 	BaseStatus[_adhocLevel].validated = true;
 
@@ -330,6 +332,8 @@ BaseScriptStatus Script::ExecuteAdhocBase(F adhocScript)
 	BaseStatus.pop_back();
 	saveBank.pop_back();
 	frameCounter.pop_back();
+	saveCache.pop_back();
+	inputsCache.pop_back();
 	_adhocLevel--;
 
 	BaseStatus[_adhocLevel].nLoads += status.nLoads;
