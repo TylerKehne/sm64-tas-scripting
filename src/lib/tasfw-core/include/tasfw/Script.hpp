@@ -12,6 +12,7 @@ class Script;
 class SlotHandle;
 class Game;
 class TopLevelScript;
+class CachedSave;
 
 template <typename F, typename R = std::invoke_result_t<F>>
 concept AdhocScript = std::same_as<R, bool>;
@@ -34,6 +35,8 @@ public:
 
 	Script(Script* parentScript) : _parentScript(parentScript)
 	{
+		saveBank.emplace_back(std::map<int64_t, SlotHandle>());
+
 		if (_parentScript)
 		{
 			game = _parentScript->game;
@@ -129,7 +132,7 @@ private:
 	int64_t _adhocLevel = 0;
 	int32_t _initialFrame = 0;
 	std::vector<BaseScriptStatus> BaseStatus = { BaseScriptStatus() };
-	std::vector<std::map<int64_t, SlotHandle>> saveBank = { std::map<int64_t, SlotHandle>() }; // contains handles to savestates
+	std::vector<std::map<int64_t, SlotHandle>> saveBank;// = { std::map<int64_t, SlotHandle>() }; // contains handles to savestates
 	std::vector<std::map<int64_t, uint64_t>> frameCounter = { std::map<int64_t, uint64_t>() }; // tracks opportunity cost of having to frame advance from an earlier save
 	std::vector<std::map<int64_t, CachedSave>> saveCache = { std::map<int64_t, CachedSave>() }; // cached references to ancestor saves to save recursion time
 	std::vector<std::map<int64_t, Inputs>> inputsCache = { std::map<int64_t, Inputs>() }; // cached ancestor inputs to save recursion time

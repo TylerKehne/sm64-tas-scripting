@@ -9,7 +9,7 @@
 #include <tasfw/Script.hpp>
 
 #ifndef GAME_H
-	#define GAME_H
+#define GAME_H
 
 // structs like this can be aggregate-initialized
 // like SegVal {".data", 0xDEADBEEF, 12345678};
@@ -53,11 +53,11 @@ public:
 	int64_t slotId = -1;
 
 	SlotHandle(Game* game, int64_t slotId) : game(game), slotId(slotId) { }
-	//SlotHandle(const SlotHandle&) = delete;
-	//SlotHandle& operator= (const SlotHandle&) = delete;
+	SlotHandle(const SlotHandle&) = delete;
+	SlotHandle& operator= (const SlotHandle&) = delete;
 
-	//SlotHandle(SlotHandle&&) = default;
-	//SlotHandle& operator = (SlotHandle&&) = default;
+	SlotHandle(SlotHandle&&) = default;
+	SlotHandle& operator = (SlotHandle&&) = default;
 
 	~SlotHandle();
 };

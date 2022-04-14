@@ -118,9 +118,10 @@ AdhocScriptStatus<TAdhocCustomScriptStatus> Script::ModifyAdhoc(F adhocScript)
 	return AdhocScriptStatus<TAdhocCustomScriptStatus>(baseStatus, customStatus);
 }
 
-AdhocBaseScriptStatus Script::TestAdhoc(AdhocScript auto&& adhocScript)
+template <AdhocScript TAdhocScript>
+AdhocBaseScriptStatus Script::TestAdhoc(TAdhocScript&& adhocScript)
 {
-	auto status = ExecuteAdhoc(std::forward<AdhocScript auto>(adhocScript));
+	auto status = ExecuteAdhoc(std::forward<TAdhocScript>(adhocScript));
 	status.m64Diff = M64Diff();
 
 	return status;
@@ -358,7 +359,7 @@ AdhocScriptStatus<TAdhocCustomScriptStatus> Script::ExecuteAdhocNoRevert(F adhoc
 
 template <std::derived_from<TopLevelScript> TTopLevelScript, std::derived_from<Game> TGame, typename... Ts>
 	requires(std::constructible_from<TGame, Ts...>)
-static ScriptStatus<TTopLevelScript> TopLevelScript::Main(M64& m64, Ts&&... params)
+ScriptStatus<TTopLevelScript> TopLevelScript::Main(M64& m64, Ts&&... params)
 {
 	TGame game = TGame(std::forward<Ts>(params)...);
 
