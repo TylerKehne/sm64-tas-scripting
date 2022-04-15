@@ -6,10 +6,12 @@
 
 #include <tasfw/Inputs.hpp>
 #include <tasfw/SharedLib.hpp>
-#include <tasfw/Script.hpp>
 
 #ifndef GAME_H
 #define GAME_H
+
+class Game;
+class Script;
 
 // structs like this can be aggregate-initialized
 // like SegVal {".data", 0xDEADBEEF, 12345678};
@@ -25,8 +27,22 @@ struct SegVal
 	}
 };
 
-class Game;
-class Script;
+class SlotHandle
+{
+public:
+	Game* game = NULL;
+	int64_t slotId = -1;
+
+	SlotHandle(Game* game, int64_t slotId) : game(game), slotId(slotId) { }
+
+	SlotHandle(SlotHandle&&) = default;
+	SlotHandle& operator = (SlotHandle&&) = default;
+
+	SlotHandle(const SlotHandle&) = delete;
+	SlotHandle& operator= (const SlotHandle&) = delete;
+
+	~SlotHandle();
+};
 
 class Slot
 {
@@ -46,21 +62,7 @@ public:
 	~Slot();
 };
 
-class SlotHandle
-{
-public:
-	Game* game = NULL;
-	int64_t slotId = -1;
 
-	SlotHandle(Game* game, int64_t slotId) : game(game), slotId(slotId) { }
-	SlotHandle(const SlotHandle&) = delete;
-	SlotHandle& operator= (const SlotHandle&) = delete;
-
-	SlotHandle(SlotHandle&&) = default;
-	SlotHandle& operator = (SlotHandle&&) = default;
-
-	~SlotHandle();
-};
 
 class SlotManager
 {

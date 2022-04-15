@@ -1,6 +1,5 @@
 #pragma once
 #include <tasfw/Inputs.hpp>
-#include <tasfw/Script.hpp>
 
 #ifndef SCRIPTSTATUS_H
 #define SCRIPTSTATUS_H
@@ -68,7 +67,7 @@ class AdhocScriptStatus : public AdhocBaseScriptStatus, public TAdhocCustomScrip
 public:
 	AdhocScriptStatus() : AdhocBaseScriptStatus(), TAdhocCustomScriptStatus() {}
 
-	AdhocScriptStatus(AdhocBaseScriptStatus baseStatus, typename TAdhocCustomScriptStatus customStatus)
+	AdhocScriptStatus(AdhocBaseScriptStatus baseStatus, TAdhocCustomScriptStatus customStatus)
 		: AdhocBaseScriptStatus(baseStatus), TAdhocCustomScriptStatus(customStatus) { }
 };
 

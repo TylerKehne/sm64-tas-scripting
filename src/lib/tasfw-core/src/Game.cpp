@@ -1,7 +1,7 @@
 #include <cstdlib>
 #include <chrono>
 
-#include <tasfw/Game.hpp>
+#include <tasfw/Script.hpp>
 
 #ifdef _MSC_VER
 	#include <intrin.h>
