@@ -4,15 +4,17 @@
 #include <map>
 
 #ifndef INPUTS_H
-	#define INPUTS_H
+#define INPUTS_H
+
+class Script;
 
 class Rotation
 {
 public:
 	enum Value : int8_t
 	{
-		CLOCKWISE				 = -1,
-		NONE						 = 0,
+		CLOCKWISE = -1,
+		NONE = 0,
 		COUNTERCLOCKWISE = 1
 	};
 
@@ -78,6 +80,28 @@ public:
 	static std::pair<int16_t, float> GetIntendedYawMagFromInput(
 		int8_t stickX, int8_t stickY, int16_t cameraYaw);
 	static bool HauEquals(int16_t angle1, int16_t angle2);
+};
+
+class InputsMetadata
+{
+public:
+	enum class InputsSource : int8_t
+	{
+		DIFF = 0,
+		ORIGINAL = 1,
+		DEFAULT = 2
+	};
+
+	Inputs inputs;
+	Script* script = nullptr;
+	int64_t frame = -1;
+	int64_t adhocLevel = -1;
+	InputsSource source = InputsSource::DIFF;
+
+	InputsMetadata() = default;
+
+	InputsMetadata(Inputs inputs, Script* script, int64_t frame, int64_t adhocLevel, InputsSource source = InputsSource::DIFF)
+		: inputs(inputs), script(script), frame(frame), adhocLevel(adhocLevel), source(source) {}
 };
 
 class M64Base

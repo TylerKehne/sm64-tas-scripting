@@ -303,11 +303,11 @@ BaseScriptStatus Script::ExecuteAdhocBase(F adhocScript)
 
 	//Increment adhoc level
 	_adhocLevel++;
-	BaseStatus.emplace_back();
-	saveBank.emplace_back();
-	frameCounter.emplace_back();
-	saveCache.emplace_back();
-	inputsCache.emplace_back();
+	BaseStatus[_adhocLevel];
+	saveBank[_adhocLevel];
+	frameCounter[_adhocLevel];
+	saveCache[_adhocLevel];
+	inputsCache[_adhocLevel];
 
 	BaseStatus[_adhocLevel].validated = true;
 
@@ -330,11 +330,11 @@ BaseScriptStatus Script::ExecuteAdhocBase(F adhocScript)
 
 	//Decrement adhoc level, revert state and return status
 	BaseScriptStatus status = BaseStatus[_adhocLevel];
-	BaseStatus.pop_back();
-	saveBank.pop_back();
-	frameCounter.pop_back();
-	saveCache.pop_back();
-	inputsCache.pop_back();
+	BaseStatus.erase(_adhocLevel);
+	saveBank.erase(_adhocLevel);
+	frameCounter.erase(_adhocLevel);
+	saveCache.erase(_adhocLevel);
+	inputsCache.erase(_adhocLevel);
 	_adhocLevel--;
 
 	BaseStatus[_adhocLevel].nLoads += status.nLoads;

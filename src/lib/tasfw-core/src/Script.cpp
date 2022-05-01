@@ -94,27 +94,31 @@ uint64_t Script::GetCurrentFrame()
 
 void Script::AdvanceFrameRead()
 {
-	SetInputs(GetInputs(GetCurrentFrame()));
+	SetInputs(GetInputsMetadataAndCache(GetCurrentFrame()).inputs);
 	game->advance_frame();
 	BaseStatus[_adhocLevel].nFrameAdvances++;
 }
 
+/*
 void Script::AdvanceFrameRead(uint64_t& counter)
 {
 	SetInputs(GetInputsTracked(GetCurrentFrame(), counter));
 	game->advance_frame();
 	BaseStatus[_adhocLevel].nFrameAdvances++;
 }
+*/
 
 void Script::AdvanceFrameWrite(Inputs inputs)
 {
 	// Save inputs to diff
-	BaseStatus[_adhocLevel].m64Diff.frames[GetCurrentFrame()] = inputs;
-
-	// Erase all saves after this point
 	uint64_t currentFrame = GetCurrentFrame();
+	BaseStatus[_adhocLevel].m64Diff.frames[currentFrame] = inputs;
+
+	// Erase all saves, cached saves, and frame counters after this point, as well as the cached input on this frame
+	inputsCache[_adhocLevel].erase(currentFrame);
 	frameCounter[_adhocLevel].erase(frameCounter[_adhocLevel].upper_bound(currentFrame), frameCounter[_adhocLevel].end());
 	saveBank[_adhocLevel].erase(saveBank[_adhocLevel].upper_bound(currentFrame), saveBank[_adhocLevel].end());
+	saveCache[_adhocLevel].erase(saveCache[_adhocLevel].upper_bound(currentFrame), saveCache[_adhocLevel].end());
 
 	// Set inputs and advance frame
 	SetInputs(inputs);
@@ -132,10 +136,11 @@ void Script::Apply(const M64Diff& m64Diff)
 
 	Load(firstFrame);
 
-	// Erase all saves after this point
+	// Erase all saves, cached saves, and frame counters after this point
 	uint64_t currentFrame = GetCurrentFrame();
 	frameCounter[_adhocLevel].erase(frameCounter[_adhocLevel].upper_bound(currentFrame), frameCounter[_adhocLevel].end());
 	saveBank[_adhocLevel].erase(saveBank[_adhocLevel].upper_bound(currentFrame), saveBank[_adhocLevel].end());
+	saveCache[_adhocLevel].erase(saveCache[_adhocLevel].upper_bound(currentFrame), saveCache[_adhocLevel].end());
 
 	while (currentFrame <= lastFrame)
 	{
@@ -145,6 +150,7 @@ void Script::Apply(const M64Diff& m64Diff)
 		{
 			inputs = m64Diff.frames.at(currentFrame);
 			BaseStatus[_adhocLevel].m64Diff.frames[currentFrame] = inputs;
+			inputsCache[_adhocLevel].erase(currentFrame);
 		}
 
 		SetInputs(inputs);
@@ -154,7 +160,34 @@ void Script::Apply(const M64Diff& m64Diff)
 		currentFrame = GetCurrentFrame();
 	}
 }
+void Script::ApplyChildDiff(const BaseScriptStatus& status, int64_t initialFrame)
+{
+	uint64_t firstFrame = status.m64Diff.frames.begin()->first;
+	uint64_t lastFrame = status.m64Diff.frames.rbegin()->first;
 
+	// Erase all saves, cached saves, and frame counters after this point
+	frameCounter[_adhocLevel].erase(frameCounter[_adhocLevel].upper_bound(firstFrame), frameCounter[_adhocLevel].end());
+	saveBank[_adhocLevel].erase(saveBank[_adhocLevel].upper_bound(firstFrame), saveBank[_adhocLevel].end());
+	saveCache[_adhocLevel].erase(saveCache[_adhocLevel].upper_bound(firstFrame), saveCache[_adhocLevel].end());
+
+	//Apply diff. State is already synced from child script, so no need to update it
+	int64_t frame = firstFrame;
+	while (frame <= lastFrame)
+	{
+		if (status.m64Diff.frames.count(frame))
+		{
+			BaseStatus[_adhocLevel].m64Diff.frames[frame] = status.m64Diff.frames.at(frame);
+			inputsCache[_adhocLevel].erase(frame);
+		}
+
+		frame++;
+	}
+
+	//Forward state to end of diff
+	Load(lastFrame + 1);
+}
+
+/*
 Inputs Script::GetInputs(int64_t frame)
 {
 	//Check ad-hoc script hierarchy first, then current script
@@ -188,7 +221,64 @@ Inputs TopLevelScript::GetInputs(int64_t frame)
 	//Default to no input
 	return Inputs(0, 0, 0);
 }
+*/
 
+Inputs Script::GetInputs(int64_t frame)
+{
+	return GetInputsMetadataAndCache(frame).inputs;
+}
+
+InputsMetadata Script::GetInputsMetadata(int64_t frame)
+{
+	//Check ad-hoc script hierarchy first, then current script
+	for (int64_t adhocLevel = _adhocLevel; adhocLevel >= 0; adhocLevel--)
+	{
+		if (BaseStatus[adhocLevel].m64Diff.frames.contains(frame))
+			return InputsMetadata(BaseStatus[adhocLevel].m64Diff.frames[frame], this, frame, adhocLevel);
+
+		if (inputsCache[adhocLevel].contains(frame))
+			return inputsCache[adhocLevel][frame];
+	}
+
+	//Then check parent script
+	if (_parentScript)
+		return _parentScript->GetInputsMetadata(frame);
+
+	//This should be impossible
+	std::runtime_error("Failed to get inputs, possible error in recursion logic.");
+	return InputsMetadata();
+}
+
+InputsMetadata TopLevelScript::GetInputsMetadata(int64_t frame)
+{
+	//Check ad-hoc script hierarchy first, then current script
+	for (int64_t adhocLevel = _adhocLevel; adhocLevel >= 0; adhocLevel--)
+	{
+		if (BaseStatus[adhocLevel].m64Diff.frames.contains(frame))
+			return InputsMetadata(BaseStatus[adhocLevel].m64Diff.frames[frame], this, frame, adhocLevel);
+
+		if (inputsCache[adhocLevel].contains(frame))
+			return inputsCache[adhocLevel][frame];
+	}
+
+	//Then check actual m64.
+	//For the purposes of the frame counter, mark as adhoc level 0.
+	if (_m64.frames.count(frame))
+		return InputsMetadata(_m64.frames[frame], this, frame, 0, InputsMetadata::InputsSource::ORIGINAL);
+
+	//Default to no input
+	//For the purposes of the frame counter, mark as adhoc level 0.
+	return InputsMetadata(Inputs(0, 0, 0), this, frame, 0, InputsMetadata::InputsSource::DEFAULT);
+}
+
+InputsMetadata Script::GetInputsMetadataAndCache(int64_t frame)
+{
+	InputsMetadata inputs = GetInputsMetadata(frame);
+	inputsCache[_adhocLevel][frame] = inputs;
+	return inputs;
+}
+
+/*
 // Seeks inputs from script hierarchy diffs recursively.
 // If a nonzero counter is provided, save if performant.
 // Return the counter, incremented by the frame counter for the frame with the inputs.
@@ -255,7 +345,26 @@ Inputs TopLevelScript::GetInputsTracked(uint64_t frame, uint64_t& counter)
 
 	return Inputs(0, 0, 0);
 }
+*/
 
+uint64_t Script::GetFrameCounter(InputsMetadata cachedInputs)
+{
+	if (!cachedInputs.script->frameCounter[cachedInputs.adhocLevel].contains(cachedInputs.frame))
+		cachedInputs.script->frameCounter[cachedInputs.adhocLevel][cachedInputs.frame] = 0;
+
+	return cachedInputs.script->frameCounter[cachedInputs.adhocLevel][cachedInputs.frame];
+}
+
+uint64_t Script::IncrementFrameCounter(InputsMetadata cachedInputs)
+{
+	if (!cachedInputs.script->frameCounter[cachedInputs.adhocLevel].contains(cachedInputs.frame))
+		cachedInputs.script->frameCounter[cachedInputs.adhocLevel][cachedInputs.frame] = 0;
+
+	//Return value BEFORE incrementing
+	return cachedInputs.script->frameCounter[cachedInputs.adhocLevel][cachedInputs.frame]++;
+}
+
+/*
 uint64_t Script::GetFrameCounter(int64_t frame)
 {
 	//Check ad-hoc script hierarchy first, then current script
@@ -285,24 +394,30 @@ uint64_t TopLevelScript::GetFrameCounter(int64_t frame)
 	//Then check current script
 	return frameCounter[0][frame];
 }
+*/
 
-CachedSave Script::GetLatestSave(int64_t frame)
+SaveMetadata Script::GetLatestSave(int64_t frame)
 {
 	//Check ad-hoc script hierarchy first, then current script
 	int64_t earlyFrame = frame;
-	CachedSave bestSave;
+	SaveMetadata bestSave;
 	for (int64_t adhocLevel = _adhocLevel; adhocLevel >= 0; adhocLevel--)
 	{
 		//Get most recent save in script
 
-		auto save = saveBank[adhocLevel].empty() ? saveBank[adhocLevel].end() : std::prev(saveBank[adhocLevel].upper_bound(earlyFrame));
+		auto save = saveBank[adhocLevel].empty() || earlyFrame < saveBank[adhocLevel].begin()->first
+			? saveBank[adhocLevel].end()
+			: std::prev(saveBank[adhocLevel].upper_bound(earlyFrame));
 
 		//Select the more recent save
 		if (save != saveBank[adhocLevel].end() && save->first >= bestSave.frame)
-			bestSave = CachedSave(this, save->first, adhocLevel);
+			bestSave = SaveMetadata(this, save->first, adhocLevel);
 
 		//Check for cached save
-		auto cachedSave = saveCache[adhocLevel].empty() ? saveCache[adhocLevel].end() : std::prev(saveCache[adhocLevel].upper_bound(earlyFrame));
+		auto cachedSave = saveCache[adhocLevel].empty() || earlyFrame < saveCache[adhocLevel].begin()->first
+			? saveCache[adhocLevel].end()
+			: std::prev(saveCache[adhocLevel].upper_bound(earlyFrame));
+
 		if (cachedSave != saveCache[adhocLevel].end())
 		{
 			//This is the purpose of caching saves: end recursion when a cached save is found. Boosts performance.
@@ -339,12 +454,12 @@ CachedSave Script::GetLatestSave(int64_t frame)
 		return bestSave;
 
 	//Default to initial save
-	return CachedSave(this);
+	return SaveMetadata(this);
 }
 
-CachedSave Script::GetLatestSaveAndCache(int64_t frame)
+SaveMetadata Script::GetLatestSaveAndCache(int64_t frame)
 {
-	CachedSave save = GetLatestSave(frame);
+	SaveMetadata save = GetLatestSave(frame);
 	saveCache[_adhocLevel][save.frame] = save; // Cache save to save recursion time later
 	return save;
 }
@@ -367,98 +482,16 @@ void Script::Load(uint64_t frame)
 	currentFrame = GetCurrentFrame();
 	uint64_t frameCounter = 0;
 	while (currentFrame++ < frame)
-		AdvanceFrameRead(frameCounter);
-}
-
-void Script::Rollback(uint64_t frame)
-{
-	// Roll back diff and savebank to target frame. Note that rollback on diff
-	// includes target frame.
-	BaseStatus[_adhocLevel].m64Diff.frames.erase(
-		BaseStatus[_adhocLevel].m64Diff.frames.lower_bound(frame),
-		BaseStatus[_adhocLevel].m64Diff.frames.end());
-	frameCounter[_adhocLevel].erase(frameCounter[_adhocLevel].upper_bound(frame), frameCounter[_adhocLevel].end());
-	saveBank[_adhocLevel].erase(saveBank[_adhocLevel].upper_bound(frame), saveBank[_adhocLevel].end());
-
-	Load(frame);
-}
-
-// Same as Rollback, but starts from current frame. Useful for scripts that edit past frames
-void Script::RollForward(int64_t frame)
-{
-	// Roll back diff and savebank to current frame. Note that roll forward on diff
-	// includes current frame.
-	uint64_t currentFrame = GetCurrentFrame();
-	BaseStatus[_adhocLevel].m64Diff.frames.erase(
-		BaseStatus[_adhocLevel].m64Diff.frames.lower_bound(currentFrame),
-		BaseStatus[_adhocLevel].m64Diff.frames.end());
-	frameCounter[_adhocLevel].erase(frameCounter[_adhocLevel].upper_bound(currentFrame), frameCounter[_adhocLevel].end());
-	saveBank[_adhocLevel].erase(saveBank[_adhocLevel].upper_bound(currentFrame), saveBank[_adhocLevel].end());
-
-	Load(frame);
-}
-
-// Load and clear diff and savebank
-void Script::Restore(int64_t frame)
-{
-	// Clear diff, frame counter and savebank
-	BaseStatus[_adhocLevel].m64Diff.frames.erase(
-		BaseStatus[_adhocLevel].m64Diff.frames.begin(),
-		BaseStatus[_adhocLevel].m64Diff.frames.end());
-	frameCounter[_adhocLevel].erase(frameCounter[_adhocLevel].begin(), frameCounter[_adhocLevel].end());
-	saveBank[_adhocLevel].erase(saveBank[_adhocLevel].begin(), saveBank[_adhocLevel].end());
-
-	Load(frame);
-}
-
-void Script::Save()
-{
-	//Desyncs should always clear future saves, so if a save already exists there is no need to overwrite it
-	int64_t currentFrame = GetCurrentFrame();
-	if (!saveBank[_adhocLevel].contains(currentFrame))
 	{
-		saveBank[_adhocLevel].emplace(
-			std::piecewise_construct,
-			std::forward_as_tuple(currentFrame),
-			std::forward_as_tuple(game, game->save_state(this, currentFrame, _adhocLevel)));
-		BaseStatus[_adhocLevel].nSaves++;
+		auto cachedInputs = GetInputsMetadataAndCache(frame);
+		frameCounter += IncrementFrameCounter(cachedInputs);
+		AdvanceFrameRead();
+
+		//Estimate future frame advances from aggregate of historical frame advances on this input segment
+		//If it reaches a certain threshold, creating a save is performant
+		if (game->shouldSave(frameCounter * 1))
+			saveCache[_adhocLevel][currentFrame] = cachedInputs.script->Save(_adhocLevel);
 	}
-}
-
-void Script::OptionalSave()
-{
-	//Integrate frame counter, saving only if threshold is reached
-	int64_t currentFrame = GetCurrentFrame();
-	int64_t latestSaveFrame = GetLatestSaveAndCache(currentFrame).frame;
-	uint64_t frameCounter = 0;
-	for (int64_t frame = latestSaveFrame; frame <= currentFrame; frame++)
-	{
-		if (game->shouldSave(frameCounter))
-		{
-			Save();
-			break;
-		}
-
-		//Increment AFTER save check. We want to know if a save on the NEXT frame is worthwhile based on the counter from this frame
-		frameCounter += GetFrameCounter(frame);
-	}
-}
-
-void Script::DeleteSave(int64_t frame, int64_t adhocLevel)
-{
-	saveBank[adhocLevel].erase(frame);
-}
-
-void Script::SetInputs(Inputs inputs)
-{
-	uint16_t* buttonDllAddr = (uint16_t*) game->addr("gControllerPads");
-	buttonDllAddr[0] = inputs.buttons;
-
-	int8_t* xStickDllAddr = (int8_t*) game->addr("gControllerPads") + 2;
-	xStickDllAddr[0] = inputs.stick_x;
-
-	int8_t* yStickDllAddr = (int8_t*) game->addr("gControllerPads") + 3;
-	yStickDllAddr[0] = inputs.stick_y;
 }
 
 // Load method specifically for Script.Execute() and Script.Modify(), checks for desyncs
@@ -484,29 +517,125 @@ void Script::Revert(uint64_t frame, const M64Diff& m64)
 	currentFrame = GetCurrentFrame();
 	uint64_t frameCounter = 0;
 	while (currentFrame++ < frame)
-		AdvanceFrameRead(frameCounter);
+	{
+		auto cachedInputs = GetInputsMetadataAndCache(frame);
+		frameCounter += IncrementFrameCounter(cachedInputs);
+		AdvanceFrameRead();
+
+		//Estimate future frame advances from aggregate of historical frame advances on this input segment
+		//If it reaches a certain threshold, creating a save is performant
+		if (game->shouldSave(frameCounter * 1))
+			saveCache[_adhocLevel][currentFrame] = cachedInputs.script->Save(_adhocLevel);
+	}
 }
 
-void Script::ApplyChildDiff(const BaseScriptStatus& status, int64_t initialFrame)
+void Script::Rollback(uint64_t frame)
 {
-	uint64_t firstFrame = status.m64Diff.frames.begin()->first;
-	uint64_t lastFrame = status.m64Diff.frames.rbegin()->first;
+	// Roll back diff and savebank to target frame. Note that rollback on diff
+	// includes target frame.
+	BaseStatus[_adhocLevel].m64Diff.frames.erase(
+		BaseStatus[_adhocLevel].m64Diff.frames.lower_bound(frame),
+		BaseStatus[_adhocLevel].m64Diff.frames.end());
+	inputsCache[_adhocLevel].erase(inputsCache[_adhocLevel].lower_bound(frame), inputsCache[_adhocLevel].end());
+	frameCounter[_adhocLevel].erase(frameCounter[_adhocLevel].upper_bound(frame), frameCounter[_adhocLevel].end());
+	saveBank[_adhocLevel].erase(saveBank[_adhocLevel].upper_bound(frame), saveBank[_adhocLevel].end());
+	saveCache[_adhocLevel].erase(saveCache[_adhocLevel].upper_bound(frame), saveCache[_adhocLevel].end());
 
-	// Erase all saves after starting frame of diff
-	auto firstInvalidFrame = saveBank[_adhocLevel].upper_bound(firstFrame);
-	saveBank[_adhocLevel].erase(firstInvalidFrame, saveBank[_adhocLevel].end());
+	Load(frame);
+}
 
-	//Apply diff. State is already synced from child script, so no need to update it
-	int64_t frame = firstFrame;
-	while (frame <= lastFrame)
+// Same as Rollback, but starts from current frame. Useful for scripts that edit past frames
+void Script::RollForward(int64_t frame)
+{
+	// Roll back diff and savebank to current frame. Note that roll forward on diff
+	// includes current frame.
+	uint64_t currentFrame = GetCurrentFrame();
+	BaseStatus[_adhocLevel].m64Diff.frames.erase(
+		BaseStatus[_adhocLevel].m64Diff.frames.lower_bound(currentFrame),
+		BaseStatus[_adhocLevel].m64Diff.frames.end());
+	inputsCache[_adhocLevel].erase(inputsCache[_adhocLevel].lower_bound(currentFrame), inputsCache[_adhocLevel].end());
+	frameCounter[_adhocLevel].erase(frameCounter[_adhocLevel].upper_bound(currentFrame), frameCounter[_adhocLevel].end());
+	saveBank[_adhocLevel].erase(saveBank[_adhocLevel].upper_bound(currentFrame), saveBank[_adhocLevel].end());
+	saveCache[_adhocLevel].erase(saveCache[_adhocLevel].upper_bound(currentFrame), saveCache[_adhocLevel].end());
+
+	Load(frame);
+}
+
+// Load and clear diff and savebank
+void Script::Restore(int64_t frame)
+{
+	// Clear diff, frame counter and savebank
+	BaseStatus[_adhocLevel].m64Diff.frames.erase(
+		BaseStatus[_adhocLevel].m64Diff.frames.begin(),
+		BaseStatus[_adhocLevel].m64Diff.frames.end());
+	inputsCache[_adhocLevel].erase(inputsCache[_adhocLevel].begin(), inputsCache[_adhocLevel].end());
+	frameCounter[_adhocLevel].erase(frameCounter[_adhocLevel].begin(), frameCounter[_adhocLevel].end());
+	saveBank[_adhocLevel].erase(saveBank[_adhocLevel].begin(), saveBank[_adhocLevel].end());
+	saveCache[_adhocLevel].erase(saveCache[_adhocLevel].begin(), saveCache[_adhocLevel].end());
+
+	Load(frame);
+}
+
+void Script::Save()
+{
+	Save(_adhocLevel);
+}
+
+//Internal version of Save() that specifies adhoc level, that can be called by a child script 
+SaveMetadata Script::Save(int64_t adhocLevel)
+{
+	//Desyncs should always clear future saves, so if a save already exists there is no need to overwrite it
+	int64_t currentFrame = GetCurrentFrame();
+	if (!saveBank[adhocLevel].contains(currentFrame))
 	{
-		if (status.m64Diff.frames.count(frame))
-			BaseStatus[_adhocLevel].m64Diff.frames[frame] = status.m64Diff.frames.at(frame);
-		frame++;
+		saveBank[adhocLevel].emplace(
+			std::piecewise_construct,
+			std::forward_as_tuple(currentFrame),
+			std::forward_as_tuple(game, game->save_state(this, currentFrame, adhocLevel)));
+		BaseStatus[adhocLevel].nSaves++;
 	}
 
-	//Forward state to end of diff
-	Load(lastFrame + 1);
+	//Return metadat for caching
+	return SaveMetadata(this, currentFrame, adhocLevel);
+}
+
+//Do a cost-benefit analysis to decide whether a save should be created
+//CBA is only for creating a save in the current script on tthe current frame
+void Script::OptionalSave()
+{
+	//Integrate frame counter, saving only if threshold is reached
+	int64_t currentFrame = GetCurrentFrame();
+	int64_t latestSaveFrame = GetLatestSaveAndCache(currentFrame).frame;
+	uint64_t frameCounter = 0;
+	for (int64_t frame = latestSaveFrame; frame <= currentFrame; frame++)
+	{
+		if (game->shouldSave(frameCounter * 2))
+		{
+			//Create save in this script at the current frame
+			Save();
+			break;
+		}
+
+		//Increment AFTER save check. We want to know if a save on the NEXT frame is worthwhile based on the counter from this frame
+		frameCounter += GetFrameCounter(GetInputsMetadataAndCache(frame));
+	}
+}
+
+void Script::DeleteSave(int64_t frame, int64_t adhocLevel)
+{
+	saveBank[adhocLevel].erase(frame);
+}
+
+void Script::SetInputs(Inputs inputs)
+{
+	uint16_t* buttonDllAddr = (uint16_t*) game->addr("gControllerPads");
+	buttonDllAddr[0] = inputs.buttons;
+
+	int8_t* xStickDllAddr = (int8_t*) game->addr("gControllerPads") + 2;
+	xStickDllAddr[0] = inputs.stick_x;
+
+	int8_t* yStickDllAddr = (int8_t*) game->addr("gControllerPads") + 3;
+	yStickDllAddr[0] = inputs.stick_y;
 }
 
 bool Script::IsDiffEmpty()

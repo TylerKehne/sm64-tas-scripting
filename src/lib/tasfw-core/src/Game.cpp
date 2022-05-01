@@ -108,7 +108,7 @@ void SlotManager::EraseOldestSlot()
 	slotsById[slotId].script->DeleteSave(slotsById[slotId].frame, slotsById[slotId].adhocLevel);
 }
 
-CachedSave::CachedSave(Script* script)
+SaveMetadata::SaveMetadata(Script* script)
 {
 	if (script)
 	{
@@ -119,13 +119,13 @@ CachedSave::CachedSave(Script* script)
 	}
 }
 
-SlotHandle* CachedSave::GetSlotHandle()
+SlotHandle* SaveMetadata::GetSlotHandle()
 {
 	if (!script)
 		return nullptr;
 
 	if (isStartSave)
-		return &(script->game->startSaveHandle);
+		return &script->game->startSaveHandle;
 
 	if (script->saveBank.size() <= adhocLevel)
 		return nullptr;
@@ -136,7 +136,7 @@ SlotHandle* CachedSave::GetSlotHandle()
 	return &script->saveBank[adhocLevel].find(frame)->second;
 }
 
-bool CachedSave::IsValid()
+bool SaveMetadata::IsValid()
 {
 	return GetSlotHandle() != nullptr;
 }
@@ -221,17 +221,16 @@ uint32_t Game::getCurrentFrame()
 	return *(uint32_t*) (addr("gGlobalTimer")) - 1;
 }
 
-bool Game::shouldSave(int64_t framesSinceLastSave) const
+bool Game::shouldSave(int64_t estFrameAdvances) const
 {
-	if (nSaveStates == 0 || framesSinceLastSave < 0)
+	if (nSaveStates == 0 || estFrameAdvances < 0)
 		return true;
 
 	double estTimeToSave = double(_totalSaveStateTime) / nSaveStates;
-	double estTimeToLoadFromRecent =
-		(double(_totalFrameAdvanceTime) / nFrameAdvances) * framesSinceLastSave;
+	double estTimeToFrameAdvance =
+		(double(_totalFrameAdvanceTime) / nFrameAdvances) * estFrameAdvances;
 
-	// TODO: Reduce number of automatic load states in script
-	return estTimeToSave < 2 * estTimeToLoadFromRecent;
+	return estTimeToSave < estTimeToFrameAdvance;
 }
 
 bool Game::shouldLoad(int64_t framesAhead) const

@@ -62,8 +62,6 @@ public:
 	~Slot();
 };
 
-
-
 class SlotManager
 {
 private:
@@ -83,7 +81,7 @@ private:
 	void UpdateSlot(int64_t slotId);
 };
 
-class CachedSave
+class SaveMetadata
 {
 public:
 	Script* script = nullptr; //ancestor script that won't go out of scope
@@ -91,11 +89,11 @@ public:
 	int64_t adhocLevel = -1;
 	bool isStartSave = false;
 
-	CachedSave() = default;
+	SaveMetadata() = default;
 
-	CachedSave(Script* script);
+	SaveMetadata(Script* script);
 
-	CachedSave(Script* script, int64_t frame, int64_t adhocLevel) : script(script), frame(frame), adhocLevel(adhocLevel) { }
+	SaveMetadata(Script* script, int64_t frame, int64_t adhocLevel) : script(script), frame(frame), adhocLevel(adhocLevel) { }
 
 	SlotHandle* GetSlotHandle();
 	bool IsValid();

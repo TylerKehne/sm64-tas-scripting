@@ -32,11 +32,11 @@ public:
 
 	Script(Script* parentScript) : _parentScript(parentScript)
 	{
-		BaseStatus.emplace_back();
-		saveBank.emplace_back();
-		frameCounter.emplace_back();
-		saveCache.emplace_back();
-		inputsCache.emplace_back();
+		BaseStatus[0];
+		saveBank[0];
+		frameCounter[0];
+		saveCache[0];
+		inputsCache[0];
 
 		if (_parentScript)
 		{
@@ -119,7 +119,7 @@ protected:
 	void Rollback(uint64_t frame);
 	void RollForward(int64_t frame);
 	void Restore(int64_t frame);
-	virtual Inputs GetInputs(int64_t frame);
+	Inputs GetInputs(int64_t frame);
 
 	virtual bool validation() = 0;
 	virtual bool execution() = 0;
@@ -128,30 +128,36 @@ protected:
 private:
 	friend class SlotManager;
 	friend class TopLevelScript;
-	friend class CachedSave;
+	friend class SaveMetadata;
+	friend class InputsMetadata;
 
 	int64_t _adhocLevel = 0;
 	int32_t _initialFrame = 0;
-	std::vector<BaseScriptStatus> BaseStatus;// = { BaseScriptStatus() };
-	std::vector<std::map<int64_t, SlotHandle>> saveBank;// = { std::map<int64_t, SlotHandle>() }; // contains handles to savestates
-	std::vector<std::map<int64_t, uint64_t>> frameCounter;// = { std::map<int64_t, uint64_t>() }; // tracks opportunity cost of having to frame advance from an earlier save
-	std::vector<std::map<int64_t, CachedSave>> saveCache;// = { std::map<int64_t, CachedSave>() }; // cached references to ancestor saves to save recursion time
-	std::vector<std::map<int64_t, Inputs>> inputsCache;// = { std::map<int64_t, Inputs>() }; // cached ancestor inputs to save recursion time
+	std::unordered_map<int64_t, BaseScriptStatus> BaseStatus;// = { BaseScriptStatus() };
+	std::unordered_map<int64_t, std::map<int64_t, SlotHandle>> saveBank;// = { std::map<int64_t, SlotHandle>() }; // contains handles to savestates
+	std::unordered_map<int64_t, std::map<int64_t, uint64_t>> frameCounter;// = { std::map<int64_t, uint64_t>() }; // tracks opportunity cost of having to frame advance from an earlier save
+	std::unordered_map<int64_t, std::map<int64_t, SaveMetadata>> saveCache;// = { std::map<int64_t, saveCache>() }; // stores metadata of ancestor saves to save recursion time
+	std::unordered_map<int64_t, std::map<int64_t, InputsMetadata>> inputsCache;// = { std::map<int64_t, Inputs>() }; // caches ancestor inputs to save recursion time
 	Script* _parentScript;
 
 	bool checkPreconditions();
 	bool execute();
 	bool checkPostconditions();
 
-	CachedSave GetLatestSave(int64_t frame);
-	CachedSave GetLatestSaveAndCache(int64_t frame);
+	SaveMetadata GetLatestSave(int64_t frame);
+	SaveMetadata GetLatestSaveAndCache(int64_t frame);
+	virtual InputsMetadata GetInputsMetadata(int64_t frame);
+	InputsMetadata GetInputsMetadataAndCache(int64_t frame);
 	void DeleteSave(int64_t frame, int64_t adhocLevel);
 	void SetInputs(Inputs inputs);
 	void Revert(uint64_t frame, const M64Diff& m64);
-	virtual Inputs GetInputsTracked(uint64_t frame, uint64_t& counter);
+	//virtual Inputs GetInputsTracked(uint64_t frame, uint64_t& counter);
 	void AdvanceFrameRead(uint64_t& counter);
-	virtual uint64_t GetFrameCounter(int64_t frame);
+	uint64_t GetFrameCounter(InputsMetadata cachedInputs);
+	uint64_t IncrementFrameCounter(InputsMetadata cachedInputs);
+	//virtual uint64_t GetFrameCounter(int64_t frame);
 	void ApplyChildDiff(const BaseScriptStatus& status, int64_t initialFrame);
+	SaveMetadata Save(int64_t adhocLevel);
 
 	template <typename F>
 	BaseScriptStatus ExecuteAdhocBase(F adhocScript);
@@ -197,14 +203,15 @@ public:
 	virtual bool execution() override = 0;
 	virtual bool assertion() override = 0;
 
-	Inputs GetInputs(int64_t frame) override;
+	//Inputs GetInputs(int64_t frame) override;
 
 protected:
 	M64& _m64;
 
 private:
-	Inputs GetInputsTracked(uint64_t frame, uint64_t& counter) override;
-	uint64_t GetFrameCounter(int64_t frame) override;
+	//Inputs GetInputsTracked(uint64_t frame, uint64_t& counter) override;
+	InputsMetadata GetInputsMetadata(int64_t frame) override;
+	//uint64_t GetFrameCounter(int64_t frame) override;
 };
 
 //Include template method implementations
