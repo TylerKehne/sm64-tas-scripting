@@ -483,14 +483,20 @@ void Script::Load(uint64_t frame)
 	uint64_t frameCounter = 0;
 	while (currentFrame++ < frame)
 	{
-		auto cachedInputs = GetInputsMetadataAndCache(frame);
+		auto cachedInputs = GetInputsMetadataAndCache(currentFrame);
 		frameCounter += IncrementFrameCounter(cachedInputs);
 		AdvanceFrameRead();
 
 		//Estimate future frame advances from aggregate of historical frame advances on this input segment
 		//If it reaches a certain threshold, creating a save is performant
-		if (game->shouldSave(frameCounter * 1))
-			saveCache[_adhocLevel][currentFrame] = cachedInputs.script->Save(_adhocLevel);
+		if (game->shouldSave(frameCounter * 2))
+		{
+			SaveMetadata cachedSave = cachedInputs.script->Save(_adhocLevel);
+
+			//Cache save if frame is before start of diff
+			//if (BaseStatus[_adhocLevel].m64Diff.frames.empty() || currentFrame <= BaseStatus[_adhocLevel].m64Diff.frames.begin()->first)
+			//	saveCache[_adhocLevel][currentFrame] = cachedSave;
+		}
 	}
 }
 
@@ -518,14 +524,21 @@ void Script::Revert(uint64_t frame, const M64Diff& m64)
 	uint64_t frameCounter = 0;
 	while (currentFrame++ < frame)
 	{
-		auto cachedInputs = GetInputsMetadataAndCache(frame);
+		auto cachedInputs = GetInputsMetadataAndCache(currentFrame);
 		frameCounter += IncrementFrameCounter(cachedInputs);
 		AdvanceFrameRead();
 
 		//Estimate future frame advances from aggregate of historical frame advances on this input segment
 		//If it reaches a certain threshold, creating a save is performant
-		if (game->shouldSave(frameCounter * 1))
-			saveCache[_adhocLevel][currentFrame] = cachedInputs.script->Save(_adhocLevel);
+		if (game->shouldSave(frameCounter * 2))
+		{
+			SaveMetadata cachedSave = cachedInputs.script->Save(_adhocLevel);
+
+			//Cache save if frame is before start of diff
+			//if (BaseStatus[_adhocLevel].m64Diff.frames.empty() || currentFrame <= BaseStatus[_adhocLevel].m64Diff.frames.begin()->first)
+			//	saveCache[_adhocLevel][currentFrame] = cachedSave;
+		}
+			
 	}
 }
 
