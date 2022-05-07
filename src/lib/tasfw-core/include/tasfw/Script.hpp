@@ -4,6 +4,7 @@
 #include <tasfw/Inputs.hpp>
 #include <sm64/Types.hpp>
 #include <tasfw/ScriptStatus.hpp>
+#include <set>
 
 #ifndef SCRIPT_H
 #define SCRIPT_H
@@ -37,6 +38,7 @@ public:
 		frameCounter[0];
 		saveCache[0];
 		inputsCache[0];
+		loadTracker[0];
 
 		if (_parentScript)
 		{
@@ -133,11 +135,12 @@ private:
 
 	int64_t _adhocLevel = 0;
 	int32_t _initialFrame = 0;
-	std::unordered_map<int64_t, BaseScriptStatus> BaseStatus;// = { BaseScriptStatus() };
-	std::unordered_map<int64_t, std::map<int64_t, SlotHandle>> saveBank;// = { std::map<int64_t, SlotHandle>() }; // contains handles to savestates
-	std::unordered_map<int64_t, std::map<int64_t, uint64_t>> frameCounter;// = { std::map<int64_t, uint64_t>() }; // tracks opportunity cost of having to frame advance from an earlier save
-	std::unordered_map<int64_t, std::map<int64_t, SaveMetadata>> saveCache;// = { std::map<int64_t, saveCache>() }; // stores metadata of ancestor saves to save recursion time
-	std::unordered_map<int64_t, std::map<int64_t, InputsMetadata>> inputsCache;// = { std::map<int64_t, Inputs>() }; // caches ancestor inputs to save recursion time
+	std::unordered_map<int64_t, BaseScriptStatus> BaseStatus;
+	std::unordered_map<int64_t, std::map<int64_t, SlotHandle>> saveBank;// contains handles to savestates
+	std::unordered_map<int64_t, std::map<int64_t, uint64_t>> frameCounter;// tracks opportunity cost of having to frame advance from an earlier save
+	std::unordered_map<int64_t, std::map<int64_t, SaveMetadata>> saveCache;// stores metadata of ancestor saves to save recursion time
+	std::unordered_map<int64_t, std::map<int64_t, InputsMetadata>> inputsCache;// caches ancestor inputs to save recursion time
+	std::unordered_map<int64_t, std::set<int64_t>> loadTracker;// track past loads to know whether a cached save is optimal
 	Script* _parentScript;
 
 	bool checkPreconditions();

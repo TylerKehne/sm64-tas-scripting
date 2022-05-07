@@ -308,6 +308,7 @@ BaseScriptStatus Script::ExecuteAdhocBase(F adhocScript)
 	frameCounter[_adhocLevel];
 	saveCache[_adhocLevel];
 	inputsCache[_adhocLevel];
+	loadTracker[_adhocLevel];
 
 	BaseStatus[_adhocLevel].validated = true;
 
@@ -335,6 +336,7 @@ BaseScriptStatus Script::ExecuteAdhocBase(F adhocScript)
 	frameCounter.erase(_adhocLevel);
 	saveCache.erase(_adhocLevel);
 	inputsCache.erase(_adhocLevel);
+	loadTracker.erase(_adhocLevel);
 	_adhocLevel--;
 
 	BaseStatus[_adhocLevel].nLoads += status.nLoads;

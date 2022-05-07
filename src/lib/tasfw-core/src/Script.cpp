@@ -114,11 +114,12 @@ void Script::AdvanceFrameWrite(Inputs inputs)
 	uint64_t currentFrame = GetCurrentFrame();
 	BaseStatus[_adhocLevel].m64Diff.frames[currentFrame] = inputs;
 
-	// Erase all saves, cached saves and inputs, and frame counters after this point, as well as the cached input on this frame
+	// Erase all saves, cached saves and inputs, tracked loads and frame counters after this point, as well as the cached input on this frame
 	inputsCache[_adhocLevel].erase(inputsCache[_adhocLevel].lower_bound(currentFrame), inputsCache[_adhocLevel].end());
 	frameCounter[_adhocLevel].erase(frameCounter[_adhocLevel].upper_bound(currentFrame), frameCounter[_adhocLevel].end());
 	saveBank[_adhocLevel].erase(saveBank[_adhocLevel].upper_bound(currentFrame), saveBank[_adhocLevel].end());
 	saveCache[_adhocLevel].erase(saveCache[_adhocLevel].upper_bound(currentFrame), saveCache[_adhocLevel].end());
+	loadTracker[_adhocLevel].erase(loadTracker[_adhocLevel].upper_bound(currentFrame), loadTracker[_adhocLevel].end());
 
 	// Set inputs and advance frame
 	SetInputs(inputs);
@@ -142,6 +143,7 @@ void Script::Apply(const M64Diff& m64Diff)
 	frameCounter[_adhocLevel].erase(frameCounter[_adhocLevel].upper_bound(currentFrame), frameCounter[_adhocLevel].end());
 	saveBank[_adhocLevel].erase(saveBank[_adhocLevel].upper_bound(currentFrame), saveBank[_adhocLevel].end());
 	saveCache[_adhocLevel].erase(saveCache[_adhocLevel].upper_bound(currentFrame), saveCache[_adhocLevel].end());
+	loadTracker[_adhocLevel].erase(loadTracker[_adhocLevel].upper_bound(currentFrame), loadTracker[_adhocLevel].end());
 
 	while (currentFrame <= lastFrame)
 	{
@@ -170,6 +172,7 @@ void Script::ApplyChildDiff(const BaseScriptStatus& status, int64_t initialFrame
 	frameCounter[_adhocLevel].erase(frameCounter[_adhocLevel].upper_bound(firstFrame), frameCounter[_adhocLevel].end());
 	saveBank[_adhocLevel].erase(saveBank[_adhocLevel].upper_bound(firstFrame), saveBank[_adhocLevel].end());
 	saveCache[_adhocLevel].erase(saveCache[_adhocLevel].upper_bound(firstFrame), saveCache[_adhocLevel].end());
+	loadTracker[_adhocLevel].erase(loadTracker[_adhocLevel].upper_bound(firstFrame), loadTracker[_adhocLevel].end());
 
 	//Apply diff. State is already synced from child script, so no need to update it
 	int64_t frame = firstFrame;
@@ -229,7 +232,7 @@ Inputs Script::GetInputs(int64_t frame)
 InputsMetadata Script::GetInputsMetadata(int64_t frame)
 {
 	if (!_parentScript)
-		std::runtime_error("Failed to get inputs because of missing parent script");
+		throw std::runtime_error("Failed to get inputs because of missing parent script");
 
 	//State owner determines what frame counter needs to be incremented
 	Script* stateOwner = nullptr;
@@ -273,7 +276,7 @@ InputsMetadata Script::GetInputsMetadata(int64_t frame)
 	return metadata;
 
 	//This should be impossible
-	std::runtime_error("Failed to get inputs, possible error in recursion logic.");
+	throw std::runtime_error("Failed to get inputs, possible error in recursion logic.");
 	return InputsMetadata();
 }
 
@@ -470,7 +473,15 @@ SaveMetadata Script::GetLatestSave(int64_t frame)
 			if (cachedSave->second.IsValid())
 			{
 				if (cachedSave->first >= bestSave.frame)
-					return cachedSave->second;
+				{
+					//However, if there was a load between the target frame and the cached save, it may not be optimal and we should continue recursion
+					auto loadAfterCachedSave = loadTracker[_adhocLevel].lower_bound(cachedSave->first);
+					if (loadAfterCachedSave == loadTracker[_adhocLevel].end() || *loadAfterCachedSave < frame)
+						bestSave = cachedSave->second;
+					else
+						return cachedSave->second;
+				}
+					
 			}
 			else
 				saveCache[adhocLevel].erase(cachedSave->first); // Delete stale cached save	
@@ -507,6 +518,16 @@ SaveMetadata Script::GetLatestSaveAndCache(int64_t frame)
 {
 	SaveMetadata save = GetLatestSave(frame);
 	saveCache[_adhocLevel][save.frame] = save; // Cache save to save recursion time later
+
+	//Tracked loads between this frame and the cached save frame are obsoloted by this one
+	auto loadAfterCachedSave = loadTracker[_adhocLevel].lower_bound(save.frame);
+	if (loadAfterCachedSave != loadTracker[_adhocLevel].end() && *loadAfterCachedSave < frame)
+		loadTracker[_adhocLevel].erase(loadAfterCachedSave);
+
+	//Track load to mark cached save as optimal
+	if (!loadTracker[_adhocLevel].contains(frame))
+		loadTracker[_adhocLevel].insert(frame);
+
 	return save;
 }
 
@@ -538,8 +559,8 @@ void Script::Load(uint64_t frame)
 		if (game->shouldSave(frameCounter))
 		{
 			SaveMetadata cachedSave = cachedInputs.stateOwner->Save(cachedInputs.stateOwnerAdhocLevel);
-
 			saveCache[_adhocLevel][currentFrame] = cachedSave;
+			frameCounter = 0;
 		}
 	}
 }
@@ -577,8 +598,8 @@ void Script::Revert(uint64_t frame, const M64Diff& m64)
 		if (game->shouldSave(frameCounter))
 		{
 			SaveMetadata cachedSave = cachedInputs.stateOwner->Save(cachedInputs.stateOwnerAdhocLevel);
-
 			saveCache[_adhocLevel][currentFrame] = cachedSave;
+			frameCounter = 0;
 		}	
 	}
 }
@@ -599,6 +620,7 @@ void Script::Rollback(uint64_t frame)
 		frameCounter[_adhocLevel].erase(frameCounter[_adhocLevel].upper_bound(firstFrame), frameCounter[_adhocLevel].end());
 		saveBank[_adhocLevel].erase(saveBank[_adhocLevel].upper_bound(firstFrame), saveBank[_adhocLevel].end());
 		saveCache[_adhocLevel].erase(saveCache[_adhocLevel].upper_bound(firstFrame), saveCache[_adhocLevel].end());
+		loadTracker[_adhocLevel].erase(loadTracker[_adhocLevel].upper_bound(firstFrame), loadTracker[_adhocLevel].end());
 	}
 
 	Load(frame);
@@ -627,6 +649,7 @@ void Script::RollForward(int64_t frame)
 		frameCounter[_adhocLevel].erase(frameCounter[_adhocLevel].upper_bound(firstFrame), frameCounter[_adhocLevel].end());
 		saveBank[_adhocLevel].erase(saveBank[_adhocLevel].upper_bound(firstFrame), saveBank[_adhocLevel].end());
 		saveCache[_adhocLevel].erase(saveCache[_adhocLevel].upper_bound(firstFrame), saveCache[_adhocLevel].end());
+		loadTracker[_adhocLevel].erase(loadTracker[_adhocLevel].upper_bound(firstFrame), loadTracker[_adhocLevel].end());
 	}
 
 	Load(frame);
@@ -648,9 +671,8 @@ void Script::Restore(int64_t frame)
 		frameCounter[_adhocLevel].erase(frameCounter[_adhocLevel].upper_bound(firstFrame), frameCounter[_adhocLevel].end());
 		saveBank[_adhocLevel].erase(saveBank[_adhocLevel].upper_bound(firstFrame), saveBank[_adhocLevel].end());
 		saveCache[_adhocLevel].erase(saveCache[_adhocLevel].upper_bound(firstFrame), saveCache[_adhocLevel].end());
+		loadTracker[_adhocLevel].erase(loadTracker[_adhocLevel].upper_bound(firstFrame), loadTracker[_adhocLevel].end());
 	}
-
-	Load(frame);
 
 	Load(frame);
 }
@@ -688,7 +710,7 @@ void Script::OptionalSave()
 	uint64_t frameCounter = 0;
 	for (int64_t frame = latestSaveFrame; frame <= currentFrame; frame++)
 	{
-		if (game->shouldSave(frameCounter))
+		if (game->shouldSave(frameCounter * 2))
 		{
 			//Create save in this script at the current frame
 			Save();
