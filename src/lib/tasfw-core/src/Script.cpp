@@ -114,8 +114,8 @@ void Script::AdvanceFrameWrite(Inputs inputs)
 	uint64_t currentFrame = GetCurrentFrame();
 	BaseStatus[_adhocLevel].m64Diff.frames[currentFrame] = inputs;
 
-	// Erase all saves, cached saves, and frame counters after this point, as well as the cached input on this frame
-	inputsCache[_adhocLevel].erase(currentFrame);
+	// Erase all saves, cached saves and inputs, and frame counters after this point, as well as the cached input on this frame
+	inputsCache[_adhocLevel].erase(inputsCache[_adhocLevel].lower_bound(currentFrame), inputsCache[_adhocLevel].end());
 	frameCounter[_adhocLevel].erase(frameCounter[_adhocLevel].upper_bound(currentFrame), frameCounter[_adhocLevel].end());
 	saveBank[_adhocLevel].erase(saveBank[_adhocLevel].upper_bound(currentFrame), saveBank[_adhocLevel].end());
 	saveCache[_adhocLevel].erase(saveCache[_adhocLevel].upper_bound(currentFrame), saveCache[_adhocLevel].end());
@@ -138,6 +138,7 @@ void Script::Apply(const M64Diff& m64Diff)
 
 	// Erase all saves, cached saves, and frame counters after this point
 	uint64_t currentFrame = GetCurrentFrame();
+	inputsCache[_adhocLevel].erase(inputsCache[_adhocLevel].lower_bound(currentFrame), inputsCache[_adhocLevel].end());
 	frameCounter[_adhocLevel].erase(frameCounter[_adhocLevel].upper_bound(currentFrame), frameCounter[_adhocLevel].end());
 	saveBank[_adhocLevel].erase(saveBank[_adhocLevel].upper_bound(currentFrame), saveBank[_adhocLevel].end());
 	saveCache[_adhocLevel].erase(saveCache[_adhocLevel].upper_bound(currentFrame), saveCache[_adhocLevel].end());
@@ -150,7 +151,6 @@ void Script::Apply(const M64Diff& m64Diff)
 		{
 			inputs = m64Diff.frames.at(currentFrame);
 			BaseStatus[_adhocLevel].m64Diff.frames[currentFrame] = inputs;
-			inputsCache[_adhocLevel].erase(currentFrame);
 		}
 
 		SetInputs(inputs);
@@ -166,6 +166,7 @@ void Script::ApplyChildDiff(const BaseScriptStatus& status, int64_t initialFrame
 	uint64_t lastFrame = status.m64Diff.frames.rbegin()->first;
 
 	// Erase all saves, cached saves, and frame counters after this point
+	inputsCache[_adhocLevel].erase(inputsCache[_adhocLevel].lower_bound(firstFrame), inputsCache[_adhocLevel].end());
 	frameCounter[_adhocLevel].erase(frameCounter[_adhocLevel].upper_bound(firstFrame), frameCounter[_adhocLevel].end());
 	saveBank[_adhocLevel].erase(saveBank[_adhocLevel].upper_bound(firstFrame), saveBank[_adhocLevel].end());
 	saveCache[_adhocLevel].erase(saveCache[_adhocLevel].upper_bound(firstFrame), saveCache[_adhocLevel].end());
@@ -175,10 +176,7 @@ void Script::ApplyChildDiff(const BaseScriptStatus& status, int64_t initialFrame
 	while (frame <= lastFrame)
 	{
 		if (status.m64Diff.frames.count(frame))
-		{
 			BaseStatus[_adhocLevel].m64Diff.frames[frame] = status.m64Diff.frames.at(frame);
-			inputsCache[_adhocLevel].erase(frame);
-		}
 
 		frame++;
 	}
@@ -230,19 +228,49 @@ Inputs Script::GetInputs(int64_t frame)
 
 InputsMetadata Script::GetInputsMetadata(int64_t frame)
 {
+	if (!_parentScript)
+		std::runtime_error("Failed to get inputs because of missing parent script");
+
+	//State owner determines what frame counter needs to be incremented
+	Script* stateOwner = nullptr;
+	int64_t stateOwnerAdhocLevel = -1;
+
 	//Check ad-hoc script hierarchy first, then current script
 	for (int64_t adhocLevel = _adhocLevel; adhocLevel >= 0; adhocLevel--)
 	{
+		if (!stateOwner)
+		{
+			if (!BaseStatus[adhocLevel].m64Diff.frames.empty() && BaseStatus[adhocLevel].m64Diff.frames.begin()->first <= frame)
+			{
+				stateOwner = this;
+				stateOwnerAdhocLevel = adhocLevel;
+			}
+		}
+
 		if (BaseStatus[adhocLevel].m64Diff.frames.contains(frame))
-			return InputsMetadata(BaseStatus[adhocLevel].m64Diff.frames[frame], this, frame, adhocLevel);
+			return InputsMetadata(BaseStatus[adhocLevel].m64Diff.frames[frame], frame, stateOwner, stateOwnerAdhocLevel);
 
 		if (inputsCache[adhocLevel].contains(frame))
-			return inputsCache[adhocLevel][frame];
+		{
+			InputsMetadata metadata = inputsCache[adhocLevel][frame];
+			if (stateOwner)
+			{
+				metadata.stateOwner = stateOwner;
+				metadata.stateOwnerAdhocLevel = stateOwnerAdhocLevel;
+			}
+
+			return metadata;
+		}
 	}
 
 	//Then check parent script
-	if (_parentScript)
-		return _parentScript->GetInputsMetadata(frame);
+	InputsMetadata metadata = _parentScript->GetInputsMetadata(frame);
+	if (stateOwner)
+	{
+		metadata.stateOwner = stateOwner;
+		metadata.stateOwnerAdhocLevel = stateOwnerAdhocLevel;
+	}
+	return metadata;
 
 	//This should be impossible
 	std::runtime_error("Failed to get inputs, possible error in recursion logic.");
@@ -251,24 +279,42 @@ InputsMetadata Script::GetInputsMetadata(int64_t frame)
 
 InputsMetadata TopLevelScript::GetInputsMetadata(int64_t frame)
 {
+	//State owner determines what frame counter needs to be incremented
+	int64_t stateOwnerAdhocLevel = -1;
+
 	//Check ad-hoc script hierarchy first, then current script
 	for (int64_t adhocLevel = _adhocLevel; adhocLevel >= 0; adhocLevel--)
 	{
+		if (stateOwnerAdhocLevel == -1)
+		{
+			if (!BaseStatus[adhocLevel].m64Diff.frames.empty() && BaseStatus[adhocLevel].m64Diff.frames.begin()->first <= frame)
+				stateOwnerAdhocLevel = adhocLevel;
+		}
+
 		if (BaseStatus[adhocLevel].m64Diff.frames.contains(frame))
-			return InputsMetadata(BaseStatus[adhocLevel].m64Diff.frames[frame], this, frame, adhocLevel);
+			return InputsMetadata(BaseStatus[adhocLevel].m64Diff.frames[frame], frame, this, stateOwnerAdhocLevel);
 
 		if (inputsCache[adhocLevel].contains(frame))
-			return inputsCache[adhocLevel][frame];
+		{
+			InputsMetadata metadata = inputsCache[adhocLevel][frame];
+			if (stateOwnerAdhocLevel == -1)
+				metadata.stateOwnerAdhocLevel = stateOwnerAdhocLevel;
+
+			return metadata;
+		}
 	}
+
+	if (stateOwnerAdhocLevel == -1)
+		stateOwnerAdhocLevel = 0;
 
 	//Then check actual m64.
 	//For the purposes of the frame counter, mark as adhoc level 0.
 	if (_m64.frames.count(frame))
-		return InputsMetadata(_m64.frames[frame], this, frame, 0, InputsMetadata::InputsSource::ORIGINAL);
+		return InputsMetadata(_m64.frames[frame], frame, this, stateOwnerAdhocLevel, InputsMetadata::InputsSource::ORIGINAL);
 
 	//Default to no input
 	//For the purposes of the frame counter, mark as adhoc level 0.
-	return InputsMetadata(Inputs(0, 0, 0), this, frame, 0, InputsMetadata::InputsSource::DEFAULT);
+	return InputsMetadata(Inputs(0, 0, 0), frame, this, stateOwnerAdhocLevel, InputsMetadata::InputsSource::DEFAULT);
 }
 
 InputsMetadata Script::GetInputsMetadataAndCache(int64_t frame)
@@ -349,19 +395,19 @@ Inputs TopLevelScript::GetInputsTracked(uint64_t frame, uint64_t& counter)
 
 uint64_t Script::GetFrameCounter(InputsMetadata cachedInputs)
 {
-	if (!cachedInputs.script->frameCounter[cachedInputs.adhocLevel].contains(cachedInputs.frame))
-		cachedInputs.script->frameCounter[cachedInputs.adhocLevel][cachedInputs.frame] = 0;
+	if (!cachedInputs.stateOwner->frameCounter[cachedInputs.stateOwnerAdhocLevel].contains(cachedInputs.frame))
+		cachedInputs.stateOwner->frameCounter[cachedInputs.stateOwnerAdhocLevel][cachedInputs.frame] = 0;
 
-	return cachedInputs.script->frameCounter[cachedInputs.adhocLevel][cachedInputs.frame];
+	return cachedInputs.stateOwner->frameCounter[cachedInputs.stateOwnerAdhocLevel][cachedInputs.frame];
 }
 
 uint64_t Script::IncrementFrameCounter(InputsMetadata cachedInputs)
 {
-	if (!cachedInputs.script->frameCounter[cachedInputs.adhocLevel].contains(cachedInputs.frame))
-		cachedInputs.script->frameCounter[cachedInputs.adhocLevel][cachedInputs.frame] = 0;
+	if (!cachedInputs.stateOwner->frameCounter[cachedInputs.stateOwnerAdhocLevel].contains(cachedInputs.frame))
+		cachedInputs.stateOwner->frameCounter[cachedInputs.stateOwnerAdhocLevel][cachedInputs.frame] = 0;
 
 	//Return value BEFORE incrementing
-	return cachedInputs.script->frameCounter[cachedInputs.adhocLevel][cachedInputs.frame]++;
+	return cachedInputs.stateOwner->frameCounter[cachedInputs.stateOwnerAdhocLevel][cachedInputs.frame]++;
 }
 
 /*
@@ -489,13 +535,11 @@ void Script::Load(uint64_t frame)
 
 		//Estimate future frame advances from aggregate of historical frame advances on this input segment
 		//If it reaches a certain threshold, creating a save is performant
-		if (game->shouldSave(frameCounter * 2))
+		if (game->shouldSave(frameCounter))
 		{
-			SaveMetadata cachedSave = cachedInputs.script->Save(_adhocLevel);
+			SaveMetadata cachedSave = cachedInputs.stateOwner->Save(cachedInputs.stateOwnerAdhocLevel);
 
-			//Cache save if frame is before start of diff
-			//if (BaseStatus[_adhocLevel].m64Diff.frames.empty() || currentFrame <= BaseStatus[_adhocLevel].m64Diff.frames.begin()->first)
-			//	saveCache[_adhocLevel][currentFrame] = cachedSave;
+			saveCache[_adhocLevel][currentFrame] = cachedSave;
 		}
 	}
 }
@@ -530,15 +574,12 @@ void Script::Revert(uint64_t frame, const M64Diff& m64)
 
 		//Estimate future frame advances from aggregate of historical frame advances on this input segment
 		//If it reaches a certain threshold, creating a save is performant
-		if (game->shouldSave(frameCounter * 2))
+		if (game->shouldSave(frameCounter))
 		{
-			SaveMetadata cachedSave = cachedInputs.script->Save(_adhocLevel);
+			SaveMetadata cachedSave = cachedInputs.stateOwner->Save(cachedInputs.stateOwnerAdhocLevel);
 
-			//Cache save if frame is before start of diff
-			//if (BaseStatus[_adhocLevel].m64Diff.frames.empty() || currentFrame <= BaseStatus[_adhocLevel].m64Diff.frames.begin()->first)
-			//	saveCache[_adhocLevel][currentFrame] = cachedSave;
-		}
-			
+			saveCache[_adhocLevel][currentFrame] = cachedSave;
+		}	
 	}
 }
 
@@ -546,13 +587,19 @@ void Script::Rollback(uint64_t frame)
 {
 	// Roll back diff and savebank to target frame. Note that rollback on diff
 	// includes target frame.
-	BaseStatus[_adhocLevel].m64Diff.frames.erase(
-		BaseStatus[_adhocLevel].m64Diff.frames.lower_bound(frame),
-		BaseStatus[_adhocLevel].m64Diff.frames.end());
-	inputsCache[_adhocLevel].erase(inputsCache[_adhocLevel].lower_bound(frame), inputsCache[_adhocLevel].end());
-	frameCounter[_adhocLevel].erase(frameCounter[_adhocLevel].upper_bound(frame), frameCounter[_adhocLevel].end());
-	saveBank[_adhocLevel].erase(saveBank[_adhocLevel].upper_bound(frame), saveBank[_adhocLevel].end());
-	saveCache[_adhocLevel].erase(saveCache[_adhocLevel].upper_bound(frame), saveCache[_adhocLevel].end());
+	if (!BaseStatus[_adhocLevel].m64Diff.frames.empty())
+	{
+		int64_t firstFrame = BaseStatus[_adhocLevel].m64Diff.frames.lower_bound(frame)->first;
+
+		BaseStatus[_adhocLevel].m64Diff.frames.erase(
+			BaseStatus[_adhocLevel].m64Diff.frames.lower_bound(frame),
+			BaseStatus[_adhocLevel].m64Diff.frames.end());
+
+		inputsCache[_adhocLevel].erase(inputsCache[_adhocLevel].lower_bound(firstFrame), inputsCache[_adhocLevel].end());
+		frameCounter[_adhocLevel].erase(frameCounter[_adhocLevel].upper_bound(firstFrame), frameCounter[_adhocLevel].end());
+		saveBank[_adhocLevel].erase(saveBank[_adhocLevel].upper_bound(firstFrame), saveBank[_adhocLevel].end());
+		saveCache[_adhocLevel].erase(saveCache[_adhocLevel].upper_bound(firstFrame), saveCache[_adhocLevel].end());
+	}
 
 	Load(frame);
 }
@@ -563,13 +610,24 @@ void Script::RollForward(int64_t frame)
 	// Roll back diff and savebank to current frame. Note that roll forward on diff
 	// includes current frame.
 	uint64_t currentFrame = GetCurrentFrame();
-	BaseStatus[_adhocLevel].m64Diff.frames.erase(
-		BaseStatus[_adhocLevel].m64Diff.frames.lower_bound(currentFrame),
-		BaseStatus[_adhocLevel].m64Diff.frames.end());
-	inputsCache[_adhocLevel].erase(inputsCache[_adhocLevel].lower_bound(currentFrame), inputsCache[_adhocLevel].end());
-	frameCounter[_adhocLevel].erase(frameCounter[_adhocLevel].upper_bound(currentFrame), frameCounter[_adhocLevel].end());
-	saveBank[_adhocLevel].erase(saveBank[_adhocLevel].upper_bound(currentFrame), saveBank[_adhocLevel].end());
-	saveCache[_adhocLevel].erase(saveCache[_adhocLevel].upper_bound(currentFrame), saveCache[_adhocLevel].end());
+
+	if (!BaseStatus[_adhocLevel].m64Diff.frames.empty())
+	{
+		int64_t firstFrame = BaseStatus[_adhocLevel].m64Diff.frames.begin()->first;
+
+		auto inputsUpperBound = BaseStatus[_adhocLevel].m64Diff.frames.upper_bound(frame);
+		if (inputsUpperBound == BaseStatus[_adhocLevel].m64Diff.frames.begin() && BaseStatus[_adhocLevel].m64Diff.frames.size() == 1)
+			inputsUpperBound = BaseStatus[_adhocLevel].m64Diff.frames.end();
+		else
+			inputsUpperBound = std::prev(inputsUpperBound);
+
+		BaseStatus[_adhocLevel].m64Diff.frames.erase(BaseStatus[_adhocLevel].m64Diff.frames.begin(), inputsUpperBound);
+
+		inputsCache[_adhocLevel].erase(inputsCache[_adhocLevel].lower_bound(firstFrame), inputsCache[_adhocLevel].end());
+		frameCounter[_adhocLevel].erase(frameCounter[_adhocLevel].upper_bound(firstFrame), frameCounter[_adhocLevel].end());
+		saveBank[_adhocLevel].erase(saveBank[_adhocLevel].upper_bound(firstFrame), saveBank[_adhocLevel].end());
+		saveCache[_adhocLevel].erase(saveCache[_adhocLevel].upper_bound(firstFrame), saveCache[_adhocLevel].end());
+	}
 
 	Load(frame);
 }
@@ -578,13 +636,21 @@ void Script::RollForward(int64_t frame)
 void Script::Restore(int64_t frame)
 {
 	// Clear diff, frame counter and savebank
-	BaseStatus[_adhocLevel].m64Diff.frames.erase(
-		BaseStatus[_adhocLevel].m64Diff.frames.begin(),
-		BaseStatus[_adhocLevel].m64Diff.frames.end());
-	inputsCache[_adhocLevel].erase(inputsCache[_adhocLevel].begin(), inputsCache[_adhocLevel].end());
-	frameCounter[_adhocLevel].erase(frameCounter[_adhocLevel].begin(), frameCounter[_adhocLevel].end());
-	saveBank[_adhocLevel].erase(saveBank[_adhocLevel].begin(), saveBank[_adhocLevel].end());
-	saveCache[_adhocLevel].erase(saveCache[_adhocLevel].begin(), saveCache[_adhocLevel].end());
+	if (!BaseStatus[_adhocLevel].m64Diff.frames.empty())
+	{
+		int64_t firstFrame = BaseStatus[_adhocLevel].m64Diff.frames.begin()->first;
+
+		BaseStatus[_adhocLevel].m64Diff.frames.erase(
+			BaseStatus[_adhocLevel].m64Diff.frames.lower_bound(frame),
+			BaseStatus[_adhocLevel].m64Diff.frames.end());
+
+		inputsCache[_adhocLevel].erase(inputsCache[_adhocLevel].lower_bound(firstFrame), inputsCache[_adhocLevel].end());
+		frameCounter[_adhocLevel].erase(frameCounter[_adhocLevel].upper_bound(firstFrame), frameCounter[_adhocLevel].end());
+		saveBank[_adhocLevel].erase(saveBank[_adhocLevel].upper_bound(firstFrame), saveBank[_adhocLevel].end());
+		saveCache[_adhocLevel].erase(saveCache[_adhocLevel].upper_bound(firstFrame), saveCache[_adhocLevel].end());
+	}
+
+	Load(frame);
 
 	Load(frame);
 }
@@ -622,7 +688,7 @@ void Script::OptionalSave()
 	uint64_t frameCounter = 0;
 	for (int64_t frame = latestSaveFrame; frame <= currentFrame; frame++)
 	{
-		if (game->shouldSave(frameCounter * 2))
+		if (game->shouldSave(frameCounter))
 		{
 			//Create save in this script at the current frame
 			Save();

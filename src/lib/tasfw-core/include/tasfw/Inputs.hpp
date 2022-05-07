@@ -93,15 +93,15 @@ public:
 	};
 
 	Inputs inputs;
-	Script* script = nullptr;
 	int64_t frame = -1;
-	int64_t adhocLevel = -1;
+	Script* stateOwner = nullptr;
+	int64_t stateOwnerAdhocLevel = -1;
 	InputsSource source = InputsSource::DIFF;
 
 	InputsMetadata() = default;
 
-	InputsMetadata(Inputs inputs, Script* script, int64_t frame, int64_t adhocLevel, InputsSource source = InputsSource::DIFF)
-		: inputs(inputs), script(script), frame(frame), adhocLevel(adhocLevel), source(source) {}
+	InputsMetadata(Inputs inputs, int64_t frame, Script* stateOwner, int64_t stateOwnerAdhocLevel, InputsSource source = InputsSource::DIFF)
+		: inputs(inputs), stateOwner(stateOwner), frame(frame), stateOwnerAdhocLevel(stateOwnerAdhocLevel), source(source) {}
 };
 
 class M64Base

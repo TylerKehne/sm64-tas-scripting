@@ -121,7 +121,7 @@ std::pair<int8_t, int8_t> Inputs::GetClosestInputByYawHau(
 					if (magDistance < closestMagDistance)
 					{
 						closestMagDistance = magDistance;
-						closestInput			 = (*lower).second;
+						closestInput = (*lower).second;
 					}
 				}
 				else if (lower == yawMagToInputs.at(yaw).end())
@@ -130,7 +130,7 @@ std::pair<int8_t, int8_t> Inputs::GetClosestInputByYawHau(
 					if (magDistance < closestMagDistance)
 					{
 						closestMagDistance = magDistance;
-						closestInput			 = (*upper).second;
+						closestInput = (*upper).second;
 					}
 				}
 				else
@@ -143,7 +143,7 @@ std::pair<int8_t, int8_t> Inputs::GetClosestInputByYawHau(
 						if (lowerMagDistance < closestMagDistance)
 						{
 							closestMagDistance = lowerMagDistance;
-							closestInput			 = (*lower).second;
+							closestInput = (*lower).second;
 						}
 					}
 					else
@@ -151,7 +151,7 @@ std::pair<int8_t, int8_t> Inputs::GetClosestInputByYawHau(
 						if (upperMagDistance < closestMagDistance)
 						{
 							closestMagDistance = upperMagDistance;
-							closestInput			 = (*upper).second;
+							closestInput = (*upper).second;
 						}
 					}
 				}
@@ -225,7 +225,7 @@ std::pair<int8_t, int8_t> Inputs::GetClosestInputByYawExact(
 				if (magDistance < closestMagDistance)
 				{
 					closestMagDistance = magDistance;
-					closestInput			 = (*lower).second;
+					closestInput = (*lower).second;
 				}
 			}
 			else if (lower == yawMagToInputs.at(yaw).end())
@@ -234,7 +234,7 @@ std::pair<int8_t, int8_t> Inputs::GetClosestInputByYawExact(
 				if (magDistance < closestMagDistance)
 				{
 					closestMagDistance = magDistance;
-					closestInput			 = (*upper).second;
+					closestInput = (*upper).second;
 				}
 			}
 			else
@@ -247,7 +247,7 @@ std::pair<int8_t, int8_t> Inputs::GetClosestInputByYawExact(
 					if (lowerMagDistance < closestMagDistance)
 					{
 						closestMagDistance = lowerMagDistance;
-						closestInput			 = (*lower).second;
+						closestInput = (*lower).second;
 					}
 				}
 				else
@@ -255,7 +255,7 @@ std::pair<int8_t, int8_t> Inputs::GetClosestInputByYawExact(
 					if (upperMagDistance < closestMagDistance)
 					{
 						closestMagDistance = upperMagDistance;
-						closestInput			 = (*upper).second;
+						closestInput = (*upper).second;
 					}
 				}
 			}
@@ -299,7 +299,7 @@ std::pair<int16_t, float> Inputs::GetIntendedYawMagFromInput(
 	int8_t stickX, int8_t stickY, int16_t cameraYaw)
 {
 	int16_t baseIntendedYaw = inputsToYawMag.at(stickX).at(stickY).first;
-	float intendedMag				= inputsToYawMag.at(stickX).at(stickY).second;
+	float intendedMag = inputsToYawMag.at(stickX).at(stickY).second;
 
 	return {baseIntendedYaw + cameraYaw, intendedMag};
 }
@@ -391,14 +391,14 @@ int M64::save(long initFrame)
 		for (int i = 0; i <= lastFrame; i++)
 		{
 			uint16_t bigEndianButtons = 0;
-			int8_t stickX							= 0;
-			int8_t stickY							= 0;
+			int8_t stickX = 0;
+			int8_t stickY = 0;
 
 			if (frames.contains(i))
 			{
 				bigEndianButtons = byteswap(frames[i].buttons);
-				stickX					 = frames[i].stick_x;
-				stickY					 = frames[i].stick_y;
+				stickX = frames[i].stick_x;
+				stickY = frames[i].stick_y;
 			}
 
 			f.write(reinterpret_cast<char*>(&bigEndianButtons), sizeof(uint16_t));
