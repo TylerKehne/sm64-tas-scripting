@@ -99,15 +99,6 @@ void Script::AdvanceFrameRead()
 	BaseStatus[_adhocLevel].nFrameAdvances++;
 }
 
-/*
-void Script::AdvanceFrameRead(uint64_t& counter)
-{
-	SetInputs(GetInputsTracked(GetCurrentFrame(), counter));
-	game->advance_frame();
-	BaseStatus[_adhocLevel].nFrameAdvances++;
-}
-*/
-
 void Script::AdvanceFrameWrite(Inputs inputs)
 {
 	// Save inputs to diff
@@ -187,42 +178,6 @@ void Script::ApplyChildDiff(const BaseScriptStatus& status, int64_t initialFrame
 	//Forward state to end of diff
 	Load(lastFrame + 1);
 }
-
-/*
-Inputs Script::GetInputs(int64_t frame)
-{
-	//Check ad-hoc script hierarchy first, then current script
-	for (int64_t adhocLevel = _adhocLevel; adhocLevel >= 0; adhocLevel--)
-	{
-		if (BaseStatus[adhocLevel].m64Diff.frames.contains(frame))
-			return BaseStatus[adhocLevel].m64Diff.frames[frame];
-	}
-
-	//Then check parent script
-	if (_parentScript)
-		return _parentScript->GetInputs(frame);
-
-	//This should be impossible
-	return Inputs(0, 0, 0);
-}
-
-Inputs TopLevelScript::GetInputs(int64_t frame)
-{
-	//Check ad-hoc script hierarchy first, then current script
-	for (int64_t adhocLevel = _adhocLevel; adhocLevel >= 0; adhocLevel--)
-	{
-		if (BaseStatus[adhocLevel].m64Diff.frames.contains(frame))
-			return BaseStatus[adhocLevel].m64Diff.frames[frame];
-	}
-
-	//Then check actual m64
-	if (_m64.frames.count(frame))
-		return _m64.frames[frame];
-
-	//Default to no input
-	return Inputs(0, 0, 0);
-}
-*/
 
 Inputs Script::GetInputs(int64_t frame)
 {
@@ -327,75 +282,6 @@ InputsMetadata Script::GetInputsMetadataAndCache(int64_t frame)
 	return inputs;
 }
 
-/*
-// Seeks inputs from script hierarchy diffs recursively.
-// If a nonzero counter is provided, save if performant.
-// Return the counter, incremented by the frame counter for the frame with the inputs.
-Inputs Script::GetInputsTracked(uint64_t frame, uint64_t& counter)
-{
-	//Check ad-hoc script hierarchy first, then current script
-	for (int64_t adhocLevel = _adhocLevel; adhocLevel >= 0; adhocLevel--)
-	{
-		if (BaseStatus[adhocLevel].m64Diff.frames.contains(frame))
-		{
-			if (counter != 0 && game->shouldSave(counter + frameCounter[adhocLevel][frame]))
-			{
-				Save();
-				counter = 0;
-			}
-			else
-				counter += frameCounter[adhocLevel][frame]++;
-
-			return BaseStatus[adhocLevel].m64Diff.frames[frame];
-		}	
-	}
-
-	//Then check parent
-	if (_parentScript)
-		return _parentScript->GetInputsTracked(frame, counter);
-
-	//This should never happen
-	return Inputs(0, 0, 0);
-}
-
-// Seeks inputs from the top level script or base m64.
-// If a nonzero counter is provided, save if performant.
-// Returns the inputs, and the counter incremented by the frame counter for the frame with the inputs.
-Inputs TopLevelScript::GetInputsTracked(uint64_t frame, uint64_t& counter)
-{
-	//Check ad-hoc script hierarchy first, then current script
-	for (int64_t adhocLevel = _adhocLevel; adhocLevel >= 0; adhocLevel--)
-	{
-		if (BaseStatus[adhocLevel].m64Diff.frames.contains(frame))
-		{
-			if (counter != 0 && game->shouldSave(counter + frameCounter[adhocLevel][frame]))
-			{
-				Save();
-				counter = 0;
-			}
-			else
-				counter += frameCounter[adhocLevel][frame]++;
-
-			return BaseStatus[adhocLevel].m64Diff.frames[frame];
-		}	
-	}
-
-	//Then check actual m64. M64 inputs and default inputs should contribute to the root frame counter
-	if (counter != 0 && game->shouldSave(counter + frameCounter[0][frame]))
-	{
-		Save();
-		counter = 0;
-	}
-	else
-		counter += frameCounter[0][frame]++;
-
-	if (_m64.frames.count(frame))
-		return _m64.frames[frame];
-
-	return Inputs(0, 0, 0);
-}
-*/
-
 uint64_t Script::GetFrameCounter(InputsMetadata cachedInputs)
 {
 	if (!cachedInputs.stateOwner->frameCounter[cachedInputs.stateOwnerAdhocLevel].contains(cachedInputs.frame))
@@ -412,38 +298,6 @@ uint64_t Script::IncrementFrameCounter(InputsMetadata cachedInputs)
 	//Return value BEFORE incrementing
 	return cachedInputs.stateOwner->frameCounter[cachedInputs.stateOwnerAdhocLevel][cachedInputs.frame]++;
 }
-
-/*
-uint64_t Script::GetFrameCounter(int64_t frame)
-{
-	//Check ad-hoc script hierarchy first, then current script
-	for (int64_t adhocLevel = _adhocLevel; adhocLevel >= 0; adhocLevel--)
-	{
-		if (BaseStatus[adhocLevel].m64Diff.frames.contains(frame))
-			return frameCounter[adhocLevel][frame];	
-	}
-
-	//Then check parent script
-	if (_parentScript)
-		return _parentScript->GetFrameCounter(frame);
-
-	//This should be impossible
-	return 0;
-}
-
-uint64_t TopLevelScript::GetFrameCounter(int64_t frame)
-{
-	//Check ad-hoc script hierarchy first
-	for (int64_t adhocLevel = _adhocLevel; adhocLevel > 0; adhocLevel--)
-	{
-		if (BaseStatus[adhocLevel].m64Diff.frames.contains(frame))
-			return frameCounter[adhocLevel][frame];	
-	}
-
-	//Then check current script
-	return frameCounter[0][frame];
-}
-*/
 
 SaveMetadata Script::GetLatestSave(int64_t frame)
 {

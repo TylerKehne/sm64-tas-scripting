@@ -154,11 +154,9 @@ private:
 	void DeleteSave(int64_t frame, int64_t adhocLevel);
 	void SetInputs(Inputs inputs);
 	void Revert(uint64_t frame, const M64Diff& m64);
-	//virtual Inputs GetInputsTracked(uint64_t frame, uint64_t& counter);
 	void AdvanceFrameRead(uint64_t& counter);
 	uint64_t GetFrameCounter(InputsMetadata cachedInputs);
 	uint64_t IncrementFrameCounter(InputsMetadata cachedInputs);
-	//virtual uint64_t GetFrameCounter(int64_t frame);
 	void ApplyChildDiff(const BaseScriptStatus& status, int64_t initialFrame);
 	SaveMetadata Save(int64_t adhocLevel);
 
@@ -206,15 +204,11 @@ public:
 	virtual bool execution() override = 0;
 	virtual bool assertion() override = 0;
 
-	//Inputs GetInputs(int64_t frame) override;
-
 protected:
 	M64& _m64;
 
 private:
-	//Inputs GetInputsTracked(uint64_t frame, uint64_t& counter) override;
 	InputsMetadata GetInputsMetadata(int64_t frame) override;
-	//uint64_t GetFrameCounter(int64_t frame) override;
 };
 
 //Include template method implementations
