@@ -52,14 +52,11 @@ public:
 	}
 };
 
-
-
 int main(int argc, const char* argv[])
 {
 	namespace fs = std::filesystem;
 	fs::path cfgPath =
-		((argc >= 2) ? fs::path(argv[1]) :
-									 getPathToSelf().parent_path() / "config.json");
+		((argc >= 2) ? fs::path(argv[1]) : getPathToSelf().parent_path() / "config.json");
 
 	BitFs_ConfigData cfg = BitFs_ConfigData::load(cfgPath);
 

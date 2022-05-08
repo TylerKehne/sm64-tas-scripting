@@ -118,9 +118,10 @@ AdhocScriptStatus<TAdhocCustomScriptStatus> Script::ModifyAdhoc(F adhocScript)
 	return AdhocScriptStatus<TAdhocCustomScriptStatus>(baseStatus, customStatus);
 }
 
-AdhocBaseScriptStatus Script::TestAdhoc(AdhocScript auto&& adhocScript)
+template <AdhocScript TAdhocScript>
+AdhocBaseScriptStatus Script::TestAdhoc(TAdhocScript&& adhocScript)
 {
-	auto status = ExecuteAdhoc(std::forward<AdhocScript auto>(adhocScript));
+	auto status = ExecuteAdhoc(std::forward<TAdhocScript>(adhocScript));
 	status.m64Diff = M64Diff();
 
 	return status;
@@ -302,9 +303,12 @@ BaseScriptStatus Script::ExecuteAdhocBase(F adhocScript)
 
 	//Increment adhoc level
 	_adhocLevel++;
-	BaseStatus.emplace_back();
-	saveBank.emplace_back();
-	frameCounter.emplace_back();
+	BaseStatus[_adhocLevel];
+	saveBank[_adhocLevel];
+	frameCounter[_adhocLevel];
+	saveCache[_adhocLevel];
+	inputsCache[_adhocLevel];
+	loadTracker[_adhocLevel];
 
 	BaseStatus[_adhocLevel].validated = true;
 
@@ -327,9 +331,12 @@ BaseScriptStatus Script::ExecuteAdhocBase(F adhocScript)
 
 	//Decrement adhoc level, revert state and return status
 	BaseScriptStatus status = BaseStatus[_adhocLevel];
-	BaseStatus.pop_back();
-	saveBank.pop_back();
-	frameCounter.pop_back();
+	BaseStatus.erase(_adhocLevel);
+	saveBank.erase(_adhocLevel);
+	frameCounter.erase(_adhocLevel);
+	saveCache.erase(_adhocLevel);
+	inputsCache.erase(_adhocLevel);
+	loadTracker.erase(_adhocLevel);
 	_adhocLevel--;
 
 	BaseStatus[_adhocLevel].nLoads += status.nLoads;
@@ -354,7 +361,7 @@ AdhocScriptStatus<TAdhocCustomScriptStatus> Script::ExecuteAdhocNoRevert(F adhoc
 
 template <std::derived_from<TopLevelScript> TTopLevelScript, std::derived_from<Game> TGame, typename... Ts>
 	requires(std::constructible_from<TGame, Ts...>)
-static ScriptStatus<TTopLevelScript> TopLevelScript::Main(M64& m64, Ts&&... params)
+ScriptStatus<TTopLevelScript> TopLevelScript::Main(M64& m64, Ts&&... params)
 {
 	TGame game = TGame(std::forward<Ts>(params)...);
 

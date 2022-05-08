@@ -1,7 +1,7 @@
 #include <cstdlib>
 #include <chrono>
 
-#include <tasfw/Game.hpp>
+#include <tasfw/Script.hpp>
 
 #ifdef _MSC_VER
 	#include <intrin.h>
@@ -100,12 +100,45 @@ void SlotManager::UpdateSlot(int64_t slotId)
 
 void SlotManager::EraseOldestSlot()
 {
-	int64_t slotId = slotIdsByLastAccess.begin() == slotIdsByLastAccess.end() ? -1 : slotIdsByLastAccess.begin()->first;
+	int64_t slotId = slotIdsByLastAccess.begin() == slotIdsByLastAccess.end() ? -1 : slotIdsByLastAccess.begin()->second;
 	if (slotId == -1)
 		return;
 
 	//Remove slot handle from script hierarchy, triggering slot deletion
 	slotsById[slotId].script->DeleteSave(slotsById[slotId].frame, slotsById[slotId].adhocLevel);
+}
+
+SaveMetadata::SaveMetadata(Script* script)
+{
+	if (script)
+	{
+		this->script = script;
+		isStartSave = true;
+		frame = 0;
+		adhocLevel = -1;
+	}
+}
+
+SlotHandle* SaveMetadata::GetSlotHandle()
+{
+	if (!script)
+		return nullptr;
+
+	if (isStartSave)
+		return &script->game->startSaveHandle;
+
+	if (script->saveBank.size() <= adhocLevel)
+		return nullptr;
+
+	if (!script->saveBank[adhocLevel].contains(frame))
+		return nullptr;
+
+	return &script->saveBank[adhocLevel].find(frame)->second;
+}
+
+bool SaveMetadata::IsValid()
+{
+	return GetSlotHandle() != nullptr;
 }
 
 void Game::advance_frame()
@@ -188,17 +221,16 @@ uint32_t Game::getCurrentFrame()
 	return *(uint32_t*) (addr("gGlobalTimer")) - 1;
 }
 
-bool Game::shouldSave(int64_t framesSinceLastSave) const
+bool Game::shouldSave(int64_t estFrameAdvances) const
 {
-	if (nSaveStates == 0 || framesSinceLastSave < 0)
+	if (nSaveStates == 0 || estFrameAdvances < 0)
 		return true;
 
 	double estTimeToSave = double(_totalSaveStateTime) / nSaveStates;
-	double estTimeToLoadFromRecent =
-		(double(_totalFrameAdvanceTime) / nFrameAdvances) * framesSinceLastSave;
+	double estTimeToFrameAdvance =
+		(double(_totalFrameAdvanceTime) / nFrameAdvances) * estFrameAdvances;
 
-	// TODO: Reduce number of automatic load states in script
-	return estTimeToSave < 2 * estTimeToLoadFromRecent;
+	return estTimeToSave < estTimeToFrameAdvance;
 }
 
 bool Game::shouldLoad(int64_t framesAhead) const
@@ -210,5 +242,5 @@ bool Game::shouldLoad(int64_t framesAhead) const
 	double estTimeToFrameAdvance =
 		(double(_totalFrameAdvanceTime) / nFrameAdvances) * framesAhead;
 
-	return estTimeToLoad < framesAhead;
+	return estTimeToLoad < estTimeToFrameAdvance;
 }

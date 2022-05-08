@@ -4,13 +4,12 @@
 #include <tasfw/Inputs.hpp>
 #include <sm64/Types.hpp>
 #include <tasfw/ScriptStatus.hpp>
+#include <set>
 
 #ifndef SCRIPT_H
 #define SCRIPT_H
 
 class Script;
-class SlotHandle;
-class Game;
 class TopLevelScript;
 
 template <typename F, typename R = std::invoke_result_t<F>>
@@ -34,6 +33,13 @@ public:
 
 	Script(Script* parentScript) : _parentScript(parentScript)
 	{
+		BaseStatus[0];
+		saveBank[0];
+		frameCounter[0];
+		saveCache[0];
+		inputsCache[0];
+		loadTracker[0];
+
 		if (_parentScript)
 		{
 			game = _parentScript->game;
@@ -111,12 +117,11 @@ protected:
 	void AdvanceFrameWrite(Inputs inputs);
 	void OptionalSave();
 	void Save();
-	void Save(uint64_t frame);
 	void Load(uint64_t frame);
 	void Rollback(uint64_t frame);
 	void RollForward(int64_t frame);
 	void Restore(int64_t frame);
-	virtual Inputs GetInputs(int64_t frame);
+	Inputs GetInputs(int64_t frame);
 
 	virtual bool validation() = 0;
 	virtual bool execution() = 0;
@@ -125,26 +130,35 @@ protected:
 private:
 	friend class SlotManager;
 	friend class TopLevelScript;
+	friend class SaveMetadata;
+	friend class InputsMetadata;
 
 	int64_t _adhocLevel = 0;
 	int32_t _initialFrame = 0;
-	std::vector<BaseScriptStatus> BaseStatus = { BaseScriptStatus() };
-	std::vector<std::map<uint64_t, SlotHandle>> saveBank = { std::map<uint64_t, SlotHandle>() };
-	std::vector<std::map<int64_t, uint64_t>> frameCounter = { std::map<int64_t, uint64_t>() };
+	std::unordered_map<int64_t, BaseScriptStatus> BaseStatus;
+	std::unordered_map<int64_t, std::map<int64_t, SlotHandle>> saveBank;// contains handles to savestates
+	std::unordered_map<int64_t, std::map<int64_t, uint64_t>> frameCounter;// tracks opportunity cost of having to frame advance from an earlier save
+	std::unordered_map<int64_t, std::map<int64_t, SaveMetadata>> saveCache;// stores metadata of ancestor saves to save recursion time
+	std::unordered_map<int64_t, std::map<int64_t, InputsMetadata>> inputsCache;// caches ancestor inputs to save recursion time
+	std::unordered_map<int64_t, std::set<int64_t>> loadTracker;// track past loads to know whether a cached save is optimal
 	Script* _parentScript;
 
 	bool checkPreconditions();
 	bool execute();
 	bool checkPostconditions();
 
-	std::pair<uint64_t, SlotHandle*> GetLatestSave(uint64_t frame);
+	SaveMetadata GetLatestSave(int64_t frame);
+	SaveMetadata GetLatestSaveAndCache(int64_t frame);
+	virtual InputsMetadata GetInputsMetadata(int64_t frame);
+	InputsMetadata GetInputsMetadataAndCache(int64_t frame);
 	void DeleteSave(int64_t frame, int64_t adhocLevel);
 	void SetInputs(Inputs inputs);
 	void Revert(uint64_t frame, const M64Diff& m64);
-	virtual Inputs GetInputsTracked(uint64_t frame, uint64_t& counter);
 	void AdvanceFrameRead(uint64_t& counter);
-	virtual uint64_t GetFrameCounter(int64_t frame);
+	uint64_t GetFrameCounter(InputsMetadata cachedInputs);
+	uint64_t IncrementFrameCounter(InputsMetadata cachedInputs);
 	void ApplyChildDiff(const BaseScriptStatus& status, int64_t initialFrame);
+	SaveMetadata Save(int64_t adhocLevel);
 
 	template <typename F>
 	BaseScriptStatus ExecuteAdhocBase(F adhocScript);
@@ -190,14 +204,11 @@ public:
 	virtual bool execution() override = 0;
 	virtual bool assertion() override = 0;
 
-	Inputs GetInputs(int64_t frame) override;
-
 protected:
 	M64& _m64;
 
 private:
-	Inputs GetInputsTracked(uint64_t frame, uint64_t& counter) override;
-	uint64_t GetFrameCounter(int64_t frame) override;
+	InputsMetadata GetInputsMetadata(int64_t frame) override;
 };
 
 //Include template method implementations
