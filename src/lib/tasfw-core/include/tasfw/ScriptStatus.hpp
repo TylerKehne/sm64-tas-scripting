@@ -32,7 +32,7 @@ class ScriptStatus : public BaseScriptStatus, public TScript::CustomScriptStatus
 public:
 	ScriptStatus() : BaseScriptStatus(), TScript::CustomScriptStatus() {}
 
-	ScriptStatus(BaseScriptStatus baseStatus, TScript::CustomScriptStatus customStatus)
+	ScriptStatus(BaseScriptStatus baseStatus, typename TScript::CustomScriptStatus customStatus)
 		: BaseScriptStatus(baseStatus), TScript::CustomScriptStatus(customStatus) { }
 };
 
