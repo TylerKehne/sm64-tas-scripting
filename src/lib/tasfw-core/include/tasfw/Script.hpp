@@ -1,15 +1,19 @@
 #pragma once
 #include <unordered_map>
-#include <tasfw/Game.hpp>
+#include <tasfw/Resource.hpp>
 #include <tasfw/Inputs.hpp>
 #include <sm64/Types.hpp>
-#include <tasfw/ScriptStatus.hpp>
+//#include <tasfw/ScriptStatus.hpp>
 #include <set>
+#include <tasfw/SharedLib.hpp>
 
 #ifndef SCRIPT_H
 #define SCRIPT_H
 
+template <derived_from_specialization_of<Resource> TResource>
 class Script;
+
+template <derived_from_specialization_of<Resource> TResource>
 class TopLevelScript;
 
 template <typename F, typename R = std::invoke_result_t<F>>
@@ -18,10 +22,129 @@ concept AdhocScript = std::same_as<R, bool>;
 template <typename F, typename T>
 concept AdhocCustomStatusScript = std::same_as<std::invoke_result_t<F, T&>, bool>;
 
+class BaseScriptStatus
+{
+public:
+	bool validated = false;
+	bool executed = false;
+	bool asserted = false;
+	bool validationThrew = false;
+	bool executionThrew = false;
+	bool assertionThrew = false;
+	uint64_t validationDuration = 0;
+	uint64_t executionDuration = 0;
+	uint64_t assertionDuration = 0;
+	uint64_t nLoads = 0;
+	uint64_t nSaves = 0;
+	uint64_t nFrameAdvances = 0;
+	M64Diff m64Diff = M64Diff();
+
+	BaseScriptStatus() = default;
+};
+
+template <derived_from_specialization_of<Script> TScript>
+class ScriptStatus : public BaseScriptStatus, public TScript::CustomScriptStatus
+{
+public:
+	ScriptStatus() : BaseScriptStatus(), TScript::CustomScriptStatus() {}
+
+	ScriptStatus(BaseScriptStatus baseStatus, typename TScript::CustomScriptStatus customStatus)
+		: BaseScriptStatus(baseStatus), TScript::CustomScriptStatus(customStatus) { }
+};
+
+class AdhocBaseScriptStatus
+{
+public:
+	bool executed = false;
+	bool executionThrew = false;
+	uint64_t executionDuration = 0;
+	uint64_t nLoads = 0;
+	uint64_t nSaves = 0;
+	uint64_t nFrameAdvances = 0;
+	M64Diff m64Diff = M64Diff();
+
+	AdhocBaseScriptStatus() = default;
+
+	AdhocBaseScriptStatus(BaseScriptStatus baseStatus)
+	{
+		executed = baseStatus.executed;
+		executionThrew = baseStatus.executionThrew;
+		executionDuration = baseStatus.executionDuration;
+		nLoads = baseStatus.nLoads;
+		nSaves = baseStatus.nSaves;
+		nFrameAdvances = baseStatus.nFrameAdvances;
+		m64Diff = baseStatus.m64Diff;
+	}
+};
+
+template <class TAdhocCustomScriptStatus>
+class AdhocScriptStatus : public AdhocBaseScriptStatus, public TAdhocCustomScriptStatus
+{
+public:
+	AdhocScriptStatus() : AdhocBaseScriptStatus(), TAdhocCustomScriptStatus() {}
+
+	AdhocScriptStatus(AdhocBaseScriptStatus baseStatus, TAdhocCustomScriptStatus customStatus)
+		: AdhocBaseScriptStatus(baseStatus), TAdhocCustomScriptStatus(customStatus) { }
+};
+
+template <class TCompareStatus>
+class CompareStatus
+{
+public:
+	virtual const AdhocScriptStatus<TCompareStatus>& Comparator(
+		const AdhocScriptStatus<TCompareStatus>& a,
+		const AdhocScriptStatus<TCompareStatus>& b) const = 0;
+
+	virtual bool Terminator(const AdhocScriptStatus<TCompareStatus>& status) const { return false; }
+};
+
+template <derived_from_specialization_of<Resource> TResource>
+class InputsMetadata
+{
+public:
+	enum class InputsSource : int8_t
+	{
+		DIFF = 0,
+		ORIGINAL = 1,
+		DEFAULT = 2
+	};
+
+	Inputs inputs;
+	int64_t frame = -1;
+	Script<TResource>* stateOwner = nullptr;
+	int64_t stateOwnerAdhocLevel = -1;
+	InputsSource source = InputsSource::DIFF;
+
+	InputsMetadata() = default;
+
+	InputsMetadata(Inputs inputs, int64_t frame, Script<TResource>* stateOwner, int64_t stateOwnerAdhocLevel, InputsSource source = InputsSource::DIFF)
+		: inputs(inputs), stateOwner(stateOwner), frame(frame), stateOwnerAdhocLevel(stateOwnerAdhocLevel), source(source) {}
+};
+
+template <derived_from_specialization_of<Resource> TResource>
+class SaveMetadata
+{
+public:
+	Script<TResource>* script = nullptr; //ancestor script that won't go out of scope
+	int64_t frame = -1;
+	int64_t adhocLevel = -1;
+	bool isStartSave = false;
+
+	SaveMetadata() = default;
+
+	SaveMetadata(Script<TResource>* script);
+
+	SaveMetadata(Script<TResource>* script, int64_t frame, int64_t adhocLevel) : script(script), frame(frame), adhocLevel(adhocLevel) { }
+
+	SlotHandle<TResource>* GetSlotHandle();
+	bool IsValid();
+};
+
 /// <summary>
 /// Execute a state-changing operation on the game. Parameters should correspond
 /// to the script's class constructor.
 /// </summary>
+template <derived_from_specialization_of<Resource> TResource>
 class Script
 {
 public:
@@ -29,39 +152,72 @@ public:
 	CustomScriptStatus CustomStatus = {};
 
 	// TODO: make private
-	Game* game = nullptr;
-
-	Script(Script* parentScript) : _parentScript(parentScript)
-	{
-		BaseStatus[0];
-		saveBank[0];
-		frameCounter[0];
-		saveCache[0];
-		inputsCache[0];
-		loadTracker[0];
-
-		if (_parentScript)
-		{
-			game = _parentScript->game;
-			_initialFrame = GetCurrentFrame();
-		}
-	}
+	TResource* game = nullptr;
+	SlotHandle<TResource> startSaveHandle = SlotHandle<TResource>(nullptr, -1);
 
 	// TODO: move this method to some utility class
 	static void CopyVec3f(Vec3f dest, Vec3f source);
 
 protected:
-	template <std::derived_from<Script> TScript, typename... Us>
-		requires(std::constructible_from<TScript, Script*, Us...>)
-	ScriptStatus<TScript> Execute(Us&&... params);
+	template <derived_from_specialization_of<Script> TScript, typename... Us>
+		requires(std::constructible_from<TScript, Us...>)
+	ScriptStatus<TScript> Execute(Us&&... params)
+	{
+		// Save state if performant
+		uint64_t initialFrame = GetCurrentFrame();
+		OptionalSave();
 
-	template <std::derived_from<Script> TScript, typename... Us>
-		requires(std::constructible_from<TScript, Script*, Us...>)
-	ScriptStatus<TScript> Modify(Us&&... params);
+		TScript script = TScript(std::forward<Us>(params)...);
+		script.Initialize(this);
 
-	template <std::derived_from<Script> TScript, typename... Us>
-		requires(std::constructible_from<TScript, Script*, Us...>)
-	ScriptStatus<TScript> Test(Us&&... params);
+		if (script.checkPreconditions() && script.execute())
+			script.checkPostconditions();
+
+		// Load if necessary
+		Revert(initialFrame, script.BaseStatus[0].m64Diff);
+
+		BaseStatus[_adhocLevel].nLoads += script.BaseStatus[0].nLoads;
+		BaseStatus[_adhocLevel].nSaves += script.BaseStatus[0].nSaves;
+		BaseStatus[_adhocLevel].nFrameAdvances += script.BaseStatus[0].nFrameAdvances;
+
+		return ScriptStatus<TScript>(script.BaseStatus[0], script.CustomStatus);
+	}
+
+	template <derived_from_specialization_of<Script> TScript, typename... Us>
+		requires(std::constructible_from<TScript, Us...>)
+	ScriptStatus<TScript> Modify(Us&&... params)
+	{
+		// Save state if performant
+		uint64_t initialFrame = GetCurrentFrame();
+		OptionalSave();
+
+		TScript script = TScript(std::forward<Us>(params)...);
+		script.Initialize(this);
+
+		if (script.checkPreconditions() && script.execute())
+			script.checkPostconditions();
+
+		// Revert state if assertion fails, otherwise apply diff
+		if (!script.BaseStatus[0].asserted || script.BaseStatus[0].m64Diff.frames.empty())
+			Revert(initialFrame, script.BaseStatus[0].m64Diff);
+		else
+			ApplyChildDiff(script.BaseStatus[0], initialFrame);
+
+		BaseStatus[_adhocLevel].nLoads += script.BaseStatus[0].nLoads;
+		BaseStatus[_adhocLevel].nSaves += script.BaseStatus[0].nSaves;
+		BaseStatus[_adhocLevel].nFrameAdvances += script.BaseStatus[0].nFrameAdvances;
+
+		return ScriptStatus<TScript>(script.BaseStatus[0], script.CustomStatus);
+	}
+
+	template <derived_from_specialization_of<Script> TScript, typename... Us>
+		requires(std::constructible_from<TScript, Us...>)
+	ScriptStatus<TScript> Test(Us&&... params)
+	{
+		ScriptStatus<TScript> status = Execute<TScript>(std::forward<Us>(params)...);
+		status.m64Diff = M64Diff();
+		return status;
+	}
 
 	AdhocBaseScriptStatus ExecuteAdhoc(AdhocScript auto adhocScript);
 
@@ -128,18 +284,17 @@ protected:
 	virtual bool assertion() = 0;
 
 private:
-	friend class SlotManager;
-	friend class TopLevelScript;
-	friend class SaveMetadata;
-	friend class InputsMetadata;
+	friend class TopLevelScript<TResource>;
+	friend class SaveMetadata<TResource>;
+	friend class InputsMetadata<TResource>;
 
 	int64_t _adhocLevel = 0;
 	int32_t _initialFrame = 0;
 	std::unordered_map<int64_t, BaseScriptStatus> BaseStatus;
-	std::unordered_map<int64_t, std::map<int64_t, SlotHandle>> saveBank;// contains handles to savestates
+	std::unordered_map<int64_t, std::map<int64_t, SlotHandle<TResource>>> saveBank;// contains handles to savestates
 	std::unordered_map<int64_t, std::map<int64_t, uint64_t>> frameCounter;// tracks opportunity cost of having to frame advance from an earlier save
-	std::unordered_map<int64_t, std::map<int64_t, SaveMetadata>> saveCache;// stores metadata of ancestor saves to save recursion time
-	std::unordered_map<int64_t, std::map<int64_t, InputsMetadata>> inputsCache;// caches ancestor inputs to save recursion time
+	std::unordered_map<int64_t, std::map<int64_t, SaveMetadata<TResource>>> saveCache;// stores metadata of ancestor saves to save recursion time
+	std::unordered_map<int64_t, std::map<int64_t, InputsMetadata<TResource>>> inputsCache;// caches ancestor inputs to save recursion time
 	std::unordered_map<int64_t, std::set<int64_t>> loadTracker;// track past loads to know whether a cached save is optimal
 	Script* _parentScript;
 
@@ -147,18 +302,19 @@ private:
 	bool execute();
 	bool checkPostconditions();
 
-	SaveMetadata GetLatestSave(int64_t frame);
-	SaveMetadata GetLatestSaveAndCache(int64_t frame);
-	virtual InputsMetadata GetInputsMetadata(int64_t frame);
-	InputsMetadata GetInputsMetadataAndCache(int64_t frame);
+	void Initialize(Script<TResource>* parentScript);
+	SaveMetadata<TResource> GetLatestSave(int64_t frame);
+	SaveMetadata<TResource> GetLatestSaveAndCache(int64_t frame);
+	virtual InputsMetadata<TResource> GetInputsMetadata(int64_t frame);
+	InputsMetadata<TResource> GetInputsMetadataAndCache(int64_t frame);
 	void DeleteSave(int64_t frame, int64_t adhocLevel);
 	void SetInputs(Inputs inputs);
 	void Revert(uint64_t frame, const M64Diff& m64);
 	void AdvanceFrameRead(uint64_t& counter);
-	uint64_t GetFrameCounter(InputsMetadata cachedInputs);
-	uint64_t IncrementFrameCounter(InputsMetadata cachedInputs);
+	uint64_t GetFrameCounter(InputsMetadata<TResource> cachedInputs);
+	uint64_t IncrementFrameCounter(InputsMetadata<TResource> cachedInputs);
 	void ApplyChildDiff(const BaseScriptStatus& status, int64_t initialFrame);
-	SaveMetadata Save(int64_t adhocLevel);
+	SaveMetadata<TResource> Save(int64_t adhocLevel);
 
 	template <typename F>
 	BaseScriptStatus ExecuteAdhocBase(F adhocScript);
@@ -188,16 +344,18 @@ private:
 	AdhocScriptStatus<TCompareStatus> ModifyCompare(int64_t initialFrame, const AdhocScriptStatus<TCompareStatus>& status1, F&& adhocScript2, G&&... adhocScripts);
 };
 
-class TopLevelScript : public Script
+template <derived_from_specialization_of<Resource> TResource>
+class TopLevelScript : public Script<TResource>
 {
 public:
-	TopLevelScript(M64& m64, Game* game) : Script(nullptr), _m64(m64)
+	TopLevelScript(M64& m64, TResource* game) : _m64(m64)
 	{
 		this->game = game;
+		this->startSaveHandle = SlotHandle<TResource>(game, -1);
 	}
 
-	template <std::derived_from<TopLevelScript> TTopLevelScript, std::derived_from<Game> TGame, typename... Ts>
-		requires(std::constructible_from<TGame, Ts...>)
+	template <std::derived_from<TopLevelScript<TResource>> TTopLevelScript, typename... Ts>
+		requires(std::constructible_from<TResource, Ts...>)
 	static ScriptStatus<TTopLevelScript> Main(M64& m64, Ts&&... params);
 
 	virtual bool validation() override = 0;
@@ -208,7 +366,7 @@ protected:
 	M64& _m64;
 
 private:
-	InputsMetadata GetInputsMetadata(int64_t frame) override;
+	InputsMetadata<TResource> GetInputsMetadata(int64_t frame) override;
 };
 
 //Include template method implementations

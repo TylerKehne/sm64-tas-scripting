@@ -18,7 +18,7 @@ public:
 
 };
 
-class BitFsPyramidOscillation : public Script
+class BitFsPyramidOscillation : public Script<LibSm64>
 {
 public:
 	class CustomScriptStatus
@@ -31,8 +31,7 @@ public:
 	};
 	CustomScriptStatus CustomStatus = CustomScriptStatus();
 
-	BitFsPyramidOscillation(Script* parentScript, float targetXzSum, int quadrant)
-		: Script(parentScript), _targetXzSum(targetXzSum), _quadrant(quadrant) {}
+	BitFsPyramidOscillation(float targetXzSum, int quadrant) : _targetXzSum(targetXzSum), _quadrant(quadrant) { }
 
 	bool validation();
 	bool execution();
@@ -45,7 +44,7 @@ private:
 
 // Find the optimal result of BitFsPyramidOscillation_TurnThenRunDownhill over a
 // range of frames
-class BitFsPyramidOscillation_Iteration : public Script
+class BitFsPyramidOscillation_Iteration : public Script<LibSm64>
 {
 public:
 	class CustomScriptStatus
@@ -61,8 +60,8 @@ public:
 	};
 	CustomScriptStatus CustomStatus = CustomScriptStatus();
 
-	BitFsPyramidOscillation_Iteration(Script* parentScript, BitFsPyramidOscillation_ParamsDto oscillationParams, int32_t minFrame, int32_t maxFrame)
-		: Script(parentScript), _oscillationParams(oscillationParams), _minFrame(minFrame), _maxFrame(maxFrame) {}
+	BitFsPyramidOscillation_Iteration(BitFsPyramidOscillation_ParamsDto oscillationParams, int32_t minFrame, int32_t maxFrame)
+		: _oscillationParams(oscillationParams), _minFrame(minFrame), _maxFrame(maxFrame) {}
 
 	bool validation();
 	bool execution();
@@ -74,7 +73,7 @@ private:
 	BitFsPyramidOscillation_ParamsDto _oscillationParams;
 };
 
-class BitFsPyramidOscillation_TurnThenRunDownhill : public Script
+class BitFsPyramidOscillation_TurnThenRunDownhill : public Script<LibSm64>
 {
 public:
 	class CustomScriptStatus
@@ -89,8 +88,8 @@ public:
 	};
 	CustomScriptStatus CustomStatus = CustomScriptStatus();
 
-	BitFsPyramidOscillation_TurnThenRunDownhill(Script* parentScript, BitFsPyramidOscillation_ParamsDto oscillationParams)
-		: Script(parentScript), _oscillationParams(oscillationParams) {}
+	BitFsPyramidOscillation_TurnThenRunDownhill(BitFsPyramidOscillation_ParamsDto oscillationParams)
+		: _oscillationParams(oscillationParams) {}
 
 	bool validation();
 	bool execution();
@@ -100,7 +99,7 @@ private:
 	BitFsPyramidOscillation_ParamsDto _oscillationParams;
 };
 
-class BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle : public Script
+class BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle : public Script<LibSm64>
 {
 public:
 	class CustomScriptStatus
@@ -118,9 +117,8 @@ public:
 	};
 	CustomScriptStatus CustomStatus = CustomScriptStatus();
 
-	BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle(
-		Script* parentScript, BitFsPyramidOscillation_ParamsDto oscillationParams, int16_t angle)
-		: Script(parentScript), _oscillationParams(oscillationParams), _angle(angle){}
+	BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle(BitFsPyramidOscillation_ParamsDto oscillationParams, int16_t angle)
+		: _oscillationParams(oscillationParams), _angle(angle){}
 
 	bool validation();
 	bool execution();
@@ -131,7 +129,7 @@ private:
 	BitFsPyramidOscillation_ParamsDto _oscillationParams;
 };
 
-class BitFsPyramidOscillation_TurnAroundAndRunDownhill : public Script
+class BitFsPyramidOscillation_TurnAroundAndRunDownhill : public Script<LibSm64>
 {
 public:
 	class CustomScriptStatus
@@ -147,9 +145,8 @@ public:
 	};
 	CustomScriptStatus CustomStatus = CustomScriptStatus();
 
-	BitFsPyramidOscillation_TurnAroundAndRunDownhill(
-		Script* parentScript, BitFsPyramidOscillation_ParamsDto oscillationParams)
-		: Script(parentScript), _oscillationParams(oscillationParams) {}
+	BitFsPyramidOscillation_TurnAroundAndRunDownhill(BitFsPyramidOscillation_ParamsDto oscillationParams)
+		: _oscillationParams(oscillationParams) {}
 
 	bool validation();
 	bool execution();
@@ -159,7 +156,7 @@ private:
 	BitFsPyramidOscillation_ParamsDto _oscillationParams;
 };
 
-class BitFsPyramidOscillation_RunDownhill : public Script
+class BitFsPyramidOscillation_RunDownhill : public Script<LibSm64>
 {
 public:
 	class CustomScriptStatus
@@ -181,8 +178,8 @@ public:
 	};
 	CustomScriptStatus CustomStatus = CustomScriptStatus();
 
-	BitFsPyramidOscillation_RunDownhill(Script* parentScript, BitFsPyramidOscillation_ParamsDto oscillationParams)
-		: Script(parentScript), _oscillationParams(oscillationParams) {}
+	BitFsPyramidOscillation_RunDownhill(BitFsPyramidOscillation_ParamsDto oscillationParams)
+		: _oscillationParams(oscillationParams) {}
 
 	bool validation();
 	bool execution();

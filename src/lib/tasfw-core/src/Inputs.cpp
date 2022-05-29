@@ -2,7 +2,6 @@
 #include <sys/types.h>
 #include <ios>
 #include <system_error>
-#include <tasfw/Game.hpp>
 #include <sm64/Trig.hpp>
 
 #include <cmath>
