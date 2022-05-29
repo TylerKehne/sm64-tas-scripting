@@ -36,10 +36,10 @@ template <derived_from_specialization_of<Resource> TResource>
 class SlotHandle
 {
 public:
-	TResource* game = NULL;
+	TResource* resource = NULL;
 	int64_t slotId = -1;
 
-	SlotHandle(TResource* game, int64_t slotId) : game(game), slotId(slotId) { }
+	SlotHandle(TResource* resource, int64_t slotId) : resource(resource), slotId(slotId) { }
 
 	SlotHandle(SlotHandle<TResource>&&) = default;
 	SlotHandle<TResource>& operator = (SlotHandle<TResource>&&) = default;
@@ -102,6 +102,11 @@ public:
 
 	TState startSave = TState();
 	SlotManager<TState> slotManager = SlotManager<TState>(this);
+
+	Resource() = default;
+
+	Resource(const Resource<TState>&) = delete;
+	Resource& operator= (const Resource<TState>&) = delete;
 
 	int64_t SaveState();
 	void LoadState(int64_t slotId);

@@ -26,7 +26,7 @@ using namespace std;
 class MainScript : public TopLevelScript<LibSm64>
 {
 public:
-	MainScript(M64& m64, LibSm64* game) : TopLevelScript<LibSm64>(m64, game) {}
+	MainScript(M64& m64, LibSm64* resource) : TopLevelScript<LibSm64>(m64, resource) {}
 
 	bool validation() { return true; }
 
@@ -65,7 +65,7 @@ int main(int argc, const char* argv[])
 	M64 m64 = M64(m64_path);
 	m64.load();
 
-	auto status = TopLevelScript<LibSm64>::Main<MainScript>(m64, lib_path);
+	auto status = MainScript::Main<MainScript>(m64, lib_path);
 
 	m64.save();
 

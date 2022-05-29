@@ -8,7 +8,7 @@
 bool BrakeToIdle::validation()
 {
 	// Check if Mario is on the pyramid platform
-	MarioState* marioState = (MarioState*) (game->addr("gMarioStates"));
+	MarioState* marioState = (MarioState*) (resource->addr("gMarioStates"));
 
 	Surface* floor = marioState->floor;
 	if (!floor)
@@ -28,9 +28,9 @@ bool BrakeToIdle::validation()
 bool BrakeToIdle::execution()
 {
 	const BehaviorScript* pyramidBehavior =
-		(const BehaviorScript*) (game->addr("bhvBitfsTiltingInvertedPyramid"));
-	MarioState* marioState = (MarioState*) (game->addr("gMarioStates"));
-	Camera* camera				 = *(Camera**) (game->addr("gCamera"));
+		(const BehaviorScript*) (resource->addr("bhvBitfsTiltingInvertedPyramid"));
+	MarioState* marioState = (MarioState*) (resource->addr("gMarioStates"));
+	Camera* camera				 = *(Camera**) (resource->addr("gCamera"));
 	Object* pyramid				 = marioState->floor->object;
 
 	// Brake to a stop
@@ -72,6 +72,6 @@ bool BrakeToIdle::execution()
 
 bool BrakeToIdle::assertion()
 {
-	MarioState* marioState = (MarioState*) (game->addr("gMarioStates"));
+	MarioState* marioState = (MarioState*) (resource->addr("gMarioStates"));
 	return marioState->action == ACT_IDLE;
 }

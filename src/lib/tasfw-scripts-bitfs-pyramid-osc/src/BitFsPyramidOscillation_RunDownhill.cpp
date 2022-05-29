@@ -13,7 +13,7 @@
 bool BitFsPyramidOscillation_RunDownhill::validation()
 {
 	// Check if Mario is on the pyramid platform
-	MarioState* marioState = (MarioState*) (game->addr("gMarioStates"));
+	MarioState* marioState = (MarioState*) (resource->addr("gMarioStates"));
 
 	Surface* floor = marioState->floor;
 	if (!floor)
@@ -24,7 +24,7 @@ bool BitFsPyramidOscillation_RunDownhill::validation()
 		return false;
 
 	const BehaviorScript* pyramidBehavior =
-		(const BehaviorScript*) (game->addr("bhvBitfsTiltingInvertedPyramid"));
+		(const BehaviorScript*) (resource->addr("bhvBitfsTiltingInvertedPyramid"));
 	if (floorObject->behavior != pyramidBehavior)
 		return false;
 
@@ -40,9 +40,9 @@ bool BitFsPyramidOscillation_RunDownhill::validation()
 bool BitFsPyramidOscillation_RunDownhill::execution()
 {
 	const BehaviorScript* pyramidBehavior =
-		(const BehaviorScript*) (game->addr("bhvBitfsTiltingInvertedPyramid"));
-	MarioState* marioState = (MarioState*) (game->addr("gMarioStates"));
-	Camera* camera		   = *(Camera**) (game->addr("gCamera"));
+		(const BehaviorScript*) (resource->addr("bhvBitfsTiltingInvertedPyramid"));
+	MarioState* marioState = (MarioState*) (resource->addr("gMarioStates"));
+	Camera* camera		   = *(Camera**) (resource->addr("gCamera"));
 	Object* pyramid		   = marioState->floor->object;
 
 	int targetXDirection =

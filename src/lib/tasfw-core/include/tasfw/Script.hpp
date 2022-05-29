@@ -141,7 +141,7 @@ public:
 };
 
 /// <summary>
-/// Execute a state-changing operation on the game. Parameters should correspond
+/// Execute a state-changing operation on the resource. Parameters should correspond
 /// to the script's class constructor.
 /// </summary>
 template <derived_from_specialization_of<Resource> TResource>
@@ -152,8 +152,13 @@ public:
 	CustomScriptStatus CustomStatus = {};
 
 	// TODO: make private
-	TResource* game = nullptr;
+	TResource* resource = nullptr;
 	SlotHandle<TResource> startSaveHandle = SlotHandle<TResource>(nullptr, -1);
+
+	Script() = default;
+
+	Script(const Script<TResource>&) = delete;
+	Script& operator= (const Script<TResource>&) = delete;
 
 	// TODO: move this method to some utility class
 	static void CopyVec3f(Vec3f dest, Vec3f source);
@@ -348,10 +353,10 @@ template <derived_from_specialization_of<Resource> TResource>
 class TopLevelScript : public Script<TResource>
 {
 public:
-	TopLevelScript(M64& m64, TResource* game) : _m64(m64)
+	TopLevelScript(M64& m64, TResource* resource) : _m64(m64)
 	{
-		this->game = game;
-		this->startSaveHandle = SlotHandle<TResource>(game, -1);
+		this->resource = resource;
+		this->startSaveHandle = SlotHandle<TResource>(resource, -1);
 	}
 
 	template <std::derived_from<TopLevelScript<TResource>> TTopLevelScript, typename... Ts>

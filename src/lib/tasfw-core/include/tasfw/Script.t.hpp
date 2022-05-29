@@ -19,8 +19,8 @@ void Script<TResource>::Initialize(Script<TResource>* parentScript)
 
 	if (_parentScript)
 	{
-		game = _parentScript->game;
-		startSaveHandle = SlotHandle<TResource>(game, -1);
+		resource = _parentScript->resource;
+		startSaveHandle = SlotHandle<TResource>(resource, -1);
 		_initialFrame = GetCurrentFrame();
 	}
 }
@@ -118,14 +118,14 @@ void Script<TResource>::CopyVec3f(Vec3f dest, Vec3f source)
 template <derived_from_specialization_of<Resource> TResource>
 uint64_t Script<TResource>::GetCurrentFrame()
 {
-	return game->getCurrentFrame();
+	return resource->getCurrentFrame();
 }
 
 template <derived_from_specialization_of<Resource> TResource>
 void Script<TResource>::AdvanceFrameRead()
 {
 	SetInputs(GetInputsMetadataAndCache(GetCurrentFrame()).inputs);
-	game->FrameAdvance();
+	resource->FrameAdvance();
 	BaseStatus[_adhocLevel].nFrameAdvances++;
 }
 
@@ -145,7 +145,7 @@ void Script<TResource>::AdvanceFrameWrite(Inputs inputs)
 
 	// Set inputs and advance frame
 	SetInputs(inputs);
-	game->FrameAdvance();
+	resource->FrameAdvance();
 	BaseStatus[_adhocLevel].nFrameAdvances++;
 }
 
@@ -179,7 +179,7 @@ void Script<TResource>::Apply(const M64Diff& m64Diff)
 		}
 
 		SetInputs(inputs);
-		game->FrameAdvance();
+		resource->FrameAdvance();
 		BaseStatus[_adhocLevel].nFrameAdvances++;
 
 		currentFrame = GetCurrentFrame();
@@ -436,11 +436,11 @@ void Script<TResource>::Load(uint64_t frame)
 	auto latestSave = GetLatestSaveAndCache(frame);
 	if (frame < currentFrame)
 	{
-		game->LoadState(latestSave.GetSlotHandle()->slotId);
+		resource->LoadState(latestSave.GetSlotHandle()->slotId);
 		BaseStatus[_adhocLevel].nLoads++;
 	}
-	else if (latestSave.frame > currentFrame && game->shouldLoad(latestSave.frame - currentFrame))
-		game->LoadState(latestSave.GetSlotHandle()->slotId);
+	else if (latestSave.frame > currentFrame && resource->shouldLoad(latestSave.frame - currentFrame))
+		resource->LoadState(latestSave.GetSlotHandle()->slotId);
 
 	// If save is before target frame, play back until frame is reached
 	currentFrame = GetCurrentFrame();
@@ -453,7 +453,7 @@ void Script<TResource>::Load(uint64_t frame)
 
 		//Estimate future frame advances from aggregate of historical frame advances on this input segment
 		//If it reaches a certain threshold, creating a save is performant
-		if (game->shouldSave(frameCounter))
+		if (resource->shouldSave(frameCounter))
 		{
 			SaveMetadata<TResource> cachedSave = cachedInputs.stateOwner->Save(cachedInputs.stateOwnerAdhocLevel);
 			saveCache[_adhocLevel][currentFrame] = cachedSave;
@@ -476,11 +476,11 @@ void Script<TResource>::Revert(uint64_t frame, const M64Diff& m64)
 	auto latestSave = GetLatestSaveAndCache(frame);
 	if (desync || frame < currentFrame)
 	{
-		game->LoadState(latestSave.GetSlotHandle()->slotId);
+		resource->LoadState(latestSave.GetSlotHandle()->slotId);
 		BaseStatus[_adhocLevel].nLoads++;
 	}
-	else if (latestSave.frame > frame && game->shouldLoad(latestSave.frame - currentFrame))
-		game->LoadState(latestSave.GetSlotHandle()->slotId);
+	else if (latestSave.frame > frame && resource->shouldLoad(latestSave.frame - currentFrame))
+		resource->LoadState(latestSave.GetSlotHandle()->slotId);
 
 	// If save is before target frame, play back until frame is reached
 	currentFrame = GetCurrentFrame();
@@ -493,7 +493,7 @@ void Script<TResource>::Revert(uint64_t frame, const M64Diff& m64)
 
 		//Estimate future frame advances from aggregate of historical frame advances on this input segment
 		//If it reaches a certain threshold, creating a save is performant
-		if (game->shouldSave(frameCounter))
+		if (resource->shouldSave(frameCounter))
 		{
 			SaveMetadata<TResource> cachedSave = cachedInputs.stateOwner->Save(cachedInputs.stateOwnerAdhocLevel);
 			saveCache[_adhocLevel][currentFrame] = cachedSave;
@@ -595,7 +595,7 @@ SaveMetadata<TResource> Script<TResource>::Save(int64_t adhocLevel)
 		saveBank[adhocLevel].emplace(
 			std::piecewise_construct,
 			std::forward_as_tuple(currentFrame),
-			std::forward_as_tuple(game, game->SaveState()));
+			std::forward_as_tuple(resource, resource->SaveState()));
 		BaseStatus[adhocLevel].nSaves++;
 	}
 
@@ -614,7 +614,7 @@ void Script<TResource>::OptionalSave()
 	uint64_t frameCounter = 0;
 	for (int64_t frame = latestSaveFrame; frame <= currentFrame; frame++)
 	{
-		if (game->shouldSave(frameCounter * 2))
+		if (resource->shouldSave(frameCounter * 2))
 		{
 			//Create save in this script at the current frame
 			Save();
@@ -635,13 +635,13 @@ void Script<TResource>::DeleteSave(int64_t frame, int64_t adhocLevel)
 template <derived_from_specialization_of<Resource> TResource>
 void Script<TResource>::SetInputs(Inputs inputs)
 {
-	uint16_t* buttonDllAddr = (uint16_t*)game->addr("gControllerPads");
+	uint16_t* buttonDllAddr = (uint16_t*)resource->addr("gControllerPads");
 	buttonDllAddr[0] = inputs.buttons;
 
-	int8_t* xStickDllAddr = (int8_t*)game->addr("gControllerPads") + 2;
+	int8_t* xStickDllAddr = (int8_t*)resource->addr("gControllerPads") + 2;
 	xStickDllAddr[0] = inputs.stick_x;
 
-	int8_t* yStickDllAddr = (int8_t*)game->addr("gControllerPads") + 3;
+	int8_t* yStickDllAddr = (int8_t*)resource->addr("gControllerPads") + 3;
 	yStickDllAddr[0] = inputs.stick_y;
 }
 

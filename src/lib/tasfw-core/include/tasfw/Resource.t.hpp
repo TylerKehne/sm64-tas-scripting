@@ -33,13 +33,13 @@ template <derived_from_specialization_of<Resource> TResource>
 SlotHandle<TResource>::~SlotHandle()
 {
 	if (slotId != -1)
-		game->slotManager.EraseSlot(slotId);
+		resource->slotManager.EraseSlot(slotId);
 }
 
 template <derived_from_specialization_of<Resource> TResource>
 bool SlotHandle<TResource>::isValid()
 {
-	return game->slotManager.isValid(slotId);
+	return resource->slotManager.isValid(slotId);
 }
 
 template <class TState>
@@ -74,14 +74,14 @@ int64_t SlotManager<TState>::CreateSlot()
 			_resource->save(slotsById[slotId]);
 
 			/*
-			slotsById[slotId].buf1.resize(_game->segment[0].length);
-			slotsById[slotId].buf2.resize(_game->segment[1].length);
+			slotsById[slotId].buf1.resize(_resource->segment[0].length);
+			slotsById[slotId].buf2.resize(_resource->segment[1].length);
 
-			int64_t* temp = reinterpret_cast<int64_t*>(_game->segment[0].address);
-			memcpy(slotsById[slotId].buf1.data(), temp, _game->segment[0].length);
+			int64_t* temp = reinterpret_cast<int64_t*>(_resource->segment[0].address);
+			memcpy(slotsById[slotId].buf1.data(), temp, _resource->segment[0].length);
 
-			temp = reinterpret_cast<int64_t*>(_game->segment[1].address);
-			memcpy(slotsById[slotId].buf2.data(), temp, _game->segment[1].length);
+			temp = reinterpret_cast<int64_t*>(_resource->segment[1].address);
+			memcpy(slotsById[slotId].buf2.data(), temp, _resource->segment[1].length);
 			*/
 
 			_resource->_currentSaveMem += additionalMem;
@@ -90,7 +90,7 @@ int64_t SlotManager<TState>::CreateSlot()
 		}
 
 		if (slotsById.size() == 0)
-			throw std::runtime_error("Not enough game slot memory allocated");
+			throw std::runtime_error("Not enough resource slot memory allocated");
 
 		// If save memory is full, remove the earliest save and try again
 		EraseOldestSlot();
@@ -128,8 +128,8 @@ void SlotManager<TState>::UpdateSlot(int64_t slotId)
 	_resource->load(slotsById[slotId]);
 
 	/*
-	memcpy(_game->segment[0].address, slotsById[slotId].buf1.data(), _game->segment[0].length);
-	memcpy(_game->segment[1].address, slotsById[slotId].buf2.data(), _game->segment[1].length);
+	memcpy(_resource->segment[0].address, slotsById[slotId].buf1.data(), _resource->segment[0].length);
+	memcpy(_resource->segment[1].address, slotsById[slotId].buf2.data(), _resource->segment[1].length);
 	*/
 }
 
