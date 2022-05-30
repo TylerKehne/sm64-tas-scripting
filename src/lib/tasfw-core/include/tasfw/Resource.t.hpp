@@ -53,8 +53,8 @@ int64_t SlotManager<TState>::CreateSlot()
 {
 	while (true)
 	{
-		int64_t additionalMem = sizeof(TState);
-		if (_resource->_currentSaveMem + additionalMem <= _resource->_saveMemLimit)
+		int64_t additionalMem = slotsById.empty() ? 0 : _currentSaveMem / slotsById.size();
+		if (_currentSaveMem + additionalMem <= _saveMemLimit)
 		{
 			//NOTE: IDs/Order will not overflow on realistic timescales
 			int64_t slotId = nextSlotId++;
@@ -72,19 +72,7 @@ int64_t SlotManager<TState>::CreateSlot()
 
 			//Save memory into slot
 			_resource->save(slotsById[slotId]);
-
-			/*
-			slotsById[slotId].buf1.resize(_resource->segment[0].length);
-			slotsById[slotId].buf2.resize(_resource->segment[1].length);
-
-			int64_t* temp = reinterpret_cast<int64_t*>(_resource->segment[0].address);
-			memcpy(slotsById[slotId].buf1.data(), temp, _resource->segment[0].length);
-
-			temp = reinterpret_cast<int64_t*>(_resource->segment[1].address);
-			memcpy(slotsById[slotId].buf2.data(), temp, _resource->segment[1].length);
-			*/
-
-			_resource->_currentSaveMem += additionalMem;
+			_currentSaveMem += _resource->getStateSize(slotsById[slotId]);
 
 			return slotId;
 		}
@@ -102,16 +90,17 @@ void SlotManager<TState>::EraseSlot(int64_t slotId)
 {
 	if (slotsById.contains(slotId))
 	{
+		_currentSaveMem -= _resource->getStateSize(slotsById[slotId]);
+
 		int64_t slotOrder = slotLastAccessOrderById[slotId];
 		slotsById.erase(slotId);
 		slotLastAccessOrderById.erase(slotId);
 		slotIdsByLastAccess.erase(slotOrder);
-		_resource->_currentSaveMem -= sizeof(TState);
 	}
 }
 
 template <class TState>
-void SlotManager<TState>::UpdateSlot(int64_t slotId)
+void SlotManager<TState>::LoadSlot(int64_t slotId)
 {
 	int64_t slotOrder = slotLastAccessOrderById[slotId];
 	slotIdsByLastAccess.erase(slotOrder);
@@ -126,11 +115,6 @@ void SlotManager<TState>::UpdateSlot(int64_t slotId)
 
 	//Load slot memory
 	_resource->load(slotsById[slotId]);
-
-	/*
-	memcpy(_resource->segment[0].address, slotsById[slotId].buf1.data(), _resource->segment[0].length);
-	memcpy(_resource->segment[1].address, slotsById[slotId].buf2.data(), _resource->segment[1].length);
-	*/
 }
 
 template <class TState>
@@ -139,6 +123,8 @@ void SlotManager<TState>::EraseOldestSlot()
 	int64_t slotId = slotIdsByLastAccess.begin() == slotIdsByLastAccess.end() ? -1 : slotIdsByLastAccess.begin()->second;
 	if (slotId == -1)
 		return;
+
+	EraseSlot(slotId);
 }
 
 template <class TState>
@@ -161,7 +147,7 @@ void Resource<TState>::LoadState(int64_t slotId)
 	if (slotId == -1)
 		load(startSave);
 	else
-		slotManager.UpdateSlot(slotId);
+		slotManager.LoadSlot(slotId);
 
 	_totalLoadStateTime = get_time() - start;
 

@@ -353,9 +353,14 @@ SaveMetadata<TResource> Script<TResource>::GetLatestSave(int64_t frame)
 			? saveBank[adhocLevel].end()
 			: std::prev(saveBank[adhocLevel].upper_bound(earlyFrame));
 
-		//Select the more recent save
-		if (save != saveBank[adhocLevel].end() && save->first >= bestSave.frame)
-			bestSave = SaveMetadata<TResource>(this, save->first, adhocLevel);
+		//Verify save exists and select the more recent save
+		if (save != saveBank[adhocLevel].end())
+		{
+			if (!save->second.isValid())
+				saveBank[adhocLevel].erase(save->first);
+			else if (save->first >= bestSave.frame)
+				bestSave = SaveMetadata<TResource>(this, save->first, adhocLevel);
+		}
 
 		//Check for cached save
 		auto cachedSave = saveCache[adhocLevel].empty() || earlyFrame < saveCache[adhocLevel].begin()->first

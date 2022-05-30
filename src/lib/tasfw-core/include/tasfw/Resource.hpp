@@ -77,12 +77,15 @@ public:
 	std::map<int64_t, int64_t> slotLastAccessOrderById;
 	int64_t nextSlotId = 1; //slot IDs are unique
 
+	int64_t _saveMemLimit = 0;
+	int64_t _currentSaveMem = 0;
+
 	SlotManager(Resource<TState>* resource) : _resource(resource) { }
 
 	int64_t CreateSlot();
 	void EraseOldestSlot();
 	void EraseSlot(int64_t slotId);
-	void UpdateSlot(int64_t slotId);
+	void LoadSlot(int64_t slotId);
 	bool isValid(int64_t slotId);
 };
 
@@ -96,9 +99,6 @@ public:
 	uint64_t nFrameAdvances = 0;
 	uint64_t nLoadStates = 0;
 	uint64_t nSaveStates = 0;
-
-	int64_t _saveMemLimit = 0;
-	int64_t _currentSaveMem = 0;
 
 	TState startSave = TState();
 	SlotManager<TState> slotManager = SlotManager<TState>(this);
@@ -118,6 +118,7 @@ public:
 	virtual void load(TState& state) = 0;
 	virtual void advance() = 0;
 	virtual void* addr(const char* symbol) = 0;
+	virtual std::size_t getStateSize(const TState& state) = 0;
 	//TODO: make this resource-agnostic
 	virtual uint32_t getCurrentFrame() = 0;
 };
@@ -137,7 +138,7 @@ public:
 
 	LibSm64(const std::filesystem::path& dllPath) : dll(dllPath)
 	{
-		_saveMemLimit = 1024 * 1024 * 1024; //1 GB
+		slotManager._saveMemLimit = 1024 * 1024 * 1024; //1 GB
 
 		// constructor of SharedLib will throw if it can't load
 		void* processID = dll.get("sm64_init");
@@ -194,6 +195,11 @@ public:
 	void* addr(const char* symbol)
 	{
 		return dll.get(symbol);
+	}
+
+	std::size_t getStateSize(const LibSm64Mem& state)
+	{
+		return state.buf1.size() + state.buf2.size();
 	}
 
 	uint32_t getCurrentFrame()
