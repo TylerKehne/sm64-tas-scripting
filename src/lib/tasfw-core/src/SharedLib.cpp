@@ -42,7 +42,7 @@ SharedLib::~SharedLib()
 	}
 }
 
-void* SharedLib::get(const char* symbol)
+void* SharedLib::get(const char* symbol) const
 {
 	FARPROC res = GetProcAddress(handle, symbol);
 	if (res == nullptr)

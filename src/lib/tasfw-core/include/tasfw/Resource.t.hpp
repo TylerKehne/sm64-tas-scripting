@@ -29,19 +29,6 @@ static inline uint64_t get_time()
 }
 #endif
 
-template <derived_from_specialization_of<Resource> TResource>
-SlotHandle<TResource>::~SlotHandle()
-{
-	if (slotId != -1)
-		resource->slotManager.EraseSlot(slotId);
-}
-
-template <derived_from_specialization_of<Resource> TResource>
-bool SlotHandle<TResource>::isValid()
-{
-	return resource->slotManager.isValid(slotId);
-}
-
 template <class TState>
 bool SlotManager<TState>::isValid(int64_t slotId)
 {

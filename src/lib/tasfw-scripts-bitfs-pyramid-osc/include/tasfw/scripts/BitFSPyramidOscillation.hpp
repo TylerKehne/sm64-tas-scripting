@@ -1,6 +1,8 @@
 #pragma once
 
 #include <tasfw/Script.hpp>
+#include "tasfw/resources/LibSm64.hpp"
+#include <tasfw/resources/PyramidUpdate.hpp>
 
 #ifndef SCRIPT_BITFS_PYRAMID_OSCILLATION_H
 	#define SCRIPT_BITFS_PYRAMID_OSCILLATION_H
@@ -187,6 +189,34 @@ public:
 
 private:
 	BitFsPyramidOscillation_ParamsDto _oscillationParams;
+};
+
+class BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle : public TopLevelScript<PyramidUpdate>
+{
+public:
+	class CustomScriptStatus
+	{
+	public:
+		Rotation downhillRotation = Rotation::NONE;
+		int32_t angleFacing = 0;
+		int32_t angleNotFacing = 0;
+		int32_t angleFacingAnalogBack = 0;
+		int32_t angleNotFacingAnalogBack = 0;
+		int32_t floorAngle = 0;
+		bool isSlope = false;
+	};
+	CustomScriptStatus CustomStatus = CustomScriptStatus();
+
+	BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle(int16_t targetAngle) : _targetAngle(targetAngle), _faceAngle(targetAngle) { }
+	BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle(int16_t targetAngle, int16_t faceAngle) : _targetAngle(targetAngle), _faceAngle(faceAngle) { }
+
+	bool validation();
+	bool execution();
+	bool assertion();
+
+private:
+	int16_t _faceAngle;
+	int16_t _targetAngle;
 };
 
 #endif

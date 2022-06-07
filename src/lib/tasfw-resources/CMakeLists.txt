@@ -1,4 +1,4 @@
-# Dumping ground for all scripts, categorized into headers.
+# Dumping ground for all resources, categorized into headers.
 add_library(tasfw-resources
 	"src/LibSm64.cpp"
 	"src/PyramidUpdate.cpp"

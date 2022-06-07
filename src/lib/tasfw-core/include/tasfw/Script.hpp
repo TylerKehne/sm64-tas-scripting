@@ -23,6 +23,26 @@ template <typename F, typename T>
 concept AdhocCustomStatusScript = std::same_as<std::invoke_result_t<F, T&>, bool>;
 
 template <derived_from_specialization_of<Resource> TResource>
+class SlotHandle
+{
+public:
+	TResource* resource = NULL;
+	int64_t slotId = -1;
+
+	SlotHandle(TResource* resource, int64_t slotId) : resource(resource), slotId(slotId) { }
+
+	SlotHandle(SlotHandle<TResource>&&) = default;
+	SlotHandle<TResource>& operator = (SlotHandle<TResource>&&) = default;
+
+	SlotHandle(const SlotHandle<TResource>&) = delete;
+	SlotHandle<TResource>& operator= (const SlotHandle<TResource>&) = delete;
+
+	~SlotHandle();
+
+	bool isValid();
+};
+
+template <derived_from_specialization_of<Resource> TResource>
 class InputsMetadata
 {
 public:
@@ -286,6 +306,10 @@ public:
 	template <std::derived_from<TopLevelScript<TResource>> TTopLevelScript, typename... Ts>
 		requires(std::constructible_from<TResource, Ts...>)
 	static ScriptStatus<TTopLevelScript> Main(M64& m64, Ts&&... params);
+
+	template <std::derived_from<TopLevelScript<TResource>> TTopLevelScript, class TState, typename... Ts>
+		requires(std::constructible_from<TResource, Ts...> && std::derived_from<TResource, Resource<TState>>)
+	static ScriptStatus<TTopLevelScript> MainFromSave(M64& m64, ImportedSave<TState> save, Ts&&... params);
 
 	virtual bool validation() override = 0;
 	virtual bool execution() override = 0;

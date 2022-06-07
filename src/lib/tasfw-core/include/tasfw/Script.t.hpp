@@ -6,6 +6,19 @@
 #include <chrono>
 
 template <derived_from_specialization_of<Resource> TResource>
+SlotHandle<TResource>::~SlotHandle()
+{
+	if (slotId != -1)
+		resource->slotManager.EraseSlot(slotId);
+}
+
+template <derived_from_specialization_of<Resource> TResource>
+bool SlotHandle<TResource>::isValid()
+{
+	return resource->slotManager.isValid(slotId);
+}
+
+template <derived_from_specialization_of<Resource> TResource>
 void Script<TResource>::Initialize(Script<TResource>* parentScript)
 {
 	_parentScript = parentScript;
@@ -18,11 +31,10 @@ void Script<TResource>::Initialize(Script<TResource>* parentScript)
 	loadTracker[0];
 
 	if (_parentScript)
-	{
 		resource = _parentScript->resource;
-		startSaveHandle = SlotHandle<TResource>(resource, -1);
-		_initialFrame = GetCurrentFrame();
-	}
+
+	startSaveHandle = SlotHandle<TResource>(resource, -1);
+	_initialFrame = GetCurrentFrame();
 }
 
 template <derived_from_specialization_of<Resource> TResource>
@@ -342,6 +354,9 @@ uint64_t Script<TResource>::IncrementFrameCounter(InputsMetadata<TResource> cach
 template <derived_from_specialization_of<Resource> TResource>
 SaveMetadata<TResource> Script<TResource>::GetLatestSave(int64_t frame)
 {
+	if (resource->initialFrame > frame)
+		throw std::runtime_error("Error: attempted to load frame prior to initial frame");
+
 	//Check ad-hoc script hierarchy first, then current script
 	int64_t earlyFrame = frame;
 	SaveMetadata<TResource> bestSave;
@@ -978,6 +993,27 @@ template <std::derived_from<TopLevelScript<TResource>> TTopLevelScript, typename
 ScriptStatus<TTopLevelScript> TopLevelScript<TResource>::Main(M64& m64, Ts&&... params)
 {
 	TResource resource = TResource(std::forward<Ts>(params)...);
+	resource.save(resource.startSave);
+	resource.initialFrame = 0;
+
+	TTopLevelScript script = TTopLevelScript(m64, &resource);
+	script.Initialize(nullptr);
+
+	if (script.checkPreconditions() && script.execute())
+		script.checkPostconditions();
+
+	return ScriptStatus<TTopLevelScript>(
+		script.BaseStatus[0], script.CustomStatus);
+}
+
+template <derived_from_specialization_of<Resource> TResource>
+template <std::derived_from<TopLevelScript<TResource>> TTopLevelScript, class TState, typename... Ts>
+	requires(std::constructible_from<TResource, Ts...>&& std::derived_from<TResource, Resource<TState>>)
+static ScriptStatus<TTopLevelScript> TopLevelScript<TResource>::MainFromSave(M64& m64, ImportedSave<TState> save, Ts&&... params)
+{
+	TResource resource = TResource(std::forward<Ts>(params)...);
+	resource.startSave = save.state;
+	resource.initialFrame = save.initialFrame;
 
 	TTopLevelScript script = TTopLevelScript(m64, &resource);
 	script.Initialize(nullptr);

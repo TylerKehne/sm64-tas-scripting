@@ -31,6 +31,20 @@ struct SectionInfo
 	size_t length;
 };
 
+// structs like this can be aggregate-initialized
+// like SegVal {".data", 0xDEADBEEF, 12345678};
+struct SegVal
+{
+	std::string name;
+	void* address;
+	size_t length;
+
+	static SegVal fromSectionData(const std::string& name, SectionInfo info)
+	{
+		return { name, info.address, info.length };
+	}
+};
+
 class SharedLib
 {
 	std::string libFileName;
@@ -43,7 +57,7 @@ public:
 	SharedLib(const std::filesystem::path& path);
 	~SharedLib();
 
-	void* get(const char* symbol);
+	void* get(const char* symbol) const;
 
 	// Reads out a list of sections.
 	// Do cache the results, as this WILL re-read the file each time it's run.
