@@ -9,7 +9,7 @@
 bool BitFsPyramidOscillation_TurnThenRunDownhill::validation()
 {
 	// Verify Mario is running on the platform
-	MarioState* marioState = (MarioState*) (game->addr("gMarioStates"));
+	MarioState* marioState = (MarioState*) (resource->addr("gMarioStates"));
 
 	Surface* floor = marioState->floor;
 	if (!floor)
@@ -20,7 +20,7 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill::validation()
 		return false;
 
 	const BehaviorScript* pyramidBehavior =
-		(const BehaviorScript*) (game->addr("bhvBitfsTiltingInvertedPyramid"));
+		(const BehaviorScript*) (resource->addr("bhvBitfsTiltingInvertedPyramid"));
 	if (floorObject->behavior != pyramidBehavior)
 		return false;
 
@@ -34,8 +34,8 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill::validation()
 
 bool BitFsPyramidOscillation_TurnThenRunDownhill::execution()
 {
-	MarioState* marioState = *(MarioState**)(game->addr("gMarioState"));
-	Camera* camera = *(Camera**)(game->addr("gCamera"));
+	MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
+	Camera* camera = *(Camera**)(resource->addr("gCamera"));
 	Object* pyramid = marioState->floor->object;
 
 	//Record initial XZ sum, don't want to decrease this

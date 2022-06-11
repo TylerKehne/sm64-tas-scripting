@@ -26,9 +26,8 @@ SharedLib::SharedLib(const std::filesystem::path& fileName) :
 		throw std::system_error(lastError, std::system_category());
 	}
 	return res;
-		}())
-{
-}
+		}()) { }
+
 SharedLib::~SharedLib()
 {
 	bool good = FreeLibrary(handle);
@@ -42,7 +41,8 @@ SharedLib::~SharedLib()
 		std::terminate();
 	}
 }
-void* SharedLib::get(const char* symbol)
+
+void* SharedLib::get(const char* symbol) const
 {
 	FARPROC res = GetProcAddress(handle, symbol);
 	if (res == nullptr)
@@ -53,6 +53,7 @@ void* SharedLib::get(const char* symbol)
 
 	return reinterpret_cast<void*>(res);
 }
+
 std::unordered_map<std::string, SectionInfo> SharedLib::readSections()
 {
 	using std::ios_base;
@@ -122,6 +123,7 @@ std::unordered_map<std::string, SectionInfo> SharedLib::readSections()
 	}
 	return sectionMap;
 }
+
 #elif defined(__linux__)
 
 	#include <dlfcn.h>

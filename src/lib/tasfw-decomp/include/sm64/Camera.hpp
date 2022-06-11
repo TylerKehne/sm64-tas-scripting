@@ -5,7 +5,7 @@
 /**
  * The main camera struct. Gets updated by the active camera mode and the
  * current level/area. In update_lakitu, its pos and focus are used to calculate
- * lakitu's next position and focus, which are then used to render the game->
+ * lakitu's next position and focus, which are then used to render the resource->
  */
 struct Camera
 {

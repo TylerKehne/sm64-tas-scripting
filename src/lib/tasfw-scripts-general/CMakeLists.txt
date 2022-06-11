@@ -7,7 +7,7 @@ add_library(tasfw-scripts-general
 
 target_include_directories(tasfw-scripts-general PUBLIC include)
 target_compile_features(tasfw-scripts-general PUBLIC cxx_std_20)
-target_link_libraries(tasfw-scripts-general PUBLIC tasfw::decomp tasfw::core)
+target_link_libraries(tasfw-scripts-general PUBLIC tasfw::decomp tasfw::core tasfw::resources)
 
 include(MatchArchFlag)
 match_arch_and_ipo(tasfw-scripts-general)

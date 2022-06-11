@@ -2,11 +2,10 @@
 #include <cstdint>
 #include <filesystem>
 #include <map>
+#include <tasfw/SharedLib.hpp>
 
 #ifndef INPUTS_H
 #define INPUTS_H
-
-class Script;
 
 class Rotation
 {
@@ -80,28 +79,6 @@ public:
 	static std::pair<int16_t, float> GetIntendedYawMagFromInput(
 		int8_t stickX, int8_t stickY, int16_t cameraYaw);
 	static bool HauEquals(int16_t angle1, int16_t angle2);
-};
-
-class InputsMetadata
-{
-public:
-	enum class InputsSource : int8_t
-	{
-		DIFF = 0,
-		ORIGINAL = 1,
-		DEFAULT = 2
-	};
-
-	Inputs inputs;
-	int64_t frame = -1;
-	Script* stateOwner = nullptr;
-	int64_t stateOwnerAdhocLevel = -1;
-	InputsSource source = InputsSource::DIFF;
-
-	InputsMetadata() = default;
-
-	InputsMetadata(Inputs inputs, int64_t frame, Script* stateOwner, int64_t stateOwnerAdhocLevel, InputsSource source = InputsSource::DIFF)
-		: inputs(inputs), stateOwner(stateOwner), frame(frame), stateOwnerAdhocLevel(stateOwnerAdhocLevel), source(source) {}
 };
 
 class M64Base

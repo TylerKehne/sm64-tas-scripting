@@ -6,11 +6,11 @@ add_library(tasfw-scripts-bitfs-pyramid-osc
 	"src/BitFsPyramidOscillation_TurnAroundAndRunDownhill.cpp"
 	"src/BitFsPyramidOscillation_TurnThenRunDownhill.cpp"
 	"src/BitFsPyramidOscillation_RunDownhill.cpp"
-)
+	"src/BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle.cpp")
 
 target_include_directories(tasfw-scripts-bitfs-pyramid-osc PUBLIC include)
 target_compile_features(tasfw-scripts-bitfs-pyramid-osc PUBLIC cxx_std_20)
-target_link_libraries(tasfw-scripts-bitfs-pyramid-osc PUBLIC tasfw::decomp tasfw::core tasfw::scripts_general)
+target_link_libraries(tasfw-scripts-bitfs-pyramid-osc PUBLIC tasfw::decomp tasfw::core tasfw::scripts_general tasfw::resources)
 
 include(MatchArchFlag)
 match_arch_and_ipo(tasfw-scripts-bitfs-pyramid-osc)

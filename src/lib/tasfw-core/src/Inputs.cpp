@@ -2,7 +2,6 @@
 #include <sys/types.h>
 #include <ios>
 #include <system_error>
-#include <tasfw/Game.hpp>
 #include <sm64/Trig.hpp>
 
 #include <cmath>
@@ -367,6 +366,9 @@ int M64::load()
 
 int M64::save(long initFrame)
 {
+	if (fileName.empty())
+		return 0;
+
 	if (frames.empty())
 		return 1;
 	std::ofstream f(fileName, ios_base::in | ios_base::out | ios_base::binary);

@@ -8,7 +8,6 @@
 #include <memory>
 #include <optional>
 
-#include <tasfw/Game.hpp>
 #include <tasfw/Inputs.hpp>
 #include <tasfw/Script.hpp>
 #include <sm64/Camera.hpp>
@@ -24,18 +23,16 @@ using namespace std;
 
 #pragma comment(lib, "Ws2_32.lib")
 
-class MainScript : public TopLevelScript
+class MainScript : public TopLevelScript<LibSm64>
 {
 public:
-	MainScript(M64& m64, Game* game) : TopLevelScript(m64, game) {}
-
 	bool validation() { return true; }
 
 	bool execution()
 	{
 		Load(3536);
 		Save();
-		auto status = Script::Modify<BitFsPyramidOscillation>(0.74f, 4);
+		auto status = Modify<BitFsPyramidOscillation>(0.74f, 4);
 		return true;
 	}
 
@@ -45,7 +42,7 @@ public:
 		M64Diff diff = GetDiff();
 		for (auto& [frame, inputs]: diff.frames)
 		{
-			_m64.frames[frame] = inputs;
+			_m64->frames[frame] = inputs;
 		}
 
 		return true;
@@ -66,7 +63,7 @@ int main(int argc, const char* argv[])
 	M64 m64 = M64(m64_path);
 	m64.load();
 
-	auto status = TopLevelScript::Main<MainScript, Game>(m64, lib_path);
+	auto status = MainScript::MainConfig<MainScript>(m64, lib_path);
 
 	m64.save();
 

@@ -4,6 +4,7 @@
 #ifndef SCRIPTSTATUS_H
 #define SCRIPTSTATUS_H
 
+template <derived_from_specialization_of<Resource> TResource>
 class Script;
 
 class BaseScriptStatus
@@ -26,7 +27,7 @@ public:
 	BaseScriptStatus() = default;
 };
 
-template <std::derived_from<Script> TScript>
+template <derived_from_specialization_of<Script> TScript>
 class ScriptStatus : public BaseScriptStatus, public TScript::CustomScriptStatus
 {
 public:
