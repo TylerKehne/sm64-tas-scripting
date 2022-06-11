@@ -319,8 +319,10 @@ public:
 		if (script.checkPreconditions() && script.execute())
 			script.checkPostconditions();
 
-		return ScriptStatus<TTopLevelScript>(
-			script.BaseStatus[0], script.CustomStatus);
+		//Dispose of slot handles before resource goes out of scope because they trigger destructor events in the resource.
+		script.saveBank[0].erase(script.saveBank[0].begin(), script.saveBank[0].end());
+
+		return ScriptStatus<TTopLevelScript>(script.BaseStatus[0], script.CustomStatus);
 	}
 
 	template <std::derived_from<TopLevelScript<TResource>> TTopLevelScript, class TState, typename... Ts>
@@ -348,8 +350,10 @@ public:
 		if (script.checkPreconditions() && script.execute())
 			script.checkPostconditions();
 
-		return ScriptStatus<TTopLevelScript>(
-			script.BaseStatus[0], script.CustomStatus);
+		//Dispose of slot handles before resource goes out of scope because they trigger destructor events in the resource.
+		script.saveBank[0].erase(script.saveBank[0].begin(), script.saveBank[0].end());
+
+		return ScriptStatus<TTopLevelScript>(script.BaseStatus[0], script.CustomStatus);
 	}
 
 	virtual bool validation() override = 0;

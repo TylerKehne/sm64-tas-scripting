@@ -15,6 +15,10 @@ SlotHandle<TResource>::~SlotHandle()
 template <derived_from_specialization_of<Resource> TResource>
 bool SlotHandle<TResource>::isValid()
 {
+	//Start save handle is always valid
+	if (resource && slotId == -1)
+		return true;
+
 	return resource->slotManager.isValid(slotId);
 }
 
@@ -305,7 +309,7 @@ InputsMetadata<TResource> TopLevelScript<TResource>::GetInputsMetadata(int64_t f
 		{
 			InputsMetadata<TResource> metadata = this->inputsCache[adhocLevel][frame];
 			if (stateOwnerAdhocLevel == -1)
-				metadata.stateOwnerAdhocLevel = stateOwnerAdhocLevel;
+				metadata.stateOwnerAdhocLevel = adhocLevel;
 
 			return metadata;
 		}
@@ -1004,8 +1008,10 @@ ScriptStatus<TTopLevelScript> TopLevelScript<TResource>::Main(M64& m64, Ts&&... 
 	if (script.checkPreconditions() && script.execute())
 		script.checkPostconditions();
 
-	return ScriptStatus<TTopLevelScript>(
-		script.BaseStatus[0], script.CustomStatus);
+	//Dispose of slot handles before resource goes out of scope because they trigger destructor events in the resource.
+	script.saveBank[0].erase(script.saveBank[0].begin(), script.saveBank[0].end());
+
+	return ScriptStatus<TTopLevelScript>(script.BaseStatus[0], script.CustomStatus);
 }
 
 template <derived_from_specialization_of<Resource> TResource>
@@ -1028,8 +1034,10 @@ static ScriptStatus<TTopLevelScript> TopLevelScript<TResource>::MainFromSave(M64
 	if (script.checkPreconditions() && script.execute())
 		script.checkPostconditions();
 
-	return ScriptStatus<TTopLevelScript>(
-		script.BaseStatus[0], script.CustomStatus);
+	//Dispose of slot handles before resource goes out of scope because they trigger destructor events in the resource.
+	script.saveBank[0].erase(script.saveBank[0].begin(), script.saveBank[0].end());
+
+	return ScriptStatus<TTopLevelScript>(script.BaseStatus[0], script.CustomStatus);
 }
 
 template <derived_from_specialization_of<Resource> TResource>
