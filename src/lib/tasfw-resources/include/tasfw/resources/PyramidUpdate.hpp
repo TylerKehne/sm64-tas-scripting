@@ -31,7 +31,8 @@ public:
 			f32 z;
 		} normal;
 		f32 originOffset;
-		Sm64Object* object;
+		bool objectIsPyramid = false;
+		Sm64Object* object(PyramidUpdateMem& state);
 	};
 
 	class Sm64Object
@@ -44,26 +45,36 @@ public:
 		float tiltingPyramidNormalY = 0;
 		float tiltingPyramidNormalZ = 0;
 		s32 tiltingPyramidMarioOnPlatform = FALSE;
-		Sm64Object* platform = nullptr;
+		bool platformIsPyramid = false;
 		Mat4 transform;
 		std::vector<Sm64Surface> surfaces;
+
+		Sm64Object* platform(PyramidUpdateMem& state);
 	};
 
-	class MarioState
+	class Sm64MarioState
 	{
 	public:
 		float posX = 0;
 		float posY = 0;
 		float posZ = 0;
+		int64_t floorId = -1;
+		u32 action = 0;
+
+		Sm64Surface* floor(PyramidUpdateMem& state);
 	};
 
 	Sm64Object marioObj;
 	Sm64Object pyramid;
-	MarioState marioState;
+	Sm64MarioState marioState;
 	int64_t frame = 0;
+	uint32_t inputs = 0;
 
 	PyramidUpdateMem() = default;
 	PyramidUpdateMem(const LibSm64& resource, Object* pyramidLibSm64);
+
+	static bool FloorIsSlope(Sm64Surface* floor, u32 action);
+	static short GetFloorClass(Sm64Surface* floor, u32 action);
 
 private:
 	//TODO: All of this needs to be rewritten when memory access is standardized
@@ -80,7 +91,7 @@ class PyramidUpdate : public Resource<PyramidUpdateMem>
 public:
 	PyramidUpdate();
 	void save(PyramidUpdateMem& state) const;
-	void load(PyramidUpdateMem& state);
+	void load(const PyramidUpdateMem& state);
 	void advance();
 	void* addr(const char* symbol) const;
 	std::size_t getStateSize(const PyramidUpdateMem& state) const;
@@ -92,6 +103,7 @@ private:
 	void TransformSurfaces();
 	float ApproachByIncrement(float goal, float src, float inc);
 	void CreateTransformFromNormals(Mat4& transform, float xNorm, float yNorm, float zNorm);
+	void FindFloor(Vec3f* marioPos, PyramidUpdateMem::Sm64Surface* surfaces, int surfaceCount, int64_t* floorId);
 };
 
 #endif

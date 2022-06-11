@@ -5,67 +5,31 @@
 #include <sm64/Types.hpp>
 #include <sm64/Pyramid.hpp>
 #include <sm64/Surface.hpp>
+#include <sm64/Trig.hpp>
 
 bool BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle::validation()
 {
 	// Check if Mario is on the pyramid platform
-	MarioState* marioState = (MarioState*) (resource->addr("gMarioStates"));
-
-	Surface* floor = marioState->floor;
-	if (!floor)
-		return false;
-
-	Object* floorObject = floor->object;
-	if (!floorObject)
-		return false;
-
-	const BehaviorScript* pyramidBehavior =
-		(const BehaviorScript*) (resource->addr("bhvBitfsTiltingInvertedPyramid"));
-	return floorObject->behavior == pyramidBehavior;
+	auto marioObj = (PyramidUpdateMem::Sm64Object*)(resource->addr("gMarioObject"));
+	return marioObj->platformIsPyramid;
 }
 
 bool BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle::execution()
 {
-	MarioState* marioState = (MarioState*) (resource->addr("gMarioStates"));
-	/*
-	s32(*mario_floor_is_slope)(struct MarioState*) = (s32(*)(struct
-	MarioState*))(resource->addr("mario_floor_is_slope"));
+	AdvanceFrameRead();
 
-	bool hackedWalkValidated = false;
-
-	//Walk OOB to get Mario's floor after surface updates + platform
-	displacement with no QStep interference int16_t floorAngle = 0; for (float
-	walkSpeed = -131072.0f; walkSpeed > -(1 << 31); walkSpeed *= 1.5f)
+	auto marioState = (PyramidUpdateMem::Sm64MarioState*)(resource->addr("gMarioStates"));
+	auto pyramid = (PyramidUpdateMem::Sm64Object*)(resource->addr("Pyramid"));
+	if (marioState->floorId == -1)
 	{
-			auto status = Test<TryHackedWalkOutOfBounds>(walkSpeed);
-
-			if (status.asserted)
-			{
-					hackedWalkValidated = true;
-					floorAngle = status.floorAngle;
-					CustomStatus.isSlope = mario_floor_is_slope(marioState);
-					break;
-			}
-
-			if (!status.executed)
-					return false;
-
-			//Nothing in QSteps should trigger this, so if this is true walking
-	is impossible if (status.endAction | ACT_FLAG_INVULNERABLE) return false;
+		CustomStatus.floorAngle = 0;
+		CustomStatus.isSlope = false;
+		return false;
 	}
 
-	if (!hackedWalkValidated)
-			return false;
-	*/
-
-	Object* marioObj				= marioState->marioObj;
-	Object* pyramidPlatform = marioState->floor->object;
-
-	short floorAngle = 0;
-
-	if (!simulate_platform_tilt(
-				marioObj, pyramidPlatform, &floorAngle, &CustomStatus.isSlope))
-		return false;
+	auto floor = &pyramid->surfaces[marioState->floorId];
+	short floorAngle = atan2s(floor->normal.z, floor->normal.x);
+	CustomStatus.isSlope = PyramidUpdateMem::FloorIsSlope(floor, marioState->action);
 
 	// m->floorAngle - m->faceAngle[1] >= -0x3FFF && m->floorAngle -
 	// m->faceAngle[1] <= 0x3FFF
@@ -77,15 +41,14 @@ bool BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle::execution()
 
 	if (lowerAngleDiff <= upperAngleDiff)
 	{
-		CustomStatus.angleFacing		= lowerAngle;
+		CustomStatus.angleFacing = lowerAngle;
 		CustomStatus.angleNotFacing = upperAngle;
-		CustomStatus.downhillRotation =
-			lowerAngleDiff < upperAngleDiff ? Rotation::CLOCKWISE : Rotation::NONE;
+		CustomStatus.downhillRotation = lowerAngleDiff < upperAngleDiff ? Rotation::CLOCKWISE : Rotation::NONE;
 	}
 	else
 	{
-		CustomStatus.angleFacing			= upperAngle;
-		CustomStatus.angleNotFacing		= lowerAngle;
+		CustomStatus.angleFacing = upperAngle;
+		CustomStatus.angleNotFacing = lowerAngle;
 		CustomStatus.downhillRotation = Rotation::COUNTERCLOCKWISE;
 	}
 

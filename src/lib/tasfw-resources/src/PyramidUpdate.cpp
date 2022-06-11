@@ -2,6 +2,8 @@
 #include <sm64/Surface.hpp>
 #include <sm64/ObjectFields.hpp>
 #include <sm64/Math.hpp>
+#include <sm64/Sm64.hpp>
+#include <format>
 
 PyramidUpdateMem::PyramidUpdateMem(const LibSm64& resource, Object* pyramidLibSm64)
 {
@@ -19,17 +21,45 @@ PyramidUpdateMem::PyramidUpdateMem(const LibSm64& resource, Object* pyramidLibSm
 	LoadSurfaces(pyramidLibSm64, pyramid);
 
 	//Initialize Mario object
-	Object* marioObjLibSm64 = (Object*)(resource.addr("gMarioObject"));
+	Object* marioObjLibSm64 = *(Object**)(resource.addr("gMarioObject"));
 	marioObj.posX = marioObjLibSm64->oPosX;
 	marioObj.posY = marioObjLibSm64->oPosY;
 	marioObj.posZ = marioObjLibSm64->oPosZ;
-	marioObjLibSm64->platform == pyramidLibSm64 ? marioObj.platform = &pyramid : marioObj.platform = nullptr;
+	marioObj.platformIsPyramid = marioObjLibSm64->platform == pyramidLibSm64;
 
 	//Initialize Mario state
 	MarioState* marioStateLibSm64 = (MarioState*)(resource.addr("gMarioStates"));
-	marioState.posX = marioStateLibSm64->posX;
-	marioState.posY = marioStateLibSm64->posY;
-	marioState.posZ = marioStateLibSm64->posZ;
+	marioState.posX = marioStateLibSm64->pos[0];
+	marioState.posY = marioStateLibSm64->pos[1];
+	marioState.posZ = marioStateLibSm64->pos[2];
+	marioState.action = marioStateLibSm64->action;
+}
+
+PyramidUpdateMem::Sm64Object* PyramidUpdateMem::Sm64Surface::object(PyramidUpdateMem& state)
+{
+	if (objectIsPyramid)
+		return &state.pyramid;
+
+	return nullptr;
+}
+
+PyramidUpdateMem::Sm64Object* PyramidUpdateMem::Sm64Object::platform(PyramidUpdateMem& state)
+{
+	if (platformIsPyramid)
+		return &state.pyramid;
+
+	return nullptr;
+}
+
+PyramidUpdateMem::Sm64Surface* PyramidUpdateMem::Sm64MarioState::floor(PyramidUpdateMem& state)
+{
+	if (floorId == -1)
+		return nullptr;
+
+	if (floorId >= state.pyramid.surfaces.size())
+		throw std::runtime_error("Surface id " + std::to_string(floorId) + " larger than max id " + std::to_string(state.pyramid.surfaces.size() - 1));
+
+	return &state.pyramid.surfaces[floorId];
 }
 
 void PyramidUpdateMem::LoadSurfaces(Object* pyramidLibSm64, Sm64Object& pyramid)
@@ -146,7 +176,7 @@ void PyramidUpdateMem::LoadObjectSurfaces(Sm64Object* pyramid, short** data, sho
 	{
 		ReadSurfaceData(vertexData, data, *surfaces);
 		(*surfaces)->type = surfaceType;
-		(*surfaces)->object = pyramid;
+		(*surfaces)->objectIsPyramid = true;
 
 		if (hasForce)
 		{
@@ -241,6 +271,74 @@ void PyramidUpdateMem::ReadSurfaceData(short* vertexData, short** vertexIndices,
 	surface->upperY = maxY + 5;
 }
 
+bool PyramidUpdateMem::FloorIsSlope(Sm64Surface* floor, u32 action)
+{
+	float normY;
+
+	switch (PyramidUpdateMem::GetFloorClass(floor, action))
+	{
+	case SURFACE_VERY_SLIPPERY:
+		normY = 0.9961947f;	 // ~cos(5 deg)
+		break;
+
+	case SURFACE_SLIPPERY:
+		normY = 0.9848077f;	 // ~cos(10 deg)
+		break;
+
+	default:
+		normY = 0.9659258f;	 // ~cos(15 deg)
+		break;
+
+	case SURFACE_NOT_SLIPPERY:
+		normY = 0.9396926f;	 // ~cos(20 deg)
+		break;
+	}
+
+	return floor->normal.y <= normY;
+}
+
+short PyramidUpdateMem::GetFloorClass(Sm64Surface* floor, u32 action)
+{
+	short floorClass = SURFACE_CLASS_DEFAULT;
+
+	if (floor != nullptr)
+	{
+		switch (floor->type)
+		{
+		case SURFACE_NOT_SLIPPERY:
+		case SURFACE_HARD_NOT_SLIPPERY:
+		case SURFACE_SWITCH:
+			floorClass = SURFACE_CLASS_NOT_SLIPPERY;
+			break;
+
+		case SURFACE_SLIPPERY:
+		case SURFACE_NOISE_SLIPPERY:
+		case SURFACE_HARD_SLIPPERY:
+		case SURFACE_NO_CAM_COL_SLIPPERY:
+			floorClass = SURFACE_CLASS_SLIPPERY;
+			break;
+
+		case SURFACE_VERY_SLIPPERY:
+		case SURFACE_ICE:
+		case SURFACE_HARD_VERY_SLIPPERY:
+		case SURFACE_NOISE_VERY_SLIPPERY_73:
+		case SURFACE_NOISE_VERY_SLIPPERY_74:
+		case SURFACE_NOISE_VERY_SLIPPERY:
+		case SURFACE_NO_CAM_COL_VERY_SLIPPERY:
+			floorClass = SURFACE_CLASS_VERY_SLIPPERY;
+			break;
+		}
+
+		// Crawling allows Mario to not slide on certain steeper surfaces.
+		if (action == ACT_CRAWLING && floor && floor->normal.y > 0.5f && floorClass == SURFACE_CLASS_DEFAULT)
+		{
+			floorClass = SURFACE_CLASS_NOT_SLIPPERY;
+		}
+	}
+
+	return floorClass;
+}
+
 PyramidUpdate::PyramidUpdate()
 {
     slotManager._saveMemLimit = 1024 * 1024 * 1024; //1 GB
@@ -251,7 +349,7 @@ void PyramidUpdate::save(PyramidUpdateMem& state) const
     state = _state;
 }
 
-void PyramidUpdate::load(PyramidUpdateMem& state)
+void PyramidUpdate::load(const PyramidUpdateMem& state)
 {
     _state = state;
 }
@@ -271,11 +369,30 @@ void PyramidUpdate::advance()
 	PyramidLoop();
 	TransformSurfaces();
 
+	Vec3f marioPos = {_state.marioState.posX, _state.marioState.posY , _state.marioState.posZ };
+	FindFloor(&marioPos, &(*_state.pyramid.surfaces.begin()), _state.pyramid.surfaces.size(), &_state.marioState.floorId);
+
 	_state.frame++;
 }
 
 void* PyramidUpdate::addr(const char* symbol) const
 {
+	std::string symbolStr = std::string(symbol);
+
+	if (symbolStr == "gMarioStates")
+		return (void*)&_state.marioState;
+
+	if (symbolStr == "gMarioObject")
+		return (void*)&_state.marioObj;
+
+	if (symbolStr == "Pyramid")
+		return (void*)&_state.pyramid;
+
+	if (symbolStr == "gControllerPads")
+		return (void*)&_state.inputs;
+
+	throw std::runtime_error("Unable to resolve symbol \"" + symbolStr + "\"");
+
 	return nullptr;
 }
 
@@ -298,7 +415,7 @@ void PyramidUpdate::PyramidLoop()
 	s32 marioOnPlatform = FALSE;
 	Mat4* transform = &_state.pyramid.transform;
 
-	if (_state.marioObj.platform == &_state.pyramid) {
+	if (_state.marioObj.platform(_state) == &_state.pyramid) {
 		dist[0] = _state.marioObj.posX - _state.pyramid.posX;
 		dist[1] = _state.marioObj.posY - _state.pyramid.posY;
 		dist[2] = _state.marioObj.posZ - _state.pyramid.posZ;
@@ -470,5 +587,70 @@ void PyramidUpdate::TransformSurfaces()
 		surfaces->upperY = maxY + 5;
 
 		surfaces++;
+	}
+}
+
+void PyramidUpdate::FindFloor(Vec3f* marioPos, PyramidUpdateMem::Sm64Surface* surfaces, int surfaceCount, int64_t* floorId)
+{
+	int i;
+	PyramidUpdateMem::Sm64Surface* surf;
+	int x1, z1, x2, z2, x3, z3;
+	float nx, ny, nz;
+	float oo;
+	float height;
+
+	*floorId = -1;
+
+	// Iterate through the list of floors until there are no more floors.
+	for (i = 0; i < surfaceCount; i++)
+	{
+		surf = surfaces;
+		surfaces++;
+
+		if (surf->normal.y <= 0.1)
+			continue;
+
+		x1 = surf->vertex1[0];
+		z1 = surf->vertex1[2];
+		x2 = surf->vertex2[0];
+		z2 = surf->vertex2[2];
+
+		// Check that the point is within the triangle bounds.
+		if (
+			(z1 - (*marioPos)[2]) * (x2 - x1) - (x1 - (*marioPos)[0]) * (z2 - z1) < 0)
+		{
+			continue;
+		}
+
+		// To slightly save on computation time, set this later.
+		x3 = surf->vertex3[0];
+		z3 = surf->vertex3[2];
+
+		if (
+			(z2 - (*marioPos)[2]) * (x3 - x2) - (x2 - (*marioPos)[0]) * (z3 - z2) < 0)
+		{
+			continue;
+		}
+		if (
+			(z3 - (*marioPos)[2]) * (x1 - x3) - (x3 - (*marioPos)[0]) * (z1 - z3) < 0)
+		{
+			continue;
+		}
+
+		nx = surf->normal.x;
+		ny = surf->normal.y;
+		nz = surf->normal.z;
+		oo = surf->originOffset;
+
+		// Find the height of the floor at a given location.
+		height = -((*marioPos)[0] * nx + nz * (*marioPos)[2] + oo) / ny;
+		// Checks for floor interaction with a 78 unit buffer.
+		if ((*marioPos)[1] - (height + -78.0f) < 0.0f)
+		{
+			continue;
+		}
+
+		*floorId = i;
+		break;
 	}
 }

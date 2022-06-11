@@ -53,7 +53,12 @@ bool BitFsPyramidOscillation::execution()
 	Object* pyramid		   = marioState->floor->object;
 
 	int16_t initAngle	 = -32768;
-	auto initAngleStatus = Test<GetMinimumDownhillWalkingAngle>(initAngle);
+	auto m64 = M64();
+	auto save = ImportedSave(PyramidUpdateMem(*resource, pyramid), GetCurrentFrame());
+	auto initAngleStatus = BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle::MainFromSave<BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>(m64, save, initAngle);
+	if (!initAngleStatus.validated)
+		return false;
+	//auto initAngleStatus = Test<GetMinimumDownhillWalkingAngle>(initAngle);
 	auto stick = Inputs::GetClosestInputByYawExact(
 		initAngleStatus.angleFacing, 32, camera->yaw,
 		initAngleStatus.downhillRotation);

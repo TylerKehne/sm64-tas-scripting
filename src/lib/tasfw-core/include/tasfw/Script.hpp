@@ -297,26 +297,67 @@ template <derived_from_specialization_of<Resource> TResource>
 class TopLevelScript : public Script<TResource>
 {
 public:
-	TopLevelScript(M64& m64, TResource* resource) : _m64(m64)
-	{
-		this->resource = resource;
-		this->startSaveHandle = SlotHandle<TResource>(resource, -1);
-	}
+	TopLevelScript() = default;
 
 	template <std::derived_from<TopLevelScript<TResource>> TTopLevelScript, typename... Ts>
-		requires(std::constructible_from<TResource, Ts...>)
+		requires(std::constructible_from<TTopLevelScript, Ts...> && std::constructible_from<TResource>)
 	static ScriptStatus<TTopLevelScript> Main(M64& m64, Ts&&... params);
 
+	template <std::derived_from<TopLevelScript<TResource>> TTopLevelScript, typename TResourceConfig, typename... Ts>
+		requires(std::constructible_from<TTopLevelScript, Ts...> && std::constructible_from<TResource, TResourceConfig>)
+	static ScriptStatus<TTopLevelScript> MainConfig(M64& m64, TResourceConfig config, Ts&&... params)
+	{
+		TTopLevelScript script = TTopLevelScript(std::forward<Ts>(params)...);
+		TResource resource = TResource(config);
+		resource.save(resource.startSave);
+		resource.initialFrame = 0;
+
+		script._m64 = &m64;
+		script.resource = &resource;
+		script.Initialize(nullptr);
+
+		if (script.checkPreconditions() && script.execute())
+			script.checkPostconditions();
+
+		return ScriptStatus<TTopLevelScript>(
+			script.BaseStatus[0], script.CustomStatus);
+	}
+
 	template <std::derived_from<TopLevelScript<TResource>> TTopLevelScript, class TState, typename... Ts>
-		requires(std::constructible_from<TResource, Ts...> && std::derived_from<TResource, Resource<TState>>)
-	static ScriptStatus<TTopLevelScript> MainFromSave(M64& m64, ImportedSave<TState> save, Ts&&... params);
+		requires(std::constructible_from<TTopLevelScript, Ts...>
+			&& std::constructible_from<TResource>
+			&& std::derived_from<TResource, Resource<TState>>)
+	static ScriptStatus<TTopLevelScript> MainFromSave(M64& m64, ImportedSave<TState>& save, Ts&&... params);
+
+	template <std::derived_from<TopLevelScript<TResource>> TTopLevelScript, class TState, typename TResourceConfig, typename... Ts>
+		requires(std::constructible_from<TTopLevelScript, Ts...>
+			&& std::constructible_from<TResource, TResourceConfig>
+			&& std::derived_from<TResource, Resource<TState>>)
+	static ScriptStatus<TTopLevelScript> MainFromSaveConfig(M64& m64, ImportedSave<TState>& save, TResourceConfig config, Ts&&... params)
+	{
+		TTopLevelScript script = TTopLevelScript(std::forward<Ts>(params)...);
+		TResource resource = TResource(config);
+		resource.load(save.state);
+		resource.save(resource.startSave);
+		resource.initialFrame = save.initialFrame;
+
+		script._m64 = &m64;
+		script.resource = &resource;
+		script.Initialize(nullptr);
+
+		if (script.checkPreconditions() && script.execute())
+			script.checkPostconditions();
+
+		return ScriptStatus<TTopLevelScript>(
+			script.BaseStatus[0], script.CustomStatus);
+	}
 
 	virtual bool validation() override = 0;
 	virtual bool execution() override = 0;
 	virtual bool assertion() override = 0;
 
 protected:
-	M64& _m64;
+	M64* _m64 = nullptr;
 
 private:
 	InputsMetadata<TResource> GetInputsMetadata(int64_t frame) override;

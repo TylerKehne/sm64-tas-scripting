@@ -59,7 +59,12 @@ bool BitFsPyramidOscillation_RunDownhill::execution()
 		// Turnaround face angle is not guaranteed to be closer to one
 		// orientation or the other, so rely on caller to specify a close-enough
 		// target orientation
-		auto status = Test<GetMinimumDownhillWalkingAngle>(_oscillationParams.roughTargetAngle, marioState->faceAngle[1]);
+
+		auto m64 = M64();
+		auto save = ImportedSave(PyramidUpdateMem(*resource, pyramid), GetCurrentFrame());
+		auto status = BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle::MainFromSave<BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>
+			(m64, save, _oscillationParams.roughTargetAngle, marioState->faceAngle[1]);
+		//auto status = Test<GetMinimumDownhillWalkingAngle>(_oscillationParams.roughTargetAngle, marioState->faceAngle[1]);
 
 		// Terminate if unable to locate a downhill angle
 		if (!status.executed)

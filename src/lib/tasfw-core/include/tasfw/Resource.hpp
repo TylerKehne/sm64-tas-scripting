@@ -18,12 +18,10 @@
 template <class TState>
 class Resource;
 
-//template <derived_from_specialization_of<Resource> TResource>
-//class TopLevelScript;
-
 template <class TState>
 class ImportedSave
 {
+public:
 	TState state;
 	int64_t initialFrame;
 
@@ -51,9 +49,6 @@ public:
 	void LoadSlot(int64_t slotId);
 	bool isValid(int64_t slotId);
 };
-
-template <derived_from_specialization_of<Resource> TResource>
-class TopLevelScript;
 
 // Interface for the state machine that represents the game. Can either contain the state machine itself, or be a client to an external state machine.
 template <class TState>

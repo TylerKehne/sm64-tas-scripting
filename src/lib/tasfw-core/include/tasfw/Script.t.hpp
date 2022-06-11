@@ -316,8 +316,8 @@ InputsMetadata<TResource> TopLevelScript<TResource>::GetInputsMetadata(int64_t f
 
 	//Then check actual m64.
 	//For the purposes of the frame counter, mark as adhoc level 0.
-	if (_m64.frames.count(frame))
-		return InputsMetadata<TResource>(_m64.frames[frame], frame, this, stateOwnerAdhocLevel, InputsMetadata<TResource>::InputsSource::ORIGINAL);
+	if (_m64->frames.count(frame))
+		return InputsMetadata<TResource>(_m64->frames[frame], frame, this, stateOwnerAdhocLevel, InputsMetadata<TResource>::InputsSource::ORIGINAL);
 
 	//Default to no input
 	//For the purposes of the frame counter, mark as adhoc level 0.
@@ -989,14 +989,16 @@ AdhocScriptStatus<TAdhocCustomScriptStatus> Script<TResource>::ExecuteAdhocNoRev
 
 template <derived_from_specialization_of<Resource> TResource>
 template <std::derived_from<TopLevelScript<TResource>> TTopLevelScript, typename... Ts>
-	requires(std::constructible_from<TResource, Ts...>)
+	requires(std::constructible_from<TTopLevelScript, Ts...> && std::constructible_from<TResource>)
 ScriptStatus<TTopLevelScript> TopLevelScript<TResource>::Main(M64& m64, Ts&&... params)
 {
-	TResource resource = TResource(std::forward<Ts>(params)...);
+	TTopLevelScript script = TTopLevelScript(std::forward<Ts>(params)...);
+	TResource resource = TResource();
 	resource.save(resource.startSave);
 	resource.initialFrame = 0;
 
-	TTopLevelScript script = TTopLevelScript(m64, &resource);
+	script._m64 = &m64;
+	script.resource = &resource;
 	script.Initialize(nullptr);
 
 	if (script.checkPreconditions() && script.execute())
@@ -1008,14 +1010,19 @@ ScriptStatus<TTopLevelScript> TopLevelScript<TResource>::Main(M64& m64, Ts&&... 
 
 template <derived_from_specialization_of<Resource> TResource>
 template <std::derived_from<TopLevelScript<TResource>> TTopLevelScript, class TState, typename... Ts>
-	requires(std::constructible_from<TResource, Ts...>&& std::derived_from<TResource, Resource<TState>>)
-static ScriptStatus<TTopLevelScript> TopLevelScript<TResource>::MainFromSave(M64& m64, ImportedSave<TState> save, Ts&&... params)
+	requires(std::constructible_from<TTopLevelScript, Ts...>
+		&& std::constructible_from<TResource>
+		&& std::derived_from<TResource, Resource<TState>>)
+static ScriptStatus<TTopLevelScript> TopLevelScript<TResource>::MainFromSave(M64& m64, ImportedSave<TState>& save, Ts&&... params)
 {
-	TResource resource = TResource(std::forward<Ts>(params)...);
-	resource.startSave = save.state;
+	TTopLevelScript script = TTopLevelScript(std::forward<Ts>(params)...);
+	TResource resource = TResource();
+	resource.load(save.state);
+	resource.save(resource.startSave);
 	resource.initialFrame = save.initialFrame;
 
-	TTopLevelScript script = TTopLevelScript(m64, &resource);
+	script._m64 = &m64;
+	script.resource = &resource;
 	script.Initialize(nullptr);
 
 	if (script.checkPreconditions() && script.execute())
