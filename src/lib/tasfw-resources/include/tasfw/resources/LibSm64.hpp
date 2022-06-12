@@ -3,7 +3,7 @@
 #include "tasfw/Resource.hpp"
 
 #ifndef LIBSM64_H
-#define LIBSM64_H
+	#define LIBSM64_H
 
 class LibSm64Mem
 {

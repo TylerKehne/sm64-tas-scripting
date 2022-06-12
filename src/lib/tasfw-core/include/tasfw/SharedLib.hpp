@@ -6,22 +6,23 @@
 #include <unordered_map>
 
 #ifndef SHAREDLIB_H
-#define SHAREDLIB_H
+	#define SHAREDLIB_H
 
-#if defined(_WIN32)
-#define NOMINMAX
-	#include <windows.h>
+	#if defined(_WIN32)
+		#define NOMINMAX
+		#include <windows.h>
 
-	#define TAS_FW_STDCALL __stdcall
-#elif defined(__linux__)
-	#define TAS_FW_STDCALL
-#endif
+		#define TAS_FW_STDCALL __stdcall
+	#elif defined(__linux__)
+		#define TAS_FW_STDCALL
+	#endif
 
 template <template <class...> class Template, class... Args>
 void derived_from_specialization_impl(const Template<Args...>&);
 
 template <class T, template <class...> class Template>
-concept derived_from_specialization_of = requires(const T& t) {
+concept derived_from_specialization_of = requires(const T& t)
+{
 	derived_from_specialization_impl<Template>(t);
 };
 
@@ -41,18 +42,18 @@ struct SegVal
 
 	static SegVal fromSectionData(const std::string& name, SectionInfo info)
 	{
-		return { name, info.address, info.length };
+		return {name, info.address, info.length};
 	}
 };
 
 class SharedLib
 {
 	std::string libFileName;
-#if defined(_WIN32)
+	#if defined(_WIN32)
 	HMODULE handle;
-#elif defined(__linux__)
+	#elif defined(__linux__)
 	void* handle;
-#endif
+	#endif
 public:
 	SharedLib(const std::filesystem::path& path);
 	~SharedLib();

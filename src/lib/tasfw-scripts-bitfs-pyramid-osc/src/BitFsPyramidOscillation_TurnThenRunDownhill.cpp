@@ -2,9 +2,9 @@
 #include <tasfw/scripts/General.hpp>
 
 #include <cmath>
-#include <tasfw/Script.hpp>
 #include <sm64/Camera.hpp>
 #include <sm64/Sm64.hpp>
+#include <tasfw/Script.hpp>
 
 bool BitFsPyramidOscillation_TurnThenRunDownhill::validation()
 {
@@ -20,7 +20,8 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill::validation()
 		return false;
 
 	const BehaviorScript* pyramidBehavior =
-		(const BehaviorScript*) (resource->addr("bhvBitfsTiltingInvertedPyramid"));
+		(const BehaviorScript*) (resource->addr(
+			"bhvBitfsTiltingInvertedPyramid"));
 	if (floorObject->behavior != pyramidBehavior)
 		return false;
 
@@ -34,26 +35,34 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill::validation()
 
 bool BitFsPyramidOscillation_TurnThenRunDownhill::execution()
 {
-	MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-	Camera* camera = *(Camera**)(resource->addr("gCamera"));
-	Object* pyramid = marioState->floor->object;
+	MarioState* marioState = *(MarioState**) (resource->addr("gMarioState"));
+	Camera* camera		   = *(Camera**) (resource->addr("gCamera"));
+	Object* pyramid		   = marioState->floor->object;
 
-	//Record initial XZ sum, don't want to decrease this
+	// Record initial XZ sum, don't want to decrease this
 	CustomStatus.initialXzSum = _oscillationParams.initialXzSum;
 
-	//Get range of target turning around angles to test
-	auto hillStatus = Test<GetMinimumDownhillWalkingAngle>(marioState->faceAngle[1]);
-	Rotation downhillRotation = hillStatus.downhillRotation == Rotation::CLOCKWISE ? Rotation::CLOCKWISE : Rotation::COUNTERCLOCKWISE;
-	int32_t extremeDownhillHau = hillStatus.angleFacing - (hillStatus.angleFacing & 15U);
-	int32_t extremeUphillHau = extremeDownhillHau - 0x4000 * (int)downhillRotation;
+	// Get range of target turning around angles to test
+	auto hillStatus =
+		Test<GetMinimumDownhillWalkingAngle>(marioState->faceAngle[1]);
+	Rotation downhillRotation =
+		hillStatus.downhillRotation == Rotation::CLOCKWISE ?
+		Rotation::CLOCKWISE :
+		Rotation::COUNTERCLOCKWISE;
+	int32_t extremeDownhillHau =
+		hillStatus.angleFacing - (hillStatus.angleFacing & 15U);
+	int32_t extremeUphillHau =
+		extremeDownhillHau - 0x4000 * (int) downhillRotation;
 	int32_t midHau = (extremeDownhillHau + extremeUphillHau) / 2;
 
 	ScriptStatus<BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle> runStatus;
 	for (int32_t angle = midHau;
-			 angle * -downhillRotation >= extremeDownhillHau * -downhillRotation;
-			 angle += 512 * downhillRotation)
+		 angle * -downhillRotation >= extremeDownhillHau * -downhillRotation;
+		 angle += 512 * downhillRotation)
 	{
-		auto status = Execute<BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle>(_oscillationParams, angle);
+		auto status =
+			Execute<BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle>(
+				_oscillationParams, angle);
 
 		if (!status.asserted)
 		{
@@ -68,10 +77,12 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill::execution()
 	}
 
 	for (int32_t angle = midHau - 512 * downhillRotation;
-			 angle * -downhillRotation <= extremeUphillHau * -downhillRotation;
-			 angle -= 512 * downhillRotation)
+		 angle * -downhillRotation <= extremeUphillHau * -downhillRotation;
+		 angle -= 512 * downhillRotation)
 	{
-		auto status = Execute<BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle>(_oscillationParams, angle);
+		auto status =
+			Execute<BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle>(
+				_oscillationParams, angle);
 
 		if (!status.asserted)
 		{
@@ -91,7 +102,7 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill::execution()
 	CustomStatus.finalXzSum = runStatus.finalXzSum;
 	CustomStatus.framePassedEquilibriumPoint =
 		runStatus.framePassedEquilibriumPoint;
-	CustomStatus.maxSpeed								= runStatus.maxSpeed;
+	CustomStatus.maxSpeed				= runStatus.maxSpeed;
 	CustomStatus.passedEquilibriumSpeed = runStatus.passedEquilibriumSpeed;
 	CustomStatus.finishTurnaroundFailedToExpire =
 		runStatus.finishTurnaroundFailedToExpire;

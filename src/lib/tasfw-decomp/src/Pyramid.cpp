@@ -1,10 +1,10 @@
-#include <sm64/Pyramid.hpp>
 #include <cmath>
+#include <sm64/Math.hpp>
 #include <sm64/ObjectFields.hpp>
+#include <sm64/Pyramid.hpp>
+#include <sm64/Surface.hpp>
 #include <sm64/Trig.hpp>
 #include <sm64/Types.hpp>
-#include <sm64/Math.hpp>
-#include <sm64/Surface.hpp>
 
 bool simulate_platform_tilt(
 	struct Object* marioObj, struct Object* pyramidPlatform, short* floorAngle,
@@ -22,7 +22,7 @@ bool simulate_platform_tilt(
 		pyramidPlatform->oTiltingPyramidNormalZ};
 
 	struct Object* marioPlatform = marioObj->platform;
-	bool onPlatform							 = (pyramidPlatform == marioPlatform);
+	bool onPlatform				 = (pyramidPlatform == marioPlatform);
 
 	Mat4 transform;
 
@@ -39,13 +39,13 @@ bool simulate_platform_tilt(
 	{
 		// Probably a better way of handling this
 		*floorAngle = 0;
-		*isSlope		= false;
+		*isSlope	= false;
 		return false;
 	}
 	else
 	{
 		*floorAngle = atan2s(floor->normal.z, floor->normal.x);
-		*isSlope		= floor_is_slope(floor);
+		*isSlope	= floor_is_slope(floor);
 	}
 
 	return true;
@@ -76,7 +76,7 @@ void bhv_tilting_inverted_pyramid_loop(
 		dx = marioPos[0] - platPos[0];
 		dy = 500.0f;
 		dz = marioPos[2] - platPos[2];
-		d	 = sqrtf(dx * dx + dy * dy + dz * dz);
+		d  = sqrtf(dx * dx + dy * dy + dz * dz);
 
 		//! Always true since dy = 500, making d >= 500.
 		if (d != 0.0f)
@@ -156,7 +156,7 @@ float approach_by_increment(float goal, float src, float inc)
 void create_transform_from_normals(Mat4& transform, Vec3f& normal, Vec3f& pos)
 {
 	Vec3f tempNormal = {normal[0], normal[1], normal[2]};
-	Vec3f tempPos		 = {pos[0], pos[1], pos[2]};
+	Vec3f tempPos	 = {pos[0], pos[1], pos[2]};
 
 	mtxf_align_terrain_normal(transform, tempNormal, tempPos, 0);
 }

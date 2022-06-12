@@ -5,15 +5,15 @@
 #include <tasfw/SharedLib.hpp>
 
 #ifndef INPUTS_H
-#define INPUTS_H
+	#define INPUTS_H
 
 class Rotation
 {
 public:
 	enum Value : int8_t
 	{
-		CLOCKWISE = -1,
-		NONE = 0,
+		CLOCKWISE		 = -1,
+		NONE			 = 0,
 		COUNTERCLOCKWISE = 1
 	};
 
@@ -24,13 +24,14 @@ public:
 
 	Rotation Negate()
 	{
-		switch (value) {
-			case Rotation::CLOCKWISE:
-				return Rotation::COUNTERCLOCKWISE;
-			case Rotation::COUNTERCLOCKWISE:
-				return Rotation::CLOCKWISE;
-			case Rotation::NONE:
-				return Rotation::NONE;
+		switch (value)
+		{
+		case Rotation::CLOCKWISE:
+			return Rotation::COUNTERCLOCKWISE;
+		case Rotation::COUNTERCLOCKWISE:
+			return Rotation::CLOCKWISE;
+		case Rotation::NONE:
+			return Rotation::NONE;
 		}
 	}
 
@@ -43,17 +44,17 @@ enum Buttons
 	C_RIGHT = 1U << 0U,
 	C_LEFT	= 1U << 1U,
 	C_DOWN	= 1U << 2U,
-	C_UP		= 1U << 3U,
-	R				= 1U << 4U,
-	L				= 1U << 5U,
+	C_UP	= 1U << 3U,
+	R		= 1U << 4U,
+	L		= 1U << 5U,
 	D_RIGHT = 1U << 8U,
 	D_LEFT	= 1U << 9U,
 	D_DOWN	= 1U << 10U,
-	D_UP		= 1U << 11U,
-	START		= 1U << 12U,
-	Z				= 1U << 13U,
-	B				= 1U << 14U,
-	A				= 1U << 15U
+	D_UP	= 1U << 11U,
+	START	= 1U << 12U,
+	Z		= 1U << 13U,
+	B		= 1U << 14U,
+	A		= 1U << 15U
 };
 
 class Inputs

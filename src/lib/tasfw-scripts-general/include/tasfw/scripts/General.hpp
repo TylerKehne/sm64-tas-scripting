@@ -1,7 +1,7 @@
 #pragma once
 
-#include <tasfw/Script.hpp>
 #include "tasfw/resources/LibSm64.hpp"
+#include <tasfw/Script.hpp>
 
 class GetMinimumDownhillWalkingAngle : public Script<LibSm64>
 {
@@ -9,18 +9,24 @@ public:
 	class CustomScriptStatus
 	{
 	public:
-		Rotation downhillRotation = Rotation::NONE;
-		int32_t angleFacing = 0;
-		int32_t angleNotFacing = 0;
-		int32_t angleFacingAnalogBack = 0;
+		Rotation downhillRotation		 = Rotation::NONE;
+		int32_t angleFacing				 = 0;
+		int32_t angleNotFacing			 = 0;
+		int32_t angleFacingAnalogBack	 = 0;
 		int32_t angleNotFacingAnalogBack = 0;
-		int32_t floorAngle = 0;
-		bool isSlope = false;
+		int32_t floorAngle				 = 0;
+		bool isSlope					 = false;
 	};
 	CustomScriptStatus CustomStatus = CustomScriptStatus();
 
-	GetMinimumDownhillWalkingAngle(int16_t targetAngle) : _targetAngle(targetAngle), _faceAngle(targetAngle) { }
-	GetMinimumDownhillWalkingAngle(int16_t targetAngle, int16_t faceAngle) :  _targetAngle(targetAngle), _faceAngle(faceAngle) { }
+	GetMinimumDownhillWalkingAngle(int16_t targetAngle) :
+		_targetAngle(targetAngle), _faceAngle(targetAngle)
+	{
+	}
+	GetMinimumDownhillWalkingAngle(int16_t targetAngle, int16_t faceAngle) :
+		_targetAngle(targetAngle), _faceAngle(faceAngle)
+	{
+	}
 
 	bool validation();
 	bool execution();
@@ -46,7 +52,7 @@ public:
 	};
 	CustomScriptStatus CustomStatus = CustomScriptStatus();
 
-	TryHackedWalkOutOfBounds(float speed) : _speed(speed) { }
+	TryHackedWalkOutOfBounds(float speed) : _speed(speed) {}
 
 	bool validation();
 	bool execution();
@@ -66,7 +72,7 @@ public:
 	};
 	CustomScriptStatus CustomStatus = CustomScriptStatus();
 
-	BrakeToIdle() { }
+	BrakeToIdle() {}
 
 	bool validation();
 	bool execution();

@@ -20,7 +20,8 @@ bool BitFsPyramidOscillation_TurnAroundAndRunDownhill::validation()
 		return false;
 
 	const BehaviorScript* pyramidBehavior =
-		(const BehaviorScript*) (resource->addr("bhvBitfsTiltingInvertedPyramid"));
+		(const BehaviorScript*) (resource->addr(
+			"bhvBitfsTiltingInvertedPyramid"));
 	if (floorObject->behavior != pyramidBehavior)
 		return false;
 
@@ -34,7 +35,8 @@ bool BitFsPyramidOscillation_TurnAroundAndRunDownhill::validation()
 bool BitFsPyramidOscillation_TurnAroundAndRunDownhill::execution()
 {
 	const BehaviorScript* pyramidBehavior =
-		(const BehaviorScript*) (resource->addr("bhvBitfsTiltingInvertedPyramid"));
+		(const BehaviorScript*) (resource->addr(
+			"bhvBitfsTiltingInvertedPyramid"));
 	MarioState* marioState = (MarioState*) (resource->addr("gMarioStates"));
 	Camera* camera		   = *(Camera**) (resource->addr("gCamera"));
 	Object* pyramid		   = marioState->floor->object;
@@ -93,7 +95,8 @@ bool BitFsPyramidOscillation_TurnAroundAndRunDownhill::execution()
 			if (marioState->floor->object == nullptr ||
 				marioState->floor->object->behavior != pyramidBehavior)
 			{
-				CustomStatus.tooDownhill = (marioState->floor->object == nullptr);
+				CustomStatus.tooDownhill =
+					(marioState->floor->object == nullptr);
 				return false;
 			}
 		} while (marioState->action == ACT_TURNING_AROUND);

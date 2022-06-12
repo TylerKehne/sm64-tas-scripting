@@ -18,7 +18,8 @@ bool BitFsPyramidOscillation_Iteration::validation()
 		return false;
 
 	const BehaviorScript* pyramidBehavior =
-		(const BehaviorScript*) (resource->addr("bhvBitfsTiltingInvertedPyramid"));
+		(const BehaviorScript*) (resource->addr(
+			"bhvBitfsTiltingInvertedPyramid"));
 	if (floorObject->behavior != pyramidBehavior)
 		return false;
 
@@ -42,7 +43,8 @@ bool BitFsPyramidOscillation_Iteration::execution()
 		Load(frame);
 		CustomStatus.speedBeforeTurning = marioState->forwardVel;
 		CustomStatus.initialXzSum		= _oscillationParams.initialXzSum;
-		auto status = Execute<BitFsPyramidOscillation_TurnThenRunDownhill>(_oscillationParams);
+		auto status = Execute<BitFsPyramidOscillation_TurnThenRunDownhill>(
+			_oscillationParams);
 
 		// Keep iterating until we get a valid result, then keep iterating until
 		// we stop getting better results Once we get a valid result, we expect

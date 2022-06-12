@@ -1,9 +1,9 @@
 #include <tasfw/scripts/General.hpp>
 
 #include <cmath>
-#include <tasfw/Script.hpp>
 #include <sm64/Camera.hpp>
 #include <sm64/Sm64.hpp>
+#include <tasfw/Script.hpp>
 
 bool BrakeToIdle::validation()
 {
@@ -28,24 +28,25 @@ bool BrakeToIdle::validation()
 bool BrakeToIdle::execution()
 {
 	const BehaviorScript* pyramidBehavior =
-		(const BehaviorScript*) (resource->addr("bhvBitfsTiltingInvertedPyramid"));
+		(const BehaviorScript*) (resource->addr(
+			"bhvBitfsTiltingInvertedPyramid"));
 	MarioState* marioState = (MarioState*) (resource->addr("gMarioStates"));
-	Camera* camera				 = *(Camera**) (resource->addr("gCamera"));
-	Object* pyramid				 = marioState->floor->object;
+	Camera* camera		   = *(Camera**) (resource->addr("gCamera"));
+	Object* pyramid		   = marioState->floor->object;
 
 	// Brake to a stop
 	do
 	{
 		AdvanceFrameWrite(Inputs(0, 0, 0));
 
-		if (
-			marioState->action != ACT_BRAKING &&
+		if (marioState->action != ACT_BRAKING &&
 			marioState->action != ACT_BRAKING_STOP)
 			return false;
 	} while (marioState->action == ACT_BRAKING);
 
 	// Quickturn uphill
-	auto status = Test<GetMinimumDownhillWalkingAngle>(marioState->faceAngle[1]);
+	auto status =
+		Test<GetMinimumDownhillWalkingAngle>(marioState->faceAngle[1]);
 	if (!status.asserted)
 		return false;
 

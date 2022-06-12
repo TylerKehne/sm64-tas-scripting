@@ -11,7 +11,7 @@
 #include <unordered_map>
 
 #if defined(_WIN32)
-#define NOMINMAX
+	#define NOMINMAX
 	#include <windows.h>
 
 SharedLib::SharedLib(const std::filesystem::path& fileName) :
@@ -26,7 +26,9 @@ SharedLib::SharedLib(const std::filesystem::path& fileName) :
 		throw std::system_error(lastError, std::system_category());
 	}
 	return res;
-		}()) { }
+		}())
+{
+}
 
 SharedLib::~SharedLib()
 {
@@ -35,8 +37,8 @@ SharedLib::~SharedLib()
 	{
 		DWORD lastError = GetLastError();
 		std::cerr << "FreeLibrary error: "
-							<< std::system_error(lastError, std::system_category()).what()
-							<< '\n';
+				  << std::system_error(lastError, std::system_category()).what()
+				  << '\n';
 		std::cerr << "terminating...\n";
 		std::terminate();
 	}
@@ -74,7 +76,8 @@ std::unordered_map<std::string, SectionInfo> SharedLib::readSections()
 		file.seekg(nextOffset + 4, ios_base::beg);
 		IMAGE_FILE_HEADER fileHeader;
 		// Read out file header
-		file.read(reinterpret_cast<char*>(&fileHeader), sizeof(IMAGE_FILE_HEADER));
+		file.read(
+			reinterpret_cast<char*>(&fileHeader), sizeof(IMAGE_FILE_HEADER));
 		numSections = fileHeader.NumberOfSections;
 		// calculate string table offset
 		// According to MS it's deprecated, but the DLLs still use it
@@ -105,7 +108,9 @@ std::unordered_map<std::string, SectionInfo> SharedLib::readSections()
 			if (sections[i].Name[j] == '\0')
 			{
 				name = std::string(
-					reinterpret_cast<char*>(static_cast<BYTE*>(sections[i].Name)), j);
+					reinterpret_cast<char*>(
+						static_cast<BYTE*>(sections[i].Name)),
+					j);
 				break;
 			}
 		}
@@ -114,7 +119,7 @@ std::unordered_map<std::string, SectionInfo> SharedLib::readSections()
 		if (name[0] == '/')
 		{
 			uint32_t off = strtoul(name.c_str() + 1, nullptr, 10);
-			name				 = std::string(&strTable[off]);
+			name		 = std::string(&strTable[off]);
 		}
 		// MS also put the section size in a union
 		sectionMap[name] = SectionInfo {
@@ -212,7 +217,7 @@ std::unordered_map<std::string, SectionInfo> SharedLib::readSections()
 
 	for (uint16_t i = 0; i < numSections; i++)
 	{
-		const auto& sect										= sections[i];
+		const auto& sect					= sections[i];
 		sectionMap[&strTable[sect.sh_name]] = SectionInfo {
 			reinterpret_cast<void*>(baseAddress + sect.sh_addr), sect.sh_size};
 	}

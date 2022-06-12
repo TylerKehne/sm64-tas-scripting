@@ -1,11 +1,11 @@
 #pragma once
 #include <vector>
 #include "tasfw/Resource.hpp"
-#include <sm64/Types.hpp>
 #include "tasfw/resources/LibSm64.hpp"
+#include <sm64/Types.hpp>
 
 #ifndef PYRAMIDUPDATE_H
-#define PYRAMIDUPDATE_H
+	#define PYRAMIDUPDATE_H
 
 class PyramidUpdateMem
 {
@@ -38,14 +38,14 @@ public:
 	class Sm64Object
 	{
 	public:
-		float posX = 0;
-		float posY = 0;
-		float posZ = 0;
-		float tiltingPyramidNormalX = 0;
-		float tiltingPyramidNormalY = 0;
-		float tiltingPyramidNormalZ = 0;
+		float posX						  = 0;
+		float posY						  = 0;
+		float posZ						  = 0;
+		float tiltingPyramidNormalX		  = 0;
+		float tiltingPyramidNormalY		  = 0;
+		float tiltingPyramidNormalZ		  = 0;
 		s32 tiltingPyramidMarioOnPlatform = false;
-		bool platformIsPyramid = false;
+		bool platformIsPyramid			  = false;
 		Mat4 transform;
 		std::vector<Sm64Surface> surfaces;
 
@@ -55,11 +55,11 @@ public:
 	class Sm64MarioState
 	{
 	public:
-		float posX = 0;
-		float posY = 0;
-		float posZ = 0;
+		float posX		= 0;
+		float posY		= 0;
+		float posZ		= 0;
 		int64_t floorId = -1;
-		u32 action = 0;
+		u32 action		= 0;
 
 		Sm64Surface* floor(PyramidUpdateMem& state);
 	};
@@ -67,7 +67,7 @@ public:
 	Sm64Object marioObj;
 	Sm64Object pyramid;
 	Sm64MarioState marioState;
-	int64_t frame = 0;
+	int64_t frame	= 0;
 	uint32_t inputs = 0;
 
 	PyramidUpdateMem() = default;
@@ -77,13 +77,17 @@ public:
 	static short GetFloorClass(Sm64Surface* floor, u32 action);
 
 private:
-	//TODO: All of this needs to be rewritten when memory access is standardized
+	// TODO: All of this needs to be rewritten when memory access is
+	// standardized
 	void LoadSurfaces(Object* pyramidLibSm64, Sm64Object& pyramid);
 	void GetVertices(short** data, short* vertexData);
 	int CountSurfaces(short* data);
 	short SurfaceHasForce(short surfaceType);
-	void LoadObjectSurfaces(Sm64Object* pyramid, short** data, short* vertexData, Sm64Surface** surfaces);
-	void ReadSurfaceData(short* vertexData, short** vertexIndices, Sm64Surface* surface);
+	void LoadObjectSurfaces(
+		Sm64Object* pyramid, short** data, short* vertexData,
+		Sm64Surface** surfaces);
+	void ReadSurfaceData(
+		short* vertexData, short** vertexIndices, Sm64Surface* surface);
 };
 
 class PyramidUpdate : public Resource<PyramidUpdateMem>
@@ -102,8 +106,11 @@ private:
 	void PyramidLoop();
 	void TransformSurfaces();
 	float ApproachByIncrement(float goal, float src, float inc);
-	void CreateTransformFromNormals(Mat4& transform, float xNorm, float yNorm, float zNorm);
-	void FindFloor(Vec3f* marioPos, PyramidUpdateMem::Sm64Surface* surfaces, int surfaceCount, int64_t* floorId);
+	void CreateTransformFromNormals(
+		Mat4& transform, float xNorm, float yNorm, float zNorm);
+	void FindFloor(
+		Vec3f* marioPos, PyramidUpdateMem::Sm64Surface* surfaces,
+		int surfaceCount, int64_t* floorId);
 };
 
 #endif

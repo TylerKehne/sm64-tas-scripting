@@ -1,24 +1,24 @@
 #pragma once
 #ifndef RESOURCE_H
-#error "Resource.t.hpp should only be included by Resource.hpp"
+	#error "Resource.t.hpp should only be included by Resource.hpp"
 #else
 
-#include <chrono>
+	#include <chrono>
 
-#ifdef _MSC_VER
-#include <intrin.h>
-#else
-// Provides __rdtsc outside MSVC
-#include <x86intrin.h>
-#endif
+	#ifdef _MSC_VER
+		#include <intrin.h>
+	#else
+		// Provides __rdtsc outside MSVC
+		#include <x86intrin.h>
+	#endif
 
-#if 1
+	#if 1
 static inline uint64_t get_time()
 {
 	return __rdtsc();
 }
-#else
-#include <sys/time.h>
+	#else
+		#include <sys/time.h>
 static inline uint64_t get_time()
 {
 	struct timeval st
@@ -27,7 +27,7 @@ static inline uint64_t get_time()
 	gettimeofday(&st, nullptr);
 	return st.tv_sec * 1000000 + st.tv_usec;
 }
-#endif
+	#endif
 
 template <class TState>
 bool SlotManager<TState>::isValid(int64_t slotId)
@@ -40,24 +40,27 @@ int64_t SlotManager<TState>::CreateSlot()
 {
 	while (true)
 	{
-		int64_t additionalMem = slotsById.empty() ? 0 : _currentSaveMem / slotsById.size();
+		int64_t additionalMem =
+			slotsById.empty() ? 0 : _currentSaveMem / slotsById.size();
 		if (_currentSaveMem + additionalMem <= _saveMemLimit)
 		{
-			//NOTE: IDs/Order will not overflow on realistic timescales
+			// NOTE: IDs/Order will not overflow on realistic timescales
 			int64_t slotId = nextSlotId++;
 			if (nextSlotId == 1)
 				throw std::runtime_error("Max slot id exceeded.");
 			slotsById[slotId] = TState();
 
-			//NOTE: Order will not overflow on realistic timescales
-			int64_t newSlotOrder = slotIdsByLastAccess.size() == 0 ? 0 : std::prev(slotIdsByLastAccess.end())->first + 1;
+			// NOTE: Order will not overflow on realistic timescales
+			int64_t newSlotOrder = slotIdsByLastAccess.size() == 0 ?
+				0 :
+				std::prev(slotIdsByLastAccess.end())->first + 1;
 			if (slotIdsByLastAccess.size() != 0 && newSlotOrder == 0)
 				throw std::runtime_error("Max slot touches exceeded.");
 
 			slotIdsByLastAccess[newSlotOrder] = slotId;
-			slotLastAccessOrderById[slotId] = newSlotOrder;
+			slotLastAccessOrderById[slotId]	  = newSlotOrder;
 
-			//Save memory into slot
+			// Save memory into slot
 			_resource->save(slotsById[slotId]);
 			_currentSaveMem += _resource->getStateSize(slotsById[slotId]);
 
@@ -65,7 +68,8 @@ int64_t SlotManager<TState>::CreateSlot()
 		}
 
 		if (slotsById.size() == 0)
-			throw std::runtime_error("Not enough resource slot memory allocated");
+			throw std::runtime_error(
+				"Not enough resource slot memory allocated");
 
 		// If save memory is full, remove the earliest save and try again
 		EraseOldestSlot();
@@ -92,22 +96,26 @@ void SlotManager<TState>::LoadSlot(int64_t slotId)
 	int64_t slotOrder = slotLastAccessOrderById[slotId];
 	slotIdsByLastAccess.erase(slotOrder);
 
-	//NOTE: Order will not overflow on realistic timescales
-	int64_t newSlotOrder = slotIdsByLastAccess.size() == 0 ? 0 : std::prev(slotIdsByLastAccess.end())->first + 1;
+	// NOTE: Order will not overflow on realistic timescales
+	int64_t newSlotOrder = slotIdsByLastAccess.size() == 0 ?
+		0 :
+		std::prev(slotIdsByLastAccess.end())->first + 1;
 	if (slotIdsByLastAccess.size() != 0 && newSlotOrder == 0)
 		throw std::runtime_error("Max slot touches exceeded.");
 
 	slotIdsByLastAccess[newSlotOrder] = slotId;
-	slotLastAccessOrderById[slotId] = newSlotOrder;
+	slotLastAccessOrderById[slotId]	  = newSlotOrder;
 
-	//Load slot memory
+	// Load slot memory
 	_resource->load(slotsById[slotId]);
 }
 
 template <class TState>
 void SlotManager<TState>::EraseOldestSlot()
 {
-	int64_t slotId = slotIdsByLastAccess.begin() == slotIdsByLastAccess.end() ? -1 : slotIdsByLastAccess.begin()->second;
+	int64_t slotId = slotIdsByLastAccess.begin() == slotIdsByLastAccess.end() ?
+		-1 :
+		slotIdsByLastAccess.begin()->second;
 	if (slotId == -1)
 		return;
 
@@ -117,7 +125,7 @@ void SlotManager<TState>::EraseOldestSlot()
 template <class TState>
 int64_t Resource<TState>::SaveState()
 {
-	auto start = get_time();
+	auto start	   = get_time();
 	int64_t slotId = slotManager.CreateSlot();
 	_totalSaveStateTime += get_time() - start;
 

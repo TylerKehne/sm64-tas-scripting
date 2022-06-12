@@ -1,5 +1,6 @@
-#include <sm64/Surface.hpp>
 #include <cmath>
+#include <sm64/Surface.hpp>
+
 
 void find_floor(
 	Vec3f* marioPos, struct Surface* surfaces, int surfaceCount,
@@ -29,8 +30,9 @@ void find_floor(
 		z2 = surf->vertex2[2];
 
 		// Check that the point is within the triangle bounds.
-		if (
-			(z1 - (*marioPos)[2]) * (x2 - x1) - (x1 - (*marioPos)[0]) * (z2 - z1) < 0)
+		if ((z1 - (*marioPos)[2]) * (x2 - x1) -
+				(x1 - (*marioPos)[0]) * (z2 - z1) <
+			0)
 		{
 			continue;
 		}
@@ -39,13 +41,15 @@ void find_floor(
 		x3 = surf->vertex3[0];
 		z3 = surf->vertex3[2];
 
-		if (
-			(z2 - (*marioPos)[2]) * (x3 - x2) - (x2 - (*marioPos)[0]) * (z3 - z2) < 0)
+		if ((z2 - (*marioPos)[2]) * (x3 - x2) -
+				(x2 - (*marioPos)[0]) * (z3 - z2) <
+			0)
 		{
 			continue;
 		}
-		if (
-			(z3 - (*marioPos)[2]) * (x1 - x3) - (x3 - (*marioPos)[0]) * (z1 - z3) < 0)
+		if ((z3 - (*marioPos)[2]) * (x1 - x3) -
+				(x3 - (*marioPos)[0]) * (z1 - z3) <
+			0)
 		{
 			continue;
 		}
@@ -209,7 +213,7 @@ void transform_surfaces(
 
 		surfaces->originOffset =
 			-(nx * surfaces->vertex1[0] + ny * surfaces->vertex1[1] +
-				nz * surfaces->vertex1[2]);
+			  nz * surfaces->vertex1[2]);
 
 		surfaces->lowerY = minY - 5;
 		surfaces->upperY = maxY + 5;
@@ -432,7 +436,7 @@ int get_surfaces(struct Object* obj, struct Surface** surfaces)
 	int surfaceCount = count_surfaces(collisionData);
 
 	*surfaces = (struct Surface*) malloc(surfaceCount * sizeof(Surface));
-	s					= *surfaces;
+	s		  = *surfaces;
 
 	while (*collisionData != TERRAIN_LOAD_CONTINUE)
 	{

@@ -3,7 +3,7 @@
 #include <sm64/UltraTypes.hpp>
 
 typedef f32 Vec2f[2];
-typedef f32 Vec3f[3];	 // X, Y, Z, where Y is up
+typedef f32 Vec3f[3];  // X, Y, Z, where Y is up
 typedef s16 Vec3s[3];
 typedef s32 Vec3i[3];
 typedef f32 Vec4f[4];
@@ -31,12 +31,11 @@ struct Animation
 	/*0x0A*/ s16 unusedBoneCount;
 	/*0x0C*/ const s16* values;
 	/*0x10*/ const u16* index;
-	/*0x14*/ u32 length;	// only used with Mario animations to determine how
-												// much to load. 0 otherwise.
+	/*0x14*/ u32 length;  // only used with Mario animations to determine how
+						  // much to load. 0 otherwise.
 };
 
-	#define ANIMINDEX_NUMPARTS(animindex) \
-		(sizeof(animindex) / sizeof(u16) / 6 - 1)
+#define ANIMINDEX_NUMPARTS(animindex) (sizeof(animindex) / sizeof(u16) / 6 - 1)
 
 struct GraphNode
 {
@@ -173,14 +172,14 @@ struct Surface
 struct MarioBodyState
 {
 	/*0x00*/ u32 action;
-	/*0x04*/ s8 capState;	 /// see MarioCapGSCId
+	/*0x04*/ s8 capState;  /// see MarioCapGSCId
 	/*0x05*/ s8 eyeState;
 	/*0x06*/ s8 handState;
-	/*0x07*/ s8 wingFlutter;	/// whether Mario's wing cap wings are fluttering
+	/*0x07*/ s8 wingFlutter;  /// whether Mario's wing cap wings are fluttering
 	/*0x08*/ s16 modelState;
 	/*0x0A*/ s8 grabPos;
 	/*0x0B*/ u8 punchState;	 /// 2 bits for type of punch, 6 bits for punch
-													 /// animation timer
+							 /// animation timer
 	/*0x0C*/ Vec3s torsoAngle;
 	/*0x12*/ Vec3s headAngle;
 	/*0x18*/ Vec3f heldObjLastPosition;	 /// also known as HOLP
@@ -257,7 +256,7 @@ struct MarioState
 	/*0xA4*/ u32 collidedObjInteractTypes;
 	/*0xA8*/ s16 numCoins;
 	/*0xAA*/ s16 numStars;
-	/*0xAC*/ s8 numKeys;	// Unused key mechanic
+	/*0xAC*/ s8 numKeys;  // Unused key mechanic
 	/*0xAD*/ s8 numLives;
 	/*0xAE*/ s16 health;
 	/*0xB0*/ s16 unkB0;

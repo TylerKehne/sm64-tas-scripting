@@ -1,10 +1,10 @@
 #include <tasfw/scripts/General.hpp>
 
-#include <tasfw/Script.hpp>
-#include <sm64/Sm64.hpp>
-#include <sm64/Types.hpp>
 #include <sm64/Pyramid.hpp>
+#include <sm64/Sm64.hpp>
 #include <sm64/Surface.hpp>
+#include <sm64/Types.hpp>
+#include <tasfw/Script.hpp>
 
 bool GetMinimumDownhillWalkingAngle::validation()
 {
@@ -20,7 +20,8 @@ bool GetMinimumDownhillWalkingAngle::validation()
 		return false;
 
 	const BehaviorScript* pyramidBehavior =
-		(const BehaviorScript*) (resource->addr("bhvBitfsTiltingInvertedPyramid"));
+		(const BehaviorScript*) (resource->addr(
+			"bhvBitfsTiltingInvertedPyramid"));
 	return floorObject->behavior == pyramidBehavior;
 }
 
@@ -58,13 +59,13 @@ bool GetMinimumDownhillWalkingAngle::execution()
 			return false;
 	*/
 
-	Object* marioObj				= marioState->marioObj;
+	Object* marioObj		= marioState->marioObj;
 	Object* pyramidPlatform = marioState->floor->object;
 
 	short floorAngle = 0;
 
 	if (!simulate_platform_tilt(
-				marioObj, pyramidPlatform, &floorAngle, &CustomStatus.isSlope))
+			marioObj, pyramidPlatform, &floorAngle, &CustomStatus.isSlope))
 		return false;
 
 	// m->floorAngle - m->faceAngle[1] >= -0x3FFF && m->floorAngle -
@@ -77,22 +78,24 @@ bool GetMinimumDownhillWalkingAngle::execution()
 
 	if (lowerAngleDiff <= upperAngleDiff)
 	{
-		CustomStatus.angleFacing		= lowerAngle;
-		CustomStatus.angleNotFacing = upperAngle;
-		CustomStatus.downhillRotation =
-			lowerAngleDiff < upperAngleDiff ? Rotation::CLOCKWISE : Rotation::NONE;
+		CustomStatus.angleFacing	  = lowerAngle;
+		CustomStatus.angleNotFacing	  = upperAngle;
+		CustomStatus.downhillRotation = lowerAngleDiff < upperAngleDiff ?
+			Rotation::CLOCKWISE :
+			Rotation::NONE;
 	}
 	else
 	{
-		CustomStatus.angleFacing			= upperAngle;
-		CustomStatus.angleNotFacing		= lowerAngle;
+		CustomStatus.angleFacing	  = upperAngle;
+		CustomStatus.angleNotFacing	  = lowerAngle;
 		CustomStatus.downhillRotation = Rotation::COUNTERCLOCKWISE;
 	}
 
 	// Get optimal angle for switching from turnaround to finish turnaround
 	int16_t facingDYaw = _faceAngle - CustomStatus.angleFacing;
 	if (abs(facingDYaw) <= 0x471C)
-		CustomStatus.angleFacingAnalogBack = _faceAngle + 0x471D * sign(facingDYaw);
+		CustomStatus.angleFacingAnalogBack =
+			_faceAngle + 0x471D * sign(facingDYaw);
 	else
 		CustomStatus.angleFacingAnalogBack = CustomStatus.angleFacing;
 

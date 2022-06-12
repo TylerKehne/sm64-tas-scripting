@@ -1,12 +1,12 @@
-#include <tasfw/Inputs.hpp>
 #include <sys/types.h>
 #include <ios>
 #include <system_error>
 #include <sm64/Trig.hpp>
+#include <tasfw/Inputs.hpp>
 
 #include <cmath>
-#include <iostream>
 #include <fstream>
+#include <iostream>
 #include <limits>
 #include <unordered_map>
 
@@ -18,7 +18,6 @@ static uint16_t byteswap(uint16_t x)
 {
 	return (x >> 8U) | (x << 8U);
 }
-
 
 std::pair<
 	std::unordered_map<int16_t, std::map<float, std::pair<int8_t, int8_t>>>,
@@ -49,7 +48,8 @@ PopulateInputMappings()
 				adjustedStickY = stickY - 6;
 
 			float stickMag = sqrtf(
-				adjustedStickX * adjustedStickX + adjustedStickY * adjustedStickY);
+				adjustedStickX * adjustedStickX +
+				adjustedStickY * adjustedStickY);
 
 			if (stickMag > 64)
 			{
@@ -58,8 +58,9 @@ PopulateInputMappings()
 				stickMag = 64;
 			}
 
-			float intendedMag = ((stickMag / 64.0f) * (stickMag / 64.0f)) * 64.0f;
-			intendedMag				= intendedMag / 2.0f;
+			float intendedMag =
+				((stickMag / 64.0f) * (stickMag / 64.0f)) * 64.0f;
+			intendedMag = intendedMag / 2.0f;
 
 			int16_t baseIntendedYaw = 0;
 			if (intendedMag > 0.0f)
@@ -70,7 +71,8 @@ PopulateInputMappings()
 						std::map<float, std::pair<int8_t, int8_t>> {
 							{intendedMag, {stickX, stickY}}};
 				else if (!yawMagToInputs[baseIntendedYaw].contains(intendedMag))
-					yawMagToInputs[baseIntendedYaw][intendedMag] = {stickX, stickY};
+					yawMagToInputs[baseIntendedYaw][intendedMag] = {
+						stickX, stickY};
 			}
 
 			inputsToYawMag[stickX][stickY] = {baseIntendedYaw, intendedMag};
@@ -99,11 +101,11 @@ std::pair<int8_t, int8_t> Inputs::GetClosestInputByYawHau(
 	float closestMagDistance = std::numeric_limits<float>::infinity();
 
 	bool foundMatchingYawHau = false;
-	int hauOffset						 = 0;
+	int hauOffset			 = 0;
 	while (true)
 	{
 		for (int16_t yaw = int16_t(minBaseIntendedYaw + 16 * hauOffset);
-				 yaw != int16_t(maxBaseIntendedYaw + 16 * hauOffset); yaw++)
+			 yaw != int16_t(maxBaseIntendedYaw + 16 * hauOffset); yaw++)
 		{
 			if (yawMagToInputs.contains(yaw))
 			{
@@ -112,7 +114,9 @@ std::pair<int8_t, int8_t> Inputs::GetClosestInputByYawHau(
 					return yawMagToInputs.at(yaw).at(intendedMag);
 
 				auto upper = yawMagToInputs.at(yaw).upper_bound(intendedMag);
-				auto lower = upper == yawMagToInputs.at(yaw).begin() ? yawMagToInputs.at(yaw).end() : std::prev(upper);
+				auto lower = upper == yawMagToInputs.at(yaw).begin() ?
+					yawMagToInputs.at(yaw).end() :
+					std::prev(upper);
 				float magDistance = std::numeric_limits<float>::infinity();
 				if (upper == yawMagToInputs.at(yaw).end())
 				{
@@ -120,7 +124,7 @@ std::pair<int8_t, int8_t> Inputs::GetClosestInputByYawHau(
 					if (magDistance < closestMagDistance)
 					{
 						closestMagDistance = magDistance;
-						closestInput = (*lower).second;
+						closestInput	   = (*lower).second;
 					}
 				}
 				else if (lower == yawMagToInputs.at(yaw).end())
@@ -129,7 +133,7 @@ std::pair<int8_t, int8_t> Inputs::GetClosestInputByYawHau(
 					if (magDistance < closestMagDistance)
 					{
 						closestMagDistance = magDistance;
-						closestInput = (*upper).second;
+						closestInput	   = (*upper).second;
 					}
 				}
 				else
@@ -142,7 +146,7 @@ std::pair<int8_t, int8_t> Inputs::GetClosestInputByYawHau(
 						if (lowerMagDistance < closestMagDistance)
 						{
 							closestMagDistance = lowerMagDistance;
-							closestInput = (*lower).second;
+							closestInput	   = (*lower).second;
 						}
 					}
 					else
@@ -150,7 +154,7 @@ std::pair<int8_t, int8_t> Inputs::GetClosestInputByYawHau(
 						if (upperMagDistance < closestMagDistance)
 						{
 							closestMagDistance = upperMagDistance;
-							closestInput = (*upper).second;
+							closestInput	   = (*upper).second;
 						}
 					}
 				}
@@ -205,7 +209,7 @@ std::pair<int8_t, int8_t> Inputs::GetClosestInputByYawExact(
 	float closestMagDistance = std::numeric_limits<float>::infinity();
 
 	bool foundMatchingYaw = false;
-	int offset						= 0;
+	int offset			  = 0;
 	while (true)
 	{
 		int16_t yaw = baseIntendedYaw + offset;
@@ -215,8 +219,10 @@ std::pair<int8_t, int8_t> Inputs::GetClosestInputByYawExact(
 			if (yawMagToInputs.at(yaw).contains(intendedMag))
 				return yawMagToInputs.at(yaw).at(intendedMag);
 
-			auto upper = yawMagToInputs.at(yaw).upper_bound(intendedMag);
-			auto lower = upper == yawMagToInputs.at(yaw).begin() ? yawMagToInputs.at(yaw).end() : std::prev(upper);
+			auto upper		  = yawMagToInputs.at(yaw).upper_bound(intendedMag);
+			auto lower		  = upper == yawMagToInputs.at(yaw).begin() ?
+					   yawMagToInputs.at(yaw).end() :
+					   std::prev(upper);
 			float magDistance = std::numeric_limits<float>::infinity();
 			if (upper == yawMagToInputs.at(yaw).end())
 			{
@@ -224,7 +230,7 @@ std::pair<int8_t, int8_t> Inputs::GetClosestInputByYawExact(
 				if (magDistance < closestMagDistance)
 				{
 					closestMagDistance = magDistance;
-					closestInput = (*lower).second;
+					closestInput	   = (*lower).second;
 				}
 			}
 			else if (lower == yawMagToInputs.at(yaw).end())
@@ -233,7 +239,7 @@ std::pair<int8_t, int8_t> Inputs::GetClosestInputByYawExact(
 				if (magDistance < closestMagDistance)
 				{
 					closestMagDistance = magDistance;
-					closestInput = (*upper).second;
+					closestInput	   = (*upper).second;
 				}
 			}
 			else
@@ -246,7 +252,7 @@ std::pair<int8_t, int8_t> Inputs::GetClosestInputByYawExact(
 					if (lowerMagDistance < closestMagDistance)
 					{
 						closestMagDistance = lowerMagDistance;
-						closestInput = (*lower).second;
+						closestInput	   = (*lower).second;
 					}
 				}
 				else
@@ -254,7 +260,7 @@ std::pair<int8_t, int8_t> Inputs::GetClosestInputByYawExact(
 					if (upperMagDistance < closestMagDistance)
 					{
 						closestMagDistance = upperMagDistance;
-						closestInput = (*upper).second;
+						closestInput	   = (*upper).second;
 					}
 				}
 			}
@@ -298,7 +304,7 @@ std::pair<int16_t, float> Inputs::GetIntendedYawMagFromInput(
 	int8_t stickX, int8_t stickY, int16_t cameraYaw)
 {
 	int16_t baseIntendedYaw = inputsToYawMag.at(stickX).at(stickY).first;
-	float intendedMag = inputsToYawMag.at(stickX).at(stickY).second;
+	float intendedMag		= inputsToYawMag.at(stickX).at(stickY).second;
 
 	return {baseIntendedYaw + cameraYaw, intendedMag};
 }
@@ -338,16 +344,20 @@ int M64::load()
 			uint16_t bigEndianButtons;
 			if (f.peek() == std::ifstream::traits_type::eof())
 				break;
-			f.read(reinterpret_cast<char*>(&bigEndianButtons), sizeof(uint16_t));
-			if (f.eof()) break;
+			f.read(
+				reinterpret_cast<char*>(&bigEndianButtons), sizeof(uint16_t));
+			if (f.eof())
+				break;
 
 			buttons = byteswap(bigEndianButtons);
 
 			f.read(reinterpret_cast<char*>(&stick_x), sizeof(uint8_t));
-			if (f.eof()) break;
+			if (f.eof())
+				break;
 
 			f.read(reinterpret_cast<char*>(&stick_y), sizeof(uint8_t));
-			if (f.eof()) break;
+			if (f.eof())
+				break;
 
 			frames[index] = Inputs(buttons, stick_x, stick_y);
 			index++;
@@ -361,8 +371,6 @@ int M64::load()
 
 	return 1;
 }
-
-
 
 int M64::save(long initFrame)
 {
@@ -393,17 +401,18 @@ int M64::save(long initFrame)
 		for (int i = 0; i <= lastFrame; i++)
 		{
 			uint16_t bigEndianButtons = 0;
-			int8_t stickX = 0;
-			int8_t stickY = 0;
+			int8_t stickX			  = 0;
+			int8_t stickY			  = 0;
 
 			if (frames.contains(i))
 			{
 				bigEndianButtons = byteswap(frames[i].buttons);
-				stickX = frames[i].stick_x;
-				stickY = frames[i].stick_y;
+				stickX			 = frames[i].stick_x;
+				stickY			 = frames[i].stick_y;
 			}
 
-			f.write(reinterpret_cast<char*>(&bigEndianButtons), sizeof(uint16_t));
+			f.write(
+				reinterpret_cast<char*>(&bigEndianButtons), sizeof(uint16_t));
 			f.write(reinterpret_cast<char*>(&stickX), sizeof(uint8_t));
 			f.write(reinterpret_cast<char*>(&stickY), sizeof(uint8_t));
 		}
@@ -416,4 +425,3 @@ int M64::save(long initFrame)
 
 	return 1;
 }
- 

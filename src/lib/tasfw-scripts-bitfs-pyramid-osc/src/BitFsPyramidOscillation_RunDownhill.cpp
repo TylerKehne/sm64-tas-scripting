@@ -2,11 +2,11 @@
 #include <tasfw/scripts/General.hpp>
 
 #include <sm64/Camera.hpp>
-#include <sm64/Sm64.hpp>
-#include <sm64/Types.hpp>
-#include <sm64/Trig.hpp>
-#include <tasfw/Script.hpp>
 #include <sm64/ObjectFields.hpp>
+#include <sm64/Sm64.hpp>
+#include <sm64/Trig.hpp>
+#include <sm64/Types.hpp>
+#include <tasfw/Script.hpp>
 
 #include <cmath>
 
@@ -24,7 +24,8 @@ bool BitFsPyramidOscillation_RunDownhill::validation()
 		return false;
 
 	const BehaviorScript* pyramidBehavior =
-		(const BehaviorScript*) (resource->addr("bhvBitfsTiltingInvertedPyramid"));
+		(const BehaviorScript*) (resource->addr(
+			"bhvBitfsTiltingInvertedPyramid"));
 	if (floorObject->behavior != pyramidBehavior)
 		return false;
 
@@ -40,7 +41,8 @@ bool BitFsPyramidOscillation_RunDownhill::validation()
 bool BitFsPyramidOscillation_RunDownhill::execution()
 {
 	const BehaviorScript* pyramidBehavior =
-		(const BehaviorScript*) (resource->addr("bhvBitfsTiltingInvertedPyramid"));
+		(const BehaviorScript*) (resource->addr(
+			"bhvBitfsTiltingInvertedPyramid"));
 	MarioState* marioState = (MarioState*) (resource->addr("gMarioStates"));
 	Camera* camera		   = *(Camera**) (resource->addr("gCamera"));
 	Object* pyramid		   = marioState->floor->object;
@@ -60,26 +62,36 @@ bool BitFsPyramidOscillation_RunDownhill::execution()
 		// orientation or the other, so rely on caller to specify a close-enough
 		// target orientation
 
-		auto m64 = M64();
-		auto save = ImportedSave(PyramidUpdateMem(*resource, pyramid), GetCurrentFrame());
-		auto status = BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle::MainFromSave<BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>
-			(m64, save, _oscillationParams.roughTargetAngle, marioState->faceAngle[1]);
-		//auto status = Test<GetMinimumDownhillWalkingAngle>(_oscillationParams.roughTargetAngle, marioState->faceAngle[1]);
+		auto m64  = M64();
+		auto save = ImportedSave(
+			PyramidUpdateMem(*resource, pyramid), GetCurrentFrame());
+		auto status = BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle::
+			MainFromSave<
+				BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>(
+				m64, save, _oscillationParams.roughTargetAngle,
+				marioState->faceAngle[1]);
+		// auto status =
+		// Test<GetMinimumDownhillWalkingAngle>(_oscillationParams.roughTargetAngle,
+		// marioState->faceAngle[1]);
 
 		// Terminate if unable to locate a downhill angle
 		if (!status.executed)
 			return true;
 
 		// Attempt to run downhill with minimum angle
-		int16_t intendedYaw = marioState->action == ACT_TURNING_AROUND ? status.angleFacingAnalogBack : status.angleFacing;
-		auto stick = Inputs::GetClosestInputByYawExact(intendedYaw, 32, camera->yaw, status.downhillRotation);
+		int16_t intendedYaw = marioState->action == ACT_TURNING_AROUND ?
+			status.angleFacingAnalogBack :
+			status.angleFacing;
+		auto stick			= Inputs::GetClosestInputByYawExact(
+					 intendedYaw, 32, camera->yaw, status.downhillRotation);
 		AdvanceFrameWrite(Inputs(0, stick.first, stick.second));
 
 		// Terminate and roll back frame if Mario is no longer running on the
 		// platform
-		if ((marioState->action != ACT_WALKING && marioState->action != ACT_FINISH_TURNING_AROUND)
-			|| marioState->marioObj->platform == NULL
-			|| marioState->marioObj->platform->behavior != pyramidBehavior)
+		if ((marioState->action != ACT_WALKING &&
+			 marioState->action != ACT_FINISH_TURNING_AROUND) ||
+			marioState->marioObj->platform == NULL ||
+			marioState->marioObj->platform->behavior != pyramidBehavior)
 		{
 			Rollback(GetCurrentFrame() - 1);
 			return true;
@@ -134,15 +146,23 @@ bool BitFsPyramidOscillation_RunDownhill::execution()
 			normalDiff = fabs(pyramid->oTiltingPyramidNormalZ - prevNormalZ);
 		}
 
-		if (CustomStatus.framePassedEquilibriumPoint == -1 && tiltDirection == targetTiltDirection && normalDiff >= 0.0099999f)
+		if (CustomStatus.framePassedEquilibriumPoint == -1 &&
+			tiltDirection == targetTiltDirection && normalDiff >= 0.0099999f)
 		{
 			CustomStatus.passedEquilibriumSpeed		 = marioState->forwardVel;
 			CustomStatus.framePassedEquilibriumPoint = GetCurrentFrame() - 1;
-			CustomStatus.finalXzSum =
-				pyramid->oTiltingPyramidNormalX * (_oscillationParams.quadrant < 3 ? 1 : -1) +
-				pyramid->oTiltingPyramidNormalZ * (_oscillationParams.quadrant == 1 || _oscillationParams.quadrant == 4 ? 1 : -1);
+			CustomStatus.finalXzSum = pyramid->oTiltingPyramidNormalX *
+					(_oscillationParams.quadrant < 3 ? 1 : -1) +
+				pyramid->oTiltingPyramidNormalZ *
+					(_oscillationParams.quadrant == 1 ||
+							 _oscillationParams.quadrant == 4 ?
+						 1 :
+						 -1);
 
-			if (CustomStatus.finalXzSum < _oscillationParams.targetXzSum - 0.00001 && CustomStatus.finalXzSum < _oscillationParams.initialXzSum + 0.01f)
+			if (CustomStatus.finalXzSum <
+					_oscillationParams.targetXzSum - 0.00001 &&
+				CustomStatus.finalXzSum <
+					_oscillationParams.initialXzSum + 0.01f)
 			{
 				CustomStatus.tooUphill = true;
 				return true;

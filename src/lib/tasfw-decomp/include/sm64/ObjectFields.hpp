@@ -33,7 +33,8 @@
 			#define OBJECT_FIELD_S32P(index) rawData.asS32P[index]
 			#define OBJECT_FIELD_ANIMS(index) rawData.asAnims[index]
 			#define OBJECT_FIELD_WAYPOINT(index) rawData.asWaypoint[index]
-			#define OBJECT_FIELD_CHAIN_SEGMENT(index) rawData.asChainSegment[index]
+			#define OBJECT_FIELD_CHAIN_SEGMENT(index) \
+				rawData.asChainSegment[index]
 			#define OBJECT_FIELD_OBJ(index) rawData.asObject[index]
 			#define OBJECT_FIELD_SURFACE(index) rawData.asSurface[index]
 			#define OBJECT_FIELD_VPTR(index) rawData.asVoidPtr[index]
@@ -43,7 +44,8 @@
 			#define OBJECT_FIELD_S32P(index) ptrData.asS32P[index]
 			#define OBJECT_FIELD_ANIMS(index) ptrData.asAnims[index]
 			#define OBJECT_FIELD_WAYPOINT(index) ptrData.asWaypoint[index]
-			#define OBJECT_FIELD_CHAIN_SEGMENT(index) ptrData.asChainSegment[index]
+			#define OBJECT_FIELD_CHAIN_SEGMENT(index) \
+				ptrData.asChainSegment[index]
 			#define OBJECT_FIELD_OBJ(index) ptrData.asObject[index]
 			#define OBJECT_FIELD_SURFACE(index) ptrData.asSurface[index]
 			#define OBJECT_FIELD_VPTR(index) ptrData.asVoidPtr[index]
@@ -180,7 +182,8 @@
 	/* Activated Back and Forth Platform */
 	#define /*0x0F4*/ oActivatedBackAndForthPlatformMaxOffset \
 		OBJECT_FIELD_F32(0x1B)
-	#define /*0x0F8*/ oActivatedBackAndForthPlatformOffset OBJECT_FIELD_F32(0x1C)
+	#define /*0x0F8*/ oActivatedBackAndForthPlatformOffset \
+		OBJECT_FIELD_F32(0x1C)
 	#define /*0x0FC*/ oActivatedBackAndForthPlatformVel OBJECT_FIELD_F32(0x1D)
 	#define /*0x100*/ oActivatedBackAndForthPlatformCountdown \
 		OBJECT_FIELD_S32(0x1E)
@@ -432,7 +435,8 @@
 
 	/* Breakable Box Small (Small Cork Box) */
 	#define /*0x0F4*/ oBreakableBoxSmallReleased OBJECT_FIELD_S32(0x1B)
-	#define /*0x0FC*/ oBreakableBoxSmallFramesSinceReleased OBJECT_FIELD_S32(0x1D)
+	#define /*0x0FC*/ oBreakableBoxSmallFramesSinceReleased \
+		OBJECT_FIELD_S32(0x1D)
 
 	/* Jumping Box (Crazy Box) */
 	#define /*0x0F4*/ oJumpingBoxUnkF4 OBJECT_FIELD_S32(0x1B)
@@ -443,7 +447,8 @@
 	#define /*0x0F8*/ oRRCruiserWingUnkF8 OBJECT_FIELD_S32(0x1C)
 
 	/* Donut Platform Spawner */
-	#define /*0x0F4*/ oDonutPlatformSpawnerSpawnedPlatforms OBJECT_FIELD_S32(0x1B)
+	#define /*0x0F4*/ oDonutPlatformSpawnerSpawnedPlatforms \
+		OBJECT_FIELD_S32(0x1B)
 
 	/* Door */
 	#define /*0x088*/ oDoorUnk88 OBJECT_FIELD_S32(0x00)
@@ -470,9 +475,9 @@
 	#define /*0x100*/ oElevatorUnk100 OBJECT_FIELD_S32(0x1E)
 
 	/* Exclamation Box */
-	#define /*0x0F4*/ oExclamationBoxUnkF4 OBJECT_FIELD_F32(0x1B)	 // scale?
-	#define /*0x0F8*/ oExclamationBoxUnkF8 OBJECT_FIELD_F32(0x1C)	 // scale?
-	#define /*0x0FC*/ oExclamationBoxUnkFC OBJECT_FIELD_S32(0x1D)	 // angle?
+	#define /*0x0F4*/ oExclamationBoxUnkF4 OBJECT_FIELD_F32(0x1B)  // scale?
+	#define /*0x0F8*/ oExclamationBoxUnkF8 OBJECT_FIELD_F32(0x1C)  // scale?
+	#define /*0x0FC*/ oExclamationBoxUnkFC OBJECT_FIELD_S32(0x1D)  // angle?
 
 	/* Eyerok Boss */
 	#define /*0x0F8*/ oEyerokBossNumHands OBJECT_FIELD_S32(0x1C)
@@ -636,7 +641,8 @@
 	#define /*0x110*/ oKoopaBlinkTimer OBJECT_FIELD_S32(0x22)
 	#define /*0x1AC*/ oKoopaCountdown OBJECT_FIELD_S16(0x49, 0)
 	#define /*0x1AE*/ oKoopaTheQuickRaceIndex OBJECT_FIELD_S16(0x49, 1)
-	#define /*0x1B0*/ oKoopaTheQuickInitTextboxCooldown OBJECT_FIELD_S16(0x4A, 0)
+	#define /*0x1B0*/ oKoopaTheQuickInitTextboxCooldown \
+		OBJECT_FIELD_S16(0x4A, 0)
 	// 0x1D-0x21 for koopa the quick reserved for pathing
 
 	/* Koopa Race Endpoint */
@@ -696,8 +702,10 @@
 	#define /*0x0FC*/ oMerryGoRoundMarioIsOutside OBJECT_FIELD_S32(0x1D)
 
 	/* Merry-Go-Round Boo Manager */
-	#define /*0x088*/ oMerryGoRoundBooManagerNumBoosKilled OBJECT_FIELD_S32(0x00)
-	#define /*0x0FC*/ oMerryGoRoundBooManagerNumBoosSpawned OBJECT_FIELD_S32(0x1D)
+	#define /*0x088*/ oMerryGoRoundBooManagerNumBoosKilled \
+		OBJECT_FIELD_S32(0x00)
+	#define /*0x0FC*/ oMerryGoRoundBooManagerNumBoosSpawned \
+		OBJECT_FIELD_S32(0x1D)
 
 	/* Mips */
 	#define /*0x0F4*/ oMipsStarStatus OBJECT_FIELD_S32(0x1B)
@@ -752,7 +760,8 @@
 	/* Racing Penguin */
 	#define /*0x0F4*/ oRacingPenguinInitTextCooldown OBJECT_FIELD_S32(0x1B)
 	// 0x1D-0x21 reserved for pathing
-	#define /*0x110*/ oRacingPenguinWeightedNewTargetSpeed OBJECT_FIELD_F32(0x22)
+	#define /*0x110*/ oRacingPenguinWeightedNewTargetSpeed \
+		OBJECT_FIELD_F32(0x22)
 	#define /*0x1AC*/ oRacingPenguinFinalTextbox OBJECT_FIELD_S16(0x49, 0)
 	#define /*0x1AE*/ oRacingPenguinMarioWon OBJECT_FIELD_S16(0x49, +1)
 	#define /*0x1B0*/ oRacingPenguinReachedBottom OBJECT_FIELD_S16(0x4A, 0)
@@ -760,7 +769,7 @@
 
 	/* Small Penguin */
 	#define /*0x088*/ oSmallPenguinUnk88 OBJECT_FIELD_S32(0x00)
-	#define /*0x100*/ oSmallPenguinUnk100 OBJECT_FIELD_S32(0x1E)	// angle?
+	#define /*0x100*/ oSmallPenguinUnk100 OBJECT_FIELD_S32(0x1E)  // angle?
 	#define /*0x104*/ oSmallPenguinUnk104 OBJECT_FIELD_F32(0x1F)
 	#define /*0x108*/ oSmallPenguinUnk108 OBJECT_FIELD_F32(0x20)
 	#define /*0x110*/ oSmallPenguinUnk110 OBJECT_FIELD_S32(0x22)
@@ -865,8 +874,8 @@
 	#define /*0x0F4*/ oSeesawPlatformPitchVel OBJECT_FIELD_F32(0x1B)
 
 	/* Ship Part 3 */
-	#define /*0x0F4*/ oShipPart3UnkF4 OBJECT_FIELD_S32(0x1B)	// angle?
-	#define /*0x0F8*/ oShipPart3UnkF8 OBJECT_FIELD_S32(0x1C)	// angle?
+	#define /*0x0F4*/ oShipPart3UnkF4 OBJECT_FIELD_S32(0x1B)  // angle?
+	#define /*0x0F8*/ oShipPart3UnkF8 OBJECT_FIELD_S32(0x1C)  // angle?
 
 	/* Sink When Stepped On */
 	#define /*0x104*/ oSinkWhenSteppedOnUnk104 OBJECT_FIELD_S32(0x1F)
@@ -957,7 +966,7 @@
 	#define /*0x108*/ oStarSelectorSize OBJECT_FIELD_F32(0x20)
 
 	/* Sushi Shark */
-	#define /*0x0F4*/ oSushiSharkUnkF4 OBJECT_FIELD_S32(0x1B)	 // angle?
+	#define /*0x0F4*/ oSushiSharkUnkF4 OBJECT_FIELD_S32(0x1B)  // angle?
 
 	/* Swing Platform */
 	#define /*0x0F4*/ oSwingPlatformAngle OBJECT_FIELD_F32(0x1B)

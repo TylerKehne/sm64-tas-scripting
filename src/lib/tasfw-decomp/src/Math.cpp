@@ -1,5 +1,5 @@
-#include <sm64/Math.hpp>
 #include <cmath>
+#include <sm64/Math.hpp>
 #include <sm64/Trig.hpp>
 
 void linear_mtxf_mul_vec3f(Mat4& m, Vec3f& dst, Vec3f& v)

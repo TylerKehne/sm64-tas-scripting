@@ -1,41 +1,47 @@
 #include "tasfw/resources/PyramidUpdate.hpp"
 #include <math.h>
-#include <sm64/Surface.hpp>
-#include <sm64/ObjectFields.hpp>
 #include <sm64/Math.hpp>
+#include <sm64/ObjectFields.hpp>
 #include <sm64/Sm64.hpp>
+#include <sm64/Surface.hpp>
 
-PyramidUpdateMem::PyramidUpdateMem(const LibSm64& resource, Object* pyramidLibSm64)
+PyramidUpdateMem::PyramidUpdateMem(
+	const LibSm64& resource, Object* pyramidLibSm64)
 {
 	frame = resource.getCurrentFrame();
 
-	//Initialize pyramid
-	pyramid.posX = pyramidLibSm64->oPosX;
-	pyramid.posY = pyramidLibSm64->oPosY;
-	pyramid.posZ = pyramidLibSm64->oPosZ;
+	// Initialize pyramid
+	pyramid.posX				  = pyramidLibSm64->oPosX;
+	pyramid.posY				  = pyramidLibSm64->oPosY;
+	pyramid.posZ				  = pyramidLibSm64->oPosZ;
 	pyramid.tiltingPyramidNormalX = pyramidLibSm64->oTiltingPyramidNormalX;
 	pyramid.tiltingPyramidNormalY = pyramidLibSm64->oTiltingPyramidNormalY;
 	pyramid.tiltingPyramidNormalZ = pyramidLibSm64->oTiltingPyramidNormalZ;
-	pyramid.tiltingPyramidMarioOnPlatform = pyramidLibSm64->oTiltingPyramidMarioOnPlatform;
-	std::copy((f32*)&pyramidLibSm64->transform, (f32*)&pyramidLibSm64->transform + 4 * 4, (f32*)&pyramid.transform);
+	pyramid.tiltingPyramidMarioOnPlatform =
+		pyramidLibSm64->oTiltingPyramidMarioOnPlatform;
+	std::copy(
+		(f32*) &pyramidLibSm64->transform,
+		(f32*) &pyramidLibSm64->transform + 4 * 4, (f32*) &pyramid.transform);
 	LoadSurfaces(pyramidLibSm64, pyramid);
 
-	//Initialize Mario object
-	Object* marioObjLibSm64 = *(Object**)(resource.addr("gMarioObject"));
-	marioObj.posX = marioObjLibSm64->oPosX;
-	marioObj.posY = marioObjLibSm64->oPosY;
-	marioObj.posZ = marioObjLibSm64->oPosZ;
+	// Initialize Mario object
+	Object* marioObjLibSm64	   = *(Object**) (resource.addr("gMarioObject"));
+	marioObj.posX			   = marioObjLibSm64->oPosX;
+	marioObj.posY			   = marioObjLibSm64->oPosY;
+	marioObj.posZ			   = marioObjLibSm64->oPosZ;
 	marioObj.platformIsPyramid = marioObjLibSm64->platform == pyramidLibSm64;
 
-	//Initialize Mario state
-	MarioState* marioStateLibSm64 = (MarioState*)(resource.addr("gMarioStates"));
-	marioState.posX = marioStateLibSm64->pos[0];
-	marioState.posY = marioStateLibSm64->pos[1];
-	marioState.posZ = marioStateLibSm64->pos[2];
+	// Initialize Mario state
+	MarioState* marioStateLibSm64 =
+		(MarioState*) (resource.addr("gMarioStates"));
+	marioState.posX	  = marioStateLibSm64->pos[0];
+	marioState.posY	  = marioStateLibSm64->pos[1];
+	marioState.posZ	  = marioStateLibSm64->pos[2];
 	marioState.action = marioStateLibSm64->action;
 }
 
-PyramidUpdateMem::Sm64Object* PyramidUpdateMem::Sm64Surface::object(PyramidUpdateMem& state)
+PyramidUpdateMem::Sm64Object* PyramidUpdateMem::Sm64Surface::object(
+	PyramidUpdateMem& state)
 {
 	if (objectIsPyramid)
 		return &state.pyramid;
@@ -43,7 +49,8 @@ PyramidUpdateMem::Sm64Object* PyramidUpdateMem::Sm64Surface::object(PyramidUpdat
 	return nullptr;
 }
 
-PyramidUpdateMem::Sm64Object* PyramidUpdateMem::Sm64Object::platform(PyramidUpdateMem& state)
+PyramidUpdateMem::Sm64Object* PyramidUpdateMem::Sm64Object::platform(
+	PyramidUpdateMem& state)
 {
 	if (platformIsPyramid)
 		return &state.pyramid;
@@ -51,13 +58,16 @@ PyramidUpdateMem::Sm64Object* PyramidUpdateMem::Sm64Object::platform(PyramidUpda
 	return nullptr;
 }
 
-PyramidUpdateMem::Sm64Surface* PyramidUpdateMem::Sm64MarioState::floor(PyramidUpdateMem& state)
+PyramidUpdateMem::Sm64Surface* PyramidUpdateMem::Sm64MarioState::floor(
+	PyramidUpdateMem& state)
 {
 	if (floorId == -1)
 		return nullptr;
 
 	if (floorId >= state.pyramid.surfaces.size())
-		throw std::runtime_error("Surface id " + std::to_string(floorId) + " larger than max id " + std::to_string(state.pyramid.surfaces.size() - 1));
+		throw std::runtime_error(
+			"Surface id " + std::to_string(floorId) + " larger than max id " +
+			std::to_string(state.pyramid.surfaces.size() - 1));
 
 	return &state.pyramid.surfaces[floorId];
 }
@@ -66,7 +76,7 @@ void PyramidUpdateMem::LoadSurfaces(Object* pyramidLibSm64, Sm64Object& pyramid)
 {
 	Sm64Surface* s;
 	short vertexData[600];
-	short* collisionData = (short*)pyramidLibSm64->collisionData;
+	short* collisionData = (short*) pyramidLibSm64->collisionData;
 	collisionData++;
 	GetVertices(&collisionData, vertexData);
 
@@ -157,7 +167,9 @@ short PyramidUpdateMem::SurfaceHasForce(short surfaceType)
 	return hasForce;
 }
 
-void PyramidUpdateMem::LoadObjectSurfaces(Sm64Object* pyramid, short** data, short* vertexData, Sm64Surface** surfaces)
+void PyramidUpdateMem::LoadObjectSurfaces(
+	Sm64Object* pyramid, short** data, short* vertexData,
+	Sm64Surface** surfaces)
 {
 	int surfaceType;
 	int i;
@@ -175,7 +187,7 @@ void PyramidUpdateMem::LoadObjectSurfaces(Sm64Object* pyramid, short** data, sho
 	for (i = 0; i < numSurfaces; i++)
 	{
 		ReadSurfaceData(vertexData, data, *surfaces);
-		(*surfaces)->type = surfaceType;
+		(*surfaces)->type			 = surfaceType;
 		(*surfaces)->objectIsPyramid = true;
 
 		if (hasForce)
@@ -191,7 +203,8 @@ void PyramidUpdateMem::LoadObjectSurfaces(Sm64Object* pyramid, short** data, sho
 	}
 }
 
-void PyramidUpdateMem::ReadSurfaceData(short* vertexData, short** vertexIndices, Sm64Surface* surface)
+void PyramidUpdateMem::ReadSurfaceData(
+	short* vertexData, short** vertexIndices, Sm64Surface* surface)
 {
 	int x1, y1, z1;
 	int x2, y2, z2;
@@ -218,9 +231,9 @@ void PyramidUpdateMem::ReadSurfaceData(short* vertexData, short** vertexIndices,
 	z3 = *(vertexData + offset3 + 2);
 
 	// (v2 - v1) x (v3 - v2)
-	nx = (y2 - y1) * (z3 - z2) - (z2 - z1) * (y3 - y2);
-	ny = (z2 - z1) * (x3 - x2) - (x2 - x1) * (z3 - z2);
-	nz = (x2 - x1) * (y3 - y2) - (y2 - y1) * (x3 - x2);
+	nx	= (y2 - y1) * (z3 - z2) - (z2 - z1) * (y3 - y2);
+	ny	= (z2 - z1) * (x3 - x2) - (x2 - x1) * (z3 - z2);
+	nz	= (x2 - x1) * (y3 - y2) - (y2 - y1) * (x3 - x2);
 	mag = sqrtf(nx * nx + ny * ny + nz * nz);
 
 	// Could have used min_3 and max_3 for this...
@@ -244,7 +257,7 @@ void PyramidUpdateMem::ReadSurfaceData(short* vertexData, short** vertexIndices,
 		maxY = y3;
 	}
 
-	mag = (f32)(1.0 / mag);
+	mag = (f32) (1.0 / mag);
 	nx *= mag;
 	ny *= mag;
 	nz *= mag;
@@ -330,7 +343,8 @@ short PyramidUpdateMem::GetFloorClass(Sm64Surface* floor, u32 action)
 		}
 
 		// Crawling allows Mario to not slide on certain steeper surfaces.
-		if (action == ACT_CRAWLING && floor && floor->normal.y > 0.5f && floorClass == SURFACE_CLASS_DEFAULT)
+		if (action == ACT_CRAWLING && floor && floor->normal.y > 0.5f &&
+			floorClass == SURFACE_CLASS_DEFAULT)
 		{
 			floorClass = SURFACE_CLASS_NOT_SLIPPERY;
 		}
@@ -341,22 +355,23 @@ short PyramidUpdateMem::GetFloorClass(Sm64Surface* floor, u32 action)
 
 PyramidUpdate::PyramidUpdate()
 {
-    slotManager._saveMemLimit = 1024 * 1024 * 1024; //1 GB
+	slotManager._saveMemLimit = 1024 * 1024 * 1024;	 // 1 GB
 }
 
 void PyramidUpdate::save(PyramidUpdateMem& state) const
 {
-    state = _state;
+	state = _state;
 }
 
 void PyramidUpdate::load(const PyramidUpdateMem& state)
 {
-    _state = state;
+	_state = state;
 }
 
 std::size_t PyramidUpdate::getStateSize(const PyramidUpdateMem& state) const
 {
-	return 2 * sizeof(PyramidUpdateMem) + state.pyramid.surfaces.capacity() + state.marioObj.surfaces.capacity();
+	return 2 * sizeof(PyramidUpdateMem) + state.pyramid.surfaces.capacity() +
+		state.marioObj.surfaces.capacity();
 }
 
 uint32_t PyramidUpdate::getCurrentFrame() const
@@ -369,8 +384,11 @@ void PyramidUpdate::advance()
 	PyramidLoop();
 	TransformSurfaces();
 
-	Vec3f marioPos = {_state.marioState.posX, _state.marioState.posY , _state.marioState.posZ };
-	FindFloor(&marioPos, &(*_state.pyramid.surfaces.begin()), _state.pyramid.surfaces.size(), &_state.marioState.floorId);
+	Vec3f marioPos = {
+		_state.marioState.posX, _state.marioState.posY, _state.marioState.posZ};
+	FindFloor(
+		&marioPos, &(*_state.pyramid.surfaces.begin()),
+		_state.pyramid.surfaces.size(), &_state.marioState.floorId);
 
 	_state.frame++;
 }
@@ -380,16 +398,16 @@ void* PyramidUpdate::addr(const char* symbol) const
 	std::string symbolStr = std::string(symbol);
 
 	if (symbolStr == "gMarioStates")
-		return (void*)&_state.marioState;
+		return (void*) &_state.marioState;
 
 	if (symbolStr == "gMarioObject")
-		return (void*)&_state.marioObj;
+		return (void*) &_state.marioObj;
 
 	if (symbolStr == "Pyramid")
-		return (void*)&_state.pyramid;
+		return (void*) &_state.pyramid;
 
 	if (symbolStr == "gControllerPads")
-		return (void*)&_state.inputs;
+		return (void*) &_state.inputs;
 
 	throw std::runtime_error("Unable to resolve symbol \"" + symbolStr + "\"");
 
@@ -413,9 +431,10 @@ void PyramidUpdate::PyramidLoop()
 	f32 mz = _state.marioState.posZ;
 
 	s32 marioOnPlatform = false;
-	Mat4* transform = &_state.pyramid.transform;
+	Mat4* transform		= &_state.pyramid.transform;
 
-	if (_state.marioObj.platform(_state) == &_state.pyramid) {
+	if (_state.marioObj.platform(_state) == &_state.pyramid)
+	{
 		dist[0] = _state.marioObj.posX - _state.pyramid.posX;
 		dist[1] = _state.marioObj.posY - _state.pyramid.posY;
 		dist[2] = _state.marioObj.posZ - _state.pyramid.posZ;
@@ -424,17 +443,19 @@ void PyramidUpdate::PyramidLoop()
 		dx = _state.marioObj.posX - _state.pyramid.posX;
 		dy = 500.0f;
 		dz = _state.marioObj.posZ - _state.pyramid.posZ;
-		d = sqrtf(dx * dx + dy * dy + dz * dz);
+		d  = sqrtf(dx * dx + dy * dy + dz * dz);
 
 		//! Always true since dy = 500, making d >= 500.
-		if (d != 0.0f) {
+		if (d != 0.0f)
+		{
 			// Normalizing
 			d = 1.0 / d;
 			dx *= d;
 			dy *= d;
 			dz *= d;
 		}
-		else {
+		else
+		{
 			dx = 0.0f;
 			dy = 1.0f;
 			dz = 0.0f;
@@ -445,22 +466,31 @@ void PyramidUpdate::PyramidLoop()
 
 		_state.pyramid.tiltingPyramidMarioOnPlatform = true;
 	}
-	else {
-		dx = 0.0f;
-		dy = 1.0f;
-		dz = 0.0f;
+	else
+	{
+		dx											 = 0.0f;
+		dy											 = 1.0f;
+		dz											 = 0.0f;
 		_state.pyramid.tiltingPyramidMarioOnPlatform = false;
 	}
 
-	// Approach the normals by 0.01f towards the new goal, then create a transform matrix and orient the object. 
-	// Outside of the other conditionals since it needs to tilt regardless of whether Mario is on.
-	_state.pyramid.tiltingPyramidNormalX = ApproachByIncrement(dx, _state.pyramid.tiltingPyramidNormalX, 0.01f);
-	_state.pyramid.tiltingPyramidNormalY = ApproachByIncrement(dy, _state.pyramid.tiltingPyramidNormalY, 0.01f);
-	_state.pyramid.tiltingPyramidNormalZ = ApproachByIncrement(dz, _state.pyramid.tiltingPyramidNormalZ, 0.01f);
-	CreateTransformFromNormals(*transform, _state.pyramid.tiltingPyramidNormalX, _state.pyramid.tiltingPyramidNormalY, _state.pyramid.tiltingPyramidNormalZ);
+	// Approach the normals by 0.01f towards the new goal, then create a
+	// transform matrix and orient the object. Outside of the other conditionals
+	// since it needs to tilt regardless of whether Mario is on.
+	_state.pyramid.tiltingPyramidNormalX =
+		ApproachByIncrement(dx, _state.pyramid.tiltingPyramidNormalX, 0.01f);
+	_state.pyramid.tiltingPyramidNormalY =
+		ApproachByIncrement(dy, _state.pyramid.tiltingPyramidNormalY, 0.01f);
+	_state.pyramid.tiltingPyramidNormalZ =
+		ApproachByIncrement(dz, _state.pyramid.tiltingPyramidNormalZ, 0.01f);
+	CreateTransformFromNormals(
+		*transform, _state.pyramid.tiltingPyramidNormalX,
+		_state.pyramid.tiltingPyramidNormalY,
+		_state.pyramid.tiltingPyramidNormalZ);
 
 	// If Mario is on the platform, adjust his position for the platform tilt.
-	if (marioOnPlatform != false) {
+	if (marioOnPlatform != false)
+	{
 		linear_mtxf_mul_vec3f(*transform, posAfterRotation, dist);
 		mx += posAfterRotation[0] - posBeforeRotation[0];
 		my += posAfterRotation[1] - posBeforeRotation[1];
@@ -471,28 +501,36 @@ void PyramidUpdate::PyramidLoop()
 	}
 }
 
-float PyramidUpdate::ApproachByIncrement(float goal, float src, float inc) {
+float PyramidUpdate::ApproachByIncrement(float goal, float src, float inc)
+{
 	f32 newVal;
 
-	if (src <= goal) {
-		if (goal - src < inc) {
+	if (src <= goal)
+	{
+		if (goal - src < inc)
+		{
 			newVal = goal;
 		}
-		else {
+		else
+		{
 			newVal = src + inc;
 		}
 	}
-	else if (goal - src > -inc) {
+	else if (goal - src > -inc)
+	{
 		newVal = goal;
 	}
-	else {
+	else
+	{
 		newVal = src - inc;
 	}
 
 	return newVal;
 }
 
-void PyramidUpdate::CreateTransformFromNormals(Mat4& transform, float xNorm, float yNorm, float zNorm) {
+void PyramidUpdate::CreateTransformFromNormals(
+	Mat4& transform, float xNorm, float yNorm, float zNorm)
+{
 	Vec3f normal;
 	Vec3f pos;
 
@@ -513,40 +551,42 @@ void PyramidUpdate::TransformSurfaces()
 	float nx, ny, nz;
 	float mag;
 
-	PyramidUpdateMem::Sm64Surface* surfaces = &(*_state.pyramid.surfaces.begin());;
+	PyramidUpdateMem::Sm64Surface* surfaces =
+		&(*_state.pyramid.surfaces.begin());
+	;
 	Mat4* transform = &_state.pyramid.transform;
 	for (int i = 0; i < _state.pyramid.surfaces.size(); i++)
 	{
 		Vec3s v1 = {
-			surfaces->vertex1[0], surfaces->vertex1[1], surfaces->vertex1[2] };
+			surfaces->vertex1[0], surfaces->vertex1[1], surfaces->vertex1[2]};
 		Vec3s v2 = {
-			surfaces->vertex2[0], surfaces->vertex2[1], surfaces->vertex2[2] };
+			surfaces->vertex2[0], surfaces->vertex2[1], surfaces->vertex2[2]};
 		Vec3s v3 = {
-			surfaces->vertex3[0], surfaces->vertex3[1], surfaces->vertex3[2] };
+			surfaces->vertex3[0], surfaces->vertex3[1], surfaces->vertex3[2]};
 
 		for (int j = 0; j < 3; j++)
 		{
 			surfaces->vertex1[j] =
-				(short)(v1[0] * (*transform)[0][j] + v1[1] * (*transform)[1][j] + v1[2] * (*transform)[2][j] + (*transform)[3][j]);
+				(short) (v1[0] * (*transform)[0][j] + v1[1] * (*transform)[1][j] + v1[2] * (*transform)[2][j] + (*transform)[3][j]);
 			surfaces->vertex2[j] =
-				(short)(v2[0] * (*transform)[0][j] + v2[1] * (*transform)[1][j] + v2[2] * (*transform)[2][j] + (*transform)[3][j]);
+				(short) (v2[0] * (*transform)[0][j] + v2[1] * (*transform)[1][j] + v2[2] * (*transform)[2][j] + (*transform)[3][j]);
 			surfaces->vertex3[j] =
-				(short)(v3[0] * (*transform)[0][j] + v3[1] * (*transform)[1][j] + v3[2] * (*transform)[2][j] + (*transform)[3][j]);
+				(short) (v3[0] * (*transform)[0][j] + v3[1] * (*transform)[1][j] + v3[2] * (*transform)[2][j] + (*transform)[3][j]);
 		}
 
 		// (v2 - v1) x (v3 - v2)
 		nx = (surfaces->vertex2[1] - surfaces->vertex1[1]) *
-			(surfaces->vertex3[2] - surfaces->vertex2[2]) -
+				(surfaces->vertex3[2] - surfaces->vertex2[2]) -
 			(surfaces->vertex2[2] - surfaces->vertex1[2]) *
-			(surfaces->vertex3[1] - surfaces->vertex2[1]);
+				(surfaces->vertex3[1] - surfaces->vertex2[1]);
 		ny = (surfaces->vertex2[2] - surfaces->vertex1[2]) *
-			(surfaces->vertex3[0] - surfaces->vertex2[0]) -
+				(surfaces->vertex3[0] - surfaces->vertex2[0]) -
 			(surfaces->vertex2[0] - surfaces->vertex1[0]) *
-			(surfaces->vertex3[2] - surfaces->vertex2[2]);
+				(surfaces->vertex3[2] - surfaces->vertex2[2]);
 		nz = (surfaces->vertex2[0] - surfaces->vertex1[0]) *
-			(surfaces->vertex3[1] - surfaces->vertex2[1]) -
+				(surfaces->vertex3[1] - surfaces->vertex2[1]) -
 			(surfaces->vertex2[1] - surfaces->vertex1[1]) *
-			(surfaces->vertex3[0] - surfaces->vertex2[0]);
+				(surfaces->vertex3[0] - surfaces->vertex2[0]);
 		mag = sqrtf(nx * nx + ny * ny + nz * nz);
 
 		// Could have used min_3 and max_3 for this...
@@ -570,7 +610,7 @@ void PyramidUpdate::TransformSurfaces()
 			maxY = surfaces->vertex3[1];
 		}
 
-		mag = (float)(1.0 / mag);
+		mag = (float) (1.0 / mag);
 		nx *= mag;
 		ny *= mag;
 		nz *= mag;
@@ -581,7 +621,7 @@ void PyramidUpdate::TransformSurfaces()
 
 		surfaces->originOffset =
 			-(nx * surfaces->vertex1[0] + ny * surfaces->vertex1[1] +
-				nz * surfaces->vertex1[2]);
+			  nz * surfaces->vertex1[2]);
 
 		surfaces->lowerY = minY - 5;
 		surfaces->upperY = maxY + 5;
@@ -590,7 +630,9 @@ void PyramidUpdate::TransformSurfaces()
 	}
 }
 
-void PyramidUpdate::FindFloor(Vec3f* marioPos, PyramidUpdateMem::Sm64Surface* surfaces, int surfaceCount, int64_t* floorId)
+void PyramidUpdate::FindFloor(
+	Vec3f* marioPos, PyramidUpdateMem::Sm64Surface* surfaces, int surfaceCount,
+	int64_t* floorId)
 {
 	int i;
 	PyramidUpdateMem::Sm64Surface* surf;
@@ -616,8 +658,9 @@ void PyramidUpdate::FindFloor(Vec3f* marioPos, PyramidUpdateMem::Sm64Surface* su
 		z2 = surf->vertex2[2];
 
 		// Check that the point is within the triangle bounds.
-		if (
-			(z1 - (*marioPos)[2]) * (x2 - x1) - (x1 - (*marioPos)[0]) * (z2 - z1) < 0)
+		if ((z1 - (*marioPos)[2]) * (x2 - x1) -
+				(x1 - (*marioPos)[0]) * (z2 - z1) <
+			0)
 		{
 			continue;
 		}
@@ -626,13 +669,15 @@ void PyramidUpdate::FindFloor(Vec3f* marioPos, PyramidUpdateMem::Sm64Surface* su
 		x3 = surf->vertex3[0];
 		z3 = surf->vertex3[2];
 
-		if (
-			(z2 - (*marioPos)[2]) * (x3 - x2) - (x2 - (*marioPos)[0]) * (z3 - z2) < 0)
+		if ((z2 - (*marioPos)[2]) * (x3 - x2) -
+				(x2 - (*marioPos)[0]) * (z3 - z2) <
+			0)
 		{
 			continue;
 		}
-		if (
-			(z3 - (*marioPos)[2]) * (x1 - x3) - (x3 - (*marioPos)[0]) * (z1 - z3) < 0)
+		if ((z3 - (*marioPos)[2]) * (x1 - x3) -
+				(x3 - (*marioPos)[0]) * (z1 - z3) <
+			0)
 		{
 			continue;
 		}

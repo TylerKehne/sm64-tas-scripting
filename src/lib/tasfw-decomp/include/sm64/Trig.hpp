@@ -2188,7 +2188,7 @@ constexpr float coss(uint16_t x)
 constexpr int16_t atan2_lookup(float z, float x)
 {
 	return (x == 0) ? gArctanTable[0] :
-						gArctanTable[(int32_t) (z / x * 1024 + 0.5f)];
+					  gArctanTable[(int32_t) (z / x * 1024 + 0.5f)];
 }
 
 constexpr int16_t atan2s(float z, float x)
@@ -2203,7 +2203,7 @@ constexpr int16_t atan2s(float z, float x)
 		{
 			z = -z;
 			return (z < x) ? 0x4000 + atan2_lookup(z, x) :
-							   0x8000 - atan2_lookup(x, z);
+							 0x8000 - atan2_lookup(x, z);
 		}
 	}
 	else
@@ -2213,7 +2213,7 @@ constexpr int16_t atan2s(float z, float x)
 		{
 			z = -z;
 			return (z >= x) ? 0x8000 + atan2_lookup(x, z) :
-								0xC000 - atan2_lookup(z, x);
+							  0xC000 - atan2_lookup(z, x);
 		}
 		else
 		{
