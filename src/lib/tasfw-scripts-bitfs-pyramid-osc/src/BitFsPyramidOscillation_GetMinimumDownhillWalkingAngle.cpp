@@ -1,4 +1,4 @@
-#include <tasfw/scripts/BitFsPyramidOscillation.hpp>
+#include <tasfw/scripts/BitFSPyramidOscillation.hpp>
 
 #include <tasfw/Script.hpp>
 #include <sm64/Sm64.hpp>

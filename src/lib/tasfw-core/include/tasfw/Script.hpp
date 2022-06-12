@@ -76,7 +76,16 @@ public:
 
 	SaveMetadata() = default;
 
-	SaveMetadata(Script<TResource>* script);
+	SaveMetadata(Script<TResource>* script) 
+	{
+		if (script)
+		{
+			this->script = script;
+			isStartSave = true;
+			frame = 0;
+			adhocLevel = -1;
+		}
+	}
 
 	SaveMetadata(Script<TResource>* script, int64_t frame, int64_t adhocLevel) : script(script), frame(frame), adhocLevel(adhocLevel) { }
 
@@ -301,7 +310,25 @@ public:
 
 	template <std::derived_from<TopLevelScript<TResource>> TTopLevelScript, typename... Ts>
 		requires(std::constructible_from<TTopLevelScript, Ts...> && std::constructible_from<TResource>)
-	static ScriptStatus<TTopLevelScript> Main(M64& m64, Ts&&... params);
+	static ScriptStatus<TTopLevelScript> Main(M64& m64, Ts&&... params) 
+	{
+		TTopLevelScript script = TTopLevelScript(std::forward<Ts>(params)...);
+		TResource resource = TResource();
+		resource.save(resource.startSave);
+		resource.initialFrame = 0;
+
+		script._m64 = &m64;
+		script.resource = &resource;
+		script.Initialize(nullptr);
+
+		if (script.checkPreconditions() && script.execute())
+			script.checkPostconditions();
+
+		//Dispose of slot handles before resource goes out of scope because they trigger destructor events in the resource.
+		script.saveBank[0].erase(script.saveBank[0].begin(), script.saveBank[0].end());
+
+		return ScriptStatus<TTopLevelScript>(script.BaseStatus[0], script.CustomStatus);		
+	}
 
 	template <std::derived_from<TopLevelScript<TResource>> TTopLevelScript, typename TResourceConfig, typename... Ts>
 		requires(std::constructible_from<TTopLevelScript, Ts...> && std::constructible_from<TResource, TResourceConfig>)
@@ -329,7 +356,26 @@ public:
 		requires(std::constructible_from<TTopLevelScript, Ts...>
 			&& std::constructible_from<TResource>
 			&& std::derived_from<TResource, Resource<TState>>)
-	static ScriptStatus<TTopLevelScript> MainFromSave(M64& m64, ImportedSave<TState>& save, Ts&&... params);
+	static ScriptStatus<TTopLevelScript> MainFromSave(M64& m64, ImportedSave<TState>& save, Ts&&... params) 
+	{
+		TTopLevelScript script = TTopLevelScript(std::forward<Ts>(params)...);
+		TResource resource = TResource();
+		resource.load(save.state);
+		resource.save(resource.startSave);
+		resource.initialFrame = save.initialFrame;
+
+		script._m64 = &m64;
+		script.resource = &resource;
+		script.Initialize(nullptr);
+
+		if (script.checkPreconditions() && script.execute())
+			script.checkPostconditions();
+
+		//Dispose of slot handles before resource goes out of scope because they trigger destructor events in the resource.
+		script.saveBank[0].erase(script.saveBank[0].begin(), script.saveBank[0].end());
+
+		return ScriptStatus<TTopLevelScript>(script.BaseStatus[0], script.CustomStatus);
+	}
 
 	template <std::derived_from<TopLevelScript<TResource>> TTopLevelScript, class TState, typename TResourceConfig, typename... Ts>
 		requires(std::constructible_from<TTopLevelScript, Ts...>

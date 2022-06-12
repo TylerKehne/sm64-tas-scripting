@@ -44,7 +44,7 @@ public:
 		float tiltingPyramidNormalX = 0;
 		float tiltingPyramidNormalY = 0;
 		float tiltingPyramidNormalZ = 0;
-		s32 tiltingPyramidMarioOnPlatform = FALSE;
+		s32 tiltingPyramidMarioOnPlatform = false;
 		bool platformIsPyramid = false;
 		Mat4 transform;
 		std::vector<Sm64Surface> surfaces;
