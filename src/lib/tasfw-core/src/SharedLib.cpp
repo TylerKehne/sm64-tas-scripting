@@ -154,7 +154,7 @@ SharedLib::~SharedLib()
 		std::terminate();
 	}
 }
-void* SharedLib::get(const char* symbol)
+void* SharedLib::get(const char* symbol) const
 {
 	dlerror();
 	void* res = dlsym(handle, symbol);

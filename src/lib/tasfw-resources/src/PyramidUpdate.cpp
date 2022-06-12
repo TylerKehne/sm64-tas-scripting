@@ -1,9 +1,9 @@
 #include "tasfw/resources/PyramidUpdate.hpp"
+#include <math.h>
 #include <sm64/Surface.hpp>
 #include <sm64/ObjectFields.hpp>
 #include <sm64/Math.hpp>
 #include <sm64/Sm64.hpp>
-#include <format>
 
 PyramidUpdateMem::PyramidUpdateMem(const LibSm64& resource, Object* pyramidLibSm64)
 {
@@ -412,7 +412,7 @@ void PyramidUpdate::PyramidLoop()
 	f32 my = _state.marioState.posY;
 	f32 mz = _state.marioState.posZ;
 
-	s32 marioOnPlatform = FALSE;
+	s32 marioOnPlatform = false;
 	Mat4* transform = &_state.pyramid.transform;
 
 	if (_state.marioObj.platform(_state) == &_state.pyramid) {
@@ -440,16 +440,16 @@ void PyramidUpdate::PyramidLoop()
 			dz = 0.0f;
 		}
 
-		if (_state.pyramid.tiltingPyramidMarioOnPlatform == TRUE)
+		if (_state.pyramid.tiltingPyramidMarioOnPlatform == true)
 			marioOnPlatform++;
 
-		_state.pyramid.tiltingPyramidMarioOnPlatform = TRUE;
+		_state.pyramid.tiltingPyramidMarioOnPlatform = true;
 	}
 	else {
 		dx = 0.0f;
 		dy = 1.0f;
 		dz = 0.0f;
-		_state.pyramid.tiltingPyramidMarioOnPlatform = FALSE;
+		_state.pyramid.tiltingPyramidMarioOnPlatform = false;
 	}
 
 	// Approach the normals by 0.01f towards the new goal, then create a transform matrix and orient the object. 
@@ -460,7 +460,7 @@ void PyramidUpdate::PyramidLoop()
 	CreateTransformFromNormals(*transform, _state.pyramid.tiltingPyramidNormalX, _state.pyramid.tiltingPyramidNormalY, _state.pyramid.tiltingPyramidNormalZ);
 
 	// If Mario is on the platform, adjust his position for the platform tilt.
-	if (marioOnPlatform != FALSE) {
+	if (marioOnPlatform != false) {
 		linear_mtxf_mul_vec3f(*transform, posAfterRotation, dist);
 		mx += posAfterRotation[0] - posBeforeRotation[0];
 		my += posAfterRotation[1] - posBeforeRotation[1];

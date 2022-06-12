@@ -991,66 +991,6 @@ AdhocScriptStatus<TAdhocCustomScriptStatus> Script<TResource>::ExecuteAdhocNoRev
 	return AdhocScriptStatus<TAdhocCustomScriptStatus>(baseStatus, customStatus);
 }
 
-template <derived_from_specialization_of<Resource> TResource>
-template <std::derived_from<TopLevelScript<TResource>> TTopLevelScript, typename... Ts>
-	requires(std::constructible_from<TTopLevelScript, Ts...> && std::constructible_from<TResource>)
-ScriptStatus<TTopLevelScript> TopLevelScript<TResource>::Main(M64& m64, Ts&&... params)
-{
-	TTopLevelScript script = TTopLevelScript(std::forward<Ts>(params)...);
-	TResource resource = TResource();
-	resource.save(resource.startSave);
-	resource.initialFrame = 0;
-
-	script._m64 = &m64;
-	script.resource = &resource;
-	script.Initialize(nullptr);
-
-	if (script.checkPreconditions() && script.execute())
-		script.checkPostconditions();
-
-	//Dispose of slot handles before resource goes out of scope because they trigger destructor events in the resource.
-	script.saveBank[0].erase(script.saveBank[0].begin(), script.saveBank[0].end());
-
-	return ScriptStatus<TTopLevelScript>(script.BaseStatus[0], script.CustomStatus);
-}
-
-template <derived_from_specialization_of<Resource> TResource>
-template <std::derived_from<TopLevelScript<TResource>> TTopLevelScript, class TState, typename... Ts>
-	requires(std::constructible_from<TTopLevelScript, Ts...>
-		&& std::constructible_from<TResource>
-		&& std::derived_from<TResource, Resource<TState>>)
-static ScriptStatus<TTopLevelScript> TopLevelScript<TResource>::MainFromSave(M64& m64, ImportedSave<TState>& save, Ts&&... params)
-{
-	TTopLevelScript script = TTopLevelScript(std::forward<Ts>(params)...);
-	TResource resource = TResource();
-	resource.load(save.state);
-	resource.save(resource.startSave);
-	resource.initialFrame = save.initialFrame;
-
-	script._m64 = &m64;
-	script.resource = &resource;
-	script.Initialize(nullptr);
-
-	if (script.checkPreconditions() && script.execute())
-		script.checkPostconditions();
-
-	//Dispose of slot handles before resource goes out of scope because they trigger destructor events in the resource.
-	script.saveBank[0].erase(script.saveBank[0].begin(), script.saveBank[0].end());
-
-	return ScriptStatus<TTopLevelScript>(script.BaseStatus[0], script.CustomStatus);
-}
-
-template <derived_from_specialization_of<Resource> TResource>
-SaveMetadata<TResource>::SaveMetadata(Script<TResource>* script)
-{
-	if (script)
-	{
-		this->script = script;
-		isStartSave = true;
-		frame = 0;
-		adhocLevel = -1;
-	}
-}
 
 template <derived_from_specialization_of<Resource> TResource>
 SlotHandle<TResource>* SaveMetadata<TResource>::GetSlotHandle()
