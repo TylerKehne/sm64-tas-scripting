@@ -1,4 +1,5 @@
 #pragma once
+#include "tasfw/Resource.hpp"
 #include <tasfw/Inputs.hpp>
 
 #ifndef SCRIPTSTATUS_H
