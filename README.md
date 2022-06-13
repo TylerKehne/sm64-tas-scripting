@@ -2,12 +2,27 @@
 This project provides a framework for automating the SM64 TAS workflow. Very much a WIP at this time.
 
 # Building instructions
-This project is built using CMake. On the CLI:
-```bash
-cmake ..
+This project is built using CMake. 
+
+**Windows**
+- Install vcpkg
+- `vcpkg install nlohmann-json`
+
+```powershell
+mkdir build
+cd build
+cmake -DCMAKE_TOOLCHAIN_FILE="<path to vcpkg>\scripts\buildsystems\vcpkg.cmake" ..
 cmake --build .
 ```
 
+**MacOS and Linux**
+- Install `nlohmann-json` using your favourite package manager.
+```bash
+mkdir build
+cd build
+cmake ..
+cmake --build .
+```
 If you're using Visual Studio, open the root directory as a local folder. This enables VS's CMake integration. More detailed instructions can be found [here](https://docs.microsoft.com/en-us/cpp/build/cmake-projects-in-visual-studio?view=msvc-170#building-cmake-projects)
 
 # Configuration system

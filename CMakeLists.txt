@@ -24,68 +24,10 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 		"Debug" "Release" "MinSizeRel" "RelWithDebInfo")
 endif()
 
-# Download conan-cmake
-if(NOT EXISTS "${CMAKE_BINARY_DIR}/conan.cmake")
-	message(STATUS "Downloading conan.cmake from https://github.com/conan-io/cmake-conan")
-	file(DOWNLOAD "https://raw.githubusercontent.com/conan-io/cmake-conan/0.17.0/conan.cmake"
-		"${CMAKE_BINARY_DIR}/conan.cmake"
-		TLS_VERIFY ON)
-endif()
-
-include("${CMAKE_BINARY_DIR}/conan.cmake")
-
-# Install local packages
-# find_package(Python COMPONENTS Interpreter)
-# if (${Python_VERSION} VERSION_LESS "3.7.0")
-# message(FATAL_ERROR "Upgrade Python (min version 3.7.0)")
-# endif()
-# execute_process(COMMAND ${Python_EXECUTABLE} ${CMAKE_CURRENT_LIST_DIR}/scripts/conan_installer.py RESULT_VARIABLE RTC)
-# if (NOT ${RTC} EQUAL 0)
-# message(FATAL_ERROR "Local installer failed")
-# endif()
-
-# Dependency config
-conan_cmake_configure(
-	REQUIRES "nlohmann_json/3.10.5"
-	GENERATORS cmake_find_package
-)
-
-# Check if generator is multi-config
-get_property(is_multiconfig GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
-
-# Setup packages using conan-cmake
-message("Generator is multi-config: ${is_multiconfig}")
-
-if(${is_multiconfig})
-	foreach(TYPE ${CMAKE_CONFIGURATION_TYPES})
-		message(STATUS "Installing Conan data for build type ${TYPE}")
-		conan_cmake_autodetect(SM64_TASFW_SETTINGS BUILD_TYPE ${TYPE})
-		conan_cmake_install(PATH_OR_REFERENCE .
-			BUILD missing
-			SETTINGS ${SM64_TASFW_SETTINGS}
-			SETTINGS "compiler.cppstd=20"
-			INSTALL_FOLDER "${CMAKE_BINARY_DIR}/CMakeFiles/conan_deps"
-		)
-	endforeach()
-else()
-	conan_cmake_autodetect(SM64_TASFW_SETTINGS)
-	conan_cmake_install(PATH_OR_REFERENCE .
-		BUILD missing
-		SETTINGS ${SM64_TASFW_SETTINGS}
-		SETTINGS "compiler.cppstd=20"
-		INSTALL_FOLDER "${CMAKE_BINARY_DIR}/CMakeFiles/conan_deps"
-	)
-endif()
-
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_BINARY_DIR}/CMakeFiles/conan_deps")
-list(APPEND CMAKE_PREFIX_PATH "${CMAKE_BINARY_DIR}/CMakeFiles/conan_deps")
-
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 
 # Import Conan packages
-foreach(PACKAGE IN ITEMS nlohmann_json)
-	find_package(${PACKAGE} REQUIRED)
-endforeach()
+find_package(nlohmann_json REQUIRED)
 
 # Library components
 add_subdirectory(src/lib)
