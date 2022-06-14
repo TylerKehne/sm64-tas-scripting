@@ -454,46 +454,13 @@ SaveMetadata<TResource> Script<TResource>::GetLatestSaveAndCache(int64_t frame)
 template <derived_from_specialization_of<Resource> TResource>
 void Script<TResource>::Load(uint64_t frame)
 {
-	// Load most recent save at or before frame. Check child saves before
-	// parent. If target frame is in future, check if faster to frame advance or load.
-	int64_t currentFrame = GetCurrentFrame();
-	auto latestSave = GetLatestSaveAndCache(frame);
-	if (frame < currentFrame)
-	{
-		resource->LoadState(latestSave.GetSlotHandle()->slotId);
-		BaseStatus[_adhocLevel].nLoads++;
-	}
-	else if (latestSave.frame > currentFrame && resource->shouldLoad(latestSave.frame - currentFrame))
-		resource->LoadState(latestSave.GetSlotHandle()->slotId);
-
-	// If save is before target frame, play back until frame is reached
-	currentFrame = GetCurrentFrame();
-	uint64_t frameCounter = 0;
-	while (currentFrame++ < frame)
-	{
-		auto cachedInputs = GetInputsMetadataAndCache(currentFrame);
-		frameCounter += IncrementFrameCounter(cachedInputs);
-		AdvanceFrameRead();
-
-		//Estimate future frame advances from aggregate of historical frame advances on this input segment
-		//If it reaches a certain threshold, creating a save is performant
-		if (resource->shouldSave(frameCounter))
-		{
-			SaveMetadata<TResource> cachedSave = cachedInputs.stateOwner->Save(cachedInputs.stateOwnerAdhocLevel);
-			saveCache[_adhocLevel][currentFrame] = cachedSave;
-			frameCounter = 0;
-		}
-	}
+	LoadBase(frame, false);
 }
 
-// Load method specifically for Script.Execute() and Script.Modify(), checks for desyncs
 template <derived_from_specialization_of<Resource> TResource>
-void Script<TResource>::Revert(uint64_t frame, const M64Diff& m64)
+void Script<TResource>::LoadBase(uint64_t frame, bool desync)
 {
-	// Check if script altered state
 	int64_t currentFrame = GetCurrentFrame();
-	bool desync =
-		(!m64.frames.empty()) && (m64.frames.begin()->first < currentFrame);
 
 	// Load most recent save at or before frame. Check child saves before
 	// parent. If target frame is in future, check if faster to frame advance or load.
@@ -526,6 +493,15 @@ void Script<TResource>::Revert(uint64_t frame, const M64Diff& m64)
 	}
 }
 
+// Load method specifically for Script.Execute() and Script.Modify(), checks for desyncs
+template <derived_from_specialization_of<Resource> TResource>
+void Script<TResource>::Revert(uint64_t frame, const M64Diff& m64)
+{
+	// Check if script altered state
+	bool desync = (!m64.frames.empty()) && (m64.frames.begin()->first < GetCurrentFrame());
+	LoadBase(frame, desync);
+}
+
 template <derived_from_specialization_of<Resource> TResource>
 void Script<TResource>::Rollback(uint64_t frame)
 {
@@ -546,22 +522,23 @@ void Script<TResource>::Rollback(uint64_t frame)
 		loadTracker[_adhocLevel].erase(loadTracker[_adhocLevel].upper_bound(firstFrame), loadTracker[_adhocLevel].end());
 	}
 
-	Load(frame);
+	//Desyncs should be impossible for rollback because no inputs are changed prior to frame being loaded
+	LoadBase(frame, false);
 }
 
 // Same as Rollback, but starts from current frame. Useful for scripts that edit past frames
 template <derived_from_specialization_of<Resource> TResource>
 void Script<TResource>::RollForward(int64_t frame)
 {
-	// Roll back diff and savebank to current frame. Note that roll forward on diff
-	// includes current frame.
-	uint64_t currentFrame = GetCurrentFrame();
+	// Check if script altered state
+	bool desync = (!BaseStatus[_adhocLevel].m64Diff.frames.empty()) && (BaseStatus[_adhocLevel].m64Diff.frames.begin()->first < GetCurrentFrame());
 
 	if (!BaseStatus[_adhocLevel].m64Diff.frames.empty())
 	{
 		int64_t firstFrame = BaseStatus[_adhocLevel].m64Diff.frames.begin()->first;
 
-		auto inputsUpperBound = BaseStatus[_adhocLevel].m64Diff.frames.upper_bound(frame);
+		//Roll forward inputs through frame prior to target frame
+		auto inputsUpperBound = BaseStatus[_adhocLevel].m64Diff.frames.upper_bound(frame - 1);
 		if (inputsUpperBound == BaseStatus[_adhocLevel].m64Diff.frames.begin() && BaseStatus[_adhocLevel].m64Diff.frames.size() == 1)
 			inputsUpperBound = BaseStatus[_adhocLevel].m64Diff.frames.end();
 		else
@@ -576,13 +553,16 @@ void Script<TResource>::RollForward(int64_t frame)
 		loadTracker[_adhocLevel].erase(loadTracker[_adhocLevel].upper_bound(firstFrame), loadTracker[_adhocLevel].end());
 	}
 
-	Load(frame);
+	LoadBase(frame, desync);
 }
 
 // Load and clear diff and savebank
 template <derived_from_specialization_of<Resource> TResource>
 void Script<TResource>::Restore(int64_t frame)
 {
+	// Check if script altered state
+	bool desync = (!BaseStatus[_adhocLevel].m64Diff.frames.empty()) && (BaseStatus[_adhocLevel].m64Diff.frames.begin()->first < GetCurrentFrame());
+
 	// Clear diff, frame counter and savebank
 	if (!BaseStatus[_adhocLevel].m64Diff.frames.empty())
 	{
@@ -599,7 +579,7 @@ void Script<TResource>::Restore(int64_t frame)
 		loadTracker[_adhocLevel].erase(loadTracker[_adhocLevel].upper_bound(firstFrame), loadTracker[_adhocLevel].end());
 	}
 
-	Load(frame);
+	LoadBase(frame, desync);
 }
 
 template <derived_from_specialization_of<Resource> TResource>

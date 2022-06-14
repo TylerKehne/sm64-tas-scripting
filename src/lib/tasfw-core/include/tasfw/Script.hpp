@@ -273,6 +273,7 @@ private:
 	uint64_t IncrementFrameCounter(InputsMetadata<TResource> cachedInputs);
 	void ApplyChildDiff(const BaseScriptStatus& status, int64_t initialFrame);
 	SaveMetadata<TResource> Save(int64_t adhocLevel);
+	void LoadBase(uint64_t frame, bool desync);
 
 	template <typename F>
 	BaseScriptStatus ExecuteAdhocBase(F adhocScript);
