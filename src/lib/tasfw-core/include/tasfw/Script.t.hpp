@@ -44,83 +44,34 @@ void Script<TResource>::Initialize(Script<TResource>* parentScript)
 template <derived_from_specialization_of<Resource> TResource>
 bool Script<TResource>::checkPreconditions()
 {
-	bool validated = false;
-
 	auto start = std::chrono::high_resolution_clock::now();
-	try
-	{
-		validated = validation();
-	}
-	catch (std::exception& e)
-	{
-		BaseStatus[_adhocLevel].validationThrew = true;
-	}
+	BaseStatus[_adhocLevel].validated = ExecuteAdhoc([&] { return validation(); }).executed;
 	auto finish = std::chrono::high_resolution_clock::now();
 
-	BaseStatus[_adhocLevel].validationDuration =
-		std::chrono::duration_cast<std::chrono::milliseconds>(finish - start)
-		.count();
-
-	// Revert state regardless of validation results
-	Restore(_initialFrame);
-
-	BaseStatus[_adhocLevel].validated = validated;
-	return validated;
+	BaseStatus[_adhocLevel].validationDuration = std::chrono::duration_cast<std::chrono::milliseconds>(finish - start).count();
+	return BaseStatus[_adhocLevel].validated;
 }
 
 template <derived_from_specialization_of<Resource> TResource>
 bool Script<TResource>::execute()
 {
-	bool executed = false;
-
 	auto start = std::chrono::high_resolution_clock::now();
-	try
-	{
-		executed = execution();
-	}
-	catch (std::exception& e)
-	{
-		BaseStatus[_adhocLevel].executionThrew = true;
-	}
+	BaseStatus[_adhocLevel].executed = ModifyAdhoc([&] { return execution(); }).executed;
 	auto finish = std::chrono::high_resolution_clock::now();
 
-	BaseStatus[_adhocLevel].executionDuration =
-		std::chrono::duration_cast<std::chrono::milliseconds>(finish - start)
-		.count();
-
-	// Revert state if there are any execution errors
-	if (!executed)
-		Restore(_initialFrame);
-
-	BaseStatus[_adhocLevel].executed = executed;
-	return executed;
+	BaseStatus[_adhocLevel].executionDuration = std::chrono::duration_cast<std::chrono::milliseconds>(finish - start).count();
+	return BaseStatus[_adhocLevel].executed;
 }
 
 template <derived_from_specialization_of<Resource> TResource>
 bool Script<TResource>::checkPostconditions()
 {
-	bool asserted = false;
-
 	auto start = std::chrono::high_resolution_clock::now();
-	try
-	{
-		asserted = assertion();
-	}
-	catch (std::exception& e)
-	{
-		BaseStatus[_adhocLevel].assertionThrew = true;
-
-		// Revert state only if assertion throws exception
-		Restore(_initialFrame);
-	}
+	BaseStatus[_adhocLevel].asserted = ExecuteAdhoc([&] { return assertion(); }).executed;
 	auto finish = std::chrono::high_resolution_clock::now();
 
-	BaseStatus[_adhocLevel].assertionDuration =
-		std::chrono::duration_cast<std::chrono::milliseconds>(finish - start)
-		.count();
-
-	BaseStatus[_adhocLevel].asserted = asserted;
-	return asserted;
+	BaseStatus[_adhocLevel].assertionDuration = std::chrono::duration_cast<std::chrono::milliseconds>(finish - start).count();
+	return BaseStatus[_adhocLevel].asserted;
 }
 
 template <derived_from_specialization_of<Resource> TResource>
@@ -649,10 +600,11 @@ void Script<TResource>::SetInputs(Inputs inputs)
 	yStickDllAddr[0] = inputs.stick_y;
 }
 
+// Only checks base diff, i.e. ad-hoc level 0
 template <derived_from_specialization_of<Resource> TResource>
 bool Script<TResource>::IsDiffEmpty()
 {
-	return BaseStatus[_adhocLevel].m64Diff.frames.empty();
+	return BaseStatus[0].m64Diff.frames.empty();
 }
 
 template <derived_from_specialization_of<Resource> TResource>
@@ -924,14 +876,7 @@ BaseScriptStatus Script<TResource>::ExecuteAdhocBase(F adhocScript)
 	BaseStatus[_adhocLevel].validated = true;
 
 	auto start = std::chrono::high_resolution_clock::now();
-	try
-	{
-		BaseStatus[_adhocLevel].executed = adhocScript();
-	}
-	catch (std::exception& e)
-	{
-		BaseStatus[_adhocLevel].executionThrew = true;
-	}
+	BaseStatus[_adhocLevel].executed = adhocScript();
 	auto finish = std::chrono::high_resolution_clock::now();
 
 	BaseStatus[_adhocLevel].executionDuration =

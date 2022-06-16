@@ -123,7 +123,6 @@ protected:
 	{
 		// Save state if performant
 		uint64_t initialFrame = GetCurrentFrame();
-		OptionalSave();
 
 		TScript script = TScript(std::forward<Us>(params)...);
 		script.Initialize(this);
@@ -147,7 +146,6 @@ protected:
 	{
 		// Save state if performant
 		uint64_t initialFrame = GetCurrentFrame();
-		OptionalSave();
 
 		TScript script = TScript(std::forward<Us>(params)...);
 		script.Initialize(this);
