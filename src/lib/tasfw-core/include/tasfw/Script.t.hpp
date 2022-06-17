@@ -358,8 +358,9 @@ SaveMetadata<TResource> Script<TResource>::GetLatestSave(int64_t frame)
 		}
 
 		// Don't search past start of m64 diff to avoid desync
-		earlyFrame = !BaseStatus[adhocLevel].m64Diff.frames.empty() ?
-			(std::min)(BaseStatus[adhocLevel].m64Diff.frames.begin()->first, (uint64_t)earlyFrame) : frame;
+		earlyFrame = !BaseStatus[adhocLevel].m64Diff.frames.empty()
+			? (std::min)(BaseStatus[adhocLevel].m64Diff.frames.begin()->first, (uint64_t)earlyFrame)
+			: (std::min)(frame, earlyFrame);
 
 		//If save is not before the start of the diff, we have the best possible save, so return it
 		if (bestSave.frame >= 0 && bestSave.frame >= earlyFrame)
