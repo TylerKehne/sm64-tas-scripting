@@ -153,11 +153,7 @@ protected:
 		if (script.checkPreconditions() && script.execute())
 			script.checkPostconditions();
 
-		// Revert state if assertion fails, otherwise apply diff
-		if (!script.BaseStatus[0].asserted || script.BaseStatus[0].m64Diff.frames.empty())
-			Revert(initialFrame, script.BaseStatus[0].m64Diff);
-		else
-			ApplyChildDiff(script.BaseStatus[0], initialFrame);
+		ApplyChildDiff(script.BaseStatus[0], script.saveBank[0], initialFrame);
 
 		BaseStatus[_adhocLevel].nLoads += script.BaseStatus[0].nLoads;
 		BaseStatus[_adhocLevel].nSaves += script.BaseStatus[0].nSaves;
@@ -269,7 +265,7 @@ private:
 	void AdvanceFrameRead(uint64_t& counter);
 	uint64_t GetFrameCounter(InputsMetadata<TResource> cachedInputs);
 	uint64_t IncrementFrameCounter(InputsMetadata<TResource> cachedInputs);
-	void ApplyChildDiff(const BaseScriptStatus& status, int64_t initialFrame);
+	void ApplyChildDiff(const BaseScriptStatus& status, std::map<int64_t, SlotHandle<TResource>>& childSaveBank, int64_t initialFrame);
 	SaveMetadata<TResource> Save(int64_t adhocLevel);
 	void LoadBase(uint64_t frame, bool desync);
 
