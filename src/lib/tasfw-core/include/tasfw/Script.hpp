@@ -131,7 +131,7 @@ protected:
 			script.checkPostconditions();
 
 		// Load if necessary
-		Revert(initialFrame, script.BaseStatus[0].m64Diff);
+		Revert(initialFrame, script.BaseStatus[0].m64Diff, script.saveBank[0]);
 
 		BaseStatus[_adhocLevel].nLoads += script.BaseStatus[0].nLoads;
 		BaseStatus[_adhocLevel].nSaves += script.BaseStatus[0].nSaves;
@@ -261,7 +261,7 @@ private:
 	InputsMetadata<TResource> GetInputsMetadataAndCache(int64_t frame);
 	void DeleteSave(int64_t frame, int64_t adhocLevel);
 	void SetInputs(Inputs inputs);
-	void Revert(uint64_t frame, const M64Diff& m64);
+	void Revert(uint64_t frame, const M64Diff& m64, std::map<int64_t, SlotHandle<TResource>>& childSaveBank);
 	void AdvanceFrameRead(uint64_t& counter);
 	uint64_t GetFrameCounter(InputsMetadata<TResource> cachedInputs);
 	uint64_t IncrementFrameCounter(InputsMetadata<TResource> cachedInputs);
