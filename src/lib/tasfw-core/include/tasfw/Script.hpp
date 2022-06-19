@@ -76,18 +76,8 @@ public:
 
 	SaveMetadata() = default;
 
-	SaveMetadata(Script<TResource>* script) 
-	{
-		if (script)
-		{
-			this->script = script;
-			isStartSave = true;
-			frame = 0;
-			adhocLevel = -1;
-		}
-	}
-
-	SaveMetadata(Script<TResource>* script, int64_t frame, int64_t adhocLevel) : script(script), frame(frame), adhocLevel(adhocLevel) { }
+	SaveMetadata(Script<TResource>* script, int64_t frame, int64_t adhocLevel, bool isStartSave = false)
+		: script(script), frame(frame), adhocLevel(adhocLevel), isStartSave(isStartSave) { }
 
 	SlotHandle<TResource>* GetSlotHandle();
 	bool IsValid();

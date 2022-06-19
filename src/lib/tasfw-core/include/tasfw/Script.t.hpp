@@ -429,7 +429,7 @@ SaveMetadata<TResource> Script<TResource>::GetLatestSave(int64_t frame)
 		return bestSave;
 
 	//Default to initial save
-	return SaveMetadata<TResource>(this);
+	return SaveMetadata<TResource>(this, _initialFrame, 0, true);
 }
 
 template <derived_from_specialization_of<Resource> TResource>
