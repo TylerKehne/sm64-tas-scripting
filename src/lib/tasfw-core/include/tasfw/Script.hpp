@@ -117,8 +117,7 @@ protected:
 		TScript script = TScript(std::forward<Us>(params)...);
 		script.Initialize(this);
 
-		if (script.checkPreconditions() && script.execute())
-			script.checkPostconditions();
+		script.Run();
 
 		// Load if necessary
 		Revert(initialFrame, script.BaseStatus[0].m64Diff, script.saveBank[0]);
@@ -140,8 +139,7 @@ protected:
 		TScript script = TScript(std::forward<Us>(params)...);
 		script.Initialize(this);
 
-		if (script.checkPreconditions() && script.execute())
-			script.checkPostconditions();
+		script.Run();
 
 		ApplyChildDiff(script.BaseStatus[0], script.saveBank[0], initialFrame);
 
@@ -240,9 +238,7 @@ private:
 	std::unordered_map<int64_t, std::set<int64_t>> loadTracker;// track past loads to know whether a cached save is optimal
 	Script* _parentScript;
 
-	bool checkPreconditions();
-	bool execute();
-	bool checkPostconditions();
+	bool Run();
 
 	void Initialize(Script<TResource>* parentScript);
 	SaveMetadata<TResource> GetLatestSave(int64_t frame);
@@ -306,8 +302,7 @@ public:
 		script.resource = &resource;
 		script.Initialize(nullptr);
 
-		if (script.checkPreconditions() && script.execute())
-			script.checkPostconditions();
+		script.Run();
 
 		//Dispose of slot handles before resource goes out of scope because they trigger destructor events in the resource.
 		script.saveBank[0].erase(script.saveBank[0].begin(), script.saveBank[0].end());
@@ -328,8 +323,7 @@ public:
 		script.resource = &resource;
 		script.Initialize(nullptr);
 
-		if (script.checkPreconditions() && script.execute())
-			script.checkPostconditions();
+		script.Run();
 
 		//Dispose of slot handles before resource goes out of scope because they trigger destructor events in the resource.
 		script.saveBank[0].erase(script.saveBank[0].begin(), script.saveBank[0].end());
@@ -353,8 +347,7 @@ public:
 		script.resource = &resource;
 		script.Initialize(nullptr);
 
-		if (script.checkPreconditions() && script.execute())
-			script.checkPostconditions();
+		script.Run();
 
 		//Dispose of slot handles before resource goes out of scope because they trigger destructor events in the resource.
 		script.saveBank[0].erase(script.saveBank[0].begin(), script.saveBank[0].end());
@@ -378,8 +371,7 @@ public:
 		script.resource = &resource;
 		script.Initialize(nullptr);
 
-		if (script.checkPreconditions() && script.execute())
-			script.checkPostconditions();
+		script.Run();
 
 		//Dispose of slot handles before resource goes out of scope because they trigger destructor events in the resource.
 		script.saveBank[0].erase(script.saveBank[0].begin(), script.saveBank[0].end());

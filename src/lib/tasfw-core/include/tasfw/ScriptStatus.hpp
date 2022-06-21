@@ -14,9 +14,6 @@ public:
 	bool validated = false;
 	bool executed = false;
 	bool asserted = false;
-	bool validationThrew = false;
-	bool executionThrew = false;
-	bool assertionThrew = false;
 	uint64_t validationDuration = 0;
 	uint64_t executionDuration = 0;
 	uint64_t assertionDuration = 0;
@@ -54,7 +51,6 @@ public:
 	AdhocBaseScriptStatus(BaseScriptStatus baseStatus)
 	{
 		executed = baseStatus.executed;
-		executionThrew = baseStatus.executionThrew;
 		executionDuration = baseStatus.executionDuration;
 		nLoads = baseStatus.nLoads;
 		nSaves = baseStatus.nSaves;

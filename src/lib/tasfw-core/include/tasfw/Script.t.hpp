@@ -42,35 +42,35 @@ void Script<TResource>::Initialize(Script<TResource>* parentScript)
 }
 
 template <derived_from_specialization_of<Resource> TResource>
-bool Script<TResource>::checkPreconditions()
+bool Script<TResource>::Run()
 {
+	// Validate
 	auto start = std::chrono::high_resolution_clock::now();
 	BaseStatus[_adhocLevel].validated = ExecuteAdhoc([&] { return validation(); }).executed;
 	auto finish = std::chrono::high_resolution_clock::now();
 
 	BaseStatus[_adhocLevel].validationDuration = std::chrono::duration_cast<std::chrono::milliseconds>(finish - start).count();
-	return BaseStatus[_adhocLevel].validated;
-}
 
-template <derived_from_specialization_of<Resource> TResource>
-bool Script<TResource>::execute()
-{
-	auto start = std::chrono::high_resolution_clock::now();
+	if (!BaseStatus[_adhocLevel].validated)
+		return false;
+
+	// Execute
+	start = std::chrono::high_resolution_clock::now();
 	BaseStatus[_adhocLevel].executed = ModifyAdhoc([&] { return execution(); }).executed;
-	auto finish = std::chrono::high_resolution_clock::now();
+	finish = std::chrono::high_resolution_clock::now();
 
 	BaseStatus[_adhocLevel].executionDuration = std::chrono::duration_cast<std::chrono::milliseconds>(finish - start).count();
-	return BaseStatus[_adhocLevel].executed;
-}
 
-template <derived_from_specialization_of<Resource> TResource>
-bool Script<TResource>::checkPostconditions()
-{
-	auto start = std::chrono::high_resolution_clock::now();
+	if (!BaseStatus[_adhocLevel].executed)
+		return false;
+
+	// Assert
+	start = std::chrono::high_resolution_clock::now();
 	BaseStatus[_adhocLevel].asserted = ExecuteAdhoc([&] { return assertion(); }).executed;
-	auto finish = std::chrono::high_resolution_clock::now();
+	finish = std::chrono::high_resolution_clock::now();
 
 	BaseStatus[_adhocLevel].assertionDuration = std::chrono::duration_cast<std::chrono::milliseconds>(finish - start).count();
+
 	return BaseStatus[_adhocLevel].asserted;
 }
 
@@ -907,7 +907,15 @@ BaseScriptStatus Script<TResource>::ExecuteAdhocBase(F adhocScript)
 	BaseStatus[_adhocLevel].validated = true;
 
 	auto start = std::chrono::high_resolution_clock::now();
-	BaseStatus[_adhocLevel].executed = adhocScript();
+	try
+	{
+		BaseStatus[_adhocLevel].executed = adhocScript();
+	}
+	catch (std::exception e)
+	{
+		// End application if exception occurs
+		throw std::runtime_error(e.what());
+	}
 	auto finish = std::chrono::high_resolution_clock::now();
 
 	BaseStatus[_adhocLevel].executionDuration =
