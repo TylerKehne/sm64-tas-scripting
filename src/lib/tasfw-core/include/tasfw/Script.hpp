@@ -76,18 +76,8 @@ public:
 
 	SaveMetadata() = default;
 
-	SaveMetadata(Script<TResource>* script) 
-	{
-		if (script)
-		{
-			this->script = script;
-			isStartSave = true;
-			frame = 0;
-			adhocLevel = -1;
-		}
-	}
-
-	SaveMetadata(Script<TResource>* script, int64_t frame, int64_t adhocLevel) : script(script), frame(frame), adhocLevel(adhocLevel) { }
+	SaveMetadata(Script<TResource>* script, int64_t frame, int64_t adhocLevel, bool isStartSave = false)
+		: script(script), frame(frame), adhocLevel(adhocLevel), isStartSave(isStartSave) { }
 
 	SlotHandle<TResource>* GetSlotHandle();
 	bool IsValid();
@@ -123,16 +113,14 @@ protected:
 	{
 		// Save state if performant
 		uint64_t initialFrame = GetCurrentFrame();
-		OptionalSave();
 
 		TScript script = TScript(std::forward<Us>(params)...);
 		script.Initialize(this);
 
-		if (script.checkPreconditions() && script.execute())
-			script.checkPostconditions();
+		script.Run();
 
 		// Load if necessary
-		Revert(initialFrame, script.BaseStatus[0].m64Diff);
+		Revert(initialFrame, script.BaseStatus[0].m64Diff, script.saveBank[0]);
 
 		BaseStatus[_adhocLevel].nLoads += script.BaseStatus[0].nLoads;
 		BaseStatus[_adhocLevel].nSaves += script.BaseStatus[0].nSaves;
@@ -147,19 +135,13 @@ protected:
 	{
 		// Save state if performant
 		uint64_t initialFrame = GetCurrentFrame();
-		OptionalSave();
 
 		TScript script = TScript(std::forward<Us>(params)...);
 		script.Initialize(this);
 
-		if (script.checkPreconditions() && script.execute())
-			script.checkPostconditions();
+		script.Run();
 
-		// Revert state if assertion fails, otherwise apply diff
-		if (!script.BaseStatus[0].asserted || script.BaseStatus[0].m64Diff.frames.empty())
-			Revert(initialFrame, script.BaseStatus[0].m64Diff);
-		else
-			ApplyChildDiff(script.BaseStatus[0], initialFrame);
+		ApplyChildDiff(script.BaseStatus[0], script.saveBank[0], initialFrame);
 
 		BaseStatus[_adhocLevel].nLoads += script.BaseStatus[0].nLoads;
 		BaseStatus[_adhocLevel].nSaves += script.BaseStatus[0].nSaves;
@@ -256,9 +238,7 @@ private:
 	std::unordered_map<int64_t, std::set<int64_t>> loadTracker;// track past loads to know whether a cached save is optimal
 	Script* _parentScript;
 
-	bool checkPreconditions();
-	bool execute();
-	bool checkPostconditions();
+	bool Run();
 
 	void Initialize(Script<TResource>* parentScript);
 	SaveMetadata<TResource> GetLatestSave(int64_t frame);
@@ -267,12 +247,13 @@ private:
 	InputsMetadata<TResource> GetInputsMetadataAndCache(int64_t frame);
 	void DeleteSave(int64_t frame, int64_t adhocLevel);
 	void SetInputs(Inputs inputs);
-	void Revert(uint64_t frame, const M64Diff& m64);
+	void Revert(uint64_t frame, const M64Diff& m64, std::map<int64_t, SlotHandle<TResource>>& childSaveBank);
 	void AdvanceFrameRead(uint64_t& counter);
 	uint64_t GetFrameCounter(InputsMetadata<TResource> cachedInputs);
 	uint64_t IncrementFrameCounter(InputsMetadata<TResource> cachedInputs);
-	void ApplyChildDiff(const BaseScriptStatus& status, int64_t initialFrame);
+	void ApplyChildDiff(const BaseScriptStatus& status, std::map<int64_t, SlotHandle<TResource>>& childSaveBank, int64_t initialFrame);
 	SaveMetadata<TResource> Save(int64_t adhocLevel);
+	void LoadBase(uint64_t frame, bool desync);
 
 	template <typename F>
 	BaseScriptStatus ExecuteAdhocBase(F adhocScript);
@@ -321,8 +302,7 @@ public:
 		script.resource = &resource;
 		script.Initialize(nullptr);
 
-		if (script.checkPreconditions() && script.execute())
-			script.checkPostconditions();
+		script.Run();
 
 		//Dispose of slot handles before resource goes out of scope because they trigger destructor events in the resource.
 		script.saveBank[0].erase(script.saveBank[0].begin(), script.saveBank[0].end());
@@ -343,8 +323,7 @@ public:
 		script.resource = &resource;
 		script.Initialize(nullptr);
 
-		if (script.checkPreconditions() && script.execute())
-			script.checkPostconditions();
+		script.Run();
 
 		//Dispose of slot handles before resource goes out of scope because they trigger destructor events in the resource.
 		script.saveBank[0].erase(script.saveBank[0].begin(), script.saveBank[0].end());
@@ -368,8 +347,7 @@ public:
 		script.resource = &resource;
 		script.Initialize(nullptr);
 
-		if (script.checkPreconditions() && script.execute())
-			script.checkPostconditions();
+		script.Run();
 
 		//Dispose of slot handles before resource goes out of scope because they trigger destructor events in the resource.
 		script.saveBank[0].erase(script.saveBank[0].begin(), script.saveBank[0].end());
@@ -393,8 +371,7 @@ public:
 		script.resource = &resource;
 		script.Initialize(nullptr);
 
-		if (script.checkPreconditions() && script.execute())
-			script.checkPostconditions();
+		script.Run();
 
 		//Dispose of slot handles before resource goes out of scope because they trigger destructor events in the resource.
 		script.saveBank[0].erase(script.saveBank[0].begin(), script.saveBank[0].end());

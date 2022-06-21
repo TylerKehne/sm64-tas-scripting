@@ -42,85 +42,36 @@ void Script<TResource>::Initialize(Script<TResource>* parentScript)
 }
 
 template <derived_from_specialization_of<Resource> TResource>
-bool Script<TResource>::checkPreconditions()
+bool Script<TResource>::Run()
 {
-	bool validated = false;
-
+	// Validate
 	auto start = std::chrono::high_resolution_clock::now();
-	try
-	{
-		validated = validation();
-	}
-	catch (std::exception& e)
-	{
-		BaseStatus[_adhocLevel].validationThrew = true;
-	}
+	BaseStatus[_adhocLevel].validated = ExecuteAdhoc([&] { return validation(); }).executed;
 	auto finish = std::chrono::high_resolution_clock::now();
 
-	BaseStatus[_adhocLevel].validationDuration =
-		std::chrono::duration_cast<std::chrono::milliseconds>(finish - start)
-		.count();
+	BaseStatus[_adhocLevel].validationDuration = std::chrono::duration_cast<std::chrono::milliseconds>(finish - start).count();
 
-	// Revert state regardless of validation results
-	Restore(_initialFrame);
+	if (!BaseStatus[_adhocLevel].validated)
+		return false;
 
-	BaseStatus[_adhocLevel].validated = validated;
-	return validated;
-}
+	// Execute
+	start = std::chrono::high_resolution_clock::now();
+	BaseStatus[_adhocLevel].executed = ModifyAdhoc([&] { return execution(); }).executed;
+	finish = std::chrono::high_resolution_clock::now();
 
-template <derived_from_specialization_of<Resource> TResource>
-bool Script<TResource>::execute()
-{
-	bool executed = false;
+	BaseStatus[_adhocLevel].executionDuration = std::chrono::duration_cast<std::chrono::milliseconds>(finish - start).count();
 
-	auto start = std::chrono::high_resolution_clock::now();
-	try
-	{
-		executed = execution();
-	}
-	catch (std::exception& e)
-	{
-		BaseStatus[_adhocLevel].executionThrew = true;
-	}
-	auto finish = std::chrono::high_resolution_clock::now();
+	if (!BaseStatus[_adhocLevel].executed)
+		return false;
 
-	BaseStatus[_adhocLevel].executionDuration =
-		std::chrono::duration_cast<std::chrono::milliseconds>(finish - start)
-		.count();
+	// Assert
+	start = std::chrono::high_resolution_clock::now();
+	BaseStatus[_adhocLevel].asserted = ExecuteAdhoc([&] { return assertion(); }).executed;
+	finish = std::chrono::high_resolution_clock::now();
 
-	// Revert state if there are any execution errors
-	if (!executed)
-		Restore(_initialFrame);
+	BaseStatus[_adhocLevel].assertionDuration = std::chrono::duration_cast<std::chrono::milliseconds>(finish - start).count();
 
-	BaseStatus[_adhocLevel].executed = executed;
-	return executed;
-}
-
-template <derived_from_specialization_of<Resource> TResource>
-bool Script<TResource>::checkPostconditions()
-{
-	bool asserted = false;
-
-	auto start = std::chrono::high_resolution_clock::now();
-	try
-	{
-		asserted = assertion();
-	}
-	catch (std::exception& e)
-	{
-		BaseStatus[_adhocLevel].assertionThrew = true;
-
-		// Revert state only if assertion throws exception
-		Restore(_initialFrame);
-	}
-	auto finish = std::chrono::high_resolution_clock::now();
-
-	BaseStatus[_adhocLevel].assertionDuration =
-		std::chrono::duration_cast<std::chrono::milliseconds>(finish - start)
-		.count();
-
-	BaseStatus[_adhocLevel].asserted = asserted;
-	return asserted;
+	return BaseStatus[_adhocLevel].asserted;
 }
 
 template <derived_from_specialization_of<Resource> TResource>
@@ -203,8 +154,15 @@ void Script<TResource>::Apply(const M64Diff& m64Diff)
 }
 
 template <derived_from_specialization_of<Resource> TResource>
-void Script<TResource>::ApplyChildDiff(const BaseScriptStatus& status, int64_t initialFrame)
+void Script<TResource>::ApplyChildDiff(const BaseScriptStatus& status, std::map<int64_t, SlotHandle<TResource>>& childSaveBank, int64_t initialFrame)
 {
+	//Revert if script was unsuccessful
+	if (!status.asserted || status.m64Diff.frames.empty())
+	{
+		Revert(initialFrame, status.m64Diff, childSaveBank);
+		return;
+	}	
+
 	uint64_t firstFrame = status.m64Diff.frames.begin()->first;
 	uint64_t lastFrame = status.m64Diff.frames.rbegin()->first;
 
@@ -225,6 +183,12 @@ void Script<TResource>::ApplyChildDiff(const BaseScriptStatus& status, int64_t i
 		frame++;
 	}
 
+	//Move child saves to parent because they are still synced
+	//If child is ad-hoc script, pop the save bank
+	std::move(childSaveBank.begin(), childSaveBank.end(), std::insert_iterator(saveBank[_adhocLevel], saveBank[_adhocLevel].end()));
+	if (saveBank.contains(_adhocLevel + 1))
+		saveBank.erase(_adhocLevel + 1);
+
 	//Forward state to end of diff
 	Load(lastFrame + 1);
 }
@@ -244,13 +208,15 @@ InputsMetadata<TResource> Script<TResource>::GetInputsMetadata(int64_t frame)
 	//State owner determines what frame counter needs to be incremented
 	Script* stateOwner = nullptr;
 	int64_t stateOwnerAdhocLevel = -1;
+	bool replaceInputs = false; //True only if state owner is above inputs owner
+	Inputs inputs;
 
 	//Check ad-hoc script hierarchy first, then current script
 	for (int64_t adhocLevel = _adhocLevel; adhocLevel >= 0; adhocLevel--)
 	{
 		if (!stateOwner)
 		{
-			if (!BaseStatus[adhocLevel].m64Diff.frames.empty() && BaseStatus[adhocLevel].m64Diff.frames.begin()->first <= frame)
+			if (!BaseStatus[adhocLevel].m64Diff.frames.empty() && BaseStatus[adhocLevel].m64Diff.frames.begin()->first < frame)
 			{
 				stateOwner = this;
 				stateOwnerAdhocLevel = adhocLevel;
@@ -258,7 +224,17 @@ InputsMetadata<TResource> Script<TResource>::GetInputsMetadata(int64_t frame)
 		}
 
 		if (BaseStatus[adhocLevel].m64Diff.frames.contains(frame))
-			return InputsMetadata<TResource>(BaseStatus[adhocLevel].m64Diff.frames[frame], frame, stateOwner, stateOwnerAdhocLevel);
+		{
+			if (stateOwner)
+				return InputsMetadata<TResource>(replaceInputs ? inputs : BaseStatus[adhocLevel].m64Diff.frames[frame], frame, stateOwner, stateOwnerAdhocLevel);
+
+			if (!replaceInputs)
+			{
+				replaceInputs = true;
+				inputs = BaseStatus[adhocLevel].m64Diff.frames[frame];
+			}
+		}
+			
 
 		if (inputsCache[adhocLevel].contains(frame))
 		{
@@ -268,6 +244,9 @@ InputsMetadata<TResource> Script<TResource>::GetInputsMetadata(int64_t frame)
 				metadata.stateOwner = stateOwner;
 				metadata.stateOwnerAdhocLevel = stateOwnerAdhocLevel;
 			}
+
+			if (replaceInputs)
+				metadata.inputs = inputs;
 
 			return metadata;
 		}
@@ -280,6 +259,9 @@ InputsMetadata<TResource> Script<TResource>::GetInputsMetadata(int64_t frame)
 		metadata.stateOwner = stateOwner;
 		metadata.stateOwnerAdhocLevel = stateOwnerAdhocLevel;
 	}
+
+	if (replaceInputs)
+		metadata.inputs = inputs;
 	return metadata;
 
 	//This should be impossible
@@ -292,24 +274,38 @@ InputsMetadata<TResource> TopLevelScript<TResource>::GetInputsMetadata(int64_t f
 {
 	//State owner determines what frame counter needs to be incremented
 	int64_t stateOwnerAdhocLevel = -1;
+	bool replaceInputs = false; //True only if state owner is above inputs owner
+	Inputs inputs;
 
 	//Check ad-hoc script hierarchy first, then current script
 	for (int64_t adhocLevel = this->_adhocLevel; adhocLevel >= 0; adhocLevel--)
 	{
 		if (stateOwnerAdhocLevel == -1)
 		{
-			if (!this->BaseStatus[adhocLevel].m64Diff.frames.empty() && this->BaseStatus[adhocLevel].m64Diff.frames.begin()->first <= frame)
+			if (!this->BaseStatus[adhocLevel].m64Diff.frames.empty() && this->BaseStatus[adhocLevel].m64Diff.frames.begin()->first < frame)
 				stateOwnerAdhocLevel = adhocLevel;
 		}
 
 		if (this->BaseStatus[adhocLevel].m64Diff.frames.contains(frame))
-			return InputsMetadata<TResource>(this->BaseStatus[adhocLevel].m64Diff.frames[frame], frame, this, stateOwnerAdhocLevel);
+		{
+			if (stateOwnerAdhocLevel != -1)
+				return InputsMetadata<TResource>(replaceInputs ? inputs : this->BaseStatus[adhocLevel].m64Diff.frames[frame], frame, this, stateOwnerAdhocLevel);
+
+			if (!replaceInputs)
+			{
+				replaceInputs = true;
+				inputs = this->BaseStatus[adhocLevel].m64Diff.frames[frame];
+			}
+		}
 
 		if (this->inputsCache[adhocLevel].contains(frame))
 		{
 			InputsMetadata<TResource> metadata = this->inputsCache[adhocLevel][frame];
-			if (stateOwnerAdhocLevel == -1)
-				metadata.stateOwnerAdhocLevel = adhocLevel;
+			if (stateOwnerAdhocLevel != -1)
+				metadata.stateOwnerAdhocLevel = stateOwnerAdhocLevel;
+
+			if (replaceInputs)
+				metadata.inputs = inputs;
 
 			return metadata;
 		}
@@ -317,6 +313,10 @@ InputsMetadata<TResource> TopLevelScript<TResource>::GetInputsMetadata(int64_t f
 
 	if (stateOwnerAdhocLevel == -1)
 		stateOwnerAdhocLevel = 0;
+
+	//Return this if inputs have been found but state owner is root
+	if (replaceInputs)
+		return InputsMetadata<TResource>(inputs, frame, this, 0);
 
 	//Then check actual m64.
 	//For the purposes of the frame counter, mark as adhoc level 0.
@@ -367,7 +367,6 @@ SaveMetadata<TResource> Script<TResource>::GetLatestSave(int64_t frame)
 	for (int64_t adhocLevel = _adhocLevel; adhocLevel >= 0; adhocLevel--)
 	{
 		//Get most recent save in script
-
 		auto save = saveBank[adhocLevel].empty() || earlyFrame < saveBank[adhocLevel].begin()->first
 			? saveBank[adhocLevel].end()
 			: std::prev(saveBank[adhocLevel].upper_bound(earlyFrame));
@@ -394,21 +393,21 @@ SaveMetadata<TResource> Script<TResource>::GetLatestSave(int64_t frame)
 				if (cachedSave->first >= bestSave.frame)
 				{
 					//However, if there was a load between the target frame and the cached save, it may not be optimal and we should continue recursion
-					auto loadAfterCachedSave = loadTracker[_adhocLevel].lower_bound(cachedSave->first);
-					if (loadAfterCachedSave == loadTracker[_adhocLevel].end() || *loadAfterCachedSave < frame)
+					auto loadAfterCachedSave = loadTracker[adhocLevel].lower_bound(cachedSave->first);
+					if (loadAfterCachedSave != loadTracker[adhocLevel].end() && *loadAfterCachedSave < frame)
 						bestSave = cachedSave->second;
 					else
 						return cachedSave->second;
 				}
-
 			}
 			else
 				saveCache[adhocLevel].erase(cachedSave->first); // Delete stale cached save	
 		}
 
 		// Don't search past start of m64 diff to avoid desync
-		earlyFrame = !BaseStatus[adhocLevel].m64Diff.frames.empty() ?
-			(std::min)(BaseStatus[adhocLevel].m64Diff.frames.begin()->first, (uint64_t)earlyFrame) : frame;
+		earlyFrame = !BaseStatus[adhocLevel].m64Diff.frames.empty()
+			? (std::min)(BaseStatus[adhocLevel].m64Diff.frames.begin()->first, (uint64_t)earlyFrame)
+			: (std::min)(frame, earlyFrame);
 
 		//If save is not before the start of the diff, we have the best possible save, so return it
 		if (bestSave.frame >= 0 && bestSave.frame >= earlyFrame)
@@ -430,7 +429,7 @@ SaveMetadata<TResource> Script<TResource>::GetLatestSave(int64_t frame)
 		return bestSave;
 
 	//Default to initial save
-	return SaveMetadata<TResource>(this);
+	return SaveMetadata<TResource>(this, _initialFrame, 0, true);
 }
 
 template <derived_from_specialization_of<Resource> TResource>
@@ -438,11 +437,6 @@ SaveMetadata<TResource> Script<TResource>::GetLatestSaveAndCache(int64_t frame)
 {
 	SaveMetadata<TResource> save = GetLatestSave(frame);
 	saveCache[_adhocLevel][save.frame] = save; // Cache save to save recursion time later
-
-	//Tracked loads between this frame and the cached save frame are obsoloted by this one
-	auto loadAfterCachedSave = loadTracker[_adhocLevel].lower_bound(save.frame);
-	if (loadAfterCachedSave != loadTracker[_adhocLevel].end() && *loadAfterCachedSave < frame)
-		loadTracker[_adhocLevel].erase(loadAfterCachedSave);
 
 	//Track load to mark cached save as optimal
 	if (!loadTracker[_adhocLevel].contains(frame))
@@ -454,46 +448,13 @@ SaveMetadata<TResource> Script<TResource>::GetLatestSaveAndCache(int64_t frame)
 template <derived_from_specialization_of<Resource> TResource>
 void Script<TResource>::Load(uint64_t frame)
 {
-	// Load most recent save at or before frame. Check child saves before
-	// parent. If target frame is in future, check if faster to frame advance or load.
-	int64_t currentFrame = GetCurrentFrame();
-	auto latestSave = GetLatestSaveAndCache(frame);
-	if (frame < currentFrame)
-	{
-		resource->LoadState(latestSave.GetSlotHandle()->slotId);
-		BaseStatus[_adhocLevel].nLoads++;
-	}
-	else if (latestSave.frame > currentFrame && resource->shouldLoad(latestSave.frame - currentFrame))
-		resource->LoadState(latestSave.GetSlotHandle()->slotId);
-
-	// If save is before target frame, play back until frame is reached
-	currentFrame = GetCurrentFrame();
-	uint64_t frameCounter = 0;
-	while (currentFrame++ < frame)
-	{
-		auto cachedInputs = GetInputsMetadataAndCache(currentFrame);
-		frameCounter += IncrementFrameCounter(cachedInputs);
-		AdvanceFrameRead();
-
-		//Estimate future frame advances from aggregate of historical frame advances on this input segment
-		//If it reaches a certain threshold, creating a save is performant
-		if (resource->shouldSave(frameCounter))
-		{
-			SaveMetadata<TResource> cachedSave = cachedInputs.stateOwner->Save(cachedInputs.stateOwnerAdhocLevel);
-			saveCache[_adhocLevel][currentFrame] = cachedSave;
-			frameCounter = 0;
-		}
-	}
+	LoadBase(frame, false);
 }
 
-// Load method specifically for Script.Execute() and Script.Modify(), checks for desyncs
 template <derived_from_specialization_of<Resource> TResource>
-void Script<TResource>::Revert(uint64_t frame, const M64Diff& m64)
+void Script<TResource>::LoadBase(uint64_t frame, bool desync)
 {
-	// Check if script altered state
 	int64_t currentFrame = GetCurrentFrame();
-	bool desync =
-		(!m64.frames.empty()) && (m64.frames.begin()->first < currentFrame);
 
 	// Load most recent save at or before frame. Check child saves before
 	// parent. If target frame is in future, check if faster to frame advance or load.
@@ -511,9 +472,10 @@ void Script<TResource>::Revert(uint64_t frame, const M64Diff& m64)
 	uint64_t frameCounter = 0;
 	while (currentFrame++ < frame)
 	{
+		AdvanceFrameRead();
+
 		auto cachedInputs = GetInputsMetadataAndCache(currentFrame);
 		frameCounter += IncrementFrameCounter(cachedInputs);
-		AdvanceFrameRead();
 
 		//Estimate future frame advances from aggregate of historical frame advances on this input segment
 		//If it reaches a certain threshold, creating a save is performant
@@ -524,6 +486,30 @@ void Script<TResource>::Revert(uint64_t frame, const M64Diff& m64)
 			frameCounter = 0;
 		}
 	}
+}
+
+// Load method specifically for Script.Execute() and Script.Modify(), checks for desyncs
+template <derived_from_specialization_of<Resource> TResource>
+void Script<TResource>::Revert(uint64_t frame, const M64Diff& m64, std::map<int64_t, SlotHandle<TResource>>& childSaveBank)
+{
+	// Check if script altered state
+	bool desync = (!m64.frames.empty()) && (m64.frames.begin()->first < GetCurrentFrame());
+
+	auto lastSyncedSave = childSaveBank.end();
+	if (!m64.frames.empty() && !childSaveBank.empty())
+	{
+		auto firstDesyncedSave = childSaveBank.upper_bound(m64.frames.begin()->first);
+		if (firstDesyncedSave != childSaveBank.begin())
+			lastSyncedSave = std::prev(firstDesyncedSave);
+	}
+
+	//Move child saves to parent that are not desynced
+	//If child is ad-hoc script, pop the save bank
+	std::move(childSaveBank.begin(), lastSyncedSave, std::insert_iterator(saveBank[_adhocLevel], saveBank[_adhocLevel].end()));
+	if (saveBank.contains(_adhocLevel + 1))
+		saveBank.erase(_adhocLevel + 1);
+
+	LoadBase(frame, desync);
 }
 
 template <derived_from_specialization_of<Resource> TResource>
@@ -546,23 +532,24 @@ void Script<TResource>::Rollback(uint64_t frame)
 		loadTracker[_adhocLevel].erase(loadTracker[_adhocLevel].upper_bound(firstFrame), loadTracker[_adhocLevel].end());
 	}
 
-	Load(frame);
+	//Desyncs should be impossible for rollback because no inputs are changed prior to frame being loaded
+	LoadBase(frame, false);
 }
 
 // Same as Rollback, but starts from current frame. Useful for scripts that edit past frames
 template <derived_from_specialization_of<Resource> TResource>
 void Script<TResource>::RollForward(int64_t frame)
 {
-	// Roll back diff and savebank to current frame. Note that roll forward on diff
-	// includes current frame.
-	uint64_t currentFrame = GetCurrentFrame();
+	// Check if script altered state
+	bool desync = (!BaseStatus[_adhocLevel].m64Diff.frames.empty()) && (BaseStatus[_adhocLevel].m64Diff.frames.begin()->first < GetCurrentFrame());
 
 	if (!BaseStatus[_adhocLevel].m64Diff.frames.empty())
 	{
 		int64_t firstFrame = BaseStatus[_adhocLevel].m64Diff.frames.begin()->first;
 
-		auto inputsUpperBound = BaseStatus[_adhocLevel].m64Diff.frames.upper_bound(frame);
-		if (inputsUpperBound == BaseStatus[_adhocLevel].m64Diff.frames.begin() && BaseStatus[_adhocLevel].m64Diff.frames.size() == 1)
+		//Roll forward inputs through frame prior to target frame
+		auto inputsUpperBound = BaseStatus[_adhocLevel].m64Diff.frames.upper_bound(frame - 1);
+		if (inputsUpperBound == BaseStatus[_adhocLevel].m64Diff.frames.begin())
 			inputsUpperBound = BaseStatus[_adhocLevel].m64Diff.frames.end();
 		else
 			inputsUpperBound = std::prev(inputsUpperBound);
@@ -576,13 +563,16 @@ void Script<TResource>::RollForward(int64_t frame)
 		loadTracker[_adhocLevel].erase(loadTracker[_adhocLevel].upper_bound(firstFrame), loadTracker[_adhocLevel].end());
 	}
 
-	Load(frame);
+	LoadBase(frame, desync);
 }
 
 // Load and clear diff and savebank
 template <derived_from_specialization_of<Resource> TResource>
 void Script<TResource>::Restore(int64_t frame)
 {
+	// Check if script altered state
+	bool desync = (!BaseStatus[_adhocLevel].m64Diff.frames.empty()) && (BaseStatus[_adhocLevel].m64Diff.frames.begin()->first < GetCurrentFrame());
+
 	// Clear diff, frame counter and savebank
 	if (!BaseStatus[_adhocLevel].m64Diff.frames.empty())
 	{
@@ -599,7 +589,7 @@ void Script<TResource>::Restore(int64_t frame)
 		loadTracker[_adhocLevel].erase(loadTracker[_adhocLevel].upper_bound(firstFrame), loadTracker[_adhocLevel].end());
 	}
 
-	Load(frame);
+	LoadBase(frame, desync);
 }
 
 template <derived_from_specialization_of<Resource> TResource>
@@ -623,7 +613,7 @@ SaveMetadata<TResource> Script<TResource>::Save(int64_t adhocLevel)
 		BaseStatus[adhocLevel].nSaves++;
 	}
 
-	//Return metadat for caching
+	//Return metadata for caching
 	return SaveMetadata<TResource>(this, currentFrame, adhocLevel);
 }
 
@@ -636,17 +626,18 @@ void Script<TResource>::OptionalSave()
 	int64_t currentFrame = GetCurrentFrame();
 	int64_t latestSaveFrame = GetLatestSaveAndCache(currentFrame).frame;
 	uint64_t frameCounter = 0;
-	for (int64_t frame = latestSaveFrame; frame <= currentFrame; frame++)
+	for (int64_t frame = latestSaveFrame + 1; frame <= currentFrame; frame++)
 	{
-		if (resource->shouldSave(frameCounter * 2))
+		auto cachedInputs = GetInputsMetadataAndCache(frame);
+		frameCounter += GetFrameCounter(cachedInputs);
+
+		if (resource->shouldSave(frameCounter / 2))
 		{
-			//Create save in this script at the current frame
-			Save();
+			//Create save at the current frame in current frame state owner
+			SaveMetadata<TResource> cachedSave = cachedInputs.stateOwner->Save(cachedInputs.stateOwnerAdhocLevel);
+			saveCache[_adhocLevel][currentFrame] = cachedSave;
 			break;
 		}
-
-		//Increment AFTER save check. We want to know if a save on the NEXT frame is worthwhile based on the counter from this frame
-		frameCounter += GetFrameCounter(GetInputsMetadataAndCache(frame));
 	}
 }
 
@@ -669,10 +660,11 @@ void Script<TResource>::SetInputs(Inputs inputs)
 	yStickDllAddr[0] = inputs.stick_y;
 }
 
+// Only checks base diff, i.e. ad-hoc level 0
 template <derived_from_specialization_of<Resource> TResource>
 bool Script<TResource>::IsDiffEmpty()
 {
-	return BaseStatus[_adhocLevel].m64Diff.frames.empty();
+	return BaseStatus[0].m64Diff.frames.empty();
 }
 
 template <derived_from_specialization_of<Resource> TResource>
@@ -687,7 +679,7 @@ AdhocBaseScriptStatus Script<TResource>::ExecuteAdhoc(AdhocScript auto adhocScri
 	int64_t initialFrame = GetCurrentFrame();
 
 	BaseScriptStatus status = ExecuteAdhocBase(adhocScript);
-	Revert(initialFrame, status.m64Diff);
+	Revert(initialFrame, status.m64Diff, saveBank[_adhocLevel + 1]);
 
 	return AdhocBaseScriptStatus(status);
 }
@@ -700,7 +692,7 @@ AdhocScriptStatus<TAdhocCustomScriptStatus> Script<TResource>::ExecuteAdhoc(F ad
 
 	TAdhocCustomScriptStatus customStatus = TAdhocCustomScriptStatus();
 	BaseScriptStatus baseStatus = ExecuteAdhocBase([&]() { return adhocScript(customStatus); });
-	Revert(initialFrame, baseStatus.m64Diff);
+	Revert(initialFrame, baseStatus.m64Diff, saveBank[_adhocLevel + 1]);
 
 	return AdhocScriptStatus<TAdhocCustomScriptStatus>(baseStatus, customStatus);
 }
@@ -711,12 +703,7 @@ AdhocBaseScriptStatus Script<TResource>::ModifyAdhoc(AdhocScript auto adhocScrip
 	int64_t initialFrame = GetCurrentFrame();
 
 	auto status = ExecuteAdhocBase(adhocScript);
-
-	// Revert state if assertion fails, otherwise apply diff
-	if (!status.asserted || status.m64Diff.frames.empty())
-		Revert(initialFrame, status.m64Diff);
-	else
-		ApplyChildDiff(status, initialFrame);
+	ApplyChildDiff(status, saveBank[_adhocLevel + 1], initialFrame);
 
 	return AdhocBaseScriptStatus(status);
 }
@@ -729,12 +716,7 @@ AdhocScriptStatus<TAdhocCustomScriptStatus> Script<TResource>::ModifyAdhoc(F adh
 
 	TAdhocCustomScriptStatus customStatus = TAdhocCustomScriptStatus();
 	BaseScriptStatus baseStatus = ExecuteAdhocBase([&]() { return adhocScript(customStatus); });
-
-	// Revert state if assertion fails, otherwise apply diff
-	if (!baseStatus.asserted || baseStatus.m64Diff.frames.empty())
-		Revert(initialFrame, baseStatus.m64Diff);
-	else
-		ApplyChildDiff(baseStatus, initialFrame);
+	ApplyChildDiff(baseStatus, saveBank[_adhocLevel + 1], initialFrame);
 
 	return AdhocScriptStatus<TAdhocCustomScriptStatus>(baseStatus, customStatus);
 }
@@ -823,11 +805,7 @@ template <class TCompareStatus>
 	requires(std::derived_from<TCompareStatus, CompareStatus<TCompareStatus>>)
 AdhocScriptStatus<TCompareStatus> Script<TResource>::ModifyCompare(int64_t initialFrame, const AdhocScriptStatus<TCompareStatus>& status1)
 {
-	// Revert state if execution failed or diff is empty, otherwise apply diff
-	if (!status1.executed && status1.m64Diff.frames.empty())
-		Revert(initialFrame, status1.m64Diff);
-	else
-		ApplyChildDiff(status1, initialFrame);
+	ApplyChildDiff(status1, saveBank[_adhocLevel + 1], initialFrame);
 
 	return status1;
 }
@@ -839,16 +817,11 @@ template <class TCompareStatus, AdhocCustomStatusScript<TCompareStatus> F, Adhoc
 AdhocScriptStatus<TCompareStatus> Script<TResource>::ModifyCompare(int64_t initialFrame, const AdhocScriptStatus<TCompareStatus>& status1, F&& adhocScript2, G&&... adhocScripts)
 {
 	//Revert state before executing new script
-	Revert(initialFrame, status1.m64Diff);
-	auto status2 = ExecuteAdhoc<TCompareStatus>(std::forward<F>(adhocScript2));
+	Revert(initialFrame, status1.m64Diff, saveBank[_adhocLevel + 1]);
+	auto status2 = ExecuteAdhocNoRevert<TCompareStatus>(std::forward<F>(adhocScript2));
 	if (status2.executed && status2.Terminator(status2))
 	{
-		// Revert state if execution failed or diff is empty, otherwise apply diff
-		if (!status2.executed && status2.m64Diff.frames.empty())
-			Revert(initialFrame, status2.m64Diff);
-		else
-			ApplyChildDiff(status2, initialFrame);
-
+		ApplyChildDiff(status2, saveBank[_adhocLevel + 1], initialFrame);
 		return status2;
 	}
 
@@ -876,26 +849,16 @@ AdhocScriptStatus<TCompareStatus> Script<TResource>::ModifyCompare(F&& adhocScri
 	auto status1 = ExecuteAdhocNoRevert<TCompareStatus>(std::forward<F>(adhocScript1));
 	if (status1.executed && status1.Terminator(status1))
 	{
-		// Revert state if diff is empty, otherwise apply diff
-		if (status1.m64Diff.frames.empty())
-			Revert(initialFrame, status1.m64Diff);
-		else
-			ApplyChildDiff(status1, initialFrame);
-
+		ApplyChildDiff(status1, saveBank[_adhocLevel + 1], initialFrame);
 		return status1;
 	}
 
 	//Revert state before executing new script
-	Revert(initialFrame, status1.m64Diff);
+	Revert(initialFrame, status1.m64Diff, saveBank[_adhocLevel + 1]);
 	auto status2 = ExecuteAdhocNoRevert<TCompareStatus>(std::forward<G>(adhocScript2));
 	if (status2.executed && status2.Terminator(status2))
 	{
-		// Revert state if diff is empty, otherwise apply diff
-		if (status2.m64Diff.frames.empty())
-			Revert(initialFrame, status2.m64Diff);
-		else
-			ApplyChildDiff(status2, initialFrame);
-
+		ApplyChildDiff(status2, saveBank[_adhocLevel + 1], initialFrame);
 		return status2;
 	}
 
@@ -948,9 +911,10 @@ BaseScriptStatus Script<TResource>::ExecuteAdhocBase(F adhocScript)
 	{
 		BaseStatus[_adhocLevel].executed = adhocScript();
 	}
-	catch (std::exception& e)
+	catch (std::exception e)
 	{
-		BaseStatus[_adhocLevel].executionThrew = true;
+		// End application if exception occurs
+		throw std::runtime_error(e.what());
 	}
 	auto finish = std::chrono::high_resolution_clock::now();
 
@@ -961,9 +925,10 @@ BaseScriptStatus Script<TResource>::ExecuteAdhocBase(F adhocScript)
 	BaseStatus[_adhocLevel].asserted = BaseStatus[_adhocLevel].executed;
 
 	//Decrement adhoc level, revert state and return status
+	//NOTE: saveBank is not popped here as the saves may be moved to the parent.
+	//Caller is responsible for popping it.
 	BaseScriptStatus status = BaseStatus[_adhocLevel];
 	BaseStatus.erase(_adhocLevel);
-	saveBank.erase(_adhocLevel);
 	frameCounter.erase(_adhocLevel);
 	saveCache.erase(_adhocLevel);
 	inputsCache.erase(_adhocLevel);
