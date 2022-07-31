@@ -947,9 +947,6 @@ template <derived_from_specialization_of<Resource> TResource>
 template <class TAdhocCustomScriptStatus, AdhocCustomStatusScript<TAdhocCustomScriptStatus> F>
 AdhocScriptStatus<TAdhocCustomScriptStatus> Script<TResource>::ExecuteAdhocNoRevert(F adhocScript)
 {
-	// Save state if performant
-	OptionalSave();
-
 	TAdhocCustomScriptStatus customStatus = TAdhocCustomScriptStatus();
 	BaseScriptStatus baseStatus = ExecuteAdhocBase([&]() { return adhocScript(customStatus); });
 

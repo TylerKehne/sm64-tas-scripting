@@ -77,6 +77,47 @@ bool BitFsPyramidOscillation::execution()
 	oscillationParams.roughTargetNormal =
 		getRoughTargetNormal(_quadrant, -1, initAngle);
 	oscillationParams.roughTargetAngle = initAngleStatus.angleFacing;
+
+	auto params1 = oscillationParams;
+	params1.targetXzSum = 0.68f;
+	auto params2 = oscillationParams;
+	//std::vector<std::tuple<BitFsPyramidOscillation_ParamsDto, int>> params = { std::tuple(params1, 3), std::tuple(params2, 4) };
+	std::vector<std::tuple<BitFsPyramidOscillation_ParamsDto>> params = { std::tuple(params1), std::tuple(params2) };
+	auto testStatus = Compare<BitFsPyramidOscillation_RunDownhill>(
+		params,
+		[](auto iteration, auto status1, auto status2)
+		{
+			if (status1.maxSpeed > status2.maxSpeed)
+				return status1;
+
+			return status2;
+		},
+		[](auto iteration, auto status) { return false; });
+
+	auto testStatus2 = Compare<BitFsPyramidOscillation_RunDownhill, std::tuple<BitFsPyramidOscillation_ParamsDto>>(
+		[&](auto iteration, auto& params)
+		{
+			switch (iteration)
+			{
+			case 0:
+				params = std::tuple(params1);
+				return true;
+			case 1:
+				params = std::tuple(params2);
+				return true;
+			}
+
+			return false;
+		},
+		[](auto iteration, auto status1, auto status2)
+		{
+			if (status1.maxSpeed > status2.maxSpeed)
+				return status1;
+
+			return status2;
+		},
+		[](auto iteration, auto status) { return false; });
+
 	auto initRunStatus =
 		Modify<BitFsPyramidOscillation_RunDownhill>(oscillationParams);
 	if (!initRunStatus.asserted)
