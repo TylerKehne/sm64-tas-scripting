@@ -40,7 +40,7 @@ public:
 
 	template <class TScript,
 		class TTupleContainer,
-		typename TTuple = TTupleContainer::value_type,
+		typename TTuple = typename TTupleContainer::value_type,
 		ScriptComparator<TScript> F,
 		ScriptTerminator<TScript> G>
 		requires (derived_from_specialization_of<TScript, Script> && constructible_from_tuple<TScript, TTuple>)
@@ -49,7 +49,7 @@ public:
 		//Have to wrap in lambda to satisfy type constraints
 		auto executeFromTuple = [&]<typename... Ts>(Ts&&... p) -> ScriptStatus<TScript>
 		{
-			return script->Execute<TScript>(std::forward<Ts>(p)...);
+			return script->template Execute<TScript>(std::forward<Ts>(p)...);
 		};
 
 		ScriptStatus<TScript> status1 = ScriptStatus<TScript>();
