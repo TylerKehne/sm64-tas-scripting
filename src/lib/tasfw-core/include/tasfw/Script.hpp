@@ -201,13 +201,13 @@ protected:
 
 	template <derived_from_specialization_of<Script> TScript,
 		class TTupleContainer,
-		typename TTuple = TTupleContainer::value_type,
+		typename TTuple = typename TTupleContainer::value_type,
 		ScriptComparator<TScript> F,
 		ScriptTerminator<TScript> G>
 		requires (constructible_from_tuple<TScript, TTuple>)
 	ScriptStatus<TScript> Compare(const TTupleContainer& paramsList, F comparator, G terminator)
 	{
-		return compareHelper.Compare<TScript>(paramsList, std::forward<F>(comparator), [](int64_t, const ScriptStatus<TScript>&) { return false; });
+		return compareHelper.template Compare<TScript>(paramsList, std::forward<F>(comparator), [](int64_t, const ScriptStatus<TScript>&) { return false; });
 	}
 
 	/*
@@ -276,7 +276,7 @@ protected:
 
 	template <derived_from_specialization_of<Script> TScript,
 		class TTupleContainer,
-		typename TTuple = TTupleContainer::value_type,
+		typename TTuple = typename TTupleContainer::value_type,
 		ScriptComparator<TScript> F>
 	requires (constructible_from_tuple<TScript, TTuple>)
 	ScriptStatus<TScript> Compare(const TTupleContainer& paramsList, F&& comparator)
@@ -359,7 +359,7 @@ protected:
 
 	template <derived_from_specialization_of<Script> TScript,
 		class TTupleContainer,
-		typename TTuple = TTupleContainer::value_type,
+		typename TTuple = typename TTupleContainer::value_type,
 		ScriptComparator<TScript> F,
 		ScriptTerminator<TScript> G>
 		requires (constructible_from_tuple<TScript, TTuple>)
@@ -463,7 +463,7 @@ protected:
 
 	template <derived_from_specialization_of<Script> TScript,
 		class TTupleContainer,
-		typename TTuple = TTupleContainer::value_type,
+		typename TTuple = typename TTupleContainer::value_type,
 		ScriptComparator<TScript> F>
 		requires (constructible_from_tuple<TScript, TTuple>)
 	ScriptStatus<TScript> ModifyCompare(const TTupleContainer& paramsList, F&& comparator)
@@ -505,7 +505,7 @@ protected:
 			return status1;
 
 		// We want to avoid reversion of successful script
-		terminate = ExecuteAdhocBase([&]()
+		bool terminate = ExecuteAdhocBase([&]()
 			{
 				status1 = std::apply(executeFromTuple, params);
 
