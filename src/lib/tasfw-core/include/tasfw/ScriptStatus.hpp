@@ -8,6 +8,12 @@
 template <derived_from_specialization_of<Resource> TResource>
 class Script;
 
+template <typename F, typename R = std::invoke_result_t<F>>
+concept AdhocScript = std::same_as<R, bool>;
+
+template <typename F, typename T>
+concept AdhocCustomStatusScript = std::same_as<std::invoke_result_t<F, T&>, bool>;
+
 class BaseScriptStatus
 {
 public:
@@ -39,7 +45,6 @@ class AdhocBaseScriptStatus
 {
 public:
 	bool executed = false;
-	bool executionThrew = false;
 	uint64_t executionDuration = 0;
 	uint64_t nLoads = 0;
 	uint64_t nSaves = 0;

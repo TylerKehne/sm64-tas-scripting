@@ -17,12 +17,6 @@ class Script;
 template <derived_from_specialization_of<Resource> TResource>
 class TopLevelScript;
 
-template <typename F, typename R = std::invoke_result_t<F>>
-concept AdhocScript = std::same_as<R, bool>;
-
-template <typename F, typename T>
-concept AdhocCustomStatusScript = std::same_as<std::invoke_result_t<F, T&>, bool>;
-
 template <derived_from_specialization_of<Resource> TResource>
 class SlotHandle
 {
@@ -281,6 +275,18 @@ protected:
 	ScriptStatus<TScript> ModifyCompare(F&& paramsGenerator, G&& comparator)
 	{
 		return compareHelper.template ModifyCompare<TScript, TTuple>(std::forward<F>(paramsGenerator), std::forward<G>(comparator), [](int64_t, const ScriptStatus<TScript>&) { return false; });
+	}
+
+	template <derived_from_specialization_of<Script> TScript,
+		class TTupleContainer,
+		typename TTuple = typename TTupleContainer::value_type,
+		AdhocScript F,
+		ScriptComparator<TScript> G,
+		ScriptTerminator<TScript> H>
+		requires (constructible_from_tuple<TScript, TTuple>)
+	AdhocScriptStatus<Substatus<TScript>> DynamicCompare(const TTupleContainer& paramsList, F&& mutator, G&& comparator, H&& terminator)
+	{
+		return compareHelper.template DynamicCompare<TScript>(paramsList, std::forward<F>(mutator), std::forward<G>(comparator), std::forward<H>(terminator));
 	}
 
 	// TODO: move this method to some utility class
