@@ -82,7 +82,7 @@ private:
 	void GetVertices(short** data, short* vertexData);
 	int CountSurfaces(short* data);
 	short SurfaceHasForce(short surfaceType);
-	void LoadObjectSurfaces(Sm64Object* pyramid, short** data, short* vertexData, Sm64Surface** surfaces);
+	void LoadObjectSurfaces(short** data, short* vertexData, Sm64Surface** surfaces);
 	void ReadSurfaceData(short* vertexData, short** vertexIndices, Sm64Surface* surface);
 };
 

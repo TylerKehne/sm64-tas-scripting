@@ -33,8 +33,6 @@ bool BitFsPyramidOscillation_Iteration::validation()
 bool BitFsPyramidOscillation_Iteration::execution()
 {
 	MarioState* marioState = (MarioState*) (resource->addr("gMarioStates"));
-	Camera* camera		   = *(Camera**) (resource->addr("gCamera"));
-	Object* pyramid		   = marioState->floor->object;
 
 	ScriptStatus<BitFsPyramidOscillation_TurnThenRunDownhill> turnRunStatus;
 	for (uint64_t frame = _maxFrame; frame >= _minFrame; frame--)

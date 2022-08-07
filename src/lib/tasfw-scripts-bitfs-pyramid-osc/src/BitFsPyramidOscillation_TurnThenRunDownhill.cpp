@@ -35,8 +35,6 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill::validation()
 bool BitFsPyramidOscillation_TurnThenRunDownhill::execution()
 {
 	MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-	Camera* camera = *(Camera**)(resource->addr("gCamera"));
-	Object* pyramid = marioState->floor->object;
 
 	//Record initial XZ sum, don't want to decrease this
 	CustomStatus.initialXzSum = _oscillationParams.initialXzSum;

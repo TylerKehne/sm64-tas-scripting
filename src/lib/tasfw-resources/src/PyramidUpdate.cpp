@@ -76,7 +76,7 @@ void PyramidUpdateMem::LoadSurfaces(Object* pyramidLibSm64, Sm64Object& pyramid)
 
 	Sm64Surface* surfaces = &(*pyramid.surfaces.begin());
 	while (*collisionData != TERRAIN_LOAD_CONTINUE)
-		LoadObjectSurfaces(&pyramid, &collisionData, vertexData, &surfaces);
+		LoadObjectSurfaces(&collisionData, vertexData, &surfaces);
 }
 
 void PyramidUpdateMem::GetVertices(short** data, short* vertexData)
@@ -157,7 +157,7 @@ short PyramidUpdateMem::SurfaceHasForce(short surfaceType)
 	return hasForce;
 }
 
-void PyramidUpdateMem::LoadObjectSurfaces(Sm64Object* pyramid, short** data, short* vertexData, Sm64Surface** surfaces)
+void PyramidUpdateMem::LoadObjectSurfaces(short** data, short* vertexData, Sm64Surface** surfaces)
 {
 	int surfaceType;
 	int i;
