@@ -46,7 +46,7 @@ bool BitFsPyramidOscillation::validation()
 
 bool BitFsPyramidOscillation::execution()
 {
-	const BehaviorScript* pyramidBehavior =
+	[[maybe_unused]] const BehaviorScript* pyramidBehavior =
 		(const BehaviorScript*) (resource->addr("bhvBitfsTiltingInvertedPyramid"));
 	MarioState* marioState = *(MarioState**) (resource->addr("gMarioState"));
 	Camera* camera		   = *(Camera**) (resource->addr("gCamera"));
@@ -64,7 +64,7 @@ bool BitFsPyramidOscillation::execution()
 		initAngleStatus.downhillRotation);
 	AdvanceFrameWrite(Inputs(0, stick.first, stick.second));
 
-	uint64_t preTurnFrame = GetCurrentFrame();
+	[[maybe_unused]] uint64_t preTurnFrame = GetCurrentFrame();
 	OptionalSave();
 
 	// Initialize base oscillation params dto
@@ -85,14 +85,14 @@ bool BitFsPyramidOscillation::execution()
 	std::vector<std::tuple<BitFsPyramidOscillation_ParamsDto>> params = { std::tuple(params1), std::tuple(params2) };
 	auto testStatus = Compare<BitFsPyramidOscillation_RunDownhill>(
 		params,
-		/* comparator */ [](auto iteration, auto status1, auto status2)
+		/* comparator */ []([[maybe_unused]] auto iteration, auto status1, auto status2)
 		{
 			if (status1->maxSpeed > status2->maxSpeed)
 				return status1;
 
 			return status2;
 		},
-		/* terminator */ [](auto iteration, auto status) { return false; });
+		/* terminator */ []([[maybe_unused]] auto iteration, [[maybe_unused]] auto status) { return false; });
 
 	auto testStatus2 = Compare<BitFsPyramidOscillation_RunDownhill, std::tuple<BitFsPyramidOscillation_ParamsDto>>(
 		/* paramsGenerator */ [&](auto iteration, auto& params)
@@ -109,14 +109,14 @@ bool BitFsPyramidOscillation::execution()
 
 			return false;
 		},
-		/* comparator */ [](auto iteration, auto status1, auto status2)
+		/* comparator */ []([[maybe_unused]] auto iteration, auto status1, auto status2)
 		{
 			if (status1->maxSpeed > status2->maxSpeed)
 				return status1;
 
 			return status2;
 		},
-		/* terminator */ [](auto iteration, auto status) { return false; });
+		/* terminator */ []([[maybe_unused]] auto iteration, [[maybe_unused]] auto status) { return false; });
 
 	auto testStatus3 = DynamicCompare<BitFsPyramidOscillation_RunDownhill, std::tuple<BitFsPyramidOscillation_ParamsDto>>(
 		/* paramsGenerator */ [&](auto iteration, auto& params)
@@ -139,14 +139,14 @@ bool BitFsPyramidOscillation::execution()
 
 			return true;
 		},
-		/* comparator */ [](auto iteration, auto status1, auto status2)
+		/* comparator */ []([[maybe_unused]] auto iteration, [[maybe_unused]] auto status1, auto status2)
 		{
 			if (status1->maxSpeed > status2->maxSpeed)
 				return status1;
 
 			return status2;
 		},
-		/* terminator */ [](auto iteration, auto status) { return false; });
+		/* terminator */ []([[maybe_unused]] auto iteration, [[maybe_unused]] auto status) { return false; });
 
 	class TestAdhocStatus
 	{
@@ -166,14 +166,14 @@ bool BitFsPyramidOscillation::execution()
 
 			return true;
 		},
-		/* comparator */ [](auto iteration, auto status1, auto status2)
+		/* comparator */ []([[maybe_unused]] auto iteration, auto status1, auto status2)
 		{
 			if (status1->maxSpeed > status2->maxSpeed)
 				return status1;
 
 			return status2;
 		},
-		/* terminator */ [](auto iteration, auto status) { return false; });
+		/* terminator */ []([[maybe_unused]] auto iteration, [[maybe_unused]] auto status) { return false; });
 
 	auto initRunStatus =
 		Modify<BitFsPyramidOscillation_RunDownhill>(oscillationParams);

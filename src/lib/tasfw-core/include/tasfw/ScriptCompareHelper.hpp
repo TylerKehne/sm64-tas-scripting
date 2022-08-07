@@ -398,7 +398,6 @@ public:
 				if (status1.asserted && script->ExecuteAdhoc([&]() { return terminator(iteration, status1); }).executed)
 					return true;
 
-				bool first = true;
 				while (GenerateParams<TScript>(std::forward<F>(paramsGenerator), ++iteration, params))
 				{
 					// Mutate state before next iteration. If mutation fails, stop execution

@@ -47,7 +47,7 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::execution()
 	do
 	{
 		// Don't want to turn around early, so cap intended yaw diff at 2048
-		int16_t intendedYaw = _angle;
+		[[maybe_unused]] int16_t intendedYaw = _angle;
 		if (abs(_angle - marioState->faceAngle[1]) > 2048)
 			intendedYaw = marioState->faceAngle[1] + 2048 * sign(_angle - marioState->faceAngle[1]);
 

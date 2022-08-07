@@ -35,7 +35,7 @@ bool BitFsPyramidOscillation_Iteration::execution()
 	MarioState* marioState = (MarioState*) (resource->addr("gMarioStates"));
 
 	ScriptStatus<BitFsPyramidOscillation_TurnThenRunDownhill> turnRunStatus;
-	for (uint64_t frame = _maxFrame; frame >= _minFrame; frame--)
+	for (int64_t frame = _maxFrame; frame >= _minFrame; frame--)
 	{
 		Load(frame);
 		CustomStatus.speedBeforeTurning = marioState->forwardVel;

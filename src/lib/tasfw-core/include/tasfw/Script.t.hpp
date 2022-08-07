@@ -174,7 +174,7 @@ void Script<TResource>::ApplyChildDiff(const BaseScriptStatus& status, std::map<
 	loadTracker[_adhocLevel].erase(loadTracker[_adhocLevel].upper_bound(firstFrame), loadTracker[_adhocLevel].end());
 
 	//Apply diff. State is already synced from child script, so no need to update it
-	int64_t frame = firstFrame;
+	uint64_t frame = firstFrame;
 	while (frame <= lastFrame)
 	{
 		if (status.m64Diff.frames.count(frame))
@@ -216,7 +216,7 @@ InputsMetadata<TResource> Script<TResource>::GetInputsMetadata(int64_t frame)
 	{
 		if (!stateOwner)
 		{
-			if (!BaseStatus[adhocLevel].m64Diff.frames.empty() && BaseStatus[adhocLevel].m64Diff.frames.begin()->first < frame)
+			if (!BaseStatus[adhocLevel].m64Diff.frames.empty() && static_cast<int64_t>(BaseStatus[adhocLevel].m64Diff.frames.begin()->first) < frame)
 			{
 				stateOwner = this;
 				stateOwnerAdhocLevel = adhocLevel;
@@ -282,7 +282,7 @@ InputsMetadata<TResource> TopLevelScript<TResource>::GetInputsMetadata(int64_t f
 	{
 		if (stateOwnerAdhocLevel == -1)
 		{
-			if (!this->BaseStatus[adhocLevel].m64Diff.frames.empty() && this->BaseStatus[adhocLevel].m64Diff.frames.begin()->first < frame)
+			if (!this->BaseStatus[adhocLevel].m64Diff.frames.empty() && static_cast<int64_t>(this->BaseStatus[adhocLevel].m64Diff.frames.begin()->first) < frame)
 				stateOwnerAdhocLevel = adhocLevel;
 		}
 
@@ -454,7 +454,7 @@ void Script<TResource>::Load(uint64_t frame)
 template <derived_from_specialization_of<Resource> TResource>
 void Script<TResource>::LoadBase(uint64_t frame, bool desync)
 {
-	int64_t currentFrame = GetCurrentFrame();
+	uint64_t currentFrame = GetCurrentFrame();
 
 	// Load most recent save at or before frame. Check child saves before
 	// parent. If target frame is in future, check if faster to frame advance or load.
@@ -464,7 +464,7 @@ void Script<TResource>::LoadBase(uint64_t frame, bool desync)
 		resource->LoadState(latestSave.GetSlotHandle()->slotId);
 		BaseStatus[_adhocLevel].nLoads++;
 	}
-	else if (latestSave.frame > frame && resource->shouldLoad(latestSave.frame - currentFrame))
+	else if (latestSave.frame > static_cast<int64_t>(frame) && resource->shouldLoad(latestSave.frame - currentFrame))
 		resource->LoadState(latestSave.GetSlotHandle()->slotId);
 
 	// If save is before target frame, play back until frame is reached
@@ -963,7 +963,7 @@ SlotHandle<TResource>* SaveMetadata<TResource>::GetSlotHandle()
 	if (isStartSave)
 		return &script->startSaveHandle;
 
-	if (script->saveBank.size() <= adhocLevel)
+	if (script->saveBank.size() <= static_cast<uint64_t>(adhocLevel))
 		return nullptr;
 
 	if (!script->saveBank[adhocLevel].contains(frame))
