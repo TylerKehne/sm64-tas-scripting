@@ -18,7 +18,7 @@ auto AdhocCompareScript_impl = [](auto... params) constexpr -> void
 template <typename F, class TCompareStatus, class TTuple>
 concept AdhocCompareScript = requires (TCompareStatus* status, TTuple& params)
 {
-	std::apply(AdhocCompareScript_impl<F>, std::tuple_cat(status, params));
+	std::apply(AdhocCompareScript_impl<F>, std::tuple_cat(std::tuple(status), params));
 };
 
 template <typename F, typename TScript, typename TTuple>
@@ -670,7 +670,7 @@ public:
 			if (status2.executed && script->ExecuteAdhoc([&]() { return terminator(iteration, status2); }).executed)
 				return status2;
 
-			SelectStatusAdhoc(std::forward<F>(comparator), iteration, status1, status2);
+			SelectStatusAdhoc(std::forward<G>(comparator), iteration, status1, status2);
 		}
 
 		return status1;
@@ -709,7 +709,7 @@ private:
 		};
 
 		TCompareStatus compareStatus = TCompareStatus();
-		return std::apply(executeFromTupleAdhoc, std::tuple_cat(&compareStatus, params));
+		return std::apply(executeFromTupleAdhoc, std::tuple_cat(std::tuple(&compareStatus), params));
 	}
 
 	template <class TScript, typename TTuple>
