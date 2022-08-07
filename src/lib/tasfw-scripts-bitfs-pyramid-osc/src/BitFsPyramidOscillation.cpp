@@ -158,7 +158,7 @@ bool BitFsPyramidOscillation::execution()
 		params,
 		/* script */ [&](auto customStatus, BitFsPyramidOscillation_ParamsDto params)
 		{
-			auto status = Execute<BitFsPyramidOscillation_RunDownhill>(params);
+			auto status = Modify<BitFsPyramidOscillation_RunDownhill>(params);
 			if (!status.asserted)
 				return false;
 
