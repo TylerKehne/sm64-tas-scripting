@@ -705,7 +705,7 @@ private:
 		//Have to wrap in lambda to satisfy type constraints
 		auto executeFromTupleAdhoc = [&]<typename... Ts>(Ts&&... p) -> AdhocScriptStatus<TCompareStatus>
 		{
-			return script->ExecuteAdhoc<TCompareStatus>([&]() { return F(std::forward<Ts>(p)...); });
+			return script->template ExecuteAdhoc<TCompareStatus>([&]() { return F(std::forward<Ts>(p)...); });
 		};
 
 		TCompareStatus compareStatus = TCompareStatus();
