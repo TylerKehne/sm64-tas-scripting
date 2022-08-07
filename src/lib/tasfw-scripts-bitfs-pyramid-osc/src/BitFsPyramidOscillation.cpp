@@ -85,17 +85,17 @@ bool BitFsPyramidOscillation::execution()
 	std::vector<std::tuple<BitFsPyramidOscillation_ParamsDto>> params = { std::tuple(params1), std::tuple(params2) };
 	auto testStatus = Compare<BitFsPyramidOscillation_RunDownhill>(
 		params,
-		[](auto iteration, auto status1, auto status2)
+		/* comparator */ [](auto iteration, auto status1, auto status2)
 		{
-			if (status1.maxSpeed > status2.maxSpeed)
+			if (status1->maxSpeed > status2->maxSpeed)
 				return status1;
 
 			return status2;
 		},
-		[](auto iteration, auto status) { return false; });
+		/* terminator */ [](auto iteration, auto status) { return false; });
 
 	auto testStatus2 = Compare<BitFsPyramidOscillation_RunDownhill, std::tuple<BitFsPyramidOscillation_ParamsDto>>(
-		[&](auto iteration, auto& params)
+		/* paramsGenerator */ [&](auto iteration, auto& params)
 		{
 			switch (iteration)
 			{
@@ -109,14 +109,44 @@ bool BitFsPyramidOscillation::execution()
 
 			return false;
 		},
-		[](auto iteration, auto status1, auto status2)
+		/* comparator */ [](auto iteration, auto status1, auto status2)
 		{
-			if (status1.maxSpeed > status2.maxSpeed)
+			if (status1->maxSpeed > status2->maxSpeed)
 				return status1;
 
 			return status2;
 		},
-		[](auto iteration, auto status) { return false; });
+		/* terminator */ [](auto iteration, auto status) { return false; });
+
+	auto testStatus3 = DynamicCompare<BitFsPyramidOscillation_RunDownhill, std::tuple<BitFsPyramidOscillation_ParamsDto>>(
+		/* paramsGenerator */ [&](auto iteration, auto& params)
+		{
+			switch (iteration)
+			{
+			case 0:
+				params = std::tuple(params1);
+				return true;
+			case 1:
+				params = std::tuple(params2);
+				return true;
+			}
+
+			return false;
+		},
+		/* mutator */ [&]()
+		{
+			AdvanceFrameRead();
+
+			return true;
+		},
+		/* comparator */ [](auto iteration, auto status1, auto status2)
+		{
+			if (status1->maxSpeed > status2->maxSpeed)
+				return status1;
+
+			return status2;
+		},
+		/* terminator */ [](auto iteration, auto status) { return false; });
 
 	auto initRunStatus =
 		Modify<BitFsPyramidOscillation_RunDownhill>(oscillationParams);

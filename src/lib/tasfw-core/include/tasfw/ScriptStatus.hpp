@@ -11,8 +11,8 @@ class Script;
 template <typename F, typename R = std::invoke_result_t<F>>
 concept AdhocScript = std::same_as<R, bool>;
 
-template <typename F, typename T>
-concept AdhocCustomStatusScript = std::same_as<std::invoke_result_t<F, T&>, bool>;
+template <typename F, typename TStatus>
+concept AdhocCustomStatusScript = std::same_as<std::invoke_result_t<F, TStatus*>, bool>;
 
 class BaseScriptStatus
 {
