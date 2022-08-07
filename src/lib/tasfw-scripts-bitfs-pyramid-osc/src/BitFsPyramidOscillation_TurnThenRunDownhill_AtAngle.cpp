@@ -38,7 +38,6 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::execution()
 		(const BehaviorScript*) (resource->addr("bhvBitfsTiltingInvertedPyramid"));
 	MarioState* marioState = (MarioState*) (resource->addr("gMarioStates"));
 	Camera* camera				 = *(Camera**) (resource->addr("gCamera"));
-	[[maybe_unused]] Object* pyramid				 = marioState->floor->object;
 
 	CustomStatus.initialXzSum = _oscillationParams.initialXzSum;
 	_oscillationParams.roughTargetAngle = marioState->faceAngle[1] + 0x8000;

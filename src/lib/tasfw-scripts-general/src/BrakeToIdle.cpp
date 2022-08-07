@@ -27,11 +27,8 @@ bool BrakeToIdle::validation()
 
 bool BrakeToIdle::execution()
 {
-	[[maybe_unused]] const BehaviorScript* pyramidBehavior =
-		(const BehaviorScript*) (resource->addr("bhvBitfsTiltingInvertedPyramid"));
 	MarioState* marioState = (MarioState*) (resource->addr("gMarioStates"));
-	Camera* camera				 = *(Camera**) (resource->addr("gCamera"));
-	[[maybe_unused]] Object* pyramid				 = marioState->floor->object;
+	Camera* camera = *(Camera**) (resource->addr("gCamera"));
 
 	// Brake to a stop
 	do

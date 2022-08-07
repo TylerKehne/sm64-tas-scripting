@@ -37,7 +37,6 @@ bool BitFsPyramidOscillation_TurnAroundAndRunDownhill::execution()
 		(const BehaviorScript*) (resource->addr("bhvBitfsTiltingInvertedPyramid"));
 	MarioState* marioState = (MarioState*) (resource->addr("gMarioStates"));
 	Camera* camera		   = *(Camera**) (resource->addr("gCamera"));
-	[[maybe_unused]] Object* pyramid		   = marioState->floor->object;
 
 	// Turn around
 	if (_oscillationParams.brake)
