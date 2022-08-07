@@ -56,7 +56,7 @@ PyramidUpdateMem::Sm64Surface* PyramidUpdateMem::Sm64MarioState::floor(PyramidUp
 	if (floorId == -1)
 		return nullptr;
 
-	if (floorId >= state.pyramid.surfaces.size())
+	if (floorId >= static_cast<int64_t>(state.pyramid.surfaces.size()))
 		throw std::runtime_error("Surface id " + std::to_string(floorId) + " larger than max id " + std::to_string(state.pyramid.surfaces.size() - 1));
 
 	return &state.pyramid.surfaces[floorId];
@@ -64,7 +64,6 @@ PyramidUpdateMem::Sm64Surface* PyramidUpdateMem::Sm64MarioState::floor(PyramidUp
 
 void PyramidUpdateMem::LoadSurfaces(Object* pyramidLibSm64, Sm64Object& pyramid)
 {
-	Sm64Surface* s;
 	short vertexData[600];
 	short* collisionData = (short*)pyramidLibSm64->collisionData;
 	collisionData++;
@@ -108,7 +107,6 @@ int PyramidUpdateMem::CountSurfaces(short* data)
 	while (*data != TERRAIN_LOAD_CONTINUE)
 	{
 		int surfaceType;
-		int i;
 		int numSurfaces;
 		short hasForce;
 
@@ -157,7 +155,7 @@ short PyramidUpdateMem::SurfaceHasForce(short surfaceType)
 	return hasForce;
 }
 
-void PyramidUpdateMem::LoadObjectSurfaces(Sm64Object* pyramid, short** data, short* vertexData, Sm64Surface** surfaces)
+void PyramidUpdateMem::LoadObjectSurfaces([[maybe_unused]] Sm64Object* pyramid, short** data, short* vertexData, Sm64Surface** surfaces)
 {
 	int surfaceType;
 	int i;
@@ -515,7 +513,7 @@ void PyramidUpdate::TransformSurfaces()
 
 	PyramidUpdateMem::Sm64Surface* surfaces = &(*_state.pyramid.surfaces.begin());;
 	Mat4* transform = &_state.pyramid.transform;
-	for (int i = 0; i < _state.pyramid.surfaces.size(); i++)
+	for (size_t i = 0; i < _state.pyramid.surfaces.size(); i++)
 	{
 		Vec3s v1 = {
 			surfaces->vertex1[0], surfaces->vertex1[1], surfaces->vertex1[2] };

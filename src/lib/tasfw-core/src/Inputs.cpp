@@ -319,7 +319,6 @@ int M64::load()
 	uint16_t buttons;
 	int8_t stick_x, stick_y;
 
-	size_t err;
 
 	try
 	{
@@ -374,10 +373,6 @@ int M64::save(long initFrame)
 	std::ofstream f(fileName, ios_base::in | ios_base::out | ios_base::binary);
 	f.exceptions(ios_base::failbit | ios_base::badbit);
 
-	uint16_t buttons;
-	int8_t stick_x, stick_y;
-
-	size_t err;
 
 	uint64_t lastFrame = frames.rbegin()->first;
 
@@ -390,7 +385,7 @@ int M64::save(long initFrame)
 
 		// Write frames
 		f.seekp(0x400 + 4 * initFrame, ios_base::beg);
-		for (int i = 0; i <= lastFrame; i++)
+		for (uint64_t i = 0; i <= lastFrame; i++)
 		{
 			uint16_t bigEndianButtons = 0;
 			int8_t stickX = 0;

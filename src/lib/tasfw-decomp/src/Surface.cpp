@@ -309,7 +309,7 @@ static void read_surface_data(
  * Applies an object's transformation to the object's vertices.
  */
 static void get_object_vertices(
-	struct Object* obj, short** data, short* vertexData)
+	[[maybe_unused]] struct Object* obj, short** data, short* vertexData)
 {
 	short* vertices;
 	int numVertices;
@@ -394,7 +394,6 @@ int count_surfaces(short* data)
 	while (*data != TERRAIN_LOAD_CONTINUE)
 	{
 		int surfaceType;
-		int i;
 		int numSurfaces;
 		short hasForce;
 
