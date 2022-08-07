@@ -57,7 +57,7 @@ public:
 	InputsMetadata() = default;
 
 	InputsMetadata(Inputs inputs, int64_t frame, Script<TResource>* stateOwner, int64_t stateOwnerAdhocLevel, InputsSource source = InputsSource::DIFF)
-		: inputs(inputs), stateOwner(stateOwner), frame(frame), stateOwnerAdhocLevel(stateOwnerAdhocLevel), source(source) {}
+		: inputs(inputs), frame(frame), stateOwner(stateOwner), stateOwnerAdhocLevel(stateOwnerAdhocLevel), source(source) {}
 };
 
 template <derived_from_specialization_of<Resource> TResource>

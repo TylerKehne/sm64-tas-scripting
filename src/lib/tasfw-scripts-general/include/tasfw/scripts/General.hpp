@@ -19,8 +19,8 @@ public:
 	};
 	CustomScriptStatus CustomStatus = CustomScriptStatus();
 
-	GetMinimumDownhillWalkingAngle(int16_t targetAngle) : _targetAngle(targetAngle), _faceAngle(targetAngle) { }
-	GetMinimumDownhillWalkingAngle(int16_t targetAngle, int16_t faceAngle) :  _targetAngle(targetAngle), _faceAngle(faceAngle) { }
+	GetMinimumDownhillWalkingAngle(int16_t targetAngle) : _faceAngle(targetAngle), _targetAngle(targetAngle) { }
+	GetMinimumDownhillWalkingAngle(int16_t targetAngle, int16_t faceAngle) :  _faceAngle(faceAngle), _targetAngle(targetAngle) { }
 
 	bool validation();
 	bool execution();

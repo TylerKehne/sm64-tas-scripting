@@ -88,7 +88,7 @@ public:
 		const AdhocScriptStatus<TCompareStatus>& a,
 		const AdhocScriptStatus<TCompareStatus>& b) const = 0;
 
-	virtual bool Terminator(const AdhocScriptStatus<TCompareStatus>& status) const { return false; }
+	virtual bool Terminator([[maybe_unused]] const AdhocScriptStatus<TCompareStatus>& status) const { return false; }
 };
 
 #endif
