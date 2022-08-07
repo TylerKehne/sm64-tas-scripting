@@ -703,13 +703,15 @@ private:
 	AdhocScriptStatus<TCompareStatus> ExecuteFromTupleAdhoc(F adhocScript, TTuple& params)
 	{
 		//Have to wrap in lambda to satisfy type constraints
-		auto executeFromTupleAdhoc = [&]<typename... Ts>(Ts&&... p) -> AdhocScriptStatus<TCompareStatus>
+		auto executeFromTupleAdhoc = [&]<typename... Ts>(Ts&&... p) -> AdhocBaseScriptStatus
 		{
-			return script->template ExecuteAdhoc<TCompareStatus>([&]() { return F(std::forward<Ts>(p)...); });
+			return script->template ExecuteAdhoc([&]() { return adhocScript(std::forward<Ts>(p)...); });
 		};
 
 		TCompareStatus compareStatus = TCompareStatus();
-		return std::apply(executeFromTupleAdhoc, std::tuple_cat(std::tuple(&compareStatus), params));
+		auto baseStatus = std::apply(executeFromTupleAdhoc, std::tuple_cat(std::tuple(&compareStatus), params));
+
+		return AdhocScriptStatus<TCompareStatus>(baseStatus, compareStatus);
 	}
 
 	template <class TScript, typename TTuple>
@@ -760,7 +762,7 @@ private:
 	}
 
 	template <class TCompareStatus, AdhocScriptComparator<TCompareStatus> F>
-	void SelectStatusAdhoc(F comparator, int64_t iteration, AdhocScriptStatus<TCompareStatus>& status1, AdhocScriptStatus<TCompareStatus>& status2)
+	bool SelectStatusAdhoc(F comparator, int64_t iteration, AdhocScriptStatus<TCompareStatus>& status1, AdhocScriptStatus<TCompareStatus>& status2)
 	{
 		// Select better status according to comparator. Wrap in ad-hoc block in case it alters state
 		return script->ExecuteAdhoc([&]()

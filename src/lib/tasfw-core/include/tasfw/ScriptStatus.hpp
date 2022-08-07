@@ -49,7 +49,7 @@ public:
 	uint64_t nLoads = 0;
 	uint64_t nSaves = 0;
 	uint64_t nFrameAdvances = 0;
-	M64Diff m64Diff;
+	M64Diff m64Diff = M64Diff();
 
 	AdhocBaseScriptStatus() = default;
 
@@ -63,9 +63,9 @@ public:
 		m64Diff = baseStatus.m64Diff;
 	}
 
-	AdhocBaseScriptStatus(const AdhocBaseScriptStatus&) = default;
+	//AdhocBaseScriptStatus(const AdhocBaseScriptStatus&) = default;
 
-	AdhocBaseScriptStatus(AdhocBaseScriptStatus&&) = default;
+	//AdhocBaseScriptStatus(AdhocBaseScriptStatus&&) = default;
 };
 
 template <class TAdhocCustomScriptStatus>
@@ -77,7 +77,7 @@ public:
 	AdhocScriptStatus(AdhocBaseScriptStatus baseStatus, TAdhocCustomScriptStatus customStatus)
 		: AdhocBaseScriptStatus(baseStatus), TAdhocCustomScriptStatus(customStatus) { }
 
-	AdhocScriptStatus(AdhocScriptStatus&&) = default;
+	//AdhocScriptStatus(AdhocScriptStatus&&) = default;
 };
 
 template <class TCompareStatus>
