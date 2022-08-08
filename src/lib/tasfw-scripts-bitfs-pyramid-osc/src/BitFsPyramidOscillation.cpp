@@ -43,6 +43,11 @@ bool BitFsPyramidOscillation::validation()
 
 	return true;
 }
+	class TestAdhocStatus
+	{
+	public:
+		float maxSpeed = -1.0f;
+	};
 
 bool BitFsPyramidOscillation::execution()
 {
@@ -148,11 +153,7 @@ bool BitFsPyramidOscillation::execution()
 		},
 		/* terminator */ []([[maybe_unused]] auto iteration, [[maybe_unused]] auto status) { return false; });
 
-	class TestAdhocStatus
-	{
-	public:
-		float maxSpeed = -1.0f;
-	};
+
 
 	auto testStatus4 = CompareAdhoc<TestAdhocStatus>(
 		params,
