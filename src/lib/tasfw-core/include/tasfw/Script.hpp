@@ -193,6 +193,8 @@ protected:
 		requires(std::derived_from<TCompareStatus, CompareStatus<TCompareStatus>>)
 	AdhocScriptStatus<TCompareStatus> TestCompare(F&& adhocScript1, G&& adhocScript2, H&&... adhocScripts);
 
+	#pragma region Compare Methods
+
 	template <derived_from_specialization_of<Script> TScript,
 		class TTupleContainer,
 		typename TTuple = typename TTupleContainer::value_type,
@@ -216,7 +218,7 @@ protected:
 
 	template <derived_from_specialization_of<Script> TScript,
 		typename TTuple,
-		ScriptParamsGenerator<TScript, TTuple> F,
+		ScriptParamsGenerator<TTuple> F,
 		ScriptComparator<TScript> G,
 		ScriptTerminator<TScript> H>
 		requires (constructible_from_tuple<TScript, TTuple>)
@@ -227,7 +229,7 @@ protected:
 
 	template <derived_from_specialization_of<Script> TScript,
 		typename TTuple,
-		ScriptParamsGenerator<TScript, TTuple> F,
+		ScriptParamsGenerator<TTuple> F,
 		ScriptComparator<TScript> G>
 		requires (constructible_from_tuple<TScript, TTuple>)
 	ScriptStatus<TScript> Compare(F&& paramsGenerator, G&& comparator)
@@ -258,7 +260,7 @@ protected:
 
 	template <derived_from_specialization_of<Script> TScript,
 		typename TTuple,
-		ScriptParamsGenerator<TScript, TTuple> F,
+		ScriptParamsGenerator<TTuple> F,
 		ScriptComparator<TScript> G,
 		ScriptTerminator<TScript> H>
 		requires (constructible_from_tuple<TScript, TTuple>)
@@ -269,7 +271,7 @@ protected:
 
 	template <derived_from_specialization_of<Script> TScript,
 		typename TTuple,
-		ScriptParamsGenerator<TScript, TTuple> F,
+		ScriptParamsGenerator<TTuple> F,
 		ScriptComparator<TScript> G>
 	requires (constructible_from_tuple<TScript, TTuple>)
 	ScriptStatus<TScript> ModifyCompare(F&& paramsGenerator, G&& comparator)
@@ -302,7 +304,7 @@ protected:
 
 	template <derived_from_specialization_of<Script> TScript,
 		typename TTuple,
-		ScriptParamsGenerator<TScript, TTuple> F,
+		ScriptParamsGenerator<TTuple> F,
 		AdhocScript G,
 		ScriptComparator<TScript> H,
 		ScriptTerminator<TScript> I>
@@ -314,7 +316,7 @@ protected:
 
 	template <derived_from_specialization_of<Script> TScript,
 		typename TTuple,
-		ScriptParamsGenerator<TScript, TTuple> F,
+		ScriptParamsGenerator<TTuple> F,
 		AdhocScript G,
 		ScriptComparator<TScript> H>
 		requires (constructible_from_tuple<TScript, TTuple>)
@@ -348,7 +350,7 @@ protected:
 
 	template <derived_from_specialization_of<Script> TScript,
 		typename TTuple,
-		ScriptParamsGenerator<TScript, TTuple> F,
+		ScriptParamsGenerator<TTuple> F,
 		AdhocScript G,
 		ScriptComparator<TScript> H,
 		ScriptTerminator<TScript> I>
@@ -360,7 +362,7 @@ protected:
 
 	template <derived_from_specialization_of<Script> TScript,
 		typename TTuple,
-		ScriptParamsGenerator<TScript, TTuple> F,
+		ScriptParamsGenerator<TTuple> F,
 		AdhocScript G,
 		ScriptComparator<TScript> H>
 		requires (constructible_from_tuple<TScript, TTuple>)
@@ -389,6 +391,31 @@ protected:
 	{
 		return compareHelper.template CompareAdhoc<TCompareStatus>(paramsList, std::forward<F>(adhocScript), std::forward<G>(comparator), [](const AdhocScriptStatus<TCompareStatus>*) { return false; });
 	}
+
+	template <class TCompareStatus,
+		typename TTuple,
+		ScriptParamsGenerator<TTuple> F,
+		AdhocCompareScript<TCompareStatus, TTuple> G,
+		AdhocScriptComparator<TCompareStatus> H,
+		AdhocScriptTerminator<TCompareStatus> I>
+	AdhocScriptStatus<TCompareStatus> CompareAdhoc(F&& paramsGenerator, G&& adhocScript, H&& comparator, I&& terminator)
+	{
+		return compareHelper.template CompareAdhoc<TCompareStatus, TTuple>(
+			std::forward<F>(paramsGenerator), std::forward<G>(adhocScript), std::forward<H>(comparator), std::forward<I>(terminator));
+	}
+
+	template <class TCompareStatus,
+		typename TTuple,
+		ScriptParamsGenerator<TTuple> F,
+		AdhocCompareScript<TCompareStatus, TTuple> G,
+		AdhocScriptComparator<TCompareStatus> H>
+	AdhocScriptStatus<TCompareStatus> CompareAdhoc(F&& paramsGenerator, G&& adhocScript, H&& comparator)
+	{
+		return compareHelper.template CompareAdhoc<TCompareStatus, TTuple>(
+			std::forward<F>(paramsGenerator), std::forward<G>(adhocScript), std::forward<H>(comparator), [](const AdhocScriptStatus<TCompareStatus>*) { return false; });
+	}
+
+	#pragma endregion
 
 	// TODO: move this method to some utility class
 	template <typename T>

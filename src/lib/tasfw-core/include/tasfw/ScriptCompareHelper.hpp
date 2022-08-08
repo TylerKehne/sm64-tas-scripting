@@ -21,11 +21,9 @@ concept AdhocCompareScript = requires (TCompareStatus* status, TTuple& params)
 	std::apply(AdhocCompareScript_impl<F>, std::tuple_cat(std::tuple(status), params));
 };
 
-template <typename F, typename TScript, typename TTuple>
+template <typename F, typename TTuple>
 concept ScriptParamsGenerator = requires
 {
-	derived_from_specialization_of<TScript, Script>;
-	constructible_from_tuple<TScript, TTuple>;
 	std::same_as<std::invoke_result_t<F, int64_t, TTuple&>, bool>;
 };
 
@@ -115,7 +113,7 @@ public:
 
 	template <class TScript,
 		typename TTuple,
-		ScriptParamsGenerator<TScript, TTuple> F,
+		ScriptParamsGenerator<TTuple> F,
 		ScriptComparator<TScript> G,
 		ScriptTerminator<TScript> H>
 		requires (derived_from_specialization_of<TScript, Script> && constructible_from_tuple<TScript, TTuple>)
@@ -229,7 +227,7 @@ public:
 
 	template <class TScript,
 		typename TTuple,
-		ScriptParamsGenerator<TScript, TTuple> F,
+		ScriptParamsGenerator<TTuple> F,
 		ScriptComparator<TScript> G,
 		ScriptTerminator<TScript> H>
 		requires (derived_from_specialization_of<TScript, Script> && constructible_from_tuple<TScript, TTuple>)
@@ -372,7 +370,7 @@ public:
 
 	template <class TScript,
 		typename TTuple,
-		ScriptParamsGenerator<TScript, TTuple> F,
+		ScriptParamsGenerator<TTuple> F,
 		AdhocScript G,
 		ScriptComparator<TScript> H,
 		ScriptTerminator<TScript> I>
@@ -532,7 +530,7 @@ public:
 
 	template <class TScript,
 		typename TTuple,
-		ScriptParamsGenerator<TScript, TTuple> F,
+		ScriptParamsGenerator<TTuple> F,
 		AdhocScript G,
 		ScriptComparator<TScript> H,
 		ScriptTerminator<TScript> I>
@@ -675,6 +673,38 @@ public:
 		return status1;
 	}
 
+	template <class TCompareStatus,
+		typename TTuple,
+		ScriptParamsGenerator<TTuple> F,
+		AdhocCompareScript<TCompareStatus, TTuple> G,
+		AdhocScriptComparator<TCompareStatus> H,
+		AdhocScriptTerminator<TCompareStatus> I>
+	AdhocScriptStatus<TCompareStatus> CompareAdhoc(F&& paramsGenerator, G&& adhocScript, H&& comparator, I terminator)
+	{
+		AdhocScriptStatus<TCompareStatus> status1 = AdhocScriptStatus<TCompareStatus>();
+		int64_t iteration = 0;
+		TTuple params;
+
+		// return if no params
+		if (!GenerateParams<TCompareStatus>(std::forward<F>(paramsGenerator), iteration, params))
+			return status1;
+
+		status1 = ExecuteFromTupleAdhoc<TCompareStatus>(std::forward<G>(adhocScript), params);
+		if (status1.executed && script->ExecuteAdhoc([&]() { return terminator(&status1); }).executed)
+			return status1;
+
+		while (GenerateParams<TCompareStatus>(std::forward<F>(paramsGenerator), ++iteration, params))
+		{
+			AdhocScriptStatus<TCompareStatus> status2 = ExecuteFromTupleAdhoc<TCompareStatus>(std::forward<G>(adhocScript), params);
+			if (status2.executed && script->ExecuteAdhoc([&]() { return terminator(&status2); }).executed)
+				return status2;
+
+			SelectStatusAdhoc(std::forward<H>(comparator), status1, status2);
+		}
+
+		return status1;
+	}
+
 private:
 	M64Diff MergeDiffs(const M64Diff& diff1, const M64Diff& diff2)
 	{
@@ -726,7 +756,7 @@ private:
 		return std::apply(executeFromTuple, params);
 	}
 
-	template <class TScript, typename TTuple, ScriptParamsGenerator<TScript, TTuple> F>
+	template <class TScript, typename TTuple, ScriptParamsGenerator<TTuple> F>
 	bool GenerateParams(F paramsGenerator, int64_t iteration, TTuple& params)
 	{
 		return script->ExecuteAdhoc([&]()
