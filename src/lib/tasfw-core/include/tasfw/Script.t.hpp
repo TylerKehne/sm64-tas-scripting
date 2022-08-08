@@ -911,7 +911,7 @@ BaseScriptStatus Script<TResource>::ExecuteAdhocBase(F adhocScript)
 	{
 		BaseStatus[_adhocLevel].executed = adhocScript();
 	}
-	catch (std::exception e)
+	catch (const std::exception &e)
 	{
 		// End application if exception occurs
 		throw std::runtime_error(e.what());
