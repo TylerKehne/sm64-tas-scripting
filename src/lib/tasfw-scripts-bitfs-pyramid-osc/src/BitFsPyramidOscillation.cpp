@@ -43,11 +43,6 @@ bool BitFsPyramidOscillation::validation()
 
 	return true;
 }
-	class TestAdhocStatus
-	{
-	public:
-		float maxSpeed = -1.0f;
-	};
 
 bool BitFsPyramidOscillation::execution()
 {
@@ -90,14 +85,13 @@ bool BitFsPyramidOscillation::execution()
 	std::vector<std::tuple<BitFsPyramidOscillation_ParamsDto>> params = { std::tuple(params1), std::tuple(params2) };
 	auto testStatus = Compare<BitFsPyramidOscillation_RunDownhill>(
 		params,
-		/* comparator */ []([[maybe_unused]] auto iteration, auto status1, auto status2)
+		/* comparator */ [](auto status1, auto status2)
 		{
 			if (status1->maxSpeed > status2->maxSpeed)
 				return status1;
 
 			return status2;
-		},
-		/* terminator */ []([[maybe_unused]] auto iteration, [[maybe_unused]] auto status) { return false; });
+		});
 
 	auto testStatus2 = Compare<BitFsPyramidOscillation_RunDownhill, std::tuple<BitFsPyramidOscillation_ParamsDto>>(
 		/* paramsGenerator */ [&](auto iteration, auto& params)
@@ -114,14 +108,13 @@ bool BitFsPyramidOscillation::execution()
 
 			return false;
 		},
-		/* comparator */ []([[maybe_unused]] auto iteration, auto status1, auto status2)
+		/* comparator */ [](auto status1, auto status2)
 		{
 			if (status1->maxSpeed > status2->maxSpeed)
 				return status1;
 
 			return status2;
-		},
-		/* terminator */ []([[maybe_unused]] auto iteration, [[maybe_unused]] auto status) { return false; });
+		});
 
 	auto testStatus3 = DynamicCompare<BitFsPyramidOscillation_RunDownhill, std::tuple<BitFsPyramidOscillation_ParamsDto>>(
 		/* paramsGenerator */ [&](auto iteration, auto& params)
@@ -144,16 +137,13 @@ bool BitFsPyramidOscillation::execution()
 
 			return true;
 		},
-		/* comparator */ []([[maybe_unused]] auto iteration, [[maybe_unused]] auto status1, auto status2)
+		/* comparator */ [](auto status1, auto status2)
 		{
 			if (status1->maxSpeed > status2->maxSpeed)
 				return status1;
 
 			return status2;
-		},
-		/* terminator */ []([[maybe_unused]] auto iteration, [[maybe_unused]] auto status) { return false; });
-
-
+		});
 
 	auto testStatus4 = CompareAdhoc<TestAdhocStatus>(
 		params,
@@ -167,14 +157,13 @@ bool BitFsPyramidOscillation::execution()
 
 			return true;
 		},
-		/* comparator */ []([[maybe_unused]] auto iteration, auto status1, auto status2)
+		/* comparator */ [](auto status1, auto status2)
 		{
 			if (status1->maxSpeed > status2->maxSpeed)
 				return status1;
 
 			return status2;
-		},
-		/* terminator */ []([[maybe_unused]] auto iteration, [[maybe_unused]] auto status) { return false; });
+		});
 
 	auto initRunStatus =
 		Modify<BitFsPyramidOscillation_RunDownhill>(oscillationParams);

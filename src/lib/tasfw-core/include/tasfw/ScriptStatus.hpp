@@ -91,4 +91,10 @@ public:
 	virtual bool Terminator([[maybe_unused]] const AdhocScriptStatus<TCompareStatus>& status) const { return false; }
 };
 
+class TestAdhocStatus
+{
+public:
+	float maxSpeed = -1.0f;
+};
+
 #endif
