@@ -124,14 +124,14 @@ public:
 		TTuple params;
 
 		// return if no params
-		if (!GenerateParams<TScript>(std::forward<F>(paramsGenerator), iteration, params))
+		if (!GenerateParams(std::forward<F>(paramsGenerator), iteration, params))
 			return status1;
 
 		status1 = ExecuteFromTuple<TScript>(params);
 		if (status1.asserted && script->ExecuteAdhoc([&]() { return terminator(&status1); }).executed)
 			return status1;
 
-		while (GenerateParams<TScript>(std::forward<F>(paramsGenerator), ++iteration, params))
+		while (GenerateParams(std::forward<F>(paramsGenerator), ++iteration, params))
 		{
 			ScriptStatus<TScript> status2 = ExecuteFromTuple<TScript>(params);
 			if (status2.asserted && script->ExecuteAdhoc([&]() { return terminator(&status2); }).executed)
@@ -240,7 +240,7 @@ public:
 		TTuple params;
 
 		// return if no params
-		if (!GenerateParams<TScript>(std::forward<F>(paramsGenerator), iteration, params))
+		if (!GenerateParams(std::forward<F>(paramsGenerator), iteration, params))
 			return status1;
 
 		// We want to avoid reversion of successful script
@@ -265,7 +265,7 @@ public:
 
 		bool nextParamsGenerated = false;
 		bool lastParams = false;
-		while (nextParamsGenerated || GenerateParams<TScript>(std::forward<F>(paramsGenerator), ++iteration, params))
+		while (nextParamsGenerated || GenerateParams(std::forward<F>(paramsGenerator), ++iteration, params))
 		{
 			// We want to avoid reversion of successful script
 			bool newIncumbent = false;
@@ -283,7 +283,7 @@ public:
 					newIncumbent = SelectStatus(std::forward<G>(comparator), status1, status2);
 
 					//avoid calling params generator twice per iteration
-					lastParams = !GenerateParams<TScript>(std::forward<F>(paramsGenerator), ++iteration, params);
+					lastParams = !GenerateParams(std::forward<F>(paramsGenerator), ++iteration, params);
 					nextParamsGenerated = true;
 
 					return false;
@@ -386,7 +386,7 @@ public:
 		auto baseStatus = script->ExecuteAdhoc([&]()
 			{
 				// return if no params
-				if (!GenerateParams<TScript>(std::forward<F>(paramsGenerator), iteration, params))
+				if (!GenerateParams(std::forward<F>(paramsGenerator), iteration, params))
 					return false;
 
 				status1 = ExecuteFromTuple<TScript>(params);
@@ -396,7 +396,7 @@ public:
 				if (status1.asserted && script->ExecuteAdhoc([&]() { return terminator(&status1); }).executed)
 					return true;
 
-				while (GenerateParams<TScript>(std::forward<F>(paramsGenerator), ++iteration, params))
+				while (GenerateParams(std::forward<F>(paramsGenerator), ++iteration, params))
 				{
 					// Mutate state before next iteration. If mutation fails, stop execution
 					if (!script->ModifyAdhoc(std::forward<G>(mutator)).executed)
@@ -549,7 +549,7 @@ public:
 		auto baseStatus = script->ModifyAdhoc([&]()
 			{
 				// return if container is empty
-				if (!GenerateParams<TScript>(std::forward<F>(paramsGenerator), iteration, params))
+				if (!GenerateParams(std::forward<F>(paramsGenerator), iteration, params))
 					return false;
 
 				// We want to avoid reversion of successful script
@@ -576,7 +576,7 @@ public:
 
 				bool nextParamsGenerated = false;
 				bool lastParams = false;
-				while (nextParamsGenerated || GenerateParams<TScript>(std::forward<F>(paramsGenerator), ++iteration, params))
+				while (nextParamsGenerated || GenerateParams(std::forward<F>(paramsGenerator), ++iteration, params))
 				{
 					// Mutate state before next iteration. If mutation fails, stop execution
 					if (!script->ModifyAdhoc(std::forward<G>(mutator)).executed)
@@ -603,7 +603,7 @@ public:
 							newIncumbent = SelectStatus(std::forward<G>(comparator), status1, status2);
 
 							//avoid calling params generator twice per iteration
-							lastParams = !GenerateParams<TScript>(std::forward<F>(paramsGenerator), iteration + 1, params);
+							lastParams = !GenerateParams(std::forward<F>(paramsGenerator), iteration + 1, params);
 							nextParamsGenerated = true;
 
 							return false;
@@ -686,14 +686,14 @@ public:
 		TTuple params;
 
 		// return if no params
-		if (!GenerateParams<TCompareStatus>(std::forward<F>(paramsGenerator), iteration, params))
+		if (!GenerateParams(std::forward<F>(paramsGenerator), iteration, params))
 			return status1;
 
 		status1 = ExecuteFromTupleAdhoc<TCompareStatus>(std::forward<G>(adhocScript), params);
 		if (status1.executed && script->ExecuteAdhoc([&]() { return terminator(&status1); }).executed)
 			return status1;
 
-		while (GenerateParams<TCompareStatus>(std::forward<F>(paramsGenerator), ++iteration, params))
+		while (GenerateParams(std::forward<F>(paramsGenerator), ++iteration, params))
 		{
 			AdhocScriptStatus<TCompareStatus> status2 = ExecuteFromTupleAdhoc<TCompareStatus>(std::forward<G>(adhocScript), params);
 			if (status2.executed && script->ExecuteAdhoc([&]() { return terminator(&status2); }).executed)
@@ -701,6 +701,176 @@ public:
 
 			SelectStatusAdhoc(std::forward<H>(comparator), status1, status2);
 		}
+
+		return status1;
+	}
+
+	template <class TCompareStatus,
+		class TTupleContainer,
+		typename TTuple = typename TTupleContainer::value_type,
+		AdhocCompareScript<TCompareStatus, TTuple> F,
+		AdhocScriptComparator<TCompareStatus> G,
+		AdhocScriptTerminator<TCompareStatus> H>
+	AdhocScriptStatus<TCompareStatus> ModifyCompareAdhoc(const TTupleContainer& paramsList, F&& adhocScript, G&& comparator, H terminator)
+	{
+		AdhocScriptStatus<TCompareStatus> status1 = AdhocScriptStatus<TCompareStatus>();
+		AdhocScriptStatus<TCompareStatus> status2 = AdhocScriptStatus<TCompareStatus>();
+		BaseScriptStatus tempStatus;
+		int64_t initialFrame = script->GetCurrentFrame();
+		int64_t iteration = 0;
+		bool terminate = false;
+
+		// return if container is empty
+		if (paramsList.begin() == paramsList.end())
+			return status1;
+
+		// We want to avoid reversion of successful script
+		tempStatus = script->ExecuteAdhocBase([&]()
+			{
+				status1 = ModifyFromTupleAdhoc<TCompareStatus>(std::forward<F>(adhocScript), *(paramsList.begin()));
+
+				if (!status1.executed)
+					return false;
+
+				terminate = script->ExecuteAdhoc([&]() { return terminator(&status1); }).executed;
+				return true;
+			});
+
+		// Handle reversion/application of last script run
+		if (terminate)
+		{
+			script->ApplyChildDiff(tempStatus, script->saveBank[script->_adhocLevel + 1], initialFrame);
+			return status1;
+		}
+		else
+			script->Revert(initialFrame, tempStatus.m64Diff, script->saveBank[script->_adhocLevel + 1]);
+
+		bool first = true;
+		for (const auto& params : paramsList)
+		{
+			// We already ran the first set of parameters
+			if (first)
+			{
+				first = false;
+				continue;
+			}
+
+			// We want to avoid reversion of successful script
+			iteration++;
+			bool newIncumbent = false;
+			tempStatus = script->ExecuteAdhocBase([&]()
+				{
+					status2 = ModifyFromTupleAdhoc<TCompareStatus>(std::forward<F>(adhocScript), params);
+
+					if (!status2.executed)
+						return false;
+
+					terminate = script->ExecuteAdhoc([&]() { return terminator(&status2); }).executed;
+					if (terminate)
+						return true;
+
+					newIncumbent = SelectStatusAdhoc(std::forward<G>(comparator), status1, status2);
+					return true;
+				});
+
+			// Don't revert if best script is the last one to be run
+			if (terminate || (tempStatus.asserted && (&params == &*std::prev(paramsList.end())) && newIncumbent))
+			{
+				script->ApplyChildDiff(tempStatus, script->saveBank[script->_adhocLevel + 1], initialFrame);
+				return status2;
+			}
+			else
+				script->Revert(initialFrame, tempStatus.m64Diff, script->saveBank[script->_adhocLevel + 1]);
+		}
+
+		// If best script was from earlier, apply it
+		if (status1.executed)
+			script->Apply(status1.m64Diff);
+
+		return status1;
+	}
+
+	template <class TCompareStatus,
+		typename TTuple,
+		ScriptParamsGenerator<TTuple> F,
+		AdhocCompareScript<TCompareStatus, TTuple> G,
+		AdhocScriptComparator<TCompareStatus> H,
+		AdhocScriptTerminator<TCompareStatus> I>
+	AdhocScriptStatus<TCompareStatus> ModifyCompareAdhoc(F&& paramsGenerator, G&& adhocScript, H&& comparator, I terminator)
+	{
+		AdhocScriptStatus<TCompareStatus> status1 = AdhocScriptStatus<TCompareStatus>();
+		AdhocScriptStatus<TCompareStatus> status2 = AdhocScriptStatus<TCompareStatus>();
+		BaseScriptStatus tempStatus;
+		int64_t initialFrame = script->GetCurrentFrame();
+		int64_t iteration = 0;
+		TTuple params;
+		bool terminate;
+
+		// return if no params
+		if (!GenerateParams(std::forward<F>(paramsGenerator), iteration, params))
+			return status1;
+
+		// We want to avoid reversion of successful script
+		tempStatus = script->ExecuteAdhocBase([&]()
+			{
+				status1 = ModifyFromTupleAdhoc<TCompareStatus>(std::forward<G>(adhocScript), params);
+
+				if (!status1.executed)
+					return false;
+
+				terminate = script->ExecuteAdhoc([&]() { return terminator(&status1); }).executed;
+				return true;
+			});
+
+		// Handle reversion/application of last script run
+		if (terminate)
+		{
+			script->ApplyChildDiff(tempStatus, script->saveBank[script->_adhocLevel + 1], initialFrame);
+			return status1;
+		}
+		else
+			script->Revert(initialFrame, tempStatus.m64Diff, script->saveBank[script->_adhocLevel + 1]);
+
+		bool nextParamsGenerated = false;
+		bool lastParams = false;
+		while (nextParamsGenerated || GenerateParams(std::forward<F>(paramsGenerator), ++iteration, params))
+		{
+			// We want to avoid reversion of successful script
+			bool newIncumbent = false;
+			nextParamsGenerated = false;
+			tempStatus = script->ExecuteAdhocBase([&]()
+				{
+					status2 = ModifyFromTupleAdhoc<TCompareStatus>(std::forward<G>(adhocScript), params);
+
+					if (!status2.executed)
+						return false;
+
+					terminate = script->ExecuteAdhoc([&]() { return terminator(&status2); }).executed;
+					if (terminate)
+						return true;
+
+					newIncumbent = SelectStatusAdhoc(std::forward<H>(comparator), status1, status2);
+
+					//avoid calling params generator twice per iteration
+					lastParams = !GenerateParams(std::forward<F>(paramsGenerator), ++iteration, params);
+					nextParamsGenerated = true;
+
+					return true;
+				});
+
+			// Don't revert if best script is the last one to be run
+			if (terminate || (tempStatus.asserted && lastParams && newIncumbent))
+			{
+				script->ApplyChildDiff(tempStatus, script->saveBank[script->_adhocLevel + 1], initialFrame);
+				return status2;
+			}
+			else
+				script->Revert(initialFrame, tempStatus.m64Diff, script->saveBank[script->_adhocLevel + 1]);
+		}
+
+		// If best script was from earlier, apply it
+		if (status1.executed)
+			script->Apply(status1.m64Diff);
 
 		return status1;
 	}
@@ -756,7 +926,22 @@ private:
 		return std::apply(executeFromTuple, params);
 	}
 
-	template <class TScript, typename TTuple, ScriptParamsGenerator<TTuple> F>
+	template <typename TCompareStatus, typename TTuple, AdhocCompareScript<TCompareStatus, TTuple> F>
+	AdhocScriptStatus<TCompareStatus> ModifyFromTupleAdhoc(F adhocScript, TTuple& params)
+	{
+		//Have to wrap in lambda to satisfy type constraints
+		auto executeFromTupleAdhoc = [&]<typename... Ts>(Ts&&... p) -> AdhocBaseScriptStatus
+		{
+			return script->ModifyAdhoc([&]() { return adhocScript(std::forward<Ts>(p)...); });
+		};
+
+		TCompareStatus compareStatus = TCompareStatus();
+		auto baseStatus = std::apply(executeFromTupleAdhoc, std::tuple_cat(std::tuple(&compareStatus), params));
+
+		return AdhocScriptStatus<TCompareStatus>(baseStatus, compareStatus);
+	}
+
+	template <typename TTuple, ScriptParamsGenerator<TTuple> F>
 	bool GenerateParams(F paramsGenerator, int64_t iteration, TTuple& params)
 	{
 		return script->ExecuteAdhoc([&]()

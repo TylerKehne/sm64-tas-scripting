@@ -415,6 +415,52 @@ protected:
 			std::forward<F>(paramsGenerator), std::forward<G>(adhocScript), std::forward<H>(comparator), [](const AdhocScriptStatus<TCompareStatus>*) { return false; });
 	}
 
+	template <class TCompareStatus,
+		class TTupleContainer,
+		typename TTuple = typename TTupleContainer::value_type,
+		AdhocCompareScript<TCompareStatus, TTuple> F,
+		AdhocScriptComparator<TCompareStatus> G,
+		AdhocScriptTerminator<TCompareStatus> H>
+	AdhocScriptStatus<TCompareStatus> ModifyCompareAdhoc(const TTupleContainer& paramsList, F&& adhocScript, G&& comparator, H&& terminator)
+	{
+		return compareHelper.template ModifyCompareAdhoc<TCompareStatus>(
+			paramsList, std::forward<F>(adhocScript), std::forward<G>(comparator), std::forward<H>(terminator));
+	}
+
+	template <class TCompareStatus,
+		class TTupleContainer,
+		typename TTuple = typename TTupleContainer::value_type,
+		AdhocCompareScript<TCompareStatus, TTuple> F,
+		AdhocScriptComparator<TCompareStatus> G>
+	AdhocScriptStatus<TCompareStatus> ModifyCompareAdhoc(const TTupleContainer& paramsList, F&& adhocScript, G&& comparator)
+	{
+		return compareHelper.template ModifyCompareAdhoc<TCompareStatus>(
+			paramsList, std::forward<F>(adhocScript), std::forward<G>(comparator), [](const AdhocScriptStatus<TCompareStatus>*) { return false; });
+	}
+
+	template <class TCompareStatus,
+		typename TTuple,
+		ScriptParamsGenerator<TTuple> F,
+		AdhocCompareScript<TCompareStatus, TTuple> G,
+		AdhocScriptComparator<TCompareStatus> H,
+		AdhocScriptTerminator<TCompareStatus> I>
+	AdhocScriptStatus<TCompareStatus> ModifyCompareAdhoc(F&& paramsGenerator, G&& adhocScript, H&& comparator, I&& terminator)
+	{
+		return compareHelper.template ModifyCompareAdhoc<TCompareStatus, TTuple>(
+			std::forward<F>(paramsGenerator), std::forward<G>(adhocScript), std::forward<H>(comparator), std::forward<I>(terminator));
+	}
+
+	template <class TCompareStatus,
+		typename TTuple,
+		ScriptParamsGenerator<TTuple> F,
+		AdhocCompareScript<TCompareStatus, TTuple> G,
+		AdhocScriptComparator<TCompareStatus> H>
+	AdhocScriptStatus<TCompareStatus> ModifyCompareAdhoc(F&& paramsGenerator, G&& adhocScript, H&& comparator)
+	{
+		return compareHelper.template ModifyCompareAdhoc<TCompareStatus, TTuple>(
+			std::forward<F>(paramsGenerator), std::forward<G>(adhocScript), std::forward<H>(comparator), [](const AdhocScriptStatus<TCompareStatus>*) { return false; });
+	}
+
 	#pragma endregion
 
 	// TODO: move this method to some utility class
