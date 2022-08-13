@@ -155,14 +155,13 @@ public:
 		ScriptStatus<TScript> status2 = ScriptStatus<TScript>();
 		int64_t initialFrame = script->GetCurrentFrame();
 		int64_t iteration = 0;
-		bool terminate = false;
 
 		// return if container is empty
 		if (paramsList.begin() == paramsList.end())
 			return status1;
 
 		// We want to avoid reversion of successful script
-		terminate = script->ExecuteAdhocBase([&]()
+		bool terminate = script->ModifyAdhoc([&]()
 			{
 				status1 = ModifyFromTuple<TScript>(*(paramsList.begin()));
 
@@ -174,12 +173,7 @@ public:
 
 		// Handle reversion/application of last script run
 		if (terminate)
-		{
-			script->ApplyChildDiff(status1, script->saveBank[script->_adhocLevel + 1], initialFrame);
 			return status1;
-		}
-		else
-			script->Revert(initialFrame, status1.m64Diff, script->saveBank[script->_adhocLevel + 1]);
 
 		bool first = true;
 		for (const auto& params : paramsList)
@@ -194,7 +188,7 @@ public:
 			// We want to avoid reversion of successful script
 			iteration++;
 			bool newIncumbent = false;
-			terminate = script->ExecuteAdhocBase([&]()
+			terminate = script->ModifyAdhoc([&]()
 				{
 					status2 = ModifyFromTuple<TScript>(params);
 
@@ -205,17 +199,12 @@ public:
 						return true;
 
 					newIncumbent = SelectStatus(std::forward<F>(comparator), status1, status2);
-					return false;
+					return (&params == &*std::prev(paramsList.end())) && newIncumbent;
 				}).executed;
 
 			// Don't revert if best script is the last one to be run
-			if (terminate || (status1.asserted && (&params == &*std::prev(paramsList.end())) && newIncumbent))
-			{
-				script->ApplyChildDiff(status2, script->saveBank[script->_adhocLevel + 1], initialFrame);
+			if (terminate)
 				return status2;
-			}
-			else
-				script->Revert(initialFrame, status2.m64Diff, script->saveBank[script->_adhocLevel + 1]);
 		}
 
 		// If best script was from earlier, apply it
@@ -244,7 +233,7 @@ public:
 			return status1;
 
 		// We want to avoid reversion of successful script
-		bool terminate = script->ExecuteAdhocBase([&]()
+		bool terminate = script->ModifyAdhoc([&]()
 			{
 				status1 = ModifyFromTuple<TScript>(params);
 
@@ -256,21 +245,16 @@ public:
 
 		// Handle reversion/application of last script run
 		if (terminate)
-		{
-			script->ApplyChildDiff(status1, script->saveBank[script->_adhocLevel + 1], initialFrame);
 			return status1;
-		}
-		else
-			script->Revert(initialFrame, status1.m64Diff, script->saveBank[script->_adhocLevel + 1]);
 
 		bool nextParamsGenerated = false;
 		bool lastParams = false;
-		while (nextParamsGenerated || GenerateParams(std::forward<F>(paramsGenerator), ++iteration, params))
+		while ((nextParamsGenerated && !lastParams) || GenerateParams(std::forward<F>(paramsGenerator), ++iteration, params))
 		{
 			// We want to avoid reversion of successful script
 			bool newIncumbent = false;
 			nextParamsGenerated = false;
-			terminate = script->ExecuteAdhocBase([&]()
+			terminate = script->ModifyAdhoc([&]()
 				{
 					status2 = ModifyFromTuple<TScript>(params);
 
@@ -286,17 +270,11 @@ public:
 					lastParams = !GenerateParams(std::forward<F>(paramsGenerator), ++iteration, params);
 					nextParamsGenerated = true;
 
-					return false;
+					return lastParams && newIncumbent;
 				}).executed;
 
-			// Don't revert if best script is the last one to be run
-			if (terminate || (status1.asserted && lastParams && newIncumbent))
-			{
-				script->ApplyChildDiff(status2, script->saveBank[script->_adhocLevel + 1], initialFrame);
+			if (terminate)
 				return status2;
-			}
-			else
-				script->Revert(initialFrame, status2.m64Diff, script->saveBank[script->_adhocLevel + 1]);
 		}
 
 		// If best script was from earlier, apply it
@@ -436,7 +414,6 @@ public:
 		ScriptStatus<TScript> status2 = ScriptStatus<TScript>();
 		int64_t initialFrame = script->GetCurrentFrame();
 		int64_t iteration = 0;
-		bool terminate = false;
 		int64_t nMutations = 0;
 		M64Diff incumbentDiff;
 
@@ -447,7 +424,7 @@ public:
 					return false;
 
 				// We want to avoid reversion of successful script
-				terminate = script->ExecuteAdhocBase([&]()
+				bool terminate = script->ModifyAdhoc([&]()
 					{
 						status1 = ModifyFromTuple<TScript>(*(paramsList.begin()));
 						if (status1.asserted)
@@ -461,12 +438,7 @@ public:
 
 				// Handle reversion/application of last script run
 				if (terminate)
-				{
-					script->ApplyChildDiff(status1, script->saveBank[script->_adhocLevel + 1], initialFrame);
 					return true;
-				}
-				else
-					script->Revert(initialFrame, status1.m64Diff, script->saveBank[script->_adhocLevel + 1]);
 
 				bool first = true;
 				for (const auto& params : paramsList)
@@ -486,7 +458,7 @@ public:
 					// We want to avoid reversion of successful script
 					iteration++;
 					bool newIncumbent = false;
-					terminate = script->ExecuteAdhocBase([&]()
+					terminate = script->ModifyAdhoc([&]()
 						{
 							status2 = ModifyFromTuple<TScript>(params);
 
@@ -499,23 +471,16 @@ public:
 								return true;
 							}
 
+							// If new status is best, construct diff from accumulated mutations and apply the new diff on top of that. Don't execute anything
 							newIncumbent = SelectStatus(std::forward<G>(comparator), status1, status2);
+							if (newIncumbent)
+								incumbentDiff = MergeDiffs(script->BaseStatus[script->_adhocLevel].m64Diff, status1.m64Diff);
 
-							return false;
+							return (&params == &*std::prev(paramsList.end())) && newIncumbent;
 						}).executed;
 
-					// If new status is best, construct diff from accumulated mutations and apply the new diff on top of that. Don't execute anything
-					if (newIncumbent)
-						incumbentDiff = MergeDiffs(script->BaseStatus[script->_adhocLevel].m64Diff, status1.m64Diff);
-
-					// Don't revert if best script is the last one to be run
-					if (terminate || (status1.asserted && (&params == &*std::prev(paramsList.end())) && newIncumbent))
-					{
-						script->ApplyChildDiff(status2, script->saveBank[script->_adhocLevel + 1], initialFrame);
+					if (terminate)
 						return true;
-					}
-					else
-						script->Revert(initialFrame, status2.m64Diff, script->saveBank[script->_adhocLevel + 1]);
 				}
 
 				// If best script was from earlier, apply it
@@ -541,7 +506,6 @@ public:
 		ScriptStatus<TScript> status2 = ScriptStatus<TScript>();
 		int64_t initialFrame = script->GetCurrentFrame();
 		int64_t iteration = 0;
-		bool terminate = false;
 		int64_t nMutations = 0;
 		M64Diff incumbentDiff;
 		TTuple params;
@@ -553,7 +517,7 @@ public:
 					return false;
 
 				// We want to avoid reversion of successful script
-				terminate = script->ExecuteAdhocBase([&]()
+				bool terminate = script->ModifyAdhoc([&]()
 					{
 						status1 = ModifyFromTuple<TScript>(params);
 						if (status1.asserted)
@@ -567,16 +531,11 @@ public:
 
 				// Handle reversion/application of last script run
 				if (terminate)
-				{
-					script->ApplyChildDiff(status1, script->saveBank[script->_adhocLevel + 1], initialFrame);
 					return true;
-				}
-				else
-					script->Revert(initialFrame, status1.m64Diff, script->saveBank[script->_adhocLevel + 1]);
 
 				bool nextParamsGenerated = false;
 				bool lastParams = false;
-				while (nextParamsGenerated || GenerateParams(std::forward<F>(paramsGenerator), ++iteration, params))
+				while ((nextParamsGenerated && !lastParams) || GenerateParams(std::forward<F>(paramsGenerator), ++iteration, params))
 				{
 					// Mutate state before next iteration. If mutation fails, stop execution
 					if (!script->ModifyAdhoc(std::forward<G>(mutator)).executed)
@@ -587,7 +546,7 @@ public:
 					iteration++;
 					bool newIncumbent = false;
 					nextParamsGenerated = false;
-					terminate = script->ExecuteAdhocBase([&]()
+					terminate = script->ModifyAdhoc([&]()
 						{
 							status2 = ModifyFromTuple<TScript>(params);
 
@@ -600,27 +559,19 @@ public:
 								return true;
 							}
 
+							// If new status is best, construct diff from accumulated mutations and apply the new diff on top of that. Don't execute anything
 							newIncumbent = SelectStatus(std::forward<G>(comparator), status1, status2);
+							if (newIncumbent)
+								incumbentDiff = MergeDiffs(script->BaseStatus[script->_adhocLevel].m64Diff, status1.m64Diff);
 
 							//avoid calling params generator twice per iteration
 							lastParams = !GenerateParams(std::forward<F>(paramsGenerator), iteration + 1, params);
 							nextParamsGenerated = true;
-
-							return false;
+							return lastParams && newIncumbent;
 						}).executed;
 
-					// If new status is best, construct diff from accumulated mutations and apply the new diff on top of that. Don't execute anything
-					if (newIncumbent)
-						incumbentDiff = MergeDiffs(script->BaseStatus[script->_adhocLevel].m64Diff, status1.m64Diff);
-
-					// Don't revert if best script is the last one to be run
-					if (terminate || (status1.asserted && lastParams && newIncumbent))
-					{
-						script->ApplyChildDiff(status2, script->saveBank[script->_adhocLevel + 1], initialFrame);
+					if (terminate)
 						return true;
-					}
-					else
-						script->Revert(initialFrame, status2.m64Diff, script->saveBank[script->_adhocLevel + 1]);
 				}
 
 				// If best script was from earlier, apply it
@@ -718,32 +669,24 @@ public:
 		BaseScriptStatus tempStatus;
 		int64_t initialFrame = script->GetCurrentFrame();
 		int64_t iteration = 0;
-		bool terminate = false;
 
 		// return if container is empty
 		if (paramsList.begin() == paramsList.end())
 			return status1;
 
 		// We want to avoid reversion of successful script
-		tempStatus = script->ExecuteAdhocBase([&]()
+		bool terminate = script->ModifyAdhoc([&]()
 			{
 				status1 = ModifyFromTupleAdhoc<TCompareStatus>(std::forward<F>(adhocScript), *(paramsList.begin()));
 
 				if (!status1.executed)
 					return false;
 
-				terminate = script->ExecuteAdhoc([&]() { return terminator(&status1); }).executed;
-				return true;
-			});
+				return script->ExecuteAdhoc([&]() { return terminator(&status1); }).executed;
+			}).executed;
 
-		// Handle reversion/application of last script run
 		if (terminate)
-		{
-			script->ApplyChildDiff(tempStatus, script->saveBank[script->_adhocLevel + 1], initialFrame);
 			return status1;
-		}
-		else
-			script->Revert(initialFrame, tempStatus.m64Diff, script->saveBank[script->_adhocLevel + 1]);
 
 		bool first = true;
 		for (const auto& params : paramsList)
@@ -758,7 +701,7 @@ public:
 			// We want to avoid reversion of successful script
 			iteration++;
 			bool newIncumbent = false;
-			tempStatus = script->ExecuteAdhocBase([&]()
+			terminate = script->ModifyAdhoc([&]()
 				{
 					status2 = ModifyFromTupleAdhoc<TCompareStatus>(std::forward<F>(adhocScript), params);
 
@@ -770,17 +713,11 @@ public:
 						return true;
 
 					newIncumbent = SelectStatusAdhoc(std::forward<G>(comparator), status1, status2);
-					return true;
-				});
+					return &params == &*std::prev(paramsList.end()) && newIncumbent;
+				}).executed;
 
-			// Don't revert if best script is the last one to be run
-			if (terminate || (tempStatus.asserted && (&params == &*std::prev(paramsList.end())) && newIncumbent))
-			{
-				script->ApplyChildDiff(tempStatus, script->saveBank[script->_adhocLevel + 1], initialFrame);
+			if (terminate)
 				return status2;
-			}
-			else
-				script->Revert(initialFrame, tempStatus.m64Diff, script->saveBank[script->_adhocLevel + 1]);
 		}
 
 		// If best script was from earlier, apply it
@@ -804,49 +741,40 @@ public:
 		int64_t initialFrame = script->GetCurrentFrame();
 		int64_t iteration = 0;
 		TTuple params;
-		bool terminate;
 
 		// return if no params
 		if (!GenerateParams(std::forward<F>(paramsGenerator), iteration, params))
 			return status1;
 
 		// We want to avoid reversion of successful script
-		tempStatus = script->ExecuteAdhocBase([&]()
+		bool terminate = script->ModifyAdhoc([&]()
 			{
 				status1 = ModifyFromTupleAdhoc<TCompareStatus>(std::forward<G>(adhocScript), params);
 
 				if (!status1.executed)
 					return false;
 
-				terminate = script->ExecuteAdhoc([&]() { return terminator(&status1); }).executed;
-				return true;
-			});
+				return script->ExecuteAdhoc([&]() { return terminator(&status1); }).executed;
+			}).executed;
 
-		// Handle reversion/application of last script run
 		if (terminate)
-		{
-			script->ApplyChildDiff(tempStatus, script->saveBank[script->_adhocLevel + 1], initialFrame);
 			return status1;
-		}
-		else
-			script->Revert(initialFrame, tempStatus.m64Diff, script->saveBank[script->_adhocLevel + 1]);
 
 		bool nextParamsGenerated = false;
 		bool lastParams = false;
-		while (nextParamsGenerated || GenerateParams(std::forward<F>(paramsGenerator), ++iteration, params))
+		while ((nextParamsGenerated && !lastParams) || GenerateParams(std::forward<F>(paramsGenerator), ++iteration, params))
 		{
 			// We want to avoid reversion of successful script
 			bool newIncumbent = false;
 			nextParamsGenerated = false;
-			tempStatus = script->ExecuteAdhocBase([&]()
+			terminate = script->ModifyAdhoc([&]()
 				{
 					status2 = ModifyFromTupleAdhoc<TCompareStatus>(std::forward<G>(adhocScript), params);
 
 					if (!status2.executed)
 						return false;
 
-					terminate = script->ExecuteAdhoc([&]() { return terminator(&status2); }).executed;
-					if (terminate)
+					if (script->ExecuteAdhoc([&]() { return terminator(&status2); }).executed)
 						return true;
 
 					newIncumbent = SelectStatusAdhoc(std::forward<H>(comparator), status1, status2);
@@ -854,18 +782,11 @@ public:
 					//avoid calling params generator twice per iteration
 					lastParams = !GenerateParams(std::forward<F>(paramsGenerator), ++iteration, params);
 					nextParamsGenerated = true;
+					return lastParams && newIncumbent;
+				}).executed;
 
-					return true;
-				});
-
-			// Don't revert if best script is the last one to be run
-			if (terminate || (tempStatus.asserted && lastParams && newIncumbent))
-			{
-				script->ApplyChildDiff(tempStatus, script->saveBank[script->_adhocLevel + 1], initialFrame);
+			if (terminate)
 				return status2;
-			}
-			else
-				script->Revert(initialFrame, tempStatus.m64Diff, script->saveBank[script->_adhocLevel + 1]);
 		}
 
 		// If best script was from earlier, apply it
