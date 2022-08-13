@@ -196,29 +196,9 @@ bool BitFsPyramidOscillation::execution()
 				return status1;
 
 			return status2;
-		});
+		});	
 
-	auto testStatus6 = ModifyCompareAdhoc<TestAdhocStatus>(
-		params,
-		/* script */ [&](auto customStatus, BitFsPyramidOscillation_ParamsDto params)
-		{
-			auto status = Modify<BitFsPyramidOscillation_RunDownhill>(params);
-			if (!status.asserted)
-				return false;
-
-			customStatus->maxSpeed = status.maxSpeed;
-
-			return true;
-		},
-		/* comparator */ [](auto status1, auto status2)
-		{
-			if (status1->maxSpeed > status2->maxSpeed)
-				return status1;
-
-			return status2;
-		});
-
-	auto testStatus7 = ModifyCompareAdhoc<TestAdhocStatus, std::tuple<BitFsPyramidOscillation_ParamsDto>>(
+	auto testStatus8 = DynamicCompareAdhoc<TestAdhocStatus, std::tuple<BitFsPyramidOscillation_ParamsDto>>(
 		/* paramsGenerator */ [&](auto iteration, auto& params)
 		{
 			switch (iteration)
@@ -240,6 +220,38 @@ bool BitFsPyramidOscillation::execution()
 				return false;
 
 			customStatus->maxSpeed = status.maxSpeed;
+
+			return true;
+		},
+		/* mutator */ [&]()
+		{
+			AdvanceFrameRead();
+
+			return true;
+		},
+		/* comparator */ [](auto status1, auto status2)
+		{
+			if (status1->maxSpeed > status2->maxSpeed)
+				return status1;
+
+			return status2;
+		});
+
+	auto testStatus9 = DynamicCompareAdhoc<TestAdhocStatus>(
+		params,
+		/* script */ [&](auto customStatus, BitFsPyramidOscillation_ParamsDto params)
+		{
+			auto status = Modify<BitFsPyramidOscillation_RunDownhill>(params);
+			if (!status.asserted)
+				return false;
+
+			customStatus->maxSpeed = status.maxSpeed;
+
+			return true;
+		},
+		/* mutator */ [&]()
+		{
+			AdvanceFrameRead();
 
 			return true;
 		},

@@ -63,6 +63,16 @@ public:
 	Substatus(int64_t nMutations, ScriptStatus<TScript> substatus) : nMutations(nMutations), substatus(substatus) { }
 };
 
+template <class TCompareStatus>
+class AdhocSubstatus
+{
+public:
+	int64_t nMutations = 0;
+	AdhocScriptStatus<TCompareStatus> substatus;
+
+	AdhocSubstatus(int64_t nMutations, AdhocScriptStatus<TCompareStatus> substatus) : nMutations(nMutations), substatus(substatus) { }
+};
+
 template <derived_from_specialization_of<Resource> TResource>
 class ScriptCompareHelper
 {
@@ -794,6 +804,306 @@ public:
 			script->Apply(status1.m64Diff);
 
 		return status1;
+	}
+
+	template <class TCompareStatus,
+		class TTupleContainer,
+		typename TTuple = typename TTupleContainer::value_type,
+		AdhocCompareScript<TCompareStatus, TTuple> F,
+		AdhocScript G,
+		AdhocScriptComparator<TCompareStatus> H,
+		AdhocScriptTerminator<TCompareStatus> I>
+	AdhocScriptStatus<AdhocSubstatus<TCompareStatus>> DynamicCompareAdhoc(const TTupleContainer& paramsList, F&& adhocScript, G&& mutator, H&& comparator, I terminator)
+	{
+		AdhocScriptStatus<TCompareStatus> status1 = AdhocScriptStatus<TCompareStatus>();
+		int64_t iteration = 0;
+		int64_t nMutations = 0;
+		M64Diff incumbentDiff;
+
+		auto baseStatus = script->ExecuteAdhoc([&]()
+			{
+				// return if container is empty
+				if (paramsList.begin() == paramsList.end())
+					return false;
+
+				status1 = ExecuteFromTupleAdhoc<TCompareStatus>(std::forward<F>(adhocScript), *(paramsList.begin()));
+				if (status1.executed)
+					incumbentDiff.frames.insert(status1.m64Diff.frames.begin(), status1.m64Diff.frames.end());
+
+				if (status1.executed && script->ExecuteAdhoc([&]() { return terminator(&status1); }).executed)
+					return true;
+
+				bool first = true;
+				for (const auto& params : paramsList)
+				{
+					// We already ran the first set of parameters
+					if (first)
+					{
+						first = false;
+						continue;
+					}
+
+					// Mutate state before next iteration. If mutation fails, stop execution
+					if (!script->ModifyAdhoc(std::forward<G>(mutator)).executed)
+						return status1.executed;
+					nMutations++;
+
+					iteration++;
+					AdhocScriptStatus<TCompareStatus> status2 = ExecuteFromTupleAdhoc<TCompareStatus>(std::forward<F>(adhocScript), params);
+					if (status2.executed && script->ExecuteAdhoc([&]() { return terminator(&status2); }).executed)
+					{
+						status1 = status2;
+						return true;
+					}
+
+					// If new status is best, construct diff from accumulated mutations and apply the new diff on top of that. Don't execute anything
+					if (SelectStatusAdhoc(std::forward<H>(comparator), status1, status2))
+						incumbentDiff = MergeDiffs(script->BaseStatus[script->_adhocLevel].m64Diff, status1.m64Diff);
+				}
+
+				return status1.executed;
+			});
+
+		baseStatus.m64Diff = incumbentDiff;
+		return AdhocScriptStatus<AdhocSubstatus<TCompareStatus>>(baseStatus, AdhocSubstatus<TCompareStatus>(nMutations, status1));
+	}
+
+	template <class TCompareStatus,
+		typename TTuple,
+		ScriptParamsGenerator<TTuple> F,
+		AdhocCompareScript<TCompareStatus, TTuple> G,
+		AdhocScript H,
+		AdhocScriptComparator<TCompareStatus> I,
+		AdhocScriptTerminator<TCompareStatus> J>
+	AdhocScriptStatus<AdhocSubstatus<TCompareStatus>> DynamicCompareAdhoc(F&& paramsGenerator, G&& adhocScript, H&& mutator, I&& comparator, J terminator)
+	{
+		AdhocScriptStatus<TCompareStatus> status1 = AdhocScriptStatus<TCompareStatus>();
+		int64_t iteration = 0;
+		int64_t nMutations = 0;
+		M64Diff incumbentDiff;
+		TTuple params;
+
+		auto baseStatus = script->ExecuteAdhoc([&]()
+			{
+				// return if no params
+				if (!GenerateParams(std::forward<F>(paramsGenerator), iteration, params))
+					return false;
+
+				status1 = ExecuteFromTupleAdhoc<TCompareStatus>(std::forward<G>(adhocScript), params);
+				if (status1.executed)
+					incumbentDiff.frames.insert(status1.m64Diff.frames.begin(), status1.m64Diff.frames.end());
+
+				if (status1.executed && script->ExecuteAdhoc([&]() { return terminator(&status1); }).executed)
+					return true;
+
+				while (GenerateParams(std::forward<F>(paramsGenerator), ++iteration, params))
+				{
+					// Mutate state before next iteration. If mutation fails, stop execution
+					if (!script->ModifyAdhoc(std::forward<H>(mutator)).executed)
+						return status1.executed;
+					nMutations++;
+
+					iteration++;
+					AdhocScriptStatus<TCompareStatus> status2 = ExecuteFromTupleAdhoc<TCompareStatus>(std::forward<G>(adhocScript), params);
+					if (status2.executed && script->ExecuteAdhoc([&]() { return terminator(&status2); }).executed)
+					{
+						status1 = status2;
+						return true;
+					}
+
+					// If new status is best, construct diff from accumulated mutations and apply the new diff on top of that. Don't execute anything
+					if (SelectStatusAdhoc(std::forward<I>(comparator), status1, status2))
+						incumbentDiff = MergeDiffs(script->BaseStatus[script->_adhocLevel].m64Diff, status1.m64Diff);
+				}
+
+				return status1.executed;
+			});
+
+		baseStatus.m64Diff = incumbentDiff;
+		return AdhocScriptStatus<AdhocSubstatus<TCompareStatus>>(baseStatus, AdhocSubstatus<TCompareStatus>(nMutations, status1));
+	}
+
+	template <class TCompareStatus,
+		class TTupleContainer,
+		typename TTuple = typename TTupleContainer::value_type,
+		AdhocCompareScript<TCompareStatus, TTuple> F,
+		AdhocScript G,
+		AdhocScriptComparator<TCompareStatus> H,
+		AdhocScriptTerminator<TCompareStatus> I>
+	AdhocScriptStatus<AdhocSubstatus<TCompareStatus>> DynamicModifyCompareAdhoc(const TTupleContainer& paramsList, F&& adhocScript, G&& mutator, H&& comparator, I terminator)
+	{
+		AdhocScriptStatus<TCompareStatus> status1 = AdhocScriptStatus<TCompareStatus>();
+		AdhocScriptStatus<TCompareStatus> status2 = AdhocScriptStatus<TCompareStatus>();
+		int64_t initialFrame = script->GetCurrentFrame();
+		int64_t iteration = 0;
+		int64_t nMutations = 0;
+		M64Diff incumbentDiff;
+
+		auto baseStatus = script->ModifyAdhoc([&]()
+			{
+				// return if container is empty
+				if (paramsList.begin() == paramsList.end())
+					return false;
+
+				// We want to avoid reversion of successful script
+				bool terminate = script->ModifyAdhoc([&]()
+					{
+						status1 = ModifyFromTupleAdhoc<TCompareStatus>(std::forward<F>(adhocScript), *(paramsList.begin()));
+						if (status1.executed)
+							incumbentDiff.frames.insert(status1.m64Diff.frames.begin(), status1.m64Diff.frames.end());
+
+						if (!status1.executed)
+							return false;
+
+						return script->ExecuteAdhoc([&]() { return terminator(&status1); }).executed;
+					}).executed;
+
+				// Handle reversion/application of last script run
+				if (terminate)
+					return true;
+
+				bool first = true;
+				for (const auto& params : paramsList)
+				{
+					// We already ran the first set of parameters
+					if (first)
+					{
+						first = false;
+						continue;
+					}
+
+					// Mutate state before next iteration. If mutation fails, stop execution
+					if (!script->ModifyAdhoc(std::forward<G>(mutator)).executed)
+						return status1.executed;
+					nMutations++;
+
+					// We want to avoid reversion of successful script
+					iteration++;
+					bool newIncumbent = false;
+					terminate = script->ModifyAdhoc([&]()
+						{
+							status2 = ModifyFromTupleAdhoc<TCompareStatus>(std::forward<F>(adhocScript), params);
+
+							if (!status2.executed)
+								return false;
+
+							if (script->ExecuteAdhoc([&]() { return terminator(&status2); }).executed)
+							{
+								status1 = status2;
+								return true;
+							}
+
+							// If new status is best, construct diff from accumulated mutations and apply the new diff on top of that. Don't execute anything
+							newIncumbent = SelectStatusAdhoc(std::forward<H>(comparator), status1, status2);
+							if (newIncumbent)
+								incumbentDiff = MergeDiffs(script->BaseStatus[script->_adhocLevel].m64Diff, status1.m64Diff);
+
+							return (&params == &*std::prev(paramsList.end())) && newIncumbent;
+						}).executed;
+
+					if (terminate)
+						return true;
+				}
+
+				// If best script was from earlier, apply it
+				if (status1.executed)
+					script->Apply(incumbentDiff);
+
+				return status1.executed;
+			});
+
+		return AdhocScriptStatus<AdhocSubstatus<TCompareStatus>>(baseStatus, AdhocSubstatus<TCompareStatus>(nMutations, status1));
+	}
+
+	template <class TCompareStatus,
+		typename TTuple,
+		ScriptParamsGenerator<TTuple> F,
+		AdhocCompareScript<TCompareStatus, TTuple> G,
+		AdhocScript H,
+		AdhocScriptComparator<TCompareStatus> I,
+		AdhocScriptTerminator<TCompareStatus> J>
+	AdhocScriptStatus<AdhocSubstatus<TCompareStatus>> DynamicModifyCompareAdhoc(F&& paramsGenerator, G&& adhocScript, H&& mutator, I&& comparator, J terminator)
+	{
+		AdhocScriptStatus<TCompareStatus> status1 = AdhocScriptStatus<TCompareStatus>();
+		AdhocScriptStatus<TCompareStatus> status2 = AdhocScriptStatus<TCompareStatus>();
+		int64_t initialFrame = script->GetCurrentFrame();
+		int64_t iteration = 0;
+		int64_t nMutations = 0;
+		M64Diff incumbentDiff;
+		TTuple params;
+
+		auto baseStatus = script->ModifyAdhoc([&]()
+			{
+				// return if container is empty
+				if (!GenerateParams(std::forward<F>(paramsGenerator), iteration, params))
+					return false;
+
+				// We want to avoid reversion of successful script
+				bool terminate = script->ModifyAdhoc([&]()
+					{
+						status1 = ModifyFromTupleAdhoc<TCompareStatus>(std::forward<G>(adhocScript), params);
+						if (status1.executed)
+							incumbentDiff.frames.insert(status1.m64Diff.frames.begin(), status1.m64Diff.frames.end());
+
+						if (!status1.executed)
+							return false;
+
+						return script->ExecuteAdhoc([&]() { return terminator(&status1); }).executed;
+					}).executed;
+
+				// Handle reversion/application of last script run
+				if (terminate)
+					return true;
+
+				bool nextParamsGenerated = false;
+				bool lastParams = false;
+				while ((nextParamsGenerated && !lastParams) || GenerateParams(std::forward<F>(paramsGenerator), ++iteration, params))
+				{
+					// Mutate state before next iteration. If mutation fails, stop execution
+					if (!script->ModifyAdhoc(std::forward<H>(mutator)).executed)
+						return status1.executed;
+					nMutations++;
+
+					// We want to avoid reversion of successful script
+					iteration++;
+					bool newIncumbent = false;
+					nextParamsGenerated = false;
+					terminate = script->ModifyAdhoc([&]()
+						{
+							status2 = ModifyFromTupleAdhoc<TCompareStatus>(std::forward<G>(adhocScript), params);
+
+							if (!status2.executed)
+								return false;
+
+							if (script->ExecuteAdhoc([&]() { return terminator(&status2); }).executed)
+							{
+								status1 = status2;
+								return true;
+							}
+
+							// If new status is best, construct diff from accumulated mutations and apply the new diff on top of that. Don't execute anything
+							newIncumbent = SelectStatusAdhoc(std::forward<I>(comparator), status1, status2);
+							if (newIncumbent)
+								incumbentDiff = MergeDiffs(script->BaseStatus[script->_adhocLevel].m64Diff, status1.m64Diff);
+
+							//avoid calling params generator twice per iteration
+							lastParams = !GenerateParams(std::forward<F>(paramsGenerator), iteration + 1, params);
+							nextParamsGenerated = true;
+							return lastParams && newIncumbent;
+						}).executed;
+
+					if (terminate)
+						return true;
+				}
+
+				// If best script was from earlier, apply it
+				if (status1.executed)
+					script->Apply(incumbentDiff);
+
+				return status1.executed;
+			});
+
+		return AdhocScriptStatus<AdhocSubstatus<TCompareStatus>>(baseStatus, AdhocSubstatus<TCompareStatus>(nMutations, status1));
 	}
 
 private:
