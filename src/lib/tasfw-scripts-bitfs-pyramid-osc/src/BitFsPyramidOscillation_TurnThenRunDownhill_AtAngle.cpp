@@ -90,7 +90,21 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::execution()
 		},
 		[&](auto customStatus, BitFsPyramidOscillation_ParamsDto params) //script
 		{
+			terminate = false;
 			customStatus->status = Modify<BitFsPyramidOscillation_TurnAroundAndRunDownhill>(params);
+
+			if (!customStatus->status.asserted || customStatus->status.tooUphill)
+			{
+				terminate = true;
+				return false;
+			}
+
+			if ((customStatus->status.maxSpeed < _oscillationParams.prevMaxSpeed || customStatus->status.passedEquilibriumSpeed <= 0) && customStatus->status.maxSpeed > 0)
+			{
+				terminate = true;
+				return false;
+			}
+
 			return true;
 		},
 		[&]() // mutator
@@ -102,13 +116,6 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::execution()
 		},
 		[&](auto status1, auto status2) //comparator
 		{
-			terminate = false;
-			if (!status2->status.asserted || status2->status.tooUphill)
-			{
-				terminate = true;
-				return status1;
-			}
-
 			//Route is only valid if it got more speed than the last time
 			//We aren't trying to maxmimize this, but this ensures route won't be too close to the lava
 			//Also make sure equilibrium point has been passed
@@ -125,7 +132,7 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::execution()
 		}
 	);
 
-	auto runDownhillStatus = status.substatus.status;
+	auto& runDownhillStatus = status.substatus.status;
 
 	/*
 	ScriptStatus<BitFsPyramidOscillation_TurnAroundAndRunDownhill> runDownhillStatus;
@@ -162,7 +169,7 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::execution()
 	}
 	*/
 
-	if (!runDownhillStatus.asserted)
+	if (!status.executed)
 	{
 		// We want to record if these flags are set without any additional
 		// running frames This tells the caller that the angle paramter is
