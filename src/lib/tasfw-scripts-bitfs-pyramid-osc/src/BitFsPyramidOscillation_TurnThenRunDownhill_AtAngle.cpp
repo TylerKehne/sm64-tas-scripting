@@ -80,6 +80,54 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::execution()
 		return false;
 	}
 
+	uint64_t initFrame = GetCurrentFrame();
+	bool terminate = false;
+	auto status = DynamicModifyCompareAdhoc<StatusField<BitFsPyramidOscillation_TurnAroundAndRunDownhill>, std::tuple<BitFsPyramidOscillation_ParamsDto>>(
+		[&](auto iteration, auto& params) //paramsGenerator
+		{
+			params = _oscillationParams;
+			return !terminate && iteration < 100;
+		},
+		[&](auto customStatus, BitFsPyramidOscillation_ParamsDto params) //script
+		{
+			customStatus->status = Modify<BitFsPyramidOscillation_TurnAroundAndRunDownhill>(params);
+			return true;
+		},
+		[&]() // mutator
+		{
+			// Run forward for another frame and try again
+			auto inputs = Inputs::GetClosestInputByYawHau(_angle, 32, camera->yaw);
+			AdvanceFrameWrite(Inputs(0, inputs.first, inputs.second));
+			return true;
+		},
+		[&](auto status1, auto status2) //comparator
+		{
+			terminate = false;
+			if (!status2->status.asserted || status2->status.tooUphill)
+			{
+				terminate = true;
+				return status1;
+			}
+
+			//Route is only valid if it got more speed than the last time
+			//We aren't trying to maxmimize this, but this ensures route won't be too close to the lava
+			//Also make sure equilibrium point has been passed
+			if (status2->status.maxSpeed >= _oscillationParams.prevMaxSpeed
+				&& status2->status.passedEquilibriumSpeed > status1->status.passedEquilibriumSpeed)
+				return status2;
+			// This also indicates running frames aren't helping and we can
+			// terminate, except when past the threshold In that case, we don't mind
+			// if this goes down.
+			else if (status2->status.maxSpeed <= status1->status.maxSpeed)
+				terminate = true;
+
+			return status1;
+		}
+	);
+
+	auto runDownhillStatus = status.substatus.status;
+
+	/*
 	ScriptStatus<BitFsPyramidOscillation_TurnAroundAndRunDownhill> runDownhillStatus;
 	uint64_t initFrame = GetCurrentFrame();
 	//This should never reach 50 frames, but just in case
@@ -112,6 +160,7 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::execution()
 		auto inputs = Inputs::GetClosestInputByYawHau(_angle, 32, camera->yaw);
 		AdvanceFrameWrite(Inputs(0, inputs.first, inputs.second));
 	}
+	*/
 
 	if (!runDownhillStatus.asserted)
 	{
@@ -137,7 +186,7 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::execution()
 	CustomStatus.finishTurnaroundFailedToExpire |=
 		runDownhillStatus.finishTurnaroundFailedToExpire;
 
-	Apply(runDownhillStatus.m64Diff);
+	//Apply(runDownhillStatus.m64Diff);
 
 	return true;
 }

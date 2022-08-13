@@ -91,6 +91,15 @@ public:
 	virtual bool Terminator([[maybe_unused]] const AdhocScriptStatus<TCompareStatus>& status) const { return false; }
 };
 
+template <derived_from_specialization_of<Script> TScript>
+class StatusField
+{
+public:
+	ScriptStatus<TScript> status;
+
+	StatusField() = default;
+};
+
 class TestAdhocStatus
 {
 public:

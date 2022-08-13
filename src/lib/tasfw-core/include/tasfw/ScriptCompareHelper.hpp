@@ -11,7 +11,7 @@ class Script;
 template <typename F>
 auto AdhocCompareScript_impl = [](auto... params) constexpr -> void
 {
-	static_assert(std::same_as < std::invoke_result_t<F, decltype(params)...>, bool>,
+	static_assert(std::same_as<std::invoke_result_t<F, decltype(params)...>, bool>,
 		"Ad-hoc script not constructible from supplied parameters");
 };
 
@@ -306,6 +306,7 @@ public:
 		ScriptStatus<TScript> status1 = ScriptStatus<TScript>();
 		int64_t iteration = 0;
 		int64_t nMutations = 0;
+		int64_t incumbentMutations = 0;
 		M64Diff incumbentDiff;
 
 		auto baseStatus = script->ExecuteAdhoc([&]()
@@ -346,14 +347,17 @@ public:
 
 				// If new status is best, construct diff from accumulated mutations and apply the new diff on top of that. Don't execute anything
 				if (SelectStatus(std::forward<G>(comparator), status1, status2))
-					incumbentDiff = MergeDiffs(script->BaseStatus[script->_adhocLevel].m64Diff, status1.m64Diff);
+				{
+					incumbentMutations = nMutations;
+					incumbentDiff = MergeDiffs(script->BaseStatus[script->_adhocLevel - 1].m64Diff, status1.m64Diff);
+				}
 			}
 
 			return status1.asserted;
 		});
 
 		baseStatus.m64Diff = incumbentDiff;
-		return AdhocScriptStatus<Substatus<TScript>>(baseStatus, Substatus<TScript>(nMutations, status1));
+		return AdhocScriptStatus<Substatus<TScript>>(baseStatus, Substatus<TScript>(incumbentMutations, status1));
 	}
 
 	template <class TScript,
@@ -368,6 +372,7 @@ public:
 		ScriptStatus<TScript> status1 = ScriptStatus<TScript>();
 		int64_t iteration = 0;
 		int64_t nMutations = 0;
+		int64_t incumbentMutations = 0;
 		M64Diff incumbentDiff;
 		TTuple params;
 
@@ -401,14 +406,17 @@ public:
 
 					// If new status is best, construct diff from accumulated mutations and apply the new diff on top of that. Don't execute anything
 					if (SelectStatus(std::forward<H>(comparator), status1, status2))
-						incumbentDiff = MergeDiffs(script->BaseStatus[script->_adhocLevel].m64Diff, status1.m64Diff);
+					{
+						incumbentMutations = nMutations;
+						incumbentDiff = MergeDiffs(script->BaseStatus[script->_adhocLevel - 1].m64Diff, status1.m64Diff);
+					}
 				}
 
 				return status1.asserted;
 			});
 
 		baseStatus.m64Diff = incumbentDiff;
-		return AdhocScriptStatus<Substatus<TScript>>(baseStatus, Substatus<TScript>(nMutations, status1));
+		return AdhocScriptStatus<Substatus<TScript>>(baseStatus, Substatus<TScript>(incumbentMutations, status1));
 	}
 
 	template <class TScript,
@@ -425,6 +433,7 @@ public:
 		int64_t initialFrame = script->GetCurrentFrame();
 		int64_t iteration = 0;
 		int64_t nMutations = 0;
+		int64_t incumbentMutations = 0;
 		M64Diff incumbentDiff;
 
 		auto baseStatus = script->ModifyAdhoc([&]()
@@ -484,7 +493,10 @@ public:
 							// If new status is best, construct diff from accumulated mutations and apply the new diff on top of that. Don't execute anything
 							newIncumbent = SelectStatus(std::forward<G>(comparator), status1, status2);
 							if (newIncumbent)
-								incumbentDiff = MergeDiffs(script->BaseStatus[script->_adhocLevel].m64Diff, status1.m64Diff);
+							{
+								incumbentMutations = nMutations;
+								incumbentDiff = MergeDiffs(script->BaseStatus[script->_adhocLevel - 1].m64Diff, status1.m64Diff);
+							}
 
 							return (&params == &*std::prev(paramsList.end())) && newIncumbent;
 						}).executed;
@@ -500,7 +512,7 @@ public:
 				return status1.asserted;
 			});
 
-		return AdhocScriptStatus<Substatus<TScript>>(baseStatus, Substatus<TScript>(nMutations, status1));
+		return AdhocScriptStatus<Substatus<TScript>>(baseStatus, Substatus<TScript>(incumbentMutations, status1));
 	}
 
 	template <class TScript,
@@ -517,6 +529,7 @@ public:
 		int64_t initialFrame = script->GetCurrentFrame();
 		int64_t iteration = 0;
 		int64_t nMutations = 0;
+		int64_t incumbentMutations = 0;
 		M64Diff incumbentDiff;
 		TTuple params;
 
@@ -572,7 +585,10 @@ public:
 							// If new status is best, construct diff from accumulated mutations and apply the new diff on top of that. Don't execute anything
 							newIncumbent = SelectStatus(std::forward<G>(comparator), status1, status2);
 							if (newIncumbent)
-								incumbentDiff = MergeDiffs(script->BaseStatus[script->_adhocLevel].m64Diff, status1.m64Diff);
+							{
+								incumbentMutations = nMutations;
+								incumbentDiff = MergeDiffs(script->BaseStatus[script->_adhocLevel - 1].m64Diff, status1.m64Diff);
+							}	
 
 							//avoid calling params generator twice per iteration
 							lastParams = !GenerateParams(std::forward<F>(paramsGenerator), iteration + 1, params);
@@ -591,7 +607,7 @@ public:
 				return status1.asserted;
 			});
 
-		return AdhocScriptStatus<Substatus<TScript>>(baseStatus, Substatus<TScript>(nMutations, status1));
+		return AdhocScriptStatus<Substatus<TScript>>(baseStatus, Substatus<TScript>(incumbentMutations, status1));
 	}
 
 	template <class TCompareStatus,
@@ -818,6 +834,7 @@ public:
 		AdhocScriptStatus<TCompareStatus> status1 = AdhocScriptStatus<TCompareStatus>();
 		int64_t iteration = 0;
 		int64_t nMutations = 0;
+		int64_t incumbentMutations = 0;
 		M64Diff incumbentDiff;
 
 		auto baseStatus = script->ExecuteAdhoc([&]()
@@ -858,14 +875,17 @@ public:
 
 					// If new status is best, construct diff from accumulated mutations and apply the new diff on top of that. Don't execute anything
 					if (SelectStatusAdhoc(std::forward<H>(comparator), status1, status2))
-						incumbentDiff = MergeDiffs(script->BaseStatus[script->_adhocLevel].m64Diff, status1.m64Diff);
+					{
+						incumbentMutations = nMutations;
+						incumbentDiff = MergeDiffs(script->BaseStatus[script->_adhocLevel - 1].m64Diff, status1.m64Diff);
+					}
 				}
 
 				return status1.executed;
 			});
 
 		baseStatus.m64Diff = incumbentDiff;
-		return AdhocScriptStatus<AdhocSubstatus<TCompareStatus>>(baseStatus, AdhocSubstatus<TCompareStatus>(nMutations, status1));
+		return AdhocScriptStatus<AdhocSubstatus<TCompareStatus>>(baseStatus, AdhocSubstatus<TCompareStatus>(incumbentMutations, status1));
 	}
 
 	template <class TCompareStatus,
@@ -880,6 +900,7 @@ public:
 		AdhocScriptStatus<TCompareStatus> status1 = AdhocScriptStatus<TCompareStatus>();
 		int64_t iteration = 0;
 		int64_t nMutations = 0;
+		int64_t incumbentMutations = 0;
 		M64Diff incumbentDiff;
 		TTuple params;
 
@@ -913,14 +934,18 @@ public:
 
 					// If new status is best, construct diff from accumulated mutations and apply the new diff on top of that. Don't execute anything
 					if (SelectStatusAdhoc(std::forward<I>(comparator), status1, status2))
-						incumbentDiff = MergeDiffs(script->BaseStatus[script->_adhocLevel].m64Diff, status1.m64Diff);
+					{
+						incumbentMutations = nMutations;
+						incumbentDiff = MergeDiffs(script->BaseStatus[script->_adhocLevel - 1].m64Diff, status1.m64Diff);
+					}
+						
 				}
 
 				return status1.executed;
 			});
 
 		baseStatus.m64Diff = incumbentDiff;
-		return AdhocScriptStatus<AdhocSubstatus<TCompareStatus>>(baseStatus, AdhocSubstatus<TCompareStatus>(nMutations, status1));
+		return AdhocScriptStatus<AdhocSubstatus<TCompareStatus>>(baseStatus, AdhocSubstatus<TCompareStatus>(incumbentMutations, status1));
 	}
 
 	template <class TCompareStatus,
@@ -937,6 +962,7 @@ public:
 		int64_t initialFrame = script->GetCurrentFrame();
 		int64_t iteration = 0;
 		int64_t nMutations = 0;
+		int64_t incumbentMutations = 0;
 		M64Diff incumbentDiff;
 
 		auto baseStatus = script->ModifyAdhoc([&]()
@@ -996,7 +1022,10 @@ public:
 							// If new status is best, construct diff from accumulated mutations and apply the new diff on top of that. Don't execute anything
 							newIncumbent = SelectStatusAdhoc(std::forward<H>(comparator), status1, status2);
 							if (newIncumbent)
-								incumbentDiff = MergeDiffs(script->BaseStatus[script->_adhocLevel].m64Diff, status1.m64Diff);
+							{
+								incumbentMutations = nMutations;
+								incumbentDiff = MergeDiffs(script->BaseStatus[script->_adhocLevel - 1].m64Diff, status1.m64Diff);
+							}	
 
 							return (&params == &*std::prev(paramsList.end())) && newIncumbent;
 						}).executed;
@@ -1012,7 +1041,7 @@ public:
 				return status1.executed;
 			});
 
-		return AdhocScriptStatus<AdhocSubstatus<TCompareStatus>>(baseStatus, AdhocSubstatus<TCompareStatus>(nMutations, status1));
+		return AdhocScriptStatus<AdhocSubstatus<TCompareStatus>>(baseStatus, AdhocSubstatus<TCompareStatus>(incumbentMutations, status1));
 	}
 
 	template <class TCompareStatus,
@@ -1030,6 +1059,7 @@ public:
 		int64_t iteration = 0;
 		int64_t nMutations = 0;
 		M64Diff incumbentDiff;
+		int64_t incumbentMutations = 0;
 		TTuple params;
 
 		auto baseStatus = script->ModifyAdhoc([&]()
@@ -1084,7 +1114,10 @@ public:
 							// If new status is best, construct diff from accumulated mutations and apply the new diff on top of that. Don't execute anything
 							newIncumbent = SelectStatusAdhoc(std::forward<I>(comparator), status1, status2);
 							if (newIncumbent)
-								incumbentDiff = MergeDiffs(script->BaseStatus[script->_adhocLevel].m64Diff, status1.m64Diff);
+							{
+								incumbentMutations = nMutations;
+								incumbentDiff = MergeDiffs(script->BaseStatus[script->_adhocLevel - 1].m64Diff, status1.m64Diff);
+							}	
 
 							//avoid calling params generator twice per iteration
 							lastParams = !GenerateParams(std::forward<F>(paramsGenerator), iteration + 1, params);
@@ -1103,7 +1136,7 @@ public:
 				return status1.executed;
 			});
 
-		return AdhocScriptStatus<AdhocSubstatus<TCompareStatus>>(baseStatus, AdhocSubstatus<TCompareStatus>(nMutations, status1));
+		return AdhocScriptStatus<AdhocSubstatus<TCompareStatus>>(baseStatus, AdhocSubstatus<TCompareStatus>(incumbentMutations, status1));
 	}
 
 private:
