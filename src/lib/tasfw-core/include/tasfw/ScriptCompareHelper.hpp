@@ -163,7 +163,6 @@ public:
 	{
 		ScriptStatus<TScript> status1 = ScriptStatus<TScript>();
 		ScriptStatus<TScript> status2 = ScriptStatus<TScript>();
-		int64_t initialFrame = script->GetCurrentFrame();
 		int64_t iteration = 0;
 
 		// return if container is empty
@@ -234,7 +233,6 @@ public:
 	{
 		ScriptStatus<TScript> status1 = ScriptStatus<TScript>();
 		ScriptStatus<TScript> status2 = ScriptStatus<TScript>();
-		int64_t initialFrame = script->GetCurrentFrame();
 		int64_t iteration = 0;
 		TTuple params;
 
@@ -430,7 +428,6 @@ public:
 	{
 		ScriptStatus<TScript> status1 = ScriptStatus<TScript>();
 		ScriptStatus<TScript> status2 = ScriptStatus<TScript>();
-		int64_t initialFrame = script->GetCurrentFrame();
 		int64_t iteration = 0;
 		int64_t nMutations = 0;
 		int64_t incumbentMutations = 0;
@@ -526,7 +523,6 @@ public:
 	{
 		ScriptStatus<TScript> status1 = ScriptStatus<TScript>();
 		ScriptStatus<TScript> status2 = ScriptStatus<TScript>();
-		int64_t initialFrame = script->GetCurrentFrame();
 		int64_t iteration = 0;
 		int64_t nMutations = 0;
 		int64_t incumbentMutations = 0;
@@ -693,7 +689,6 @@ public:
 		AdhocScriptStatus<TCompareStatus> status1 = AdhocScriptStatus<TCompareStatus>();
 		AdhocScriptStatus<TCompareStatus> status2 = AdhocScriptStatus<TCompareStatus>();
 		BaseScriptStatus tempStatus;
-		int64_t initialFrame = script->GetCurrentFrame();
 		int64_t iteration = 0;
 
 		// return if container is empty
@@ -764,7 +759,6 @@ public:
 		AdhocScriptStatus<TCompareStatus> status1 = AdhocScriptStatus<TCompareStatus>();
 		AdhocScriptStatus<TCompareStatus> status2 = AdhocScriptStatus<TCompareStatus>();
 		BaseScriptStatus tempStatus;
-		int64_t initialFrame = script->GetCurrentFrame();
 		int64_t iteration = 0;
 		TTuple params;
 
@@ -959,7 +953,6 @@ public:
 	{
 		AdhocScriptStatus<TCompareStatus> status1 = AdhocScriptStatus<TCompareStatus>();
 		AdhocScriptStatus<TCompareStatus> status2 = AdhocScriptStatus<TCompareStatus>();
-		int64_t initialFrame = script->GetCurrentFrame();
 		int64_t iteration = 0;
 		int64_t nMutations = 0;
 		int64_t incumbentMutations = 0;
@@ -1055,7 +1048,6 @@ public:
 	{
 		AdhocScriptStatus<TCompareStatus> status1 = AdhocScriptStatus<TCompareStatus>();
 		AdhocScriptStatus<TCompareStatus> status2 = AdhocScriptStatus<TCompareStatus>();
-		int64_t initialFrame = script->GetCurrentFrame();
 		int64_t iteration = 0;
 		int64_t nMutations = 0;
 		M64Diff incumbentDiff;
