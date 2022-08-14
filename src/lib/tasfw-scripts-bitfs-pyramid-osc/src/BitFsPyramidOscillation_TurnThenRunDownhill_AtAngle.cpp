@@ -93,13 +93,9 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::execution()
 			terminate = false;
 			customStatus->status = Modify<BitFsPyramidOscillation_TurnAroundAndRunDownhill>(params);
 
-			if (!customStatus->status.asserted || customStatus->status.tooUphill)
-			{
-				terminate = true;
-				return false;
-			}
-
-			if ((customStatus->status.maxSpeed < _oscillationParams.prevMaxSpeed || customStatus->status.passedEquilibriumSpeed <= 0) && customStatus->status.maxSpeed > 0)
+			if (!customStatus->status.asserted
+				|| customStatus->status.tooUphill
+				|| ((customStatus->status.maxSpeed < _oscillationParams.prevMaxSpeed || customStatus->status.passedEquilibriumSpeed <= 0) && customStatus->status.maxSpeed > 0))
 			{
 				terminate = true;
 				return false;
@@ -107,7 +103,7 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::execution()
 
 			return true;
 		},
-		[&]() // mutator
+		[&]() //mutator
 		{
 			// Run forward for another frame and try again
 			auto inputs = Inputs::GetClosestInputByYawHau(_angle, 32, camera->yaw);
