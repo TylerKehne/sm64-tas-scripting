@@ -169,30 +169,6 @@ protected:
 	template <class TAdhocCustomScriptStatus, AdhocCustomStatusScript<TAdhocCustomScriptStatus> F>
 	AdhocScriptStatus<TAdhocCustomScriptStatus> TestAdhoc(F&& adhocScript);
 
-	//Leaf method for comparing ad-hoc scripts. This is the one the user will call.
-	template <class TCompareStatus,
-		AdhocCustomStatusScript<TCompareStatus> F,
-		AdhocCustomStatusScript<TCompareStatus> G,
-		AdhocCustomStatusScript<TCompareStatus>... H>
-	requires(std::derived_from<TCompareStatus, CompareStatus<TCompareStatus>>)
-	AdhocScriptStatus<TCompareStatus> Compare(F&& adhocScript1, G&& adhocScript2, H&&... adhocScripts);
-
-	//Leaf method for comparing ad-hoc scripts and applying the result. This is the one the user will call.
-	template <class TCompareStatus,
-		AdhocCustomStatusScript<TCompareStatus> F,
-		AdhocCustomStatusScript<TCompareStatus> G,
-		AdhocCustomStatusScript<TCompareStatus>... H>
-		requires(std::derived_from<TCompareStatus, CompareStatus<TCompareStatus>>)
-	AdhocScriptStatus<TCompareStatus> ModifyCompare(F&& adhocScript1, G&& adhocScript2, H&&... adhocScripts);
-
-	//Same as Compare(), but with no diff returned
-	template <class TCompareStatus,
-		AdhocCustomStatusScript<TCompareStatus> F,
-		AdhocCustomStatusScript<TCompareStatus> G,
-		AdhocCustomStatusScript<TCompareStatus>... H>
-		requires(std::derived_from<TCompareStatus, CompareStatus<TCompareStatus>>)
-	AdhocScriptStatus<TCompareStatus> TestCompare(F&& adhocScript1, G&& adhocScript2, H&&... adhocScripts);
-
 	#pragma region Compare Methods
 
 	template <derived_from_specialization_of<Script> TScript,
@@ -624,30 +600,6 @@ private:
 
 	template <typename F>
 	BaseScriptStatus ExecuteAdhocBase(F adhocScript);
-
-	//Root method for Compare() template recursion. This will be called when there are no scripts left to compare the incumbent to.
-	template <class TCompareStatus>
-		requires(std::derived_from<TCompareStatus, CompareStatus<TCompareStatus>>)
-	AdhocScriptStatus<TCompareStatus> Compare(const AdhocScriptStatus<TCompareStatus>& status1);
-
-	//Main recursive method for comparing ad hoc scripts. Only the root and leaf use different methods
-	template <class TCompareStatus, AdhocCustomStatusScript<TCompareStatus> F, AdhocCustomStatusScript<TCompareStatus>... G>
-		requires(std::derived_from<TCompareStatus, CompareStatus<TCompareStatus>>)
-	AdhocScriptStatus<TCompareStatus> Compare(const AdhocScriptStatus<TCompareStatus>& status1, F&& adhocScript2, G&&... adhocScripts);
-
-	//Only to be used by ModifyCompare(). Will desync if used alone, as it assumes the caller will call Revert().
-	template <class TAdhocCustomScriptStatus, AdhocCustomStatusScript<TAdhocCustomScriptStatus> F>
-	AdhocScriptStatus<TAdhocCustomScriptStatus> ExecuteAdhocNoRevert(F adhocScript);
-
-	//Root method for ModifyCompare() template recursion. This will be called when there are no scripts left to compare the incumbent to.
-	template <class TCompareStatus>
-		requires(std::derived_from<TCompareStatus, CompareStatus<TCompareStatus>>)
-	AdhocScriptStatus<TCompareStatus> ModifyCompare(int64_t initialFrame, const AdhocScriptStatus<TCompareStatus>& status1);
-
-	//Main recursive method for ModifyCompare(). Only the root and leaf use different methods
-	template <class TCompareStatus, AdhocCustomStatusScript<TCompareStatus> F, AdhocCustomStatusScript<TCompareStatus>... G>
-		requires(std::derived_from<TCompareStatus, CompareStatus<TCompareStatus>>)
-	AdhocScriptStatus<TCompareStatus> ModifyCompare(int64_t initialFrame, const AdhocScriptStatus<TCompareStatus>& status1, F&& adhocScript2, G&&... adhocScripts);
 };
 
 template <derived_from_specialization_of<Resource> TResource>

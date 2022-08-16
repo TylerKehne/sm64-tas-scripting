@@ -62,10 +62,6 @@ public:
 		nFrameAdvances = baseStatus.nFrameAdvances;
 		m64Diff = baseStatus.m64Diff;
 	}
-
-	//AdhocBaseScriptStatus(const AdhocBaseScriptStatus&) = default;
-
-	//AdhocBaseScriptStatus(AdhocBaseScriptStatus&&) = default;
 };
 
 template <class TAdhocCustomScriptStatus>
@@ -76,19 +72,6 @@ public:
 
 	AdhocScriptStatus(AdhocBaseScriptStatus baseStatus, TAdhocCustomScriptStatus customStatus)
 		: AdhocBaseScriptStatus(baseStatus), TAdhocCustomScriptStatus(customStatus) { }
-
-	//AdhocScriptStatus(AdhocScriptStatus&&) = default;
-};
-
-template <class TCompareStatus>
-class CompareStatus
-{
-public:
-	virtual const AdhocScriptStatus<TCompareStatus>& Comparator(
-		const AdhocScriptStatus<TCompareStatus>& a,
-		const AdhocScriptStatus<TCompareStatus>& b) const = 0;
-
-	virtual bool Terminator([[maybe_unused]] const AdhocScriptStatus<TCompareStatus>& status) const { return false; }
 };
 
 template <derived_from_specialization_of<Script> TScript>
