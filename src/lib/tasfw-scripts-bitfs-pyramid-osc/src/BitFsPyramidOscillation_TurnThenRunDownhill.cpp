@@ -46,6 +46,66 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill::execution()
 	int32_t extremeUphillHau = extremeDownhillHau - 0x4000 * (int)downhillRotation;
 	int32_t midHau = (extremeDownhillHau + extremeUphillHau) / 2;
 
+	int progression = 0;
+	auto runStatus = ModifyCompareAdhoc<StatusField<BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle>, std::tuple<int32_t>>(
+		[&]([[unused]] auto iteration, auto& params) //paramsGenerator
+		{
+			auto& angle = std::get<0>(params);
+
+			if (progression < 2)
+			{
+				if (progression == 0) //init downhill
+				{
+					angle = midHau;
+					progression = 1;
+				}
+				else if (progression == 1) //increment downhill
+					angle += 512 * downhillRotation;
+
+				if (angle * -downhillRotation < extremeDownhillHau * -downhillRotation)
+					progression = 2;
+				else
+					return true;
+			}
+
+			if (progression == 2) //init uphill
+			{
+				angle = midHau - 512 * downhillRotation;
+				progression = 3;
+			}
+			else if (progression == 3) //iterate uphill
+				angle -= 512 * downhillRotation;
+
+			return progression != 4 && (angle * -downhillRotation <= extremeUphillHau * -downhillRotation);
+		},
+		[&](auto customStatus, auto angle) //script
+		{
+			customStatus->status = Modify<BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle>(_oscillationParams, angle);
+
+			if (!customStatus->status.asserted)
+			{
+				if (customStatus->status.tooDownhill)
+					progression = 2; //do uphill half
+				else if (customStatus->status.tooUphill)
+					progression = 4; //terminate
+
+				return false;
+			}
+
+			return customStatus->status.passedEquilibriumSpeed > 0;
+		},
+		[&](auto status1, auto status2) //comparator
+		{
+			if (status2->status.passedEquilibriumSpeed > status1->status.passedEquilibriumSpeed)
+				return status2;
+
+			return status1;
+		}).status;
+
+	if (!runStatus.asserted)
+		return false;
+
+	/*
 	ScriptStatus<BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle> runStatus;
 	for (int32_t angle = midHau;
 			 angle * -downhillRotation >= extremeDownhillHau * -downhillRotation;
@@ -86,17 +146,17 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill::execution()
 	if (!runStatus.asserted)
 		return false;
 
+	*/
+
 	CustomStatus.finalXzSum = runStatus.finalXzSum;
-	CustomStatus.framePassedEquilibriumPoint =
-		runStatus.framePassedEquilibriumPoint;
-	CustomStatus.maxSpeed								= runStatus.maxSpeed;
+	CustomStatus.framePassedEquilibriumPoint = runStatus.framePassedEquilibriumPoint;
+	CustomStatus.maxSpeed = runStatus.maxSpeed;
 	CustomStatus.passedEquilibriumSpeed = runStatus.passedEquilibriumSpeed;
-	CustomStatus.finishTurnaroundFailedToExpire =
-		runStatus.finishTurnaroundFailedToExpire;
+	CustomStatus.finishTurnaroundFailedToExpire = runStatus.finishTurnaroundFailedToExpire;
 
-	Apply(runStatus.m64Diff);
+	//Apply(runStatus.m64Diff);
 
-	return runStatus.asserted;
+	return true;
 }
 
 bool BitFsPyramidOscillation_TurnThenRunDownhill::assertion()
