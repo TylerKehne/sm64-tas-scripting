@@ -105,56 +105,11 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill::execution()
 	if (!runStatus.asserted)
 		return false;
 
-	/*
-	ScriptStatus<BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle> runStatus;
-	for (int32_t angle = midHau;
-			 angle * -downhillRotation >= extremeDownhillHau * -downhillRotation;
-			 angle += 512 * downhillRotation)
-	{
-		auto status = Execute<BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle>(_oscillationParams, angle);
-
-		if (!status.asserted)
-		{
-			if (status.tooDownhill)
-				break;
-			else
-				continue;
-		}
-
-		if (status.passedEquilibriumSpeed > runStatus.passedEquilibriumSpeed)
-			runStatus = status;
-	}
-
-	for (int32_t angle = midHau - 512 * downhillRotation;
-			 angle * -downhillRotation <= extremeUphillHau * -downhillRotation;
-			 angle -= 512 * downhillRotation)
-	{
-		auto status = Execute<BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle>(_oscillationParams, angle);
-
-		if (!status.asserted)
-		{
-			if (status.tooUphill)
-				break;
-			else
-				continue;
-		}
-
-		if (status.passedEquilibriumSpeed > runStatus.passedEquilibriumSpeed)
-			runStatus = status;
-	}
-
-	if (!runStatus.asserted)
-		return false;
-
-	*/
-
 	CustomStatus.finalXzSum = runStatus.finalXzSum;
 	CustomStatus.framePassedEquilibriumPoint = runStatus.framePassedEquilibriumPoint;
 	CustomStatus.maxSpeed = runStatus.maxSpeed;
 	CustomStatus.passedEquilibriumSpeed = runStatus.passedEquilibriumSpeed;
 	CustomStatus.finishTurnaroundFailedToExpire = runStatus.finishTurnaroundFailedToExpire;
-
-	//Apply(runStatus.m64Diff);
 
 	return true;
 }

@@ -84,35 +84,6 @@ bool BitFsPyramidOscillation_Iteration::execution()
 			return status1;
 		}).status;
 
-	/*
-	ScriptStatus<BitFsPyramidOscillation_TurnThenRunDownhill> turnRunStatus;
-	for (int64_t frame = _maxFrame; frame >= _minFrame; frame--)
-	{
-		Load(frame);
-		CustomStatus.speedBeforeTurning = marioState->forwardVel;
-		CustomStatus.initialXzSum		= _oscillationParams.initialXzSum;
-		auto status = Execute<BitFsPyramidOscillation_TurnThenRunDownhill>(_oscillationParams);
-
-		// Keep iterating until we get a valid result, then keep iterating until
-		// we stop getting better results Once we get a valid result, we expect
-		// successive iterations to be worse (less space to accelerate), but
-		// that isn't always true
-		if (!status.asserted)
-		{
-			if (turnRunStatus.passedEquilibriumSpeed == 0.0f)
-				continue;
-			else
-				break;
-		}
-
-		if (status.passedEquilibriumSpeed >
-			turnRunStatus.passedEquilibriumSpeed)
-			turnRunStatus = status;
-		else if (status.maxSpeed == 0.0f)
-			break;
-	}
-	*/
-
 	if (!turnRunStatus.asserted)
 		return false;
 
@@ -121,8 +92,6 @@ bool BitFsPyramidOscillation_Iteration::execution()
 	CustomStatus.passedEquilibriumSpeed = turnRunStatus.passedEquilibriumSpeed;
 	CustomStatus.framePassedEquilibriumPoint = turnRunStatus.framePassedEquilibriumPoint;
 	CustomStatus.finishTurnaroundFailedToExpire = turnRunStatus.finishTurnaroundFailedToExpire;
-
-	//Apply(turnRunStatus.m64Diff);
 
 	return true;
 }

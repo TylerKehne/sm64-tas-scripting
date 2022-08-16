@@ -432,6 +432,7 @@ public:
 		int64_t nMutations = 0;
 		int64_t incumbentMutations = 0;
 		M64Diff incumbentDiff;
+		bool applyIncumbentDiff = false;
 
 		auto baseStatus = script->ModifyAdhoc([&]()
 			{
@@ -501,13 +502,16 @@ public:
 					if (terminate)
 						return true;
 				}
-
-				// If best script was from earlier, apply it
+				
 				if (status1.asserted)
-					script->Apply(incumbentDiff);
+					applyIncumbentDiff = true;
 
 				return status1.asserted;
 			});
+
+		// If best script was from earlier, apply it
+		if (applyIncumbentDiff)
+			script->Apply(incumbentDiff);
 
 		return AdhocScriptStatus<Substatus<TScript>>(baseStatus, Substatus<TScript>(incumbentMutations, status1));
 	}
@@ -528,6 +532,7 @@ public:
 		int64_t incumbentMutations = 0;
 		M64Diff incumbentDiff;
 		TTuple params;
+		bool applyIncumbentDiff = false;
 
 		auto baseStatus = script->ModifyAdhoc([&]()
 			{
@@ -595,13 +600,16 @@ public:
 					if (terminate)
 						return true;
 				}
-
-				// If best script was from earlier, apply it
+				
 				if (status1.asserted)
-					script->Apply(incumbentDiff);
+					applyIncumbentDiff = true;
 
 				return status1.asserted;
 			});
+
+		// If best script was from earlier, apply it
+		if (applyIncumbentDiff)
+			script->Apply(incumbentDiff);
 
 		return AdhocScriptStatus<Substatus<TScript>>(baseStatus, Substatus<TScript>(incumbentMutations, status1));
 	}
@@ -688,7 +696,6 @@ public:
 	{
 		AdhocScriptStatus<TCompareStatus> status1 = AdhocScriptStatus<TCompareStatus>();
 		AdhocScriptStatus<TCompareStatus> status2 = AdhocScriptStatus<TCompareStatus>();
-		BaseScriptStatus tempStatus;
 		int64_t iteration = 0;
 
 		// return if container is empty
@@ -758,7 +765,6 @@ public:
 	{
 		AdhocScriptStatus<TCompareStatus> status1 = AdhocScriptStatus<TCompareStatus>();
 		AdhocScriptStatus<TCompareStatus> status2 = AdhocScriptStatus<TCompareStatus>();
-		BaseScriptStatus tempStatus;
 		int64_t iteration = 0;
 		TTuple params;
 
@@ -957,6 +963,7 @@ public:
 		int64_t nMutations = 0;
 		int64_t incumbentMutations = 0;
 		M64Diff incumbentDiff;
+		bool applyIncumbentDiff = false;
 
 		auto baseStatus = script->ModifyAdhoc([&]()
 			{
@@ -1027,12 +1034,15 @@ public:
 						return true;
 				}
 
-				// If best script was from earlier, apply it
 				if (status1.executed)
-					script->Apply(incumbentDiff);
+					applyIncumbentDiff = true;
 
 				return status1.executed;
 			});
+
+		// If best script was from earlier, apply it
+		if (applyIncumbentDiff)
+			script->Apply(incumbentDiff);
 
 		return AdhocScriptStatus<AdhocSubstatus<TCompareStatus>>(baseStatus, AdhocSubstatus<TCompareStatus>(incumbentMutations, status1));
 	}
@@ -1053,6 +1063,7 @@ public:
 		M64Diff incumbentDiff;
 		int64_t incumbentMutations = 0;
 		TTuple params;
+		bool applyIncumbentDiff = false;
 
 		auto baseStatus = script->ModifyAdhoc([&]()
 			{
@@ -1121,12 +1132,15 @@ public:
 						return true;
 				}
 
-				// If best script was from earlier, apply it
 				if (status1.executed)
-					script->Apply(incumbentDiff);
+					applyIncumbentDiff = true;
 
 				return status1.executed;
 			});
+
+		// If best script was from earlier, apply it
+		if (applyIncumbentDiff)
+			script->Apply(incumbentDiff);
 
 		return AdhocScriptStatus<AdhocSubstatus<TCompareStatus>>(baseStatus, AdhocSubstatus<TCompareStatus>(incumbentMutations, status1));
 	}
