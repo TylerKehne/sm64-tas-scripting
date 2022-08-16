@@ -8,6 +8,12 @@
 template <derived_from_specialization_of<Resource> TResource>
 class Script;
 
+template <typename F, typename R = std::invoke_result_t<F>>
+concept AdhocScript = std::same_as<R, bool>;
+
+template <typename F, typename TStatus>
+concept AdhocCustomStatusScript = std::same_as<std::invoke_result_t<F, TStatus*>, bool>;
+
 class BaseScriptStatus
 {
 public:
@@ -39,7 +45,6 @@ class AdhocBaseScriptStatus
 {
 public:
 	bool executed = false;
-	bool executionThrew = false;
 	uint64_t executionDuration = 0;
 	uint64_t nLoads = 0;
 	uint64_t nSaves = 0;
@@ -69,15 +74,19 @@ public:
 		: AdhocBaseScriptStatus(baseStatus), TAdhocCustomScriptStatus(customStatus) { }
 };
 
-template <class TCompareStatus>
-class CompareStatus
+template <derived_from_specialization_of<Script> TScript>
+class StatusField
 {
 public:
-	virtual const AdhocScriptStatus<TCompareStatus>& Comparator(
-		const AdhocScriptStatus<TCompareStatus>& a,
-		const AdhocScriptStatus<TCompareStatus>& b) const = 0;
+	ScriptStatus<TScript> status;
 
-	virtual bool Terminator(const AdhocScriptStatus<TCompareStatus>& status) const { return false; }
+	StatusField() = default;
+};
+
+class TestAdhocStatus
+{
+public:
+	float maxSpeed = -1.0f;
 };
 
 #endif

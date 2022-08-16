@@ -35,8 +35,6 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill::validation()
 bool BitFsPyramidOscillation_TurnThenRunDownhill::execution()
 {
 	MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-	Camera* camera = *(Camera**)(resource->addr("gCamera"));
-	Object* pyramid = marioState->floor->object;
 
 	//Record initial XZ sum, don't want to decrease this
 	CustomStatus.initialXzSum = _oscillationParams.initialXzSum;
@@ -48,57 +46,72 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill::execution()
 	int32_t extremeUphillHau = extremeDownhillHau - 0x4000 * (int)downhillRotation;
 	int32_t midHau = (extremeDownhillHau + extremeUphillHau) / 2;
 
-	ScriptStatus<BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle> runStatus;
-	for (int32_t angle = midHau;
-			 angle * -downhillRotation >= extremeDownhillHau * -downhillRotation;
-			 angle += 512 * downhillRotation)
-	{
-		auto status = Execute<BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle>(_oscillationParams, angle);
-
-		if (!status.asserted)
+	int progression = 0;
+	auto runStatus = ModifyCompareAdhoc<StatusField<BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle>, std::tuple<int32_t>>(
+		[&]([[unused]] auto iteration, auto& params) //paramsGenerator
 		{
-			if (status.tooDownhill)
-				break;
-			else
-				continue;
-		}
+			auto& angle = std::get<0>(params);
 
-		if (status.passedEquilibriumSpeed > runStatus.passedEquilibriumSpeed)
-			runStatus = status;
-	}
+			if (progression < 2)
+			{
+				if (progression == 0) //init downhill
+				{
+					angle = midHau;
+					progression = 1;
+				}
+				else if (progression == 1) //increment downhill
+					angle += 512 * downhillRotation;
 
-	for (int32_t angle = midHau - 512 * downhillRotation;
-			 angle * -downhillRotation <= extremeUphillHau * -downhillRotation;
-			 angle -= 512 * downhillRotation)
-	{
-		auto status = Execute<BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle>(_oscillationParams, angle);
+				if (angle * -downhillRotation < extremeDownhillHau * -downhillRotation)
+					progression = 2;
+				else
+					return true;
+			}
 
-		if (!status.asserted)
+			if (progression == 2) //init uphill
+			{
+				angle = midHau - 512 * downhillRotation;
+				progression = 3;
+			}
+			else if (progression == 3) //iterate uphill
+				angle -= 512 * downhillRotation;
+
+			return progression != 4 && (angle * -downhillRotation <= extremeUphillHau * -downhillRotation);
+		},
+		[&](auto customStatus, auto angle) //script
 		{
-			if (status.tooUphill)
-				break;
-			else
-				continue;
-		}
+			customStatus->status = Modify<BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle>(_oscillationParams, angle);
 
-		if (status.passedEquilibriumSpeed > runStatus.passedEquilibriumSpeed)
-			runStatus = status;
-	}
+			if (!customStatus->status.asserted)
+			{
+				if (customStatus->status.tooDownhill)
+					progression = 2; //do uphill half
+				else if (customStatus->status.tooUphill)
+					progression = 4; //terminate
+
+				return false;
+			}
+
+			return customStatus->status.passedEquilibriumSpeed > 0;
+		},
+		[&](auto status1, auto status2) //comparator
+		{
+			if (status2->status.passedEquilibriumSpeed > status1->status.passedEquilibriumSpeed)
+				return status2;
+
+			return status1;
+		}).status;
 
 	if (!runStatus.asserted)
 		return false;
 
 	CustomStatus.finalXzSum = runStatus.finalXzSum;
-	CustomStatus.framePassedEquilibriumPoint =
-		runStatus.framePassedEquilibriumPoint;
-	CustomStatus.maxSpeed								= runStatus.maxSpeed;
+	CustomStatus.framePassedEquilibriumPoint = runStatus.framePassedEquilibriumPoint;
+	CustomStatus.maxSpeed = runStatus.maxSpeed;
 	CustomStatus.passedEquilibriumSpeed = runStatus.passedEquilibriumSpeed;
-	CustomStatus.finishTurnaroundFailedToExpire =
-		runStatus.finishTurnaroundFailedToExpire;
+	CustomStatus.finishTurnaroundFailedToExpire = runStatus.finishTurnaroundFailedToExpire;
 
-	Apply(runStatus.m64Diff);
-
-	return runStatus.asserted;
+	return true;
 }
 
 bool BitFsPyramidOscillation_TurnThenRunDownhill::assertion()

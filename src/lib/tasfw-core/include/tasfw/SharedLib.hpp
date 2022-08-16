@@ -21,8 +21,23 @@ template <template <class...> class Template, class... Args>
 void derived_from_specialization_impl(const Template<Args...>&);
 
 template <class T, template <class...> class Template>
-concept derived_from_specialization_of = requires(const T& t) {
+concept derived_from_specialization_of = requires(const T& t)
+{
 	derived_from_specialization_impl<Template>(t);
+};
+
+template <class T>
+auto constructible_from_params_impl = [](auto... params) constexpr -> void
+{
+	static_assert(std::constructible_from<T, decltype(params)...>,
+		"Class does not have a constructor that matches the supplied parameters.");
+};
+
+template <class T, typename TTuple>
+concept constructible_from_tuple = requires (const TTuple& t)
+{
+	requires derived_from_specialization_of<TTuple, std::tuple>;
+	std::apply(constructible_from_params_impl<T>, t);
 };
 
 struct SectionInfo

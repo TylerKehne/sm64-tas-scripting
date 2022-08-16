@@ -174,7 +174,7 @@ void Script<TResource>::ApplyChildDiff(const BaseScriptStatus& status, std::map<
 	loadTracker[_adhocLevel].erase(loadTracker[_adhocLevel].upper_bound(firstFrame), loadTracker[_adhocLevel].end());
 
 	//Apply diff. State is already synced from child script, so no need to update it
-	int64_t frame = firstFrame;
+	uint64_t frame = firstFrame;
 	while (frame <= lastFrame)
 	{
 		if (status.m64Diff.frames.count(frame))
@@ -216,7 +216,7 @@ InputsMetadata<TResource> Script<TResource>::GetInputsMetadata(int64_t frame)
 	{
 		if (!stateOwner)
 		{
-			if (!BaseStatus[adhocLevel].m64Diff.frames.empty() && BaseStatus[adhocLevel].m64Diff.frames.begin()->first < frame)
+			if (!BaseStatus[adhocLevel].m64Diff.frames.empty() && static_cast<int64_t>(BaseStatus[adhocLevel].m64Diff.frames.begin()->first) < frame)
 			{
 				stateOwner = this;
 				stateOwnerAdhocLevel = adhocLevel;
@@ -282,7 +282,7 @@ InputsMetadata<TResource> TopLevelScript<TResource>::GetInputsMetadata(int64_t f
 	{
 		if (stateOwnerAdhocLevel == -1)
 		{
-			if (!this->BaseStatus[adhocLevel].m64Diff.frames.empty() && this->BaseStatus[adhocLevel].m64Diff.frames.begin()->first < frame)
+			if (!this->BaseStatus[adhocLevel].m64Diff.frames.empty() && static_cast<int64_t>(this->BaseStatus[adhocLevel].m64Diff.frames.begin()->first) < frame)
 				stateOwnerAdhocLevel = adhocLevel;
 		}
 
@@ -454,7 +454,7 @@ void Script<TResource>::Load(uint64_t frame)
 template <derived_from_specialization_of<Resource> TResource>
 void Script<TResource>::LoadBase(uint64_t frame, bool desync)
 {
-	int64_t currentFrame = GetCurrentFrame();
+	uint64_t currentFrame = GetCurrentFrame();
 
 	// Load most recent save at or before frame. Check child saves before
 	// parent. If target frame is in future, check if faster to frame advance or load.
@@ -464,7 +464,7 @@ void Script<TResource>::LoadBase(uint64_t frame, bool desync)
 		resource->LoadState(latestSave.GetSlotHandle()->slotId);
 		BaseStatus[_adhocLevel].nLoads++;
 	}
-	else if (latestSave.frame > frame && resource->shouldLoad(latestSave.frame - currentFrame))
+	else if (latestSave.frame > static_cast<int64_t>(frame) && resource->shouldLoad(latestSave.frame - currentFrame))
 		resource->LoadState(latestSave.GetSlotHandle()->slotId);
 
 	// If save is before target frame, play back until frame is reached
@@ -741,153 +741,6 @@ AdhocScriptStatus<TAdhocCustomScriptStatus> Script<TResource>::TestAdhoc(F&& adh
 	return status;
 }
 
-//Root method for Compare() template recursion. This will be called when there are no scripts left to compare the incumbent to.
-template <derived_from_specialization_of<Resource> TResource>
-template <class TCompareStatus>
-	requires(std::derived_from<TCompareStatus, CompareStatus<TCompareStatus>>)
-AdhocScriptStatus<TCompareStatus> Script<TResource>::Compare(const AdhocScriptStatus<TCompareStatus>& status1)
-{
-	return status1;
-}
-
-//Main recursive method for comparing ad hoc scripts. Only the root and leaf use different methods
-template <derived_from_specialization_of<Resource> TResource>
-template <class TCompareStatus, AdhocCustomStatusScript<TCompareStatus> F, AdhocCustomStatusScript<TCompareStatus>... G>
-	requires(std::derived_from<TCompareStatus, CompareStatus<TCompareStatus>>)
-AdhocScriptStatus<TCompareStatus> Script<TResource>::Compare(const AdhocScriptStatus<TCompareStatus>& status1, F&& adhocScript2, G&&... adhocScripts)
-{
-	auto status2 = ExecuteAdhoc<TCompareStatus>(std::forward<F>(adhocScript2));
-	if (status2.executed && status2.Terminator(status2))
-		return status2;
-
-	if (!status1.executed)
-	{
-		if (!status2.executed)
-			return Compare<TCompareStatus>(status1, std::forward<G>(adhocScripts)...);
-
-		return Compare<TCompareStatus>(status2, std::forward<G>(adhocScripts)...);
-	}
-
-	return Compare<TCompareStatus>(status1.Comparator(status1, status2), std::forward<G>(adhocScripts)...);
-}
-
-//Leaf method for comparing ad-hoc scripts. This is the one the user will call.
-template <derived_from_specialization_of<Resource> TResource>
-template <class TCompareStatus,
-	AdhocCustomStatusScript<TCompareStatus> F,
-	AdhocCustomStatusScript<TCompareStatus> G,
-	AdhocCustomStatusScript<TCompareStatus>... H>
-	requires(std::derived_from<TCompareStatus, CompareStatus<TCompareStatus>>)
-AdhocScriptStatus<TCompareStatus> Script<TResource>::Compare(F&& adhocScript1, G&& adhocScript2, H&&... adhocScripts)
-{
-	auto status1 = ExecuteAdhoc<TCompareStatus>(std::forward<F>(adhocScript1));
-	if (status1.executed && status1.Terminator(status1))
-		return status1;
-
-	auto status2 = ExecuteAdhoc<TCompareStatus>(std::forward<G>(adhocScript2));
-	if (status2.executed && status2.Terminator(status2))
-		return status2;
-
-	if (!status1.executed)
-	{
-		if (!status2.executed)
-			return Compare<TCompareStatus>(status1, std::forward<H>(adhocScripts)...);
-
-		return Compare<TCompareStatus>(status2, std::forward<H>(adhocScripts)...);
-	}
-
-	return Compare<TCompareStatus>(status1.Comparator(status1, status2), std::forward<H>(adhocScripts)...);
-}
-
-//Root method for ModifyCompare() template recursion. This will be called when there are no scripts left to compare the incumbent to.
-template <derived_from_specialization_of<Resource> TResource>
-template <class TCompareStatus>
-	requires(std::derived_from<TCompareStatus, CompareStatus<TCompareStatus>>)
-AdhocScriptStatus<TCompareStatus> Script<TResource>::ModifyCompare(int64_t initialFrame, const AdhocScriptStatus<TCompareStatus>& status1)
-{
-	ApplyChildDiff(status1, saveBank[_adhocLevel + 1], initialFrame);
-
-	return status1;
-}
-
-//Main recursive method for ModifyCompare(). Only the root and leaf use different methods
-template <derived_from_specialization_of<Resource> TResource>
-template <class TCompareStatus, AdhocCustomStatusScript<TCompareStatus> F, AdhocCustomStatusScript<TCompareStatus>... G>
-	requires(std::derived_from<TCompareStatus, CompareStatus<TCompareStatus>>)
-AdhocScriptStatus<TCompareStatus> Script<TResource>::ModifyCompare(int64_t initialFrame, const AdhocScriptStatus<TCompareStatus>& status1, F&& adhocScript2, G&&... adhocScripts)
-{
-	//Revert state before executing new script
-	Revert(initialFrame, status1.m64Diff, saveBank[_adhocLevel + 1]);
-	auto status2 = ExecuteAdhocNoRevert<TCompareStatus>(std::forward<F>(adhocScript2));
-	if (status2.executed && status2.Terminator(status2))
-	{
-		ApplyChildDiff(status2, saveBank[_adhocLevel + 1], initialFrame);
-		return status2;
-	}
-
-	if (!status1.executed)
-	{
-		if (!status2.executed)
-			return ModifyCompare<TCompareStatus>(initialFrame, status1, std::forward<G>(adhocScripts)...);
-
-		return ModifyCompare<TCompareStatus>(initialFrame, status2, std::forward<G>(adhocScripts)...);
-	}
-
-	return ModifyCompare<TCompareStatus>(initialFrame, status1.Comparator(status1, status2), std::forward<G>(adhocScripts)...);
-}
-
-//Leaf method for comparing ad-hoc scripts and applying the result. This is the one the user will call.
-template <derived_from_specialization_of<Resource> TResource>
-template <class TCompareStatus,
-	AdhocCustomStatusScript<TCompareStatus> F,
-	AdhocCustomStatusScript<TCompareStatus> G,
-	AdhocCustomStatusScript<TCompareStatus>... H>
-	requires(std::derived_from<TCompareStatus, CompareStatus<TCompareStatus>>)
-AdhocScriptStatus<TCompareStatus> Script<TResource>::ModifyCompare(F&& adhocScript1, G&& adhocScript2, H&&... adhocScripts)
-{
-	int64_t initialFrame = GetCurrentFrame();
-	auto status1 = ExecuteAdhocNoRevert<TCompareStatus>(std::forward<F>(adhocScript1));
-	if (status1.executed && status1.Terminator(status1))
-	{
-		ApplyChildDiff(status1, saveBank[_adhocLevel + 1], initialFrame);
-		return status1;
-	}
-
-	//Revert state before executing new script
-	Revert(initialFrame, status1.m64Diff, saveBank[_adhocLevel + 1]);
-	auto status2 = ExecuteAdhocNoRevert<TCompareStatus>(std::forward<G>(adhocScript2));
-	if (status2.executed && status2.Terminator(status2))
-	{
-		ApplyChildDiff(status2, saveBank[_adhocLevel + 1], initialFrame);
-		return status2;
-	}
-
-	if (!status1.executed)
-	{
-		if (!status2.executed)
-			return ModifyCompare<TCompareStatus>(initialFrame, status1, std::forward<H>(adhocScripts)...);
-
-		return ModifyCompare<TCompareStatus>(initialFrame, status2, std::forward<H>(adhocScripts)...);
-	}
-
-	return ModifyCompare<TCompareStatus>(initialFrame, status1.Comparator(status1, status2), std::forward<H>(adhocScripts)...);
-}
-
-//Same as Compare(), but with no diff returned
-template <derived_from_specialization_of<Resource> TResource>
-template <class TCompareStatus,
-	AdhocCustomStatusScript<TCompareStatus> F,
-	AdhocCustomStatusScript<TCompareStatus> G,
-	AdhocCustomStatusScript<TCompareStatus>... H>
-	requires(std::derived_from<TCompareStatus, CompareStatus<TCompareStatus>>)
-AdhocScriptStatus<TCompareStatus> Script<TResource>::TestCompare(F&& adhocScript1, G&& adhocScript2, H&&... adhocScripts)
-{
-	auto status = Compare<TCompareStatus>(std::forward<F>(adhocScript1), std::forward<G>(adhocScript2), std::forward<H>(adhocScripts)...);
-	status.m64Diff = M64Diff();
-
-	return status;
-}
-
 template <derived_from_specialization_of<Resource> TResource>
 template <typename F>
 BaseScriptStatus Script<TResource>::ExecuteAdhocBase(F adhocScript)
@@ -911,7 +764,7 @@ BaseScriptStatus Script<TResource>::ExecuteAdhocBase(F adhocScript)
 	{
 		BaseStatus[_adhocLevel].executed = adhocScript();
 	}
-	catch (std::exception e)
+	catch (const std::exception &e)
 	{
 		// End application if exception occurs
 		throw std::runtime_error(e.what());
@@ -942,21 +795,6 @@ BaseScriptStatus Script<TResource>::ExecuteAdhocBase(F adhocScript)
 	return status;
 }
 
-//Only to be used by ModifyCompare(). Will desync if used alone, as it assumes the caller will call Revert().
-template <derived_from_specialization_of<Resource> TResource>
-template <class TAdhocCustomScriptStatus, AdhocCustomStatusScript<TAdhocCustomScriptStatus> F>
-AdhocScriptStatus<TAdhocCustomScriptStatus> Script<TResource>::ExecuteAdhocNoRevert(F adhocScript)
-{
-	// Save state if performant
-	OptionalSave();
-
-	TAdhocCustomScriptStatus customStatus = TAdhocCustomScriptStatus();
-	BaseScriptStatus baseStatus = ExecuteAdhocBase([&]() { return adhocScript(customStatus); });
-
-	return AdhocScriptStatus<TAdhocCustomScriptStatus>(baseStatus, customStatus);
-}
-
-
 template <derived_from_specialization_of<Resource> TResource>
 SlotHandle<TResource>* SaveMetadata<TResource>::GetSlotHandle()
 {
@@ -966,7 +804,7 @@ SlotHandle<TResource>* SaveMetadata<TResource>::GetSlotHandle()
 	if (isStartSave)
 		return &script->startSaveHandle;
 
-	if (script->saveBank.size() <= adhocLevel)
+	if (script->saveBank.size() <= static_cast<uint64_t>(adhocLevel))
 		return nullptr;
 
 	if (!script->saveBank[adhocLevel].contains(frame))

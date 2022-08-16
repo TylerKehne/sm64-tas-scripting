@@ -6,6 +6,7 @@
 #include <tasfw/ScriptStatus.hpp>
 #include <set>
 #include <tasfw/SharedLib.hpp>
+#include <tasfw/ScriptCompareHelper.hpp>
 
 #ifndef SCRIPT_H
 #define SCRIPT_H
@@ -15,12 +16,6 @@ class Script;
 
 template <derived_from_specialization_of<Resource> TResource>
 class TopLevelScript;
-
-template <typename F, typename R = std::invoke_result_t<F>>
-concept AdhocScript = std::same_as<R, bool>;
-
-template <typename F, typename T>
-concept AdhocCustomStatusScript = std::same_as<std::invoke_result_t<F, T&>, bool>;
 
 template <derived_from_specialization_of<Resource> TResource>
 class SlotHandle
@@ -62,7 +57,7 @@ public:
 	InputsMetadata() = default;
 
 	InputsMetadata(Inputs inputs, int64_t frame, Script<TResource>* stateOwner, int64_t stateOwnerAdhocLevel, InputsSource source = InputsSource::DIFF)
-		: inputs(inputs), stateOwner(stateOwner), frame(frame), stateOwnerAdhocLevel(stateOwnerAdhocLevel), source(source) {}
+		: inputs(inputs), frame(frame), stateOwner(stateOwner), stateOwnerAdhocLevel(stateOwnerAdhocLevel), source(source) {}
 };
 
 template <derived_from_specialization_of<Resource> TResource>
@@ -174,29 +169,375 @@ protected:
 	template <class TAdhocCustomScriptStatus, AdhocCustomStatusScript<TAdhocCustomScriptStatus> F>
 	AdhocScriptStatus<TAdhocCustomScriptStatus> TestAdhoc(F&& adhocScript);
 
-	//Leaf method for comparing ad-hoc scripts. This is the one the user will call.
-	template <class TCompareStatus,
-		AdhocCustomStatusScript<TCompareStatus> F,
-		AdhocCustomStatusScript<TCompareStatus> G,
-		AdhocCustomStatusScript<TCompareStatus>... H>
-	requires(std::derived_from<TCompareStatus, CompareStatus<TCompareStatus>>)
-	AdhocScriptStatus<TCompareStatus> Compare(F&& adhocScript1, G&& adhocScript2, H&&... adhocScripts);
+	#pragma region Compare Methods
 
-	//Leaf method for comparing ad-hoc scripts and applying the result. This is the one the user will call.
-	template <class TCompareStatus,
-		AdhocCustomStatusScript<TCompareStatus> F,
-		AdhocCustomStatusScript<TCompareStatus> G,
-		AdhocCustomStatusScript<TCompareStatus>... H>
-		requires(std::derived_from<TCompareStatus, CompareStatus<TCompareStatus>>)
-	AdhocScriptStatus<TCompareStatus> ModifyCompare(F&& adhocScript1, G&& adhocScript2, H&&... adhocScripts);
+	template <derived_from_specialization_of<Script> TScript,
+		class TTupleContainer,
+		typename TTuple = typename TTupleContainer::value_type,
+		ScriptComparator<TScript> F,
+		ScriptTerminator<TScript> G>
+		requires (constructible_from_tuple<TScript, TTuple>)
+	ScriptStatus<TScript> Compare(const TTupleContainer& paramsList, F&& comparator, G&& terminator)
+	{
+		return compareHelper.template Compare<TScript>(paramsList, std::forward<F>(comparator), std::forward<G>(terminator));
+	}
 
-	//Same as Compare(), but with no diff returned
+	template <derived_from_specialization_of<Script> TScript,
+		class TTupleContainer,
+		typename TTuple = typename TTupleContainer::value_type,
+		ScriptComparator<TScript> F>
+	requires (constructible_from_tuple<TScript, TTuple>)
+	ScriptStatus<TScript> Compare(const TTupleContainer& paramsList, F&& comparator)
+	{
+		return compareHelper.template Compare<TScript>(paramsList, std::forward<F>(comparator), [](const ScriptStatus<TScript>*) { return false; });
+	}
+
+	template <derived_from_specialization_of<Script> TScript,
+		typename TTuple,
+		ScriptParamsGenerator<TTuple> F,
+		ScriptComparator<TScript> G,
+		ScriptTerminator<TScript> H>
+		requires (constructible_from_tuple<TScript, TTuple>)
+	ScriptStatus<TScript> Compare(F&& paramsGenerator, G&& comparator, H&& terminator)
+	{
+		return compareHelper.template Compare<TScript, TTuple>(std::forward<F>(paramsGenerator), std::forward<G>(comparator), std::forward<H>(terminator));
+	}
+
+	template <derived_from_specialization_of<Script> TScript,
+		typename TTuple,
+		ScriptParamsGenerator<TTuple> F,
+		ScriptComparator<TScript> G>
+		requires (constructible_from_tuple<TScript, TTuple>)
+	ScriptStatus<TScript> Compare(F&& paramsGenerator, G&& comparator)
+	{
+		return compareHelper.template Compare<TScript, TTuple>(std::forward<F>(paramsGenerator), std::forward<G>(comparator), [](const ScriptStatus<TScript>*) { return false; });
+	}
+
+	template <derived_from_specialization_of<Script> TScript,
+		class TTupleContainer,
+		typename TTuple = typename TTupleContainer::value_type,
+		ScriptComparator<TScript> F,
+		ScriptTerminator<TScript> G>
+		requires (constructible_from_tuple<TScript, TTuple>)
+	ScriptStatus<TScript> ModifyCompare(const TTupleContainer& paramsList, F&& comparator, G&& terminator)
+	{
+		return compareHelper.template ModifyCompare<TScript>(paramsList, std::forward<F>(comparator), std::forward<G>(terminator));
+	}
+
+	template <derived_from_specialization_of<Script> TScript,
+		class TTupleContainer,
+		typename TTuple = typename TTupleContainer::value_type,
+		ScriptComparator<TScript> F>
+		requires (constructible_from_tuple<TScript, TTuple>)
+	ScriptStatus<TScript> ModifyCompare(const TTupleContainer& paramsList, F&& comparator)
+	{
+		return compareHelper.template ModifyCompare<TScript>(paramsList, std::forward<F>(comparator), [](const ScriptStatus<TScript>*) { return false; });
+	}
+
+	template <derived_from_specialization_of<Script> TScript,
+		typename TTuple,
+		ScriptParamsGenerator<TTuple> F,
+		ScriptComparator<TScript> G,
+		ScriptTerminator<TScript> H>
+		requires (constructible_from_tuple<TScript, TTuple>)
+	ScriptStatus<TScript> ModifyCompare(F&& paramsGenerator, G&& comparator, H&& terminator)
+	{
+		return compareHelper.template ModifyCompare<TScript, TTuple>(std::forward<F>(paramsGenerator), std::forward<G>(comparator), std::forward<H>(terminator));
+	}
+
+	template <derived_from_specialization_of<Script> TScript,
+		typename TTuple,
+		ScriptParamsGenerator<TTuple> F,
+		ScriptComparator<TScript> G>
+	requires (constructible_from_tuple<TScript, TTuple>)
+	ScriptStatus<TScript> ModifyCompare(F&& paramsGenerator, G&& comparator)
+	{
+		return compareHelper.template ModifyCompare<TScript, TTuple>(std::forward<F>(paramsGenerator), std::forward<G>(comparator), [](const ScriptStatus<TScript>*) { return false; });
+	}
+
+	template <derived_from_specialization_of<Script> TScript,
+		class TTupleContainer,
+		typename TTuple = typename TTupleContainer::value_type,
+		AdhocScript F,
+		ScriptComparator<TScript> G,
+		ScriptTerminator<TScript> H>
+		requires (constructible_from_tuple<TScript, TTuple>)
+	AdhocScriptStatus<Substatus<TScript>> DynamicCompare(const TTupleContainer& paramsList, F&& mutator, G&& comparator, H&& terminator)
+	{
+		return compareHelper.template DynamicCompare<TScript>(paramsList, std::forward<F>(mutator), std::forward<G>(comparator), std::forward<H>(terminator));
+	}
+
+	template <derived_from_specialization_of<Script> TScript,
+		class TTupleContainer,
+		typename TTuple = typename TTupleContainer::value_type,
+		AdhocScript F,
+		ScriptComparator<TScript> G>
+		requires (constructible_from_tuple<TScript, TTuple>)
+	AdhocScriptStatus<Substatus<TScript>> DynamicCompare(const TTupleContainer& paramsList, F&& mutator, G&& comparator)
+	{
+		return compareHelper.template DynamicCompare<TScript>(paramsList, std::forward<F>(mutator), std::forward<G>(comparator), [](const ScriptStatus<TScript>*) { return false; });
+	}
+
+	template <derived_from_specialization_of<Script> TScript,
+		typename TTuple,
+		ScriptParamsGenerator<TTuple> F,
+		AdhocScript G,
+		ScriptComparator<TScript> H,
+		ScriptTerminator<TScript> I>
+		requires (constructible_from_tuple<TScript, TTuple>)
+	AdhocScriptStatus<Substatus<TScript>> DynamicCompare(F&& paramsGenerator, G&& mutator, H&& comparator, I&& terminator)
+	{
+		return compareHelper.template DynamicCompare<TScript, TTuple>(std::forward<F>(paramsGenerator), std::forward<G>(mutator), std::forward<H>(comparator), std::forward<I>(terminator));
+	}
+
+	template <derived_from_specialization_of<Script> TScript,
+		typename TTuple,
+		ScriptParamsGenerator<TTuple> F,
+		AdhocScript G,
+		ScriptComparator<TScript> H>
+		requires (constructible_from_tuple<TScript, TTuple>)
+	AdhocScriptStatus<Substatus<TScript>> DynamicCompare(F&& paramsGenerator, G&& mutator, H&& comparator)
+	{
+		return compareHelper.template DynamicCompare<TScript, TTuple>(std::forward<F>(paramsGenerator), std::forward<G>(mutator), std::forward<H>(comparator), [](const ScriptStatus<TScript>*) { return false; });
+	}
+
+	template <derived_from_specialization_of<Script> TScript,
+		class TTupleContainer,
+		typename TTuple = typename TTupleContainer::value_type,
+		AdhocScript F,
+		ScriptComparator<TScript> G,
+		ScriptTerminator<TScript> H>
+		requires (constructible_from_tuple<TScript, TTuple>)
+	AdhocScriptStatus<Substatus<TScript>> DynamicModifyCompare(const TTupleContainer& paramsList, F&& mutator, G&& comparator, H&& terminator)
+	{
+		return compareHelper.template DynamicModifyCompare<TScript>(paramsList, std::forward<F>(mutator), std::forward<G>(comparator), std::forward<H>(terminator));
+	}
+
+	template <derived_from_specialization_of<Script> TScript,
+		class TTupleContainer,
+		typename TTuple = typename TTupleContainer::value_type,
+		AdhocScript F,
+		ScriptComparator<TScript> G>
+		requires (constructible_from_tuple<TScript, TTuple>)
+	AdhocScriptStatus<Substatus<TScript>> DynamicModifyCompare(const TTupleContainer& paramsList, F&& mutator, G&& comparator)
+	{
+		return compareHelper.template DynamicModifyCompare<TScript>(paramsList, std::forward<F>(mutator), std::forward<G>(comparator), [](const ScriptStatus<TScript>*) { return false; });
+	}
+
+	template <derived_from_specialization_of<Script> TScript,
+		typename TTuple,
+		ScriptParamsGenerator<TTuple> F,
+		AdhocScript G,
+		ScriptComparator<TScript> H,
+		ScriptTerminator<TScript> I>
+		requires (constructible_from_tuple<TScript, TTuple>)
+	AdhocScriptStatus<Substatus<TScript>> DynamicModifyCompare(F&& paramsGenerator, G&& mutator, H&& comparator, I&& terminator)
+	{
+		return compareHelper.template DynamicModifyCompare<TScript, TTuple>(std::forward<F>(paramsGenerator), std::forward<G>(mutator), std::forward<H>(comparator), std::forward<I>(terminator));
+	}
+
+	template <derived_from_specialization_of<Script> TScript,
+		typename TTuple,
+		ScriptParamsGenerator<TTuple> F,
+		AdhocScript G,
+		ScriptComparator<TScript> H>
+		requires (constructible_from_tuple<TScript, TTuple>)
+	AdhocScriptStatus<Substatus<TScript>> DynamicModifyCompare(F&& paramsGenerator, G&& mutator, H&& comparator)
+	{
+		return compareHelper.template DynamicModifyCompare<TScript, TTuple>(std::forward<F>(paramsGenerator), std::forward<G>(mutator), std::forward<H>(comparator), [](const ScriptStatus<TScript>*) { return false; });
+	}
+
 	template <class TCompareStatus,
-		AdhocCustomStatusScript<TCompareStatus> F,
-		AdhocCustomStatusScript<TCompareStatus> G,
-		AdhocCustomStatusScript<TCompareStatus>... H>
-		requires(std::derived_from<TCompareStatus, CompareStatus<TCompareStatus>>)
-	AdhocScriptStatus<TCompareStatus> TestCompare(F&& adhocScript1, G&& adhocScript2, H&&... adhocScripts);
+		class TTupleContainer,
+		typename TTuple = typename TTupleContainer::value_type,
+		AdhocCompareScript<TCompareStatus, TTuple> F,
+		AdhocScriptComparator<TCompareStatus> G,
+		AdhocScriptTerminator<TCompareStatus> H>
+	AdhocScriptStatus<TCompareStatus> CompareAdhoc(const TTupleContainer& paramsList, F&& adhocScript, G&& comparator, H&& terminator)
+	{
+		return compareHelper.template CompareAdhoc<TCompareStatus>(paramsList, std::forward<F>(adhocScript), std::forward<G>(comparator), std::forward<H>(terminator));
+	}
+
+	template <class TCompareStatus,
+		class TTupleContainer,
+		typename TTuple = typename TTupleContainer::value_type,
+		AdhocCompareScript<TCompareStatus, TTuple> F,
+		AdhocScriptComparator<TCompareStatus> G>
+	AdhocScriptStatus<TCompareStatus> CompareAdhoc(const TTupleContainer& paramsList, F&& adhocScript, G&& comparator)
+	{
+		return compareHelper.template CompareAdhoc<TCompareStatus>(paramsList, std::forward<F>(adhocScript), std::forward<G>(comparator), [](const AdhocScriptStatus<TCompareStatus>*) { return false; });
+	}
+
+	template <class TCompareStatus,
+		typename TTuple,
+		ScriptParamsGenerator<TTuple> F,
+		AdhocCompareScript<TCompareStatus, TTuple> G,
+		AdhocScriptComparator<TCompareStatus> H,
+		AdhocScriptTerminator<TCompareStatus> I>
+	AdhocScriptStatus<TCompareStatus> CompareAdhoc(F&& paramsGenerator, G&& adhocScript, H&& comparator, I&& terminator)
+	{
+		return compareHelper.template CompareAdhoc<TCompareStatus, TTuple>(
+			std::forward<F>(paramsGenerator), std::forward<G>(adhocScript), std::forward<H>(comparator), std::forward<I>(terminator));
+	}
+
+	template <class TCompareStatus,
+		typename TTuple,
+		ScriptParamsGenerator<TTuple> F,
+		AdhocCompareScript<TCompareStatus, TTuple> G,
+		AdhocScriptComparator<TCompareStatus> H>
+	AdhocScriptStatus<TCompareStatus> CompareAdhoc(F&& paramsGenerator, G&& adhocScript, H&& comparator)
+	{
+		return compareHelper.template CompareAdhoc<TCompareStatus, TTuple>(
+			std::forward<F>(paramsGenerator), std::forward<G>(adhocScript), std::forward<H>(comparator), [](const AdhocScriptStatus<TCompareStatus>*) { return false; });
+	}
+
+	template <class TCompareStatus,
+		class TTupleContainer,
+		typename TTuple = typename TTupleContainer::value_type,
+		AdhocCompareScript<TCompareStatus, TTuple> F,
+		AdhocScriptComparator<TCompareStatus> G,
+		AdhocScriptTerminator<TCompareStatus> H>
+	AdhocScriptStatus<TCompareStatus> ModifyCompareAdhoc(const TTupleContainer& paramsList, F&& adhocScript, G&& comparator, H&& terminator)
+	{
+		return compareHelper.template ModifyCompareAdhoc<TCompareStatus>(
+			paramsList, std::forward<F>(adhocScript), std::forward<G>(comparator), std::forward<H>(terminator));
+	}
+
+	template <class TCompareStatus,
+		class TTupleContainer,
+		typename TTuple = typename TTupleContainer::value_type,
+		AdhocCompareScript<TCompareStatus, TTuple> F,
+		AdhocScriptComparator<TCompareStatus> G>
+	AdhocScriptStatus<TCompareStatus> ModifyCompareAdhoc(const TTupleContainer& paramsList, F&& adhocScript, G&& comparator)
+	{
+		return compareHelper.template ModifyCompareAdhoc<TCompareStatus>(
+			paramsList, std::forward<F>(adhocScript), std::forward<G>(comparator), [](const AdhocScriptStatus<TCompareStatus>*) { return false; });
+	}
+
+	template <class TCompareStatus,
+		typename TTuple,
+		ScriptParamsGenerator<TTuple> F,
+		AdhocCompareScript<TCompareStatus, TTuple> G,
+		AdhocScriptComparator<TCompareStatus> H,
+		AdhocScriptTerminator<TCompareStatus> I>
+	AdhocScriptStatus<TCompareStatus> ModifyCompareAdhoc(F&& paramsGenerator, G&& adhocScript, H&& comparator, I&& terminator)
+	{
+		return compareHelper.template ModifyCompareAdhoc<TCompareStatus, TTuple>(
+			std::forward<F>(paramsGenerator), std::forward<G>(adhocScript), std::forward<H>(comparator), std::forward<I>(terminator));
+	}
+
+	template <class TCompareStatus,
+		typename TTuple,
+		ScriptParamsGenerator<TTuple> F,
+		AdhocCompareScript<TCompareStatus, TTuple> G,
+		AdhocScriptComparator<TCompareStatus> H>
+	AdhocScriptStatus<TCompareStatus> ModifyCompareAdhoc(F&& paramsGenerator, G&& adhocScript, H&& comparator)
+	{
+		return compareHelper.template ModifyCompareAdhoc<TCompareStatus, TTuple>(
+			std::forward<F>(paramsGenerator), std::forward<G>(adhocScript), std::forward<H>(comparator), [](const AdhocScriptStatus<TCompareStatus>*) { return false; });
+	}
+
+	template <class TCompareStatus,
+		class TTupleContainer,
+		typename TTuple = typename TTupleContainer::value_type,
+		AdhocCompareScript<TCompareStatus, TTuple> F,
+		AdhocScript G,
+		AdhocScriptComparator<TCompareStatus> H,
+		AdhocScriptTerminator<TCompareStatus> I>
+	AdhocScriptStatus<AdhocSubstatus<TCompareStatus>> DynamicCompareAdhoc(const TTupleContainer& paramsList, F&& adhocScript, G&& mutator, H&& comparator, I&& terminator)
+	{
+		return compareHelper.template DynamicCompareAdhoc<TCompareStatus>(
+			paramsList, std::forward<F>(adhocScript), std::forward<G>(mutator), std::forward<H>(comparator), std::forward<I>(terminator));
+	}
+
+	template <class TCompareStatus,
+		class TTupleContainer,
+		typename TTuple = typename TTupleContainer::value_type,
+		AdhocCompareScript<TCompareStatus, TTuple> F,
+		AdhocScript G,
+		AdhocScriptComparator<TCompareStatus> H>
+	AdhocScriptStatus<AdhocSubstatus<TCompareStatus>> DynamicCompareAdhoc(const TTupleContainer& paramsList, F&& adhocScript, G&& mutator, H&& comparator)
+	{
+		return compareHelper.template DynamicCompareAdhoc<TCompareStatus>(
+			paramsList, std::forward<F>(adhocScript), std::forward<G>(mutator), std::forward<H>(comparator), [](const AdhocScriptStatus<TCompareStatus>*) { return false; });
+	}
+
+	template <class TCompareStatus,
+		typename TTuple,
+		ScriptParamsGenerator<TTuple> F,
+		AdhocCompareScript<TCompareStatus, TTuple> G,
+		AdhocScript H,
+		AdhocScriptComparator<TCompareStatus> I,
+		AdhocScriptTerminator<TCompareStatus> J>
+	AdhocScriptStatus<AdhocSubstatus<TCompareStatus>> DynamicCompareAdhoc(F&& paramsGenerator, G&& adhocScript, H&& mutator, I&& comparator, J&& terminator)
+	{
+		return compareHelper.template DynamicCompareAdhoc<TCompareStatus, TTuple>(
+			std::forward<F>(paramsGenerator), std::forward<G>(adhocScript), std::forward<H>(mutator), std::forward<I>(comparator), std::forward<J>(terminator));
+	}
+
+	template <class TCompareStatus,
+		typename TTuple,
+		ScriptParamsGenerator<TTuple> F,
+		AdhocCompareScript<TCompareStatus, TTuple> G,
+		AdhocScript H,
+		AdhocScriptComparator<TCompareStatus> I>
+	AdhocScriptStatus<AdhocSubstatus<TCompareStatus>> DynamicCompareAdhoc(F&& paramsGenerator, G&& adhocScript, H&& mutator, I&& comparator)
+	{
+		return compareHelper.template DynamicCompareAdhoc<TCompareStatus, TTuple>(
+			std::forward<F>(paramsGenerator), std::forward<G>(adhocScript), std::forward<H>(mutator), std::forward<I>(comparator), [](const AdhocScriptStatus<TCompareStatus>*) { return false; });
+	}
+
+	template <class TCompareStatus,
+		class TTupleContainer,
+		typename TTuple = typename TTupleContainer::value_type,
+		AdhocCompareScript<TCompareStatus, TTuple> F,
+		AdhocScript G,
+		AdhocScriptComparator<TCompareStatus> H,
+		AdhocScriptTerminator<TCompareStatus> I>
+	AdhocScriptStatus<AdhocSubstatus<TCompareStatus>> DynamicModifyCompareAdhoc(const TTupleContainer& paramsList, F&& adhocScript, G&& mutator, H&& comparator, I&& terminator)
+	{
+		return compareHelper.template DynamicModifyCompareAdhoc<TCompareStatus>(
+			paramsList, std::forward<F>(adhocScript), std::forward<G>(mutator), std::forward<H>(comparator), std::forward<I>(terminator));
+	}
+
+	template <class TCompareStatus,
+		class TTupleContainer,
+		typename TTuple = typename TTupleContainer::value_type,
+		AdhocCompareScript<TCompareStatus, TTuple> F,
+		AdhocScript G,
+		AdhocScriptComparator<TCompareStatus> H>
+	AdhocScriptStatus<AdhocSubstatus<TCompareStatus>> DynamicModifyCompareAdhoc(const TTupleContainer& paramsList, F&& adhocScript, G&& mutator, H&& comparator)
+	{
+		return compareHelper.template DynamicModifyCompareAdhoc<TCompareStatus>(
+			paramsList, std::forward<F>(adhocScript), std::forward<G>(mutator), std::forward<H>(comparator), [](const AdhocScriptStatus<TCompareStatus>*) { return false; });
+	}
+
+	template <class TCompareStatus,
+		typename TTuple,
+		ScriptParamsGenerator<TTuple> F,
+		AdhocCompareScript<TCompareStatus, TTuple> G,
+		AdhocScript H,
+		AdhocScriptComparator<TCompareStatus> I,
+		AdhocScriptTerminator<TCompareStatus> J>
+	AdhocScriptStatus<AdhocSubstatus<TCompareStatus>> DynamicModifyCompareAdhoc(F&& paramsGenerator, G&& adhocScript, H&& mutator, I&& comparator, J&& terminator)
+	{
+		return compareHelper.template DynamicModifyCompareAdhoc<TCompareStatus, TTuple>(
+			std::forward<F>(paramsGenerator), std::forward<G>(adhocScript), std::forward<H>(mutator), std::forward<I>(comparator), std::forward<J>(terminator));
+	}
+
+	template <class TCompareStatus,
+		typename TTuple,
+		ScriptParamsGenerator<TTuple> F,
+		AdhocCompareScript<TCompareStatus, TTuple> G,
+		AdhocScript H,
+		AdhocScriptComparator<TCompareStatus> I>
+	AdhocScriptStatus<AdhocSubstatus<TCompareStatus>> DynamicModifyCompareAdhoc(F&& paramsGenerator, G&& adhocScript, H&& mutator, I&& comparator)
+	{
+		return compareHelper.template DynamicModifyCompareAdhoc<TCompareStatus, TTuple>(
+			std::forward<F>(paramsGenerator), std::forward<G>(adhocScript), std::forward<H>(mutator), std::forward<I>(comparator), [](const AdhocScriptStatus<TCompareStatus>*) { return false; });
+	}
+
+	#pragma endregion
 
 	// TODO: move this method to some utility class
 	template <typename T>
@@ -227,6 +568,7 @@ private:
 	friend class TopLevelScript<TResource>;
 	friend class SaveMetadata<TResource>;
 	friend class InputsMetadata<TResource>;
+	friend class ScriptCompareHelper<TResource>;
 
 	int64_t _adhocLevel = 0;
 	int32_t _initialFrame = 0;
@@ -237,6 +579,7 @@ private:
 	std::unordered_map<int64_t, std::map<int64_t, InputsMetadata<TResource>>> inputsCache;// caches ancestor inputs to save recursion time
 	std::unordered_map<int64_t, std::set<int64_t>> loadTracker;// track past loads to know whether a cached save is optimal
 	Script* _parentScript;
+	ScriptCompareHelper<TResource> compareHelper = ScriptCompareHelper<TResource>(this);
 
 	bool Run();
 
@@ -257,30 +600,6 @@ private:
 
 	template <typename F>
 	BaseScriptStatus ExecuteAdhocBase(F adhocScript);
-
-	//Root method for Compare() template recursion. This will be called when there are no scripts left to compare the incumbent to.
-	template <class TCompareStatus>
-		requires(std::derived_from<TCompareStatus, CompareStatus<TCompareStatus>>)
-	AdhocScriptStatus<TCompareStatus> Compare(const AdhocScriptStatus<TCompareStatus>& status1);
-
-	//Main recursive method for comparing ad hoc scripts. Only the root and leaf use different methods
-	template <class TCompareStatus, AdhocCustomStatusScript<TCompareStatus> F, AdhocCustomStatusScript<TCompareStatus>... G>
-		requires(std::derived_from<TCompareStatus, CompareStatus<TCompareStatus>>)
-	AdhocScriptStatus<TCompareStatus> Compare(const AdhocScriptStatus<TCompareStatus>& status1, F&& adhocScript2, G&&... adhocScripts);
-
-	//Only to be used by ModifyCompare(). Will desync if used alone, as it assumes the caller will call Revert().
-	template <class TAdhocCustomScriptStatus, AdhocCustomStatusScript<TAdhocCustomScriptStatus> F>
-	AdhocScriptStatus<TAdhocCustomScriptStatus> ExecuteAdhocNoRevert(F adhocScript);
-
-	//Root method for ModifyCompare() template recursion. This will be called when there are no scripts left to compare the incumbent to.
-	template <class TCompareStatus>
-		requires(std::derived_from<TCompareStatus, CompareStatus<TCompareStatus>>)
-	AdhocScriptStatus<TCompareStatus> ModifyCompare(int64_t initialFrame, const AdhocScriptStatus<TCompareStatus>& status1);
-
-	//Main recursive method for ModifyCompare(). Only the root and leaf use different methods
-	template <class TCompareStatus, AdhocCustomStatusScript<TCompareStatus> F, AdhocCustomStatusScript<TCompareStatus>... G>
-		requires(std::derived_from<TCompareStatus, CompareStatus<TCompareStatus>>)
-	AdhocScriptStatus<TCompareStatus> ModifyCompare(int64_t initialFrame, const AdhocScriptStatus<TCompareStatus>& status1, F&& adhocScript2, G&&... adhocScripts);
 };
 
 template <derived_from_specialization_of<Resource> TResource>

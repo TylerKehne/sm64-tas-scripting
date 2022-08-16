@@ -37,7 +37,6 @@ bool BitFsPyramidOscillation_TurnAroundAndRunDownhill::execution()
 		(const BehaviorScript*) (resource->addr("bhvBitfsTiltingInvertedPyramid"));
 	MarioState* marioState = (MarioState*) (resource->addr("gMarioStates"));
 	Camera* camera		   = *(Camera**) (resource->addr("gCamera"));
-	Object* pyramid		   = marioState->floor->object;
 
 	// Turn around
 	if (_oscillationParams.brake)
@@ -101,15 +100,13 @@ bool BitFsPyramidOscillation_TurnAroundAndRunDownhill::execution()
 		Rollback(GetCurrentFrame() - 1);
 	}
 
-	auto status =
-		Modify<BitFsPyramidOscillation_RunDownhill>(_oscillationParams);
+	auto status = Modify<BitFsPyramidOscillation_RunDownhill>(_oscillationParams);
 
-	CustomStatus.framePassedEquilibriumPoint =
-		status.framePassedEquilibriumPoint;
-	CustomStatus.maxSpeed				= status.maxSpeed;
+	CustomStatus.framePassedEquilibriumPoint = status.framePassedEquilibriumPoint;
+	CustomStatus.maxSpeed = status.maxSpeed;
 	CustomStatus.passedEquilibriumSpeed = status.passedEquilibriumSpeed;
-	CustomStatus.finalXzSum				= status.finalXzSum;
-	CustomStatus.tooUphill				= status.tooUphill;
+	CustomStatus.finalXzSum = status.finalXzSum;
+	CustomStatus.tooUphill = status.tooUphill;
 
 	return true;
 }

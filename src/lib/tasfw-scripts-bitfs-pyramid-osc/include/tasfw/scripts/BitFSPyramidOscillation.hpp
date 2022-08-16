@@ -63,7 +63,7 @@ public:
 	CustomScriptStatus CustomStatus = CustomScriptStatus();
 
 	BitFsPyramidOscillation_Iteration(BitFsPyramidOscillation_ParamsDto oscillationParams, int32_t minFrame, int32_t maxFrame)
-		: _oscillationParams(oscillationParams), _minFrame(minFrame), _maxFrame(maxFrame) {}
+		: _minFrame(minFrame), _maxFrame(maxFrame), _oscillationParams(oscillationParams) {}
 
 	bool validation();
 	bool execution();
@@ -120,7 +120,7 @@ public:
 	CustomScriptStatus CustomStatus = CustomScriptStatus();
 
 	BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle(BitFsPyramidOscillation_ParamsDto oscillationParams, int16_t angle)
-		: _oscillationParams(oscillationParams), _angle(angle){}
+		: _angle(angle), _oscillationParams(oscillationParams){}
 
 	bool validation();
 	bool execution();
@@ -207,8 +207,8 @@ public:
 	};
 	CustomScriptStatus CustomStatus = CustomScriptStatus();
 
-	BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle(int16_t targetAngle) : _targetAngle(targetAngle), _faceAngle(targetAngle) { }
-	BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle(int16_t targetAngle, int16_t faceAngle) : _targetAngle(targetAngle), _faceAngle(faceAngle) { }
+	BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle(int16_t targetAngle) : _faceAngle(targetAngle), _targetAngle(targetAngle) { }
+	BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle(int16_t targetAngle, int16_t faceAngle) : _faceAngle(faceAngle), _targetAngle(targetAngle) { }
 
 	bool validation();
 	bool execution();
