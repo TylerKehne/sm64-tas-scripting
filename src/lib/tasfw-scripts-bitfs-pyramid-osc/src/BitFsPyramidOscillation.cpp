@@ -46,8 +46,6 @@ bool BitFsPyramidOscillation::validation()
 
 bool BitFsPyramidOscillation::execution()
 {
-	[[maybe_unused]] const BehaviorScript* pyramidBehavior =
-		(const BehaviorScript*) (resource->addr("bhvBitfsTiltingInvertedPyramid"));
 	MarioState* marioState = *(MarioState**) (resource->addr("gMarioState"));
 	Camera* camera		   = *(Camera**) (resource->addr("gCamera"));
 	Object* pyramid		   = marioState->floor->object;
@@ -64,7 +62,6 @@ bool BitFsPyramidOscillation::execution()
 		initAngleStatus.downhillRotation);
 	AdvanceFrameWrite(Inputs(0, stick.first, stick.second));
 
-	[[maybe_unused]] uint64_t preTurnFrame = GetCurrentFrame();
 	OptionalSave();
 
 	// Initialize base oscillation params dto
