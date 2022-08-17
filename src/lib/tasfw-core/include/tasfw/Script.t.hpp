@@ -348,8 +348,8 @@ uint64_t Script<TResource>::IncrementFrameCounter(InputsMetadata<TResource> cach
 	if (!cachedInputs.stateOwner->frameCounter[cachedInputs.stateOwnerAdhocLevel].contains(cachedInputs.frame))
 		cachedInputs.stateOwner->frameCounter[cachedInputs.stateOwnerAdhocLevel][cachedInputs.frame] = 0;
 
-	//Return value BEFORE incrementing
-	return cachedInputs.stateOwner->frameCounter[cachedInputs.stateOwnerAdhocLevel][cachedInputs.frame]++;
+	//Return value AFTER incrementing
+	return ++cachedInputs.stateOwner->frameCounter[cachedInputs.stateOwnerAdhocLevel][cachedInputs.frame];
 }
 
 template <derived_from_specialization_of<Resource> TResource>
@@ -446,6 +446,32 @@ template <derived_from_specialization_of<Resource> TResource>
 void Script<TResource>::Load(uint64_t frame)
 {
 	LoadBase(frame, false);
+}
+
+template <derived_from_specialization_of<Resource> TResource>
+void Script<TResource>::LongLoad(int64_t frame)
+{
+	int64_t currentFrame = static_cast<int64_t>(GetCurrentFrame());
+
+	// Load most recent save at or before frame. Check child saves before
+	// parent. If target frame is in future, check if faster to frame advance or load.
+	// Also, don't cache as it is unlikely the save will be needed again.
+	auto latestSave = GetLatestSave(frame);
+	if (frame < currentFrame)
+	{
+		resource->LoadState(latestSave.GetSlotHandle()->slotId);
+		BaseStatus[_adhocLevel].nLoads++;
+	}
+	else if (latestSave.frame > frame && resource->shouldLoad(latestSave.frame - currentFrame))
+		resource->LoadState(latestSave.GetSlotHandle()->slotId);
+
+	// If save is before target frame, play back until frame is reached
+	currentFrame = GetCurrentFrame();
+	while (currentFrame++ < frame)
+		AdvanceFrameRead();
+
+	// Create a save as it is likely that very many frames were advanced since the most recent one.
+	Save();
 }
 
 template <derived_from_specialization_of<Resource> TResource>
@@ -589,7 +615,9 @@ void Script<TResource>::Restore(int64_t frame)
 template <derived_from_specialization_of<Resource> TResource>
 void Script<TResource>::Save()
 {
-	Save(_adhocLevel);
+	int64_t currentFrame = GetCurrentFrame();
+	auto inputsMetadata = GetInputsMetadata(currentFrame);
+	saveCache[_adhocLevel][currentFrame] = inputsMetadata.stateOwner->Save(inputsMetadata.stateOwnerAdhocLevel);
 }
 
 //Internal version of Save() that specifies adhoc level, that can be called by a child script
