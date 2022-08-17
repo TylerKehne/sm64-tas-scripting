@@ -30,8 +30,7 @@ public:
 
 	bool execution()
 	{
-		Load(3536);
-		Save();
+		LongLoad(3536);
 		auto status = Modify<BitFsPyramidOscillation>(0.74f, 4);
 		return true;
 	}

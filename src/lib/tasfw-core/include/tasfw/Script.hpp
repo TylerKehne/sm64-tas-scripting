@@ -555,6 +555,7 @@ protected:
 	void OptionalSave();
 	void Save();
 	void Load(uint64_t frame);
+	void LongLoad(int64_t frame);
 	void Rollback(uint64_t frame);
 	void RollForward(int64_t frame);
 	void Restore(int64_t frame);
