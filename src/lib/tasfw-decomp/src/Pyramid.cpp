@@ -40,6 +40,7 @@ bool simulate_platform_tilt(
 		// Probably a better way of handling this
 		*floorAngle = 0;
 		*isSlope		= false;
+		free(pyramidSurfaces);
 		return false;
 	}
 	else
@@ -47,6 +48,7 @@ bool simulate_platform_tilt(
 		*floorAngle = atan2s(floor->normal.z, floor->normal.x);
 		*isSlope		= floor_is_slope(floor);
 	}
+	free(pyramidSurfaces);
 
 	return true;
 }
