@@ -48,7 +48,7 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill::execution()
 
 	int progression = 0;
 	auto runStatus = ModifyCompareAdhoc<StatusField<BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle>, std::tuple<int32_t>>(
-		[&]([[unused]] auto iteration, auto& params) //paramsGenerator
+		[&]([[maybe_unused]] auto iteration, auto& params) //paramsGenerator
 		{
 			auto& angle = std::get<0>(params);
 
