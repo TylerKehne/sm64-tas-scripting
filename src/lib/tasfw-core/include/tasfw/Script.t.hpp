@@ -108,7 +108,6 @@ void Script<TResource>::AdvanceFrameWrite(Inputs inputs)
 	frameCounter[_adhocLevel].erase(frameCounter[_adhocLevel].upper_bound(currentFrame), frameCounter[_adhocLevel].end());
 	saveBank[_adhocLevel].erase(saveBank[_adhocLevel].upper_bound(currentFrame), saveBank[_adhocLevel].end());
 	saveCache[_adhocLevel].erase(saveCache[_adhocLevel].upper_bound(currentFrame), saveCache[_adhocLevel].end());
-	loadTracker[_adhocLevel].erase(loadTracker[_adhocLevel].upper_bound(currentFrame), loadTracker[_adhocLevel].end());
 
 	// Set inputs and advance frame
 	SetInputs(inputs);
@@ -133,7 +132,6 @@ void Script<TResource>::Apply(const M64Diff& m64Diff)
 	frameCounter[_adhocLevel].erase(frameCounter[_adhocLevel].upper_bound(currentFrame), frameCounter[_adhocLevel].end());
 	saveBank[_adhocLevel].erase(saveBank[_adhocLevel].upper_bound(currentFrame), saveBank[_adhocLevel].end());
 	saveCache[_adhocLevel].erase(saveCache[_adhocLevel].upper_bound(currentFrame), saveCache[_adhocLevel].end());
-	loadTracker[_adhocLevel].erase(loadTracker[_adhocLevel].upper_bound(currentFrame), loadTracker[_adhocLevel].end());
 
 	while (currentFrame <= lastFrame)
 	{
@@ -171,7 +169,6 @@ void Script<TResource>::ApplyChildDiff(const BaseScriptStatus& status, std::map<
 	frameCounter[_adhocLevel].erase(frameCounter[_adhocLevel].upper_bound(firstFrame), frameCounter[_adhocLevel].end());
 	saveBank[_adhocLevel].erase(saveBank[_adhocLevel].upper_bound(firstFrame), saveBank[_adhocLevel].end());
 	saveCache[_adhocLevel].erase(saveCache[_adhocLevel].upper_bound(firstFrame), saveCache[_adhocLevel].end());
-	loadTracker[_adhocLevel].erase(loadTracker[_adhocLevel].upper_bound(firstFrame), loadTracker[_adhocLevel].end());
 
 	//Apply diff. State is already synced from child script, so no need to update it
 	uint64_t frame = firstFrame;
@@ -529,7 +526,6 @@ void Script<TResource>::Rollback(uint64_t frame)
 		frameCounter[_adhocLevel].erase(frameCounter[_adhocLevel].upper_bound(firstFrame), frameCounter[_adhocLevel].end());
 		saveBank[_adhocLevel].erase(saveBank[_adhocLevel].upper_bound(firstFrame), saveBank[_adhocLevel].end());
 		saveCache[_adhocLevel].erase(saveCache[_adhocLevel].upper_bound(firstFrame), saveCache[_adhocLevel].end());
-		loadTracker[_adhocLevel].erase(loadTracker[_adhocLevel].upper_bound(firstFrame), loadTracker[_adhocLevel].end());
 	}
 
 	//Desyncs should be impossible for rollback because no inputs are changed prior to frame being loaded
@@ -560,7 +556,6 @@ void Script<TResource>::RollForward(int64_t frame)
 		frameCounter[_adhocLevel].erase(frameCounter[_adhocLevel].upper_bound(firstFrame), frameCounter[_adhocLevel].end());
 		saveBank[_adhocLevel].erase(saveBank[_adhocLevel].upper_bound(firstFrame), saveBank[_adhocLevel].end());
 		saveCache[_adhocLevel].erase(saveCache[_adhocLevel].upper_bound(firstFrame), saveCache[_adhocLevel].end());
-		loadTracker[_adhocLevel].erase(loadTracker[_adhocLevel].upper_bound(firstFrame), loadTracker[_adhocLevel].end());
 	}
 
 	LoadBase(frame, desync);
@@ -586,7 +581,6 @@ void Script<TResource>::Restore(int64_t frame)
 		frameCounter[_adhocLevel].erase(frameCounter[_adhocLevel].upper_bound(firstFrame), frameCounter[_adhocLevel].end());
 		saveBank[_adhocLevel].erase(saveBank[_adhocLevel].upper_bound(firstFrame), saveBank[_adhocLevel].end());
 		saveCache[_adhocLevel].erase(saveCache[_adhocLevel].upper_bound(firstFrame), saveCache[_adhocLevel].end());
-		loadTracker[_adhocLevel].erase(loadTracker[_adhocLevel].upper_bound(firstFrame), loadTracker[_adhocLevel].end());
 	}
 
 	LoadBase(frame, desync);
