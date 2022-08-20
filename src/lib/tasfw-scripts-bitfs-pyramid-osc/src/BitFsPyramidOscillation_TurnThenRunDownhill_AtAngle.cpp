@@ -47,11 +47,11 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::execution()
 	do
 	{
 		// Don't want to turn around early, so cap intended yaw diff at 2048
-		[[maybe_unused]] int16_t intendedYaw = _angle;
-		if (abs(_angle - marioState->faceAngle[1]) > 2048)
-			intendedYaw = marioState->faceAngle[1] + 2048 * sign(_angle - marioState->faceAngle[1]);
+		int16_t intendedYaw = _angle;
+		if (abs(int16_t(_angle - marioState->faceAngle[1])) >= 16384)
+			intendedYaw = marioState->faceAngle[1] + 2048 * sign(int16_t(_angle - marioState->faceAngle[1]));
 
-		auto inputs = Inputs::GetClosestInputByYawHau(_angle, 32, camera->yaw);
+		auto inputs = Inputs::GetClosestInputByYawHau(intendedYaw, 32, camera->yaw);
 		actualIntendedYaw = Inputs::GetIntendedYawMagFromInput(inputs.first, inputs.second, camera->yaw).first;
 		AdvanceFrameWrite(Inputs(0, inputs.first, inputs.second));
 
