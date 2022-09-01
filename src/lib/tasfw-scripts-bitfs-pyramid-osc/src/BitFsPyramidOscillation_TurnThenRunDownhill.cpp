@@ -6,6 +6,16 @@
 #include <sm64/Camera.hpp>
 #include <sm64/Sm64.hpp>
 
+bool BitFsPyramidOscillation_TurnThenRunDownhill::CompareSpeed(
+	const ScriptStatus<BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle>& status1,
+	const ScriptStatus<BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle>& status2)
+{
+	if (_oscillationParams.optimizeMaxSpeed)
+		return status2.maxSpeed > status1.maxSpeed;
+
+	return status2.passedEquilibriumSpeed > status1.passedEquilibriumSpeed;
+}
+
 bool BitFsPyramidOscillation_TurnThenRunDownhill::validation()
 {
 	// Verify Mario is running on the platform
@@ -96,7 +106,7 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill::execution()
 		},
 		[&](auto status1, auto status2) //comparator
 		{
-			if (status2->status.passedEquilibriumSpeed > status1->status.passedEquilibriumSpeed)
+			if (CompareSpeed(status1->status, status2->status))
 				return status2;
 
 			return status1;

@@ -155,30 +155,11 @@ template <derived_from_specialization_of<Resource> TResource>
 void Script<TResource>::ApplyChildDiff(const BaseScriptStatus& status, std::map<int64_t, SlotHandle<TResource>>& childSaveBank, int64_t initialFrame)
 {
 	//Revert if script was unsuccessful
-	if (!status.asserted || status.m64Diff.frames.empty())
+	if (!status.asserted)
 	{
 		Revert(initialFrame, status.m64Diff, childSaveBank);
 		return;
 	}	
-
-	uint64_t firstFrame = status.m64Diff.frames.begin()->first;
-	uint64_t lastFrame = status.m64Diff.frames.rbegin()->first;
-
-	// Erase all saves, cached saves, and frame counters after this point
-	inputsCache[_adhocLevel].erase(inputsCache[_adhocLevel].lower_bound(firstFrame), inputsCache[_adhocLevel].end());
-	frameCounter[_adhocLevel].erase(frameCounter[_adhocLevel].upper_bound(firstFrame), frameCounter[_adhocLevel].end());
-	saveBank[_adhocLevel].erase(saveBank[_adhocLevel].upper_bound(firstFrame), saveBank[_adhocLevel].end());
-	saveCache[_adhocLevel].erase(saveCache[_adhocLevel].upper_bound(firstFrame), saveCache[_adhocLevel].end());
-
-	//Apply diff. State is already synced from child script, so no need to update it
-	uint64_t frame = firstFrame;
-	while (frame <= lastFrame)
-	{
-		if (status.m64Diff.frames.count(frame))
-			BaseStatus[_adhocLevel].m64Diff.frames[frame] = status.m64Diff.frames.at(frame);
-
-		frame++;
-	}
 
 	//Move child saves to parent because they are still synced
 	//If child is ad-hoc script, pop the save bank
@@ -186,8 +167,30 @@ void Script<TResource>::ApplyChildDiff(const BaseScriptStatus& status, std::map<
 	if (saveBank.contains(_adhocLevel + 1))
 		saveBank.erase(_adhocLevel + 1);
 
-	//Forward state to end of diff
-	Load(lastFrame + 1);
+	if (!status.m64Diff.frames.empty())
+	{
+		uint64_t firstFrame = status.m64Diff.frames.begin()->first;
+		uint64_t lastFrame = status.m64Diff.frames.rbegin()->first;
+
+		// Erase all saves, cached saves, and frame counters after this point
+		inputsCache[_adhocLevel].erase(inputsCache[_adhocLevel].lower_bound(firstFrame), inputsCache[_adhocLevel].end());
+		frameCounter[_adhocLevel].erase(frameCounter[_adhocLevel].upper_bound(firstFrame), frameCounter[_adhocLevel].end());
+		saveBank[_adhocLevel].erase(saveBank[_adhocLevel].upper_bound(firstFrame), saveBank[_adhocLevel].end());
+		saveCache[_adhocLevel].erase(saveCache[_adhocLevel].upper_bound(firstFrame), saveCache[_adhocLevel].end());
+
+		//Apply diff. State is already synced from child script, so no need to update it
+		uint64_t frame = firstFrame;
+		while (frame <= lastFrame)
+		{
+			if (status.m64Diff.frames.count(frame))
+				BaseStatus[_adhocLevel].m64Diff.frames[frame] = status.m64Diff.frames.at(frame);
+
+			frame++;
+		}
+
+		//Forward state to end of diff
+		Load(lastFrame + 1);
+	}
 }
 
 template <derived_from_specialization_of<Resource> TResource>
@@ -693,6 +696,12 @@ template <derived_from_specialization_of<Resource> TResource>
 M64Diff Script<TResource>::GetDiff()
 {
 	return BaseStatus[_adhocLevel].m64Diff;
+}
+
+template <derived_from_specialization_of<Resource> TResource>
+M64Diff Script<TResource>::GetBaseDiff()
+{
+	return BaseStatus[0].m64Diff;
 }
 
 template <derived_from_specialization_of<Resource> TResource>

@@ -6,6 +6,16 @@
 #include <sm64/Camera.hpp>
 #include <sm64/Sm64.hpp>
 
+bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::CompareSpeed(
+	const ScriptStatus<BitFsPyramidOscillation_TurnAroundAndRunDownhill>& status1,
+	const ScriptStatus<BitFsPyramidOscillation_TurnAroundAndRunDownhill>& status2)
+{
+	if (_oscillationParams.optimizeMaxSpeed)
+		return status2.maxSpeed > status1.maxSpeed;
+
+	return status2.passedEquilibriumSpeed > status1.passedEquilibriumSpeed;
+}
+
 bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::validation()
 {
 	// Verify Mario is running on the platform
@@ -34,10 +44,9 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::validation()
 
 bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::execution()
 {
-	const BehaviorScript* pyramidBehavior =
-		(const BehaviorScript*) (resource->addr("bhvBitfsTiltingInvertedPyramid"));
+	const BehaviorScript* pyramidBehavior = (const BehaviorScript*) (resource->addr("bhvBitfsTiltingInvertedPyramid"));
 	MarioState* marioState = (MarioState*) (resource->addr("gMarioStates"));
-	Camera* camera				 = *(Camera**) (resource->addr("gCamera"));
+	Camera* camera = *(Camera**)(resource->addr("gCamera"));
 
 	CustomStatus.initialXzSum = _oscillationParams.initialXzSum;
 	_oscillationParams.roughTargetAngle = marioState->faceAngle[1] + 0x8000;
@@ -116,7 +125,7 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::execution()
 			//We aren't trying to maxmimize this, but this ensures route won't be too close to the lava
 			//Also make sure equilibrium point has been passed
 			if (status2->status.maxSpeed >= _oscillationParams.prevMaxSpeed
-				&& status2->status.passedEquilibriumSpeed > status1->status.passedEquilibriumSpeed)
+				&& CompareSpeed(status1->status, status2->status))
 				return status2;
 			// This also indicates running frames aren't helping and we can
 			// terminate, except when past the threshold In that case, we don't mind

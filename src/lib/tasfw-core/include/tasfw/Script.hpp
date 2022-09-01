@@ -549,6 +549,7 @@ protected:
 	uint64_t GetCurrentFrame();
 	bool IsDiffEmpty();
 	M64Diff GetDiff();
+	M64Diff GetBaseDiff();
 	void Apply(const M64Diff& m64Diff);
 	void AdvanceFrameRead();
 	void AdvanceFrameWrite(Inputs inputs);

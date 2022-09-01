@@ -10,15 +10,6 @@
 #include <array>
 #include <cmath>
 
-int16_t getRoughTargetNormal(
-	int quadrant, int iteration, int16_t initWalkingAngle)
-{
-	int16_t baseAngle	  = quadrant * 0x4000 - 0x2000 + 0x4000;
-	int16_t initAngleDiff = baseAngle - initWalkingAngle;
-	baseAngle = abs(initAngleDiff) < 0x4000 ? baseAngle + 0x8000 : baseAngle;
-	return iteration & 1U ? baseAngle + 0x8000 : baseAngle;
-}
-
 bool BitFsPyramidOscillation::validation()
 {
 	// Check if Mario is on the pyramid platform
@@ -62,8 +53,6 @@ bool BitFsPyramidOscillation::execution()
 		initAngleStatus.downhillRotation);
 	AdvanceFrameWrite(Inputs(0, stick.first, stick.second));
 
-	OptionalSave();
-
 	// Initialize base oscillation params dto
 	auto baseOscParams		  = BitFsPyramidOscillation_ParamsDto {};
 	baseOscParams.quadrant	  = _quadrant;
@@ -71,8 +60,6 @@ bool BitFsPyramidOscillation::execution()
 
 	// Initial run downhill
 	auto oscillationParams = baseOscParams;
-	oscillationParams.roughTargetNormal =
-		getRoughTargetNormal(_quadrant, -1, initAngle);
 	oscillationParams.roughTargetAngle = initAngleStatus.angleFacing;
 
 	auto initRunStatus =
@@ -92,20 +79,17 @@ bool BitFsPyramidOscillation::execution()
 		initRunStatus.framePassedEquilibriumPoint;
 	uint64_t maxFrame = initRunStatus.m64Diff.frames.rbegin()->first;
 	CustomStatus.finalXzSum[1] = initRunStatus.finalXzSum;
-	std::vector<std::pair<int64_t, int64_t>> oscillationMinMaxFrames;
 	for (int i = 0; i < 200; i++)
 	{
-		oscillationMinMaxFrames.emplace_back(minFrame, maxFrame);
+		CustomStatus.oscillationMinMaxFrames.emplace_back(minFrame, maxFrame);
 
 		// Start at the latest ppossible frame and work backwards. Stop when the
 		// max speed at the equilibrium point stops increasing.
 		oscillationParams = baseOscParams;
-		oscillationParams.roughTargetNormal = getRoughTargetNormal(_quadrant, i, initAngle);
 		oscillationParams.prevMaxSpeed = CustomStatus.maxSpeed[i & 1U];
 		oscillationParams.brake		   = false;
 		oscillationParams.initialXzSum = CustomStatus.finalXzSum[(i & 1U) ^ 1U];
-		auto turnRunStatus = Execute<BitFsPyramidOscillation_Iteration>(
-			oscillationParams, minFrame, maxFrame);
+		auto turnRunStatus = Execute<BitFsPyramidOscillation_Iteration>(oscillationParams, minFrame, maxFrame);
 
 		// If path was affected by ACT_FINISH_TURNING_AROUND taking too long to
 		// expire, retry the PREVIOUS oscillation with braking + quickturn Then
@@ -114,10 +98,9 @@ bool BitFsPyramidOscillation::execution()
 		if (i > 0 && (turnRunStatus.finishTurnaroundFailedToExpire || !turnRunStatus.asserted))
 		{
 			M64Diff nonBrakeDiff	   = GetDiff();
-			int64_t minFrameBrake	   = oscillationMinMaxFrames[i - 1].first;
-			int64_t maxFrameBrake	   = oscillationMinMaxFrames[i - 1].second;
+			int64_t minFrameBrake	   = CustomStatus.oscillationMinMaxFrames[i - 1].first;
+			int64_t maxFrameBrake	   = CustomStatus.oscillationMinMaxFrames[i - 1].second;
 			auto oscillationParamsPrev = baseOscParams;
-			oscillationParamsPrev.roughTargetNormal = getRoughTargetNormal(_quadrant, i - 1, initAngle);
 			oscillationParamsPrev.prevMaxSpeed = CustomStatus.maxSpeed[(i & 1U) ^ 1U];
 			oscillationParamsPrev.brake		   = true;
 			oscillationParamsPrev.initialXzSum = CustomStatus.finalXzSum[i & 1U];
@@ -130,7 +113,7 @@ bool BitFsPyramidOscillation::execution()
 				if (turnRunStatus2.passedEquilibriumSpeed >
 					turnRunStatus.passedEquilibriumSpeed)
 				{
-					oscillationMinMaxFrames[i] = {minFrame2, maxFrame2};
+					CustomStatus.oscillationMinMaxFrames[i] = {minFrame2, maxFrame2};
 					CustomStatus.maxSpeed[(i & 1U)] = turnRunStatusBrake.speedBeforeTurning;
 					CustomStatus.finalXzSum[(i & 1U) ^ 1U] = turnRunStatusBrake.finalXzSum;
 					CustomStatus.maxPassedEquilibriumSpeed[(i & 1U) ^ 1U] = turnRunStatusBrake.passedEquilibriumSpeed;
