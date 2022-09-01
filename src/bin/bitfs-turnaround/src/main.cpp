@@ -18,6 +18,7 @@
 #include <tasfw/scripts/BitFSPyramidOscillation.hpp>
 
 #include "BitFsConfig.hpp"
+#include <tasfw/scripts/BitFsScApproach.hpp>
 
 using namespace std;
 
@@ -30,15 +31,16 @@ public:
 
 	bool execution()
 	{
-		LongLoad(3536);
-		auto status = Modify<BitFsPyramidOscillation>(0.74f, 4);
+		LongLoad(3277); //3536
+		auto status = Modify<BitFsPyramidOscillation>(0.66f, 4);
+		auto status2 = Modify<BitFsScApproach>(16384, 4, status);
 		return true;
 	}
 
 	bool assertion()
 	{
 		// Save m64Diff to M64
-		M64Diff diff = GetDiff();
+		M64Diff diff = GetBaseDiff();
 		for (auto& [frame, inputs]: diff.frames)
 		{
 			_m64->frames[frame] = inputs;

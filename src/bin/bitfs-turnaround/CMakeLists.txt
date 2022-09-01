@@ -11,6 +11,7 @@ target_link_libraries(bitfs-turn PRIVATE
 	tasfw::decomp 
 	tasfw::scripts_general 
 	tasfw::scripts_bitfs_pyramid_osc 
+	tasfw-bitfs-sc-setup
 	nlohmann_json::nlohmann_json
 )
 

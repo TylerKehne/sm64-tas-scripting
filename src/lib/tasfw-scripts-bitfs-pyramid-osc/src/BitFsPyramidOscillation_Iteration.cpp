@@ -4,6 +4,16 @@
 #include <sm64/Sm64.hpp>
 #include <tasfw/Script.hpp>
 
+bool BitFsPyramidOscillation_Iteration::CompareSpeed(
+	const ScriptStatus<BitFsPyramidOscillation_TurnThenRunDownhill>& status1,
+	const ScriptStatus<BitFsPyramidOscillation_TurnThenRunDownhill>& status2)
+{
+	if (_oscillationParams.optimizeMaxSpeed)
+		return status2.maxSpeed > status1.maxSpeed;
+
+	return status2.passedEquilibriumSpeed > status1.passedEquilibriumSpeed;
+}
+
 bool BitFsPyramidOscillation_Iteration::validation()
 {
 	// Verify Mario is running on the platform
@@ -76,7 +86,7 @@ bool BitFsPyramidOscillation_Iteration::execution()
 		},
 		[&](auto status1, auto status2) //comparator
 		{
-			if (status2->status.passedEquilibriumSpeed > status1->status.passedEquilibriumSpeed)
+			if (CompareSpeed(status1->status, status2->status))
 				return status2;
 			else if (status2->status.maxSpeed == 0.0f)
 				terminate = true;
