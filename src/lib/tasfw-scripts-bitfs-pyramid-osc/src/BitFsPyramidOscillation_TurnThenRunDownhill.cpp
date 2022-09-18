@@ -11,7 +11,15 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill::CompareSpeed(
 	const ScriptStatus<BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle>& status2)
 {
 	if (_oscillationParams.optimizeMaxSpeed)
+	{
+		if (abs(status2.maxSpeed - status1.maxSpeed) < 0.2f)
+			return status2.passedEquilibriumXzDist > status1.passedEquilibriumXzDist;
+
 		return status2.maxSpeed > status1.maxSpeed;
+	}
+
+	if (abs(status2.passedEquilibriumSpeed - status1.passedEquilibriumSpeed) < 0.2f)
+		return status2.passedEquilibriumXzDist > status1.passedEquilibriumXzDist;
 
 	return status2.passedEquilibriumSpeed > status1.passedEquilibriumSpeed;
 }
@@ -112,6 +120,71 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill::execution()
 			return status1;
 		}).status;
 
+	if (runStatus.asserted)
+	{
+		progression = 0;
+		int16_t midHau2 = runStatus.angle;
+		auto runStatus2 = ModifyCompareAdhoc<StatusField<BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle>, std::tuple<int32_t>>(
+			[&]([[maybe_unused]] auto iteration, auto& params) //paramsGenerator
+			{
+				auto& angle = std::get<0>(params);
+
+				if (progression < 2)
+				{
+					if (progression == 0) //init downhill
+					{
+						angle = midHau2;
+						progression = 1;
+					}
+					else if (progression == 1) //increment downhill
+						angle += 16 * downhillRotation;
+
+					if (angle * -downhillRotation < (midHau2 + 496 * downhillRotation) * -downhillRotation)
+						progression = 2;
+					else
+						return true;
+				}
+
+				if (progression == 2) //init uphill
+				{
+					angle = midHau - 16 * downhillRotation;
+					progression = 3;
+				}
+				else if (progression == 3) //iterate uphill
+					angle -= 16 * downhillRotation;
+
+				return progression != 4 && (angle * -downhillRotation <= (midHau2 - 496 * downhillRotation) * -downhillRotation);
+			},
+			[&](auto customStatus, auto angle) //script
+			{
+				if (angle == midHau2)
+					customStatus->status = runStatus;
+				else
+					customStatus->status = Modify<BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle>(_oscillationParams, angle);
+
+				if (!customStatus->status.asserted)
+				{
+					if (customStatus->status.tooDownhill)
+						progression = 2; //do uphill half
+					else if (customStatus->status.tooUphill)
+						progression = 4; //terminate
+
+					return false;
+				}
+
+				return customStatus->status.passedEquilibriumSpeed > 0;
+			},
+				[&](auto status1, auto status2) //comparator
+			{
+				if (CompareSpeed(status1->status, status2->status))
+					return status2;
+
+				return status1;
+			}).status;
+
+		runStatus = runStatus2;
+	}
+
 	if (!runStatus.asserted)
 		return false;
 
@@ -119,6 +192,7 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill::execution()
 	CustomStatus.framePassedEquilibriumPoint = runStatus.framePassedEquilibriumPoint;
 	CustomStatus.maxSpeed = runStatus.maxSpeed;
 	CustomStatus.passedEquilibriumSpeed = runStatus.passedEquilibriumSpeed;
+	CustomStatus.passedEquilibriumXzDist = runStatus.passedEquilibriumXzDist;
 	CustomStatus.finishTurnaroundFailedToExpire = runStatus.finishTurnaroundFailedToExpire;
 
 	return true;

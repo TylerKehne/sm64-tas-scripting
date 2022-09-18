@@ -29,11 +29,13 @@ public:
 		float finalXzSum[2] = { 0, 0 };
 		float maxSpeed[2] = { 0, 0 };
 		float maxPassedEquilibriumSpeed[2] = { 0, 0 };
+		float maxPassedEquilibriumXzDist[2] = { 0, 0 };
 		std::vector<std::pair<int64_t, int64_t>> oscillationMinMaxFrames;
+		float actualMaxSpeed[2] = { 0, 0 };
 	};
 	CustomScriptStatus CustomStatus = CustomScriptStatus();
 
-	BitFsPyramidOscillation(float targetXzSum, int quadrant) : _targetXzSum(targetXzSum), _quadrant(quadrant) { }
+	BitFsPyramidOscillation(float targetXzSum, int quadrant, bool alwaysBrake = false) : _targetXzSum(targetXzSum), _quadrant(quadrant), _alwaysBrake(alwaysBrake) { }
 
 	bool validation();
 	bool execution();
@@ -41,7 +43,9 @@ public:
 
 private:
 	float _targetXzSum = 0;
+	int lowerXzSumParity = 1;
 	int _quadrant = 1;
+	bool _alwaysBrake = false;
 };
 
 class BitFsPyramidOscillation_TurnAroundAndRunDownhill : public Script<LibSm64>
@@ -53,6 +57,7 @@ public:
 		int64_t framePassedEquilibriumPoint = -1;
 		float maxSpeed = 0;
 		float passedEquilibriumSpeed = 0;
+		float passedEquilibriumXzDist = 0;
 		float finalXzSum = 0;
 		bool tooDownhill = false;
 		bool tooUphill = false;
@@ -82,10 +87,12 @@ public:
 		float finalXzSum = 0;
 		float maxSpeed = 0;
 		float passedEquilibriumSpeed = 0;
+		float passedEquilibriumXzDist = 0;
 		bool tooSlowForTurnAround = false;
 		bool tooUphill = false;
 		bool tooDownhill = false;
 		bool finishTurnaroundFailedToExpire = false;
+		int16_t angle;
 	};
 	CustomScriptStatus CustomStatus = CustomScriptStatus();
 
@@ -115,6 +122,7 @@ public:
 		float finalXzSum = 0;
 		float maxSpeed = 0;
 		float passedEquilibriumSpeed = 0;
+		float passedEquilibriumXzDist = 0;
 		int64_t framePassedEquilibriumPoint = -1;
 		bool finishTurnaroundFailedToExpire = false;
 	};
@@ -147,6 +155,7 @@ public:
 		float finalXzSum = 0;
 		float maxSpeed = 0;
 		float passedEquilibriumSpeed = 0;
+		float passedEquilibriumXzDist = 0;
 		int64_t framePassedEquilibriumPoint = -1;
 		bool finishTurnaroundFailedToExpire = false;
 		float speedBeforeTurning = 0;
@@ -187,6 +196,7 @@ public:
 		int64_t framePassedEquilibriumPoint = -1;
 		float maxSpeed = 0;
 		float passedEquilibriumSpeed = 0;
+		float passedEquilibriumXzDist = 0;
 		float finalXzSum = 0;
 		bool tooUphill = false;
 	};

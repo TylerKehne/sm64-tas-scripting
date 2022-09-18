@@ -9,7 +9,15 @@ bool BitFsPyramidOscillation_Iteration::CompareSpeed(
 	const ScriptStatus<BitFsPyramidOscillation_TurnThenRunDownhill>& status2)
 {
 	if (_oscillationParams.optimizeMaxSpeed)
+	{
+		if (abs(status2.maxSpeed - status1.maxSpeed) < 0.2f)
+			return status2.passedEquilibriumXzDist > status1.passedEquilibriumXzDist;
+
 		return status2.maxSpeed > status1.maxSpeed;
+	}
+	
+	if (abs(status2.passedEquilibriumSpeed - status1.passedEquilibriumSpeed) < 0.2f)
+		return status2.passedEquilibriumXzDist > status1.passedEquilibriumXzDist;
 
 	return status2.passedEquilibriumSpeed > status1.passedEquilibriumSpeed;
 }
@@ -65,7 +73,7 @@ bool BitFsPyramidOscillation_Iteration::execution()
 			customStatus->status = Modify<BitFsPyramidOscillation_TurnThenRunDownhill>(_oscillationParams);
 
 			// Keep iterating until we get a valid result, then keep iterating until
-			// we stop getting better results Once we get a valid result, we expect
+			// we stop getting better results. Once we get a valid result, we expect
 			// successive iterations to be worse (less space to accelerate), but
 			// that isn't always true
 			if (!customStatus->status.asserted)
@@ -100,6 +108,7 @@ bool BitFsPyramidOscillation_Iteration::execution()
 	CustomStatus.finalXzSum = turnRunStatus.finalXzSum;
 	CustomStatus.maxSpeed = turnRunStatus.maxSpeed;
 	CustomStatus.passedEquilibriumSpeed = turnRunStatus.passedEquilibriumSpeed;
+	CustomStatus.passedEquilibriumXzDist = turnRunStatus.passedEquilibriumXzDist;
 	CustomStatus.framePassedEquilibriumPoint = turnRunStatus.framePassedEquilibriumPoint;
 	CustomStatus.finishTurnaroundFailedToExpire = turnRunStatus.finishTurnaroundFailedToExpire;
 

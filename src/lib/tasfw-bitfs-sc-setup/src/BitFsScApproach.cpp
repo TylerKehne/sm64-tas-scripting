@@ -23,8 +23,9 @@ bool BitFsScApproach::validation()
 		_maxFramePrev = _oscStatus.oscillationMinMaxFrames[max - 1].second;
 		_minFrame = _oscStatus.oscillationMinMaxFrames[max].first;
 		_maxFrame = _oscStatus.oscillationMinMaxFrames[max].second;
-		_targetXzSum = _oscStatus.finalXzSum[((max - 1) & 1U) ^ 1U];
+		//_targetXzSum = _oscStatus.finalXzSum[((max - 1) & 1U) ^ 1U];
 		_prevMaxSpeed = _oscStatus.maxSpeed[((max - 1) & 1U)];
+		_prevActualMaxSpeed = _oscStatus.actualMaxSpeed[((max - 1) & 1U)];
 		_lastOscAngle = angle1 + 0x8000;
 	}
 	else
@@ -33,8 +34,9 @@ bool BitFsScApproach::validation()
 		_maxFramePrev = _oscStatus.oscillationMinMaxFrames[max - 2].second;
 		_minFrame = _oscStatus.oscillationMinMaxFrames[max - 1].first;
 		_maxFrame = _oscStatus.oscillationMinMaxFrames[max - 1].second;
-		_targetXzSum = _oscStatus.finalXzSum[(max & 1U) ^ 1U];
+		//_targetXzSum = _oscStatus.finalXzSum[(max & 1U) ^ 1U];
 		_prevMaxSpeed = _oscStatus.maxSpeed[(max & 1U)];
+		_prevActualMaxSpeed = _oscStatus.actualMaxSpeed[(max & 1U)];
 		_lastOscAngle = angle2 + 0x8000;
 	}
 		
@@ -59,31 +61,58 @@ bool BitFsScApproach::execution()
 {
 	MarioState* marioState = (MarioState*)(resource->addr("gMarioStates"));
 
-	//First attempt with optimized equilibrium speed
-	auto drStatus = Modify<BitFsScApproach_AttemptDr_BF>(_roughTargetAngle, _minFrame, _maxFrame);
+	//First attempt with optimized equilibrium speed and increased xz sum
+	float prevMaxSpeed = _prevMaxSpeed;
+	bool terminate = false;
+	auto drStatus = ModifyCompareAdhoc<BitFsScApproach_AttemptDr_BF::CustomScriptStatus, std::tuple<>>(
+		[&](auto iteration, auto& params) //paramsGenerator
+		{
+			return !terminate;
+		},
+		[&](auto customStatus) //script
+		{
+			auto oscParams = BitFsPyramidOscillation_ParamsDto{};
+			oscParams.quadrant = _quadrant;
+			oscParams.targetXzSum = _targetXzSum + 0.05f;
+			oscParams.initialXzSum = _targetXzSum - 0.01f;
+			oscParams.brake = false;
+			oscParams.prevMaxSpeed = prevMaxSpeed;
+			oscParams.roughTargetAngle = _lastOscAngle;
+			oscParams.optimizeMaxSpeed = false;
+			auto turnRunStatus = Modify<BitFsPyramidOscillation_Iteration>(oscParams, _minFramePrev, _maxFramePrev);
+			if (!turnRunStatus.asserted)
+			{
+				//try to get actual max speed
+				terminate = true;
+				oscParams.prevMaxSpeed = _prevMaxSpeed;
+				oscParams.optimizeMaxSpeed = true;
+				turnRunStatus = Modify<BitFsPyramidOscillation_Iteration>(oscParams, _minFramePrev, _maxFramePrev);
+				if (!turnRunStatus.asserted)
+					return false;
+			}
 
-	//If unsuccessful, try again with optimized max speed
-	if (!drStatus.asserted)
-	{
-		// Initialize base oscillation params dto
-		auto oscParams = BitFsPyramidOscillation_ParamsDto{};
-		oscParams.quadrant = _quadrant;
-		oscParams.targetXzSum = _targetXzSum;
-		oscParams.initialXzSum = _targetXzSum;
-		oscParams.brake = false;
-		oscParams.prevMaxSpeed = _prevMaxSpeed;
-		oscParams.roughTargetAngle = _lastOscAngle;
-		oscParams.optimizeMaxSpeed = true;
-		auto turnRunStatus = Modify<BitFsPyramidOscillation_Iteration>(oscParams, _minFramePrev, _maxFramePrev);
-		if (turnRunStatus.asserted)
-			drStatus = Modify<BitFsScApproach_AttemptDr_BF>(_roughTargetAngle, turnRunStatus.framePassedEquilibriumPoint, turnRunStatus.m64Diff.frames.rbegin()->first);
-	}
+			prevMaxSpeed = nextafterf(turnRunStatus.maxSpeed, INFINITY);
+
+			*customStatus = Modify<BitFsScApproach_AttemptDr_BF>(_roughTargetAngle, turnRunStatus.framePassedEquilibriumPoint, turnRunStatus.m64Diff.frames.rbegin()->first);
+			return customStatus->drLanded;
+		},
+		[&](auto incumbent, auto challenger) //comparator
+		{
+			if (challenger->drRelHeight > 0 && challenger->drRelHeight < incumbent->drRelHeight)
+				return challenger;
+
+			return incumbent;
+		},
+		[&](auto challenger) //terminator
+		{
+			return challenger->executed;
+		});
 
 	CustomStatus.diveLanded = drStatus.diveLanded;
 	CustomStatus.diveRelHeight = drStatus.diveRelHeight;
 	CustomStatus.drLanded = drStatus.drLanded;
 	CustomStatus.drRelHeight = drStatus.drRelHeight;
-
+	
 	return true;
 }
 

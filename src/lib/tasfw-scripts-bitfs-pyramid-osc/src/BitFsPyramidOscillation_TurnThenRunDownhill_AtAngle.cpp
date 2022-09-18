@@ -11,13 +11,23 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::CompareSpeed(
 	const ScriptStatus<BitFsPyramidOscillation_TurnAroundAndRunDownhill>& status2)
 {
 	if (_oscillationParams.optimizeMaxSpeed)
+	{
+		if (abs(status2.maxSpeed - status1.maxSpeed) < 0.2f)
+			return status2.passedEquilibriumXzDist > status1.passedEquilibriumXzDist;
+
 		return status2.maxSpeed > status1.maxSpeed;
+	}
+
+	if (abs(status2.passedEquilibriumSpeed - status1.passedEquilibriumSpeed) < 0.2f)
+		return status2.passedEquilibriumXzDist > status1.passedEquilibriumXzDist;
 
 	return status2.passedEquilibriumSpeed > status1.passedEquilibriumSpeed;
 }
 
 bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::validation()
 {
+	CustomStatus.angle = _angle;
+
 	// Verify Mario is running on the platform
 	MarioState* marioState = (MarioState*) (resource->addr("gMarioStates"));
 
@@ -102,11 +112,17 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::execution()
 			terminate = false;
 			customStatus->status = Modify<BitFsPyramidOscillation_TurnAroundAndRunDownhill>(params);
 
-			if (!customStatus->status.asserted
-				|| customStatus->status.tooUphill
-				|| ((customStatus->status.maxSpeed < _oscillationParams.prevMaxSpeed || customStatus->status.passedEquilibriumSpeed <= 0) && customStatus->status.maxSpeed > 0))
+			if (!customStatus->status.asserted || customStatus->status.tooUphill)
 			{
 				terminate = true;
+				return false;
+			}
+
+			if (customStatus->status.maxSpeed < _oscillationParams.prevMaxSpeed || customStatus->status.passedEquilibriumSpeed <= 0)
+			{
+				if (customStatus->status.maxSpeed <= 0)
+					terminate = true;
+
 				return false;
 			}
 
@@ -128,9 +144,9 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::execution()
 				&& CompareSpeed(status1->status, status2->status))
 				return status2;
 			// This also indicates running frames aren't helping and we can
-			// terminate, except when past the threshold In that case, we don't mind
+			// terminate, except when past the threshold. In that case, we don't mind
 			// if this goes down.
-			else if (status2->status.maxSpeed <= status1->status.maxSpeed)
+			else if (status2->status.maxSpeed < status1->status.maxSpeed)
 				terminate = true;
 
 			return status1;
@@ -154,14 +170,12 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::execution()
 		return false;
 	}
 
-	CustomStatus.framePassedEquilibriumPoint =
-		runDownhillStatus.framePassedEquilibriumPoint;
+	CustomStatus.framePassedEquilibriumPoint = runDownhillStatus.framePassedEquilibriumPoint;
 	CustomStatus.maxSpeed = runDownhillStatus.maxSpeed;
-	CustomStatus.passedEquilibriumSpeed =
-		runDownhillStatus.passedEquilibriumSpeed;
+	CustomStatus.passedEquilibriumSpeed = runDownhillStatus.passedEquilibriumSpeed;
+	CustomStatus.passedEquilibriumXzDist = runDownhillStatus.passedEquilibriumXzDist;
 	CustomStatus.finalXzSum = runDownhillStatus.finalXzSum;
-	CustomStatus.finishTurnaroundFailedToExpire |=
-		runDownhillStatus.finishTurnaroundFailedToExpire;
+	CustomStatus.finishTurnaroundFailedToExpire |= runDownhillStatus.finishTurnaroundFailedToExpire;
 
 	return true;
 }

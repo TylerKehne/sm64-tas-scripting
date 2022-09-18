@@ -7,6 +7,14 @@
 #ifndef PYRAMIDUPDATE_H
 #define PYRAMIDUPDATE_H
 
+class PyramidUpdateConfig
+{
+public:
+	bool EnableMarioMovement = false;
+
+	PyramidUpdateConfig() = default;
+};
+
 class PyramidUpdateMem
 {
 public:
@@ -32,6 +40,7 @@ public:
 		} normal;
 		f32 originOffset;
 		bool objectIsPyramid = false;
+
 		Sm64Object* object(PyramidUpdateMem& state);
 	};
 
@@ -47,7 +56,7 @@ public:
 		s32 tiltingPyramidMarioOnPlatform = false;
 		bool platformIsPyramid = false;
 		Mat4 transform;
-		std::vector<Sm64Surface> surfaces;
+		std::vector<Sm64Surface> surfaces[3];
 
 		Sm64Object* platform(PyramidUpdateMem& state);
 	};
@@ -59,6 +68,7 @@ public:
 		float posY = 0;
 		float posZ = 0;
 		int64_t floorId = -1;
+		bool isFloorStatic = false;
 		u32 action = 0;
 
 		Sm64Surface* floor(PyramidUpdateMem& state);
@@ -66,6 +76,7 @@ public:
 
 	Sm64Object marioObj;
 	Sm64Object pyramid;
+	std::vector<Sm64Surface> staticFloors;
 	Sm64MarioState marioState;
 	int64_t frame = 0;
 	uint32_t inputs = 0;
@@ -82,14 +93,16 @@ private:
 	void GetVertices(short** data, short* vertexData);
 	int CountSurfaces(short* data);
 	short SurfaceHasForce(short surfaceType);
-	void LoadObjectSurfaces(short** data, short* vertexData, Sm64Surface** surfaces);
-	void ReadSurfaceData(short* vertexData, short** vertexIndices, Sm64Surface* surface);
+	void LoadObjectSurfaces(short** data, short* vertexData, Sm64Surface** surfaceArrays);
+	void ReadSurfaceData(short* vertexData, short** vertexIndices, Sm64Surface** surfaceArrays, int surfaceType);
+	void AddStaticGeometry();
 };
 
 class PyramidUpdate : public Resource<PyramidUpdateMem>
 {
 public:
 	PyramidUpdate();
+	PyramidUpdate(PyramidUpdateConfig config) : _enableMarioMovement(config.EnableMarioMovement) { }
 	void save(PyramidUpdateMem& state) const;
 	void load(const PyramidUpdateMem& state);
 	void advance();
@@ -99,11 +112,14 @@ public:
 
 private:
 	PyramidUpdateMem _state;
-	void PyramidLoop();
-	void TransformSurfaces();
+	void UpdatePyramid();
+	void UpdateMario();
+	void TransformSurfaces(int surfaceIndex);
 	float ApproachByIncrement(float goal, float src, float inc);
 	void CreateTransformFromNormals(Mat4& transform, float xNorm, float yNorm, float zNorm);
-	void FindFloor(Vec3f* marioPos, PyramidUpdateMem::Sm64Surface* surfaces, int surfaceCount, int64_t* floorId);
+	float FindFloor(Vec3f* marioPos, PyramidUpdateMem::Sm64Surface* surfaces, int surfaceCount, int64_t* floorId);
+
+	bool _enableMarioMovement = false;
 };
 
 #endif

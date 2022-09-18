@@ -13,6 +13,7 @@
 #include <sm64/Camera.hpp>
 #include <sm64/Trig.hpp>
 #include <sm64/Types.hpp>
+#include <sm64/ObjectFields.hpp>
 
 #include <tasfw/scripts/General.hpp>
 #include <tasfw/scripts/BitFSPyramidOscillation.hpp>
@@ -31,9 +32,21 @@ public:
 
 	bool execution()
 	{
-		LongLoad(3277); //3536
-		auto status = Modify<BitFsPyramidOscillation>(0.66f, 4);
-		auto status2 = Modify<BitFsScApproach>(16384, 4, status);
+		LongLoad(3270); //3277, 3536
+
+		//const BehaviorScript* trackPlatformBehavior = (const BehaviorScript*)(resource->addr("bhvPlatformOnTrack"));
+		//Object* objectPool = (Object*)(resource->addr("gObjectPool"));
+		//Object* trackPlatform = &objectPool[85];
+		//if (trackPlatform->behavior != trackPlatformBehavior)
+		//	return false;
+
+		//! UNSAFE
+		//trackPlatform->oPosX = -1945.0f;
+		//AdvanceFrameRead();
+		//Save();
+
+		auto status = Modify<BitFsPyramidOscillation>(0.73f, 4, false);
+		auto status2 = Modify<BitFsScApproach>(16384, 4, 0.69f, status);
 		return true;
 	}
 

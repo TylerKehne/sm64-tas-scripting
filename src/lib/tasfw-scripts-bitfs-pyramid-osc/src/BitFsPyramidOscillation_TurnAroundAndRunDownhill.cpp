@@ -105,6 +105,7 @@ bool BitFsPyramidOscillation_TurnAroundAndRunDownhill::execution()
 	CustomStatus.framePassedEquilibriumPoint = status.framePassedEquilibriumPoint;
 	CustomStatus.maxSpeed = status.maxSpeed;
 	CustomStatus.passedEquilibriumSpeed = status.passedEquilibriumSpeed;
+	CustomStatus.passedEquilibriumXzDist = status.passedEquilibriumXzDist;
 	CustomStatus.finalXzSum = status.finalXzSum;
 	CustomStatus.tooUphill = status.tooUphill;
 

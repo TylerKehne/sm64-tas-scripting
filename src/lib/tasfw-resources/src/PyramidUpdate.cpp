@@ -4,6 +4,7 @@
 #include <sm64/ObjectFields.hpp>
 #include <sm64/Math.hpp>
 #include <sm64/Sm64.hpp>
+#include <sm64/SurfaceTerrains.hpp>
 
 PyramidUpdateMem::PyramidUpdateMem(const LibSm64& resource, Object* pyramidLibSm64)
 {
@@ -33,6 +34,66 @@ PyramidUpdateMem::PyramidUpdateMem(const LibSm64& resource, Object* pyramidLibSm
 	marioState.posY = marioStateLibSm64->pos[1];
 	marioState.posZ = marioStateLibSm64->pos[2];
 	marioState.action = marioStateLibSm64->action;
+
+	//Add lava
+	AddStaticGeometry();
+}
+
+void PyramidUpdateMem::AddStaticGeometry()
+{
+	staticFloors.resize(2);
+	staticFloors[0] = Sm64Surface();
+	staticFloors[1] = Sm64Surface();
+
+	//floor 1
+	staticFloors[0].vertex1[0] = -8191;
+	staticFloors[0].vertex2[0] = 8192;
+	staticFloors[0].vertex3[0] = -8191;
+
+	staticFloors[0].vertex1[1] = -3071;
+	staticFloors[0].vertex2[1] = -3071;
+	staticFloors[0].vertex3[1] = -3071;
+
+	staticFloors[0].vertex1[2] = 8192;
+	staticFloors[0].vertex2[2] = -8191;
+	staticFloors[0].vertex3[2] = -8191;
+
+	staticFloors[0].normal.x = 0;
+	staticFloors[0].normal.y = 1;
+	staticFloors[0].normal.z = 0;
+
+	staticFloors[0].originOffset = 3071;
+
+	staticFloors[0].lowerY = -3076;
+	staticFloors[0].upperY = -3066;
+
+	staticFloors[0].type = SURFACE_BURNING;
+	staticFloors[0].objectIsPyramid = false;
+
+	//floor 2
+	staticFloors[1].vertex1[0] = -8191;
+	staticFloors[1].vertex2[0] = 8192;
+	staticFloors[1].vertex3[0] = 8192;
+
+	staticFloors[1].vertex1[1] = -3071;
+	staticFloors[1].vertex2[1] = -3071;
+	staticFloors[1].vertex3[1] = -3071;
+
+	staticFloors[1].vertex1[2] = 8192;
+	staticFloors[1].vertex2[2] = 8192;
+	staticFloors[1].vertex3[2] = -8191;
+
+	staticFloors[1].normal.x = 0;
+	staticFloors[1].normal.y = 1;
+	staticFloors[1].normal.z = 0;
+
+	staticFloors[1].originOffset = 3071;
+
+	staticFloors[1].lowerY = -3076;
+	staticFloors[1].upperY = -3066;
+
+	staticFloors[1].type = SURFACE_BURNING;
+	staticFloors[1].objectIsPyramid = false;
 }
 
 PyramidUpdateMem::Sm64Object* PyramidUpdateMem::Sm64Surface::object(PyramidUpdateMem& state)
@@ -56,10 +117,10 @@ PyramidUpdateMem::Sm64Surface* PyramidUpdateMem::Sm64MarioState::floor(PyramidUp
 	if (floorId == -1)
 		return nullptr;
 
-	if (floorId >= static_cast<int64_t>(state.pyramid.surfaces.size()))
-		throw std::runtime_error("Surface id " + std::to_string(floorId) + " larger than max id " + std::to_string(state.pyramid.surfaces.size() - 1));
+	if (floorId >= static_cast<int64_t>(state.pyramid.surfaces[1].size()))
+		throw std::runtime_error("Surface id " + std::to_string(floorId) + " larger than max id " + std::to_string(state.pyramid.surfaces[1].size() - 1));
 
-	return &state.pyramid.surfaces[floorId];
+	return &state.pyramid.surfaces[1][floorId];
 }
 
 void PyramidUpdateMem::LoadSurfaces(Object* pyramidLibSm64, Sm64Object& pyramid)
@@ -71,11 +132,13 @@ void PyramidUpdateMem::LoadSurfaces(Object* pyramidLibSm64, Sm64Object& pyramid)
 
 	int surfaceCount = CountSurfaces(collisionData);
 
-	pyramid.surfaces.resize(surfaceCount);
+	pyramid.surfaces[0].resize(surfaceCount);
+	pyramid.surfaces[1].resize(surfaceCount);
+	pyramid.surfaces[2].resize(surfaceCount);
 
-	Sm64Surface* surfaces = &(*pyramid.surfaces.begin());
+	Sm64Surface* surfaces[3] = { &(*pyramid.surfaces[0].begin()), &(*pyramid.surfaces[1].begin()), &(*pyramid.surfaces[2].begin()) };
 	while (*collisionData != TERRAIN_LOAD_CONTINUE)
-		LoadObjectSurfaces(&collisionData, vertexData, &surfaces);
+		LoadObjectSurfaces(&collisionData, vertexData, surfaces);
 }
 
 void PyramidUpdateMem::GetVertices(short** data, short* vertexData)
@@ -155,7 +218,7 @@ short PyramidUpdateMem::SurfaceHasForce(short surfaceType)
 	return hasForce;
 }
 
-void PyramidUpdateMem::LoadObjectSurfaces(short** data, short* vertexData, Sm64Surface** surfaces)
+void PyramidUpdateMem::LoadObjectSurfaces(short** data, short* vertexData, Sm64Surface** surfaceArrays)
 {
 	int surfaceType;
 	int i;
@@ -172,24 +235,16 @@ void PyramidUpdateMem::LoadObjectSurfaces(short** data, short* vertexData, Sm64S
 
 	for (i = 0; i < numSurfaces; i++)
 	{
-		ReadSurfaceData(vertexData, data, *surfaces);
-		(*surfaces)->type = surfaceType;
-		(*surfaces)->objectIsPyramid = true;
+		ReadSurfaceData(vertexData, data, surfaceArrays, surfaceType);
 
 		if (hasForce)
-		{
 			*data += 4;
-		}
 		else
-		{
 			*data += 3;
-		}
-
-		(*surfaces)++;
 	}
 }
 
-void PyramidUpdateMem::ReadSurfaceData(short* vertexData, short** vertexIndices, Sm64Surface* surface)
+void PyramidUpdateMem::ReadSurfaceData(short* vertexData, short** vertexIndices, Sm64Surface** surfaceArrays, int surfaceType)
 {
 	int x1, y1, z1;
 	int x2, y2, z2;
@@ -247,6 +302,15 @@ void PyramidUpdateMem::ReadSurfaceData(short* vertexData, short** vertexIndices,
 	ny *= mag;
 	nz *= mag;
 
+	//Walls, Floors, and Ceilings
+	int surfaceIndex = 0;
+	if (ny > 0.01)
+		surfaceIndex = 1;
+	else if (ny < -0.01)
+		surfaceIndex = 2;
+
+	Sm64Surface* surface = surfaceArrays[surfaceIndex];
+
 	surface->vertex1[0] = x1;
 	surface->vertex2[0] = x2;
 	surface->vertex3[0] = x3;
@@ -267,6 +331,12 @@ void PyramidUpdateMem::ReadSurfaceData(short* vertexData, short** vertexIndices,
 
 	surface->lowerY = minY - 5;
 	surface->upperY = maxY + 5;
+
+	surface->type = surfaceType;
+	surface->objectIsPyramid = true;
+
+	//Should be safe as vector was resized to equal surface count for all 3 surface types.
+	surfaceArrays[surfaceIndex]++;
 }
 
 bool PyramidUpdateMem::FloorIsSlope(Sm64Surface* floor, u32 action)
@@ -354,7 +424,7 @@ void PyramidUpdate::load(const PyramidUpdateMem& state)
 
 std::size_t PyramidUpdate::getStateSize(const PyramidUpdateMem& state) const
 {
-	return 2 * sizeof(PyramidUpdateMem) + state.pyramid.surfaces.capacity() + state.marioObj.surfaces.capacity();
+	return 2 * sizeof(PyramidUpdateMem) + 3 * sizeof(PyramidUpdateMem::Sm64Surface) * (state.pyramid.surfaces[0].capacity() + state.marioObj.surfaces[0].capacity());
 }
 
 uint32_t PyramidUpdate::getCurrentFrame() const
@@ -364,11 +434,28 @@ uint32_t PyramidUpdate::getCurrentFrame() const
 
 void PyramidUpdate::advance()
 {
-	PyramidLoop();
-	TransformSurfaces();
+	UpdatePyramid();
+	TransformSurfaces(0); // Walls
+	TransformSurfaces(1); // Floors
+	TransformSurfaces(2); // Ceilings
 
-	Vec3f marioPos = {_state.marioState.posX, _state.marioState.posY , _state.marioState.posZ };
-	FindFloor(&marioPos, &(*_state.pyramid.surfaces.begin()), _state.pyramid.surfaces.size(), &_state.marioState.floorId);
+	Vec3f marioPos = { _state.marioState.posX, _state.marioState.posY , _state.marioState.posZ };
+	int64_t dynamicFloorId = -1;
+	float dynamicY = FindFloor(&marioPos, &(*_state.pyramid.surfaces[1].begin()), _state.pyramid.surfaces[1].size(), &dynamicFloorId);
+
+	int64_t staticFloorId = -1;
+	float staticY = FindFloor(&marioPos, &(*_state.staticFloors.begin()), _state.staticFloors.size(), &staticFloorId);
+
+	if (dynamicY > staticY)
+	{
+		_state.marioState.floorId = dynamicFloorId;
+		_state.marioState.isFloorStatic = false;
+	}
+	else
+	{
+		_state.marioState.floorId = staticFloorId;
+		_state.marioState.isFloorStatic = true;
+	}
 
 	_state.frame++;
 }
@@ -394,7 +481,7 @@ void* PyramidUpdate::addr(const char* symbol) const
 	return nullptr;
 }
 
-void PyramidUpdate::PyramidLoop()
+void PyramidUpdate::UpdatePyramid()
 {
 	f32 dx;
 	f32 dy;
@@ -505,15 +592,15 @@ void PyramidUpdate::CreateTransformFromNormals(Mat4& transform, float xNorm, flo
 	mtxf_align_terrain_normal(transform, normal, pos, 0);
 }
 
-void PyramidUpdate::TransformSurfaces()
+void PyramidUpdate::TransformSurfaces(int surfaceIndex)
 {
 	int maxY, minY;
 	float nx, ny, nz;
 	float mag;
 
-	PyramidUpdateMem::Sm64Surface* surfaces = &(*_state.pyramid.surfaces.begin());;
+	PyramidUpdateMem::Sm64Surface* surfaces = &(*_state.pyramid.surfaces[surfaceIndex].begin());;
 	Mat4* transform = &_state.pyramid.transform;
-	for (size_t i = 0; i < _state.pyramid.surfaces.size(); i++)
+	for (size_t i = 0; i < _state.pyramid.surfaces[surfaceIndex].size(); i++)
 	{
 		Vec3s v1 = {
 			surfaces->vertex1[0], surfaces->vertex1[1], surfaces->vertex1[2] };
@@ -588,7 +675,7 @@ void PyramidUpdate::TransformSurfaces()
 	}
 }
 
-void PyramidUpdate::FindFloor(Vec3f* marioPos, PyramidUpdateMem::Sm64Surface* surfaces, int surfaceCount, int64_t* floorId)
+float PyramidUpdate::FindFloor(Vec3f* marioPos, PyramidUpdateMem::Sm64Surface* surfaces, int surfaceCount, int64_t* floorId)
 {
 	int i;
 	PyramidUpdateMem::Sm64Surface* surf;
@@ -651,4 +738,6 @@ void PyramidUpdate::FindFloor(Vec3f* marioPos, PyramidUpdateMem::Sm64Surface* su
 		*floorId = i;
 		break;
 	}
+
+	return height;
 }

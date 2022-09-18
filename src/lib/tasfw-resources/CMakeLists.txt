@@ -2,7 +2,7 @@
 add_library(tasfw-resources
 	"src/LibSm64.cpp"
 	"src/PyramidUpdate.cpp"
-)
+    "src/PyramidUpdate_Mario.cpp")
 
 target_include_directories(tasfw-resources PUBLIC include)
 target_compile_features(tasfw-resources PUBLIC cxx_std_20)
