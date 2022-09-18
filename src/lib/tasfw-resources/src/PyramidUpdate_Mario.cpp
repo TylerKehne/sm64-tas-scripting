@@ -5,4 +5,7 @@
 #include <sm64/Math.hpp>
 #include <sm64/Sm64.hpp>
 
-
+void PyramidUpdate::UpdateMario()
+{
+    return;
+}
