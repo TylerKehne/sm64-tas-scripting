@@ -67,6 +67,11 @@ public:
 		float posX = 0;
 		float posY = 0;
 		float posZ = 0;
+		float velX = 0;
+		float velY = 0;
+		float velZ = 0;
+		Vec3s angle;
+		Vec3s angleVel;
 		int64_t floorId = -1;
 		bool isFloorStatic = false;
 		u32 action = 0;
@@ -74,10 +79,17 @@ public:
 		Sm64Surface* floor(PyramidUpdateMem& state);
 	};
 
+	class Sm64Camera
+	{
+	public:
+		s16 yaw = 0;
+	};
+
 	Sm64Object marioObj;
 	Sm64Object pyramid;
 	std::vector<Sm64Surface> staticFloors;
 	Sm64MarioState marioState;
+	Sm64Camera camera;
 	int64_t frame = 0;
 	uint32_t inputs = 0;
 
@@ -113,11 +125,15 @@ public:
 private:
 	PyramidUpdateMem _state;
 	void UpdatePyramid();
-	void UpdateMario();
 	void TransformSurfaces(int surfaceIndex);
 	float ApproachByIncrement(float goal, float src, float inc);
 	void CreateTransformFromNormals(Mat4& transform, float xNorm, float yNorm, float zNorm);
 	float FindFloor(Vec3f* marioPos, PyramidUpdateMem::Sm64Surface* surfaces, int surfaceCount, int64_t* floorId);
+
+	//Mario update methods
+	void UpdateMario();
+	void ExecuteMarioAction();
+	void CopyMarioStateToObject();
 
 	bool _enableMarioMovement = false;
 };

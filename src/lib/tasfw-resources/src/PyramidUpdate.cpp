@@ -5,6 +5,7 @@
 #include <sm64/Math.hpp>
 #include <sm64/Sm64.hpp>
 #include <sm64/SurfaceTerrains.hpp>
+#include <sm64/Camera.hpp>
 
 PyramidUpdateMem::PyramidUpdateMem(const LibSm64& resource, Object* pyramidLibSm64)
 {
@@ -37,6 +38,10 @@ PyramidUpdateMem::PyramidUpdateMem(const LibSm64& resource, Object* pyramidLibSm
 
 	//Add lava
 	AddStaticGeometry();
+
+	//Copy camera yaw
+	Camera* sm64Camera = *(Camera**)(resource.addr("gCamera"));
+	camera.yaw = sm64Camera->yaw;
 }
 
 void PyramidUpdateMem::AddStaticGeometry()

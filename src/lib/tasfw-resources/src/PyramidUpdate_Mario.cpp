@@ -9,3 +9,10 @@ void PyramidUpdate::UpdateMario()
 {
     return;
 }
+
+void PyramidUpdate::CopyMarioStateToObject()
+{
+    _state.marioObj.posX = _state.marioState.posX;
+    _state.marioObj.posY = _state.marioState.posY;
+    _state.marioObj.posZ = _state.marioState.posZ;
+}
