@@ -20,6 +20,7 @@
 
 #include "BitFsConfig.hpp"
 #include <tasfw/scripts/BitFsScApproach.hpp>
+#include <sm64/Sm64.hpp>
 
 using namespace std;
 
@@ -32,7 +33,7 @@ public:
 
 	bool execution()
 	{
-		LongLoad(3270); //3277, 3536
+		LongLoad(3300); //3277, 3536
 
 		//const BehaviorScript* trackPlatformBehavior = (const BehaviorScript*)(resource->addr("bhvPlatformOnTrack"));
 		//Object* objectPool = (Object*)(resource->addr("gObjectPool"));
@@ -44,9 +45,16 @@ public:
 		//trackPlatform->oPosX = -1945.0f;
 		//AdvanceFrameRead();
 		//Save();
+		Camera* camera = *(Camera**)(resource->addr("gCamera"));
+		MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
+		auto stick = Inputs::GetClosestInputByYawExact(-16384, 32, camera->yaw);
+		AdvanceFrameWrite(Inputs(0, stick.first, stick.second));
 
-		auto status = Modify<BitFsPyramidOscillation>(0.73f, 4, false);
-		auto status2 = Modify<BitFsScApproach>(16384, 4, 0.69f, status);
+		while (marioState->action != ACT_IDLE)
+			AdvanceFrameWrite(Inputs(0, 0, 0));
+
+		auto status = Modify<BitFsPyramidOscillation>(0.69f, 3, false);
+		auto status2 = Modify<BitFsScApproach>(0, 3, 0.69f, status);
 		return true;
 	}
 
