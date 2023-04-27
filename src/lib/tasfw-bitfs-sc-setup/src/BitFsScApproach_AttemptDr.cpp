@@ -7,6 +7,7 @@ class AttemptDrStatus
 public:
 	float relHeight = 0;
 	bool landed = false;
+	bool offPlatform = false;
 };
 
 bool BitFsScApproach_AttemptDr::validation()
@@ -26,7 +27,11 @@ bool BitFsScApproach_AttemptDr::validation()
 	}
 
 	if (action != ACT_WALKING)
+	{
+		CustomStatus.terminate = true;
 		return false;
+	}
+		
 
 	// Check if Mario is on the pyramid platform
 	Surface* floor = marioState->floor;
@@ -54,8 +59,12 @@ bool BitFsScApproach_AttemptDr::execution()
 	auto inputs = Inputs::GetClosestInputByYawHau(marioState->faceAngle[1], 32, camera->yaw);
 	AdvanceFrameWrite(Inputs(Buttons::B | Buttons::START, inputs.first, inputs.second));
 
+	//float z = marioState->pos[2];
+	//if (z > -356.01 && z < -355.99)
+	//	CustomStatus.terminate = false;
+
 	//move on to next frame in incumbent path if we encounter unexpected action
-	if (marioState->action != ACT_DIVE && marioState->action != ACT_DIVE_SLIDE)
+	if (marioState->action != ACT_DIVE && marioState->action != ACT_DIVE_SLIDE)// && marioState->action != ACT_BACKWARD_AIR_KB)
 		CustomStatus.terminate = true;
 
 	CustomStatus.diveRelHeight = marioState->pos[1] - marioState->floorHeight;
@@ -79,13 +88,14 @@ bool BitFsScApproach_AttemptDr::execution()
 	int16_t uphillAngleDiff = uphillAngleStatus.floorAngle + 0x8000 - marioState->faceAngle[1];
 	Rotation rotation = uphillAngleDiff > 0 ? Rotation::COUNTERCLOCKWISE : Rotation::CLOCKWISE;
 
+	//First 2 frames are the most important
 	auto status = ModifyCompareAdhoc<AttemptDrStatus, std::tuple<int8_t, int8_t>>(
 		[&](auto iteration, auto& params) //paramsGenerator
 		{
-			if (iteration >= 5)
+			if (iteration >= 33)
 				return false;
 
-			int16_t intendedYaw = marioState->faceAngle[1] + 4096 * iteration * rotation;
+			int16_t intendedYaw = marioState->faceAngle[1] + 512 * iteration * rotation;
 			params = std::tuple(Inputs::GetClosestInputByYawHau(intendedYaw, 32, camera->yaw));
 
 			return true;
@@ -95,7 +105,8 @@ bool BitFsScApproach_AttemptDr::execution()
 			AdvanceFrameWrite(Inputs(Buttons::B, stick_x, stick_y));
 			customStatus->relHeight = marioState->pos[1] - marioState->floorHeight;
 
-			if (marioState->action != ACT_FORWARD_ROLLOUT && marioState->action != ACT_FREEFALL_LAND_STOP)
+			//don't want to land right away
+			if (marioState->action != ACT_FORWARD_ROLLOUT)
 				return false;
 
 			if (abs(customStatus->relHeight) < 4.0f)
@@ -106,10 +117,10 @@ bool BitFsScApproach_AttemptDr::execution()
 					customStatus->landed = ModifyCompareAdhoc<std::tuple<>, std::tuple<int8_t, int8_t>>(
 						[&](auto iteration, auto& params) //paramsGenerator
 						{
-							if (iteration >= 5)
+							if (iteration >= 33)
 								return false;
 
-							int16_t intendedYaw = marioState->faceAngle[1] + 4096 * iteration * rotation;
+							int16_t intendedYaw = marioState->faceAngle[1] + 512 * iteration * rotation;
 							params = std::tuple(Inputs::GetClosestInputByYawHau(intendedYaw, 32, camera->yaw));
 
 							return true;
@@ -119,7 +130,7 @@ bool BitFsScApproach_AttemptDr::execution()
 							AdvanceFrameWrite(Inputs(0, stick_x, stick_y));
 							float relHeight = marioState->pos[1] - marioState->floorHeight;
 
-							if (marioState->action != ACT_FORWARD_ROLLOUT && marioState->action != ACT_FREEFALL_LAND_STOP)
+							if (marioState->action != ACT_FORWARD_ROLLOUT)
 								return false;
 
 							if (marioState->floor->object != pyramid)
@@ -139,21 +150,69 @@ bool BitFsScApproach_AttemptDr::execution()
 		},
 		[&](auto incumbent, auto challenger) //comparator
 		{
-			if (challenger->relHeight < incumbent->relHeight)
+			if (challenger->relHeight != 0 && challenger->relHeight < incumbent->relHeight)
 				return challenger;
 
 			return incumbent;
 		},
-		[&](auto status) { return status->landed; } //terminator
+		[&](auto challenger) { return challenger->landed; } //terminator
 	);
 
-	if (!status.executed)
+	//landed here means not actually landed, but within 4 units on both frames
+	AdhocScriptStatus<AttemptDrStatus> status2;
+	if (status.executed && status.landed)
 	{
-		CustomStatus.terminate = true;
-		return false;
+		while (true)
+		{
+			//Continue low DR until we pass platform edge
+			status2 = ModifyCompareAdhoc<AttemptDrStatus, std::tuple<int8_t, int8_t>>(
+				[&](auto iteration, auto& params) //paramsGenerator
+				{
+					if (iteration >= 33)
+						return false;
+
+					//sweep right to left
+					int16_t intendedYaw = marioState->faceAngle[1] - 0x4000 + 512 * iteration * rotation;
+					params = std::tuple(Inputs::GetClosestInputByYawHau(intendedYaw, 32, camera->yaw));
+
+					return true;
+				},
+				[&](auto customStatus, int8_t stick_x, int8_t stick_y) //script
+				{
+					AdvanceFrameWrite(Inputs(0, stick_x, stick_y));
+					float relHeight = marioState->pos[1] - marioState->floorHeight;
+					customStatus->relHeight = relHeight;
+
+					if (marioState->action != ACT_FORWARD_ROLLOUT)
+						return false;
+
+					if (marioState->floor->object != pyramid)
+					{
+						customStatus->offPlatform = true;
+						return true;
+					}
+
+					return abs(relHeight) < 4.0f;
+				},
+				[&](auto incumbent, auto challenger) //comparator
+				{
+					//Get as close to +4 as possible if still above platform
+					if (challenger->relHeight != 0 && challenger->relHeight > incumbent->relHeight)
+						return challenger;
+
+					return incumbent;
+				},
+				[&](auto challenger) //terminator
+				{
+					return challenger->offPlatform;
+				});
+
+			if (!status2.executed || status2.offPlatform)
+				break;
+		}
 	}
 
-	CustomStatus.drLanded = status.landed;
+	CustomStatus.drLanded = status.executed && status2.executed && status.landed && status2.offPlatform;
 	CustomStatus.drRelHeight = status.relHeight;
 
 	return true;

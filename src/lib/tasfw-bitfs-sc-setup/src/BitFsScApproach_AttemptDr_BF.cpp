@@ -1,6 +1,7 @@
 #include <tasfw/scripts/BitFsScApproach.hpp>
 #include <sm64/Camera.hpp>
 #include <sm64/Sm64.hpp>
+#include <sm64/ObjectFields.hpp>
 
 bool BitFsScApproach_AttemptDr_BF::validation()
 {
@@ -41,6 +42,20 @@ bool BitFsScApproach_AttemptDr_BF::execution()
 	//	8. if not already facing uphill or DR height improves, turn 2048 uphill and go back to step 1
 	//for now, return first valid solution, otherwise track the closest
 	Load(_minFrame);
+	
+	//Hack track platform x pos
+	/*
+	AdvanceFrameWrite(GetInputs(_minFrame - 1));
+	const BehaviorScript* trackPlatformBehavior = (const BehaviorScript*)(resource->addr("bhvPlatformOnTrack"));
+	Object* objectPool = (Object*)(resource->addr("gObjectPool"));
+	Object* trackPlatform = &objectPool[85];
+	if (trackPlatform->behavior != trackPlatformBehavior)
+		return false;
+	//! UNSAFE
+	trackPlatform->oPosX = -1945.0f;
+	Save();
+	*/
+
 	auto status = DynamicModifyCompareAdhoc<BitFsScApproach_AttemptDr::CustomScriptStatus, std::tuple<>>(
 		[&](auto iteration, auto& params) { return true; }, //paramsGenerator
 		[&](auto customStatus) //script
@@ -49,11 +64,11 @@ bool BitFsScApproach_AttemptDr_BF::execution()
 			bool marioIsFacingUphill = false;
 			*customStatus = DynamicModifyCompareAdhoc<BitFsScApproach_AttemptDr::CustomScriptStatus, std::tuple<>>(
 				[&](auto iteration, auto& params) { return !terminate; }, //paramsGenerator
-				[&](auto customStatus) //script
+				[&](auto customStatus2) //script
 				{
-					*customStatus = Modify<BitFsScApproach_AttemptDr>();
-					terminate = customStatus->terminate;
-					if (terminate || !customStatus->diveLanded)
+					*customStatus2 = Modify<BitFsScApproach_AttemptDr>();
+					terminate = customStatus2->terminate;
+					if (terminate || !customStatus2->diveLanded)
 						return false;
 
 					return true;
@@ -82,16 +97,16 @@ bool BitFsScApproach_AttemptDr_BF::execution()
 				},
 				[&](auto incumbent, auto challenger) //comparator
 				{
-					if (challenger->drRelHeight > -4.0f && challenger->drRelHeight < incumbent->drRelHeight)
+					if (challenger->drRelHeight > 0 && challenger->drRelHeight < incumbent->drRelHeight)
 						return challenger;
 
-					terminate = marioIsFacingUphill;
+					terminate = marioIsFacingUphill && challenger->drRelHeight != 0;
 					return incumbent;
 				},
 				[&](auto status) { return status->drLanded; } //terminator
 				).substatus;
 
-			return true;
+			return customStatus->diveLanded;
 		},
 		[&]() //mutator
 		{
@@ -100,7 +115,7 @@ bool BitFsScApproach_AttemptDr_BF::execution()
 		},
 		[&](auto incumbent, auto challenger) //comparator
 		{
-			if (challenger->drRelHeight > -4.0f && challenger->drRelHeight < incumbent->drRelHeight)
+			if (challenger->drRelHeight > 0 && challenger->drRelHeight < incumbent->drRelHeight)
 				return challenger;
 
 			return incumbent;

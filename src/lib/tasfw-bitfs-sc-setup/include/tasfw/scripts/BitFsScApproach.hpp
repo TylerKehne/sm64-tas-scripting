@@ -21,8 +21,8 @@ public:
 	};
 	CustomScriptStatus CustomStatus = CustomScriptStatus();
 
-	BitFsScApproach(int16_t roughTargetAngle, int quadrant, const ScriptStatus<BitFsPyramidOscillation>& oscStatus)
-		: _oscStatus(oscStatus), _roughTargetAngle(roughTargetAngle), _quadrant(quadrant) { }
+	BitFsScApproach(int16_t roughTargetAngle, int quadrant, float targetXzSum, const ScriptStatus<BitFsPyramidOscillation>& oscStatus)
+		: _oscStatus(oscStatus), _roughTargetAngle(roughTargetAngle), _targetXzSum(targetXzSum), _quadrant(quadrant) { }
 
 	bool validation();
 	bool execution();
@@ -38,7 +38,9 @@ private:
 	int64_t _maxFramePrev = -1;
 	float _targetXzSum = 0;
 	float _prevMaxSpeed = 0;
+	float _prevActualMaxSpeed = 0;
 	int16_t _lastOscAngle = 0;
+	float _xzSumIncrement = 0;
 };
 
 class BitFsScApproach_AttemptDr_BF : public Script<LibSm64>

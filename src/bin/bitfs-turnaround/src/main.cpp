@@ -13,12 +13,14 @@
 #include <sm64/Camera.hpp>
 #include <sm64/Trig.hpp>
 #include <sm64/Types.hpp>
+#include <sm64/ObjectFields.hpp>
 
 #include <tasfw/scripts/General.hpp>
 #include <tasfw/scripts/BitFSPyramidOscillation.hpp>
 
 #include "BitFsConfig.hpp"
 #include <tasfw/scripts/BitFsScApproach.hpp>
+#include <sm64/Sm64.hpp>
 
 using namespace std;
 
@@ -31,9 +33,28 @@ public:
 
 	bool execution()
 	{
-		LongLoad(3277); //3536
-		auto status = Modify<BitFsPyramidOscillation>(0.66f, 4);
-		auto status2 = Modify<BitFsScApproach>(16384, 4, status);
+		LongLoad(3300); //3277, 3536
+
+		//const BehaviorScript* trackPlatformBehavior = (const BehaviorScript*)(resource->addr("bhvPlatformOnTrack"));
+		//Object* objectPool = (Object*)(resource->addr("gObjectPool"));
+		//Object* trackPlatform = &objectPool[85];
+		//if (trackPlatform->behavior != trackPlatformBehavior)
+		//	return false;
+
+		//! UNSAFE
+		//trackPlatform->oPosX = -1945.0f;
+		//AdvanceFrameRead();
+		//Save();
+		Camera* camera = *(Camera**)(resource->addr("gCamera"));
+		MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
+		auto stick = Inputs::GetClosestInputByYawExact(-16384, 32, camera->yaw);
+		AdvanceFrameWrite(Inputs(0, stick.first, stick.second));
+
+		while (marioState->action != ACT_IDLE)
+			AdvanceFrameWrite(Inputs(0, 0, 0));
+
+		auto status = Modify<BitFsPyramidOscillation>(0.69f, 3, false);
+		auto status2 = Modify<BitFsScApproach>(0, 3, 0.69f, status);
 		return true;
 	}
 

@@ -136,13 +136,20 @@ bool BitFsPyramidOscillation_RunDownhill::execution()
 
 		if (CustomStatus.framePassedEquilibriumPoint == -1 && tiltDirection == targetTiltDirection && normalDiff >= 0.0099999f)
 		{
-			CustomStatus.passedEquilibriumSpeed		 = marioState->forwardVel;
+			CustomStatus.passedEquilibriumSpeed = marioState->forwardVel;
+
+			//Calculate distance-based tiebreaker when speeds are close
+			int16_t closestDiagonal = ((marioState->faceAngle[1] + 0x4000) & 0x8000) - 0x4000 * (_oscillationParams.quadrant & 1) + 0x2000;
+			CustomStatus.passedEquilibriumXzDist =
+				sqrtf(powf(sins(closestDiagonal) * marioState->pos[0], 2) + powf(coss(closestDiagonal) * marioState->pos[2], 2))
+				* (_oscillationParams.quadrant & 1 ? sins(closestDiagonal - 0x2000) : coss(closestDiagonal - 0x2000));
+
 			CustomStatus.framePassedEquilibriumPoint = GetCurrentFrame() - 1;
 			CustomStatus.finalXzSum =
 				pyramid->oTiltingPyramidNormalX * (_oscillationParams.quadrant < 3 ? 1 : -1) +
 				pyramid->oTiltingPyramidNormalZ * (_oscillationParams.quadrant == 1 || _oscillationParams.quadrant == 4 ? 1 : -1);
 
-			if (CustomStatus.finalXzSum < _oscillationParams.targetXzSum - 0.00001 && CustomStatus.finalXzSum < _oscillationParams.initialXzSum + 0.01f)
+			if (CustomStatus.finalXzSum < _oscillationParams.targetXzSum && CustomStatus.finalXzSum < _oscillationParams.initialXzSum + 0.01f)
 			{
 				CustomStatus.tooUphill = true;
 				return true;
