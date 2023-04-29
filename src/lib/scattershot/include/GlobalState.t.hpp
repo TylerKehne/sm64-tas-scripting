@@ -7,7 +7,7 @@ template <class TState>
 GlobalState<TState>::GlobalState(const Configuration& config) : config(config)
 {
     AllBlocks = (Block*)calloc(config.TotalThreads * config.MaxBlocks + config.MaxSharedBlocks, sizeof(Block));
-    AllSegments = (struct Segment**)malloc((config.MaxSharedSegments + config.TotalThreads * config.MaxLocalSegments) * sizeof(struct Segment*));
+    AllSegments = (Segment**)malloc((config.MaxSharedSegments + config.TotalThreads * config.MaxLocalSegments) * sizeof(Segment*));
     AllHashTables = (int*)calloc(config.TotalThreads * config.MaxHashes + config.MaxSharedHashes, sizeof(int));
     NBlocks = (int*)calloc(config.TotalThreads + 1, sizeof(int));
     NSegments = (int*)calloc(config.TotalThreads + 1, sizeof(int));

@@ -1,11 +1,12 @@
 #pragma once
 
 #include <tasfw/Script.hpp>
-#include <tasfw/Resource.hpp>
 #include <tasfw/SharedLib.hpp>
+#include <ScattershotThread.hpp>
 #include <omp.h>
 #include <vector>
 #include <filesystem>
+
 
 #ifndef SCATTERSHOT_H
 #define SCATTERSHOT_H
@@ -13,18 +14,15 @@
 template <class TState, derived_from_specialization_of<Resource> TResource>
 class Scattershot;
 
+template <class TState, derived_from_specialization_of<Resource> TResource>
+class ScattershotThread;
+
 template <class TState>
 class StateBin;
 
-class Segment
-{
-public:
-    Segment* parent;
-    uint64_t seed;
-    uint32_t nReferences;
-    uint8_t nFrames;
-    uint8_t depth;
-};
+class Segment;
+
+
 
 template <class TState>
 class Block
@@ -153,8 +151,10 @@ template <class TState, derived_from_specialization_of<Resource> TResource>
 class Scattershot
 {
 public:
+    friend class ScattershotThread<TState, TResource>;
+
     template <derived_from_specialization_of<Resource> TResource>
-    static void Run(Configuration configuration)// : config(configuration)
+    void Run(Configuration configuration)// : config(configuration)
     {
         config = Configuration(configuration);
         gState = GlobalState<TState>(config);
@@ -191,19 +191,6 @@ private:
         {
             func();
         }
-    }
-
-    template <typename F>
-    void SingleThread(F func)
-    {
-        #pragma omp barrier
-        {
-            if (omp_get_thread_num() == 0)
-                func();
-        }
-        #pragma omp barrier
-
-        return;
     }
 };
 
