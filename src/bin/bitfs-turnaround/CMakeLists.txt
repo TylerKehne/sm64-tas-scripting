@@ -4,6 +4,7 @@ add_executable(bitfs-turn
 	"src/BitFsConfig.cpp"
 	"src/BitFsConfig.hpp"
 	"src/main.cpp"
+	"src/Scattershot_BitfsDr.hpp"
 )
 target_compile_definitions(bitfs-turn PRIVATE cxx_std_20)
 target_link_libraries(bitfs-turn PRIVATE 
@@ -13,6 +14,7 @@ target_link_libraries(bitfs-turn PRIVATE
 	tasfw::scripts_bitfs_pyramid_osc 
 	tasfw-bitfs-sc-setup
 	nlohmann_json::nlohmann_json
+	tasfw::scattershot
 )
 
 include(MatchArchFlag)

@@ -123,6 +123,8 @@ void GlobalState<TState>::MergeState(int mainIteration)
 
     if (mainIteration % (config.ShotsPerMerge * config.MergesPerSegmentGC) == 0)
         SegmentGarbageCollection();
+
+    printf("\nThread ALL Loop %d blocks %d\n", mainIteration, NBlocks[config.TotalThreads]);
 }
 
 #endif

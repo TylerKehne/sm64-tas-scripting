@@ -21,6 +21,8 @@
 #include "BitFsConfig.hpp"
 #include <tasfw/scripts/BitFsScApproach.hpp>
 #include <sm64/Sm64.hpp>
+#include "Scattershot.hpp"
+#include "Scattershot_BitfsDr.hpp"
 
 using namespace std;
 
@@ -70,6 +72,25 @@ public:
 		return true;
 	}
 };
+
+void InitConfiguration(Configuration& configuration)
+{
+	configuration.StartFrame = 3545;
+	configuration.SegmentLength = 10;
+	configuration.MaxSegments = 1024;
+	configuration.MaxBlocks = 500000;
+	configuration.MaxHashes = 10 * configuration.MaxBlocks;
+	configuration.MaxSharedBlocks = 20000000;
+	configuration.MaxSharedHashes = 10 * configuration.MaxSharedBlocks;
+	configuration.TotalThreads = 4;
+	configuration.MaxSharedSegments = 25000000;
+	configuration.MaxLocalSegments = 2000000;
+	configuration.MaxLightningLength = 10000;
+	configuration.MaxShots = 1000000000;
+	configuration.SegmentsPerShot = 200;
+	configuration.ShotsPerMerge = 300;
+	configuration.MergesPerSegmentGC = 10;
+}
 
 int main(int argc, const char* argv[])
 {

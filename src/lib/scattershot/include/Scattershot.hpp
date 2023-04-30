@@ -22,31 +22,8 @@ class StateBin;
 
 class Segment;
 
-
-
 template <class TState>
-class Block
-{
-public:
-    float fitness;
-    Segment* tailSegment;
-    StateBin<TState> stateBin;
-
-    int DiffFrameCount()
-    {
-        int nFrames = 0;
-        Segment* currentSegment = tailSegment;
-        //if (tailSeg->depth == 0) { printf("tailSeg depth is 0!\n"); }
-        while (currentSegment != 0)
-        {
-            //if (curSeg->depth == 0) { printf("curSeg depth is 0!\n"); }
-            nFrames += currentSegment->nFrames;
-            currentSegment = currentSegment->parent;
-        }
-
-        return nFrames;
-    }
-};
+class Block;
 
 template <class TState>
 class StateBin {
@@ -93,6 +70,11 @@ public:
         return (sizeof(*this.state) == sizeof(toCompare.state)) &&
             (std::memcmp(state, &toCompare.state, sizeof(*this.state)) == 0);
     }
+
+    bool operator!=(const StateBin<TState>& toCompare) const
+    {
+        return !(*this == toCompare);
+    }
 };
 
 class Configuration
@@ -113,6 +95,7 @@ public:
     int SegmentsPerShot;
     int ShotsPerMerge;
     int MergesPerSegmentGC;
+    std::filesystem::path M64Path;
     std::vector<std::filesystem::path> ResourcePaths;
 
     template <class TContainer, typename TElement = typename TContainer::value_type>
@@ -153,14 +136,18 @@ class Scattershot
 public:
     friend class ScattershotThread<TState, TResource>;
 
-    template <derived_from_specialization_of<Resource> TResource>
-    void Run(Configuration configuration)// : config(configuration)
+    void Run(const Configuration& configuration)
     {
-        config = Configuration(configuration);
+        config = configuration;
         gState = GlobalState<TState>(config);
         MultiThread(configuration.TotalThreads, [&]()
             {
-
+                int threadId = omp_get_thread_num();
+                if (threadId < config.ResourcePaths.size())
+                {
+                    auto resourcePath = config.ResourcePaths[threadId];
+                    auto status = ScattershotThread::Main<ScattershotThread>(config.M64Path, resourcePath, *this, threadId);
+                }
             });
     }
 
@@ -180,7 +167,7 @@ protected:
     
 
 private:
-    const Configuration config;
+    const Configuration& config;
     GlobalState<TState> gState;
 
     template <typename F>

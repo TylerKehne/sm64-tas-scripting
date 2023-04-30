@@ -7,20 +7,12 @@
 #include <omp.h>
 #include <vector>
 #include <filesystem>
+#include <map>
+#include <unordered_set>
 
 
 #ifndef SCATTERSHOT_THREAD_H
 #define SCATTERSHOT_THREAD_H
-
-class Segment
-{
-public:
-    Segment* parent;
-    uint64_t seed;
-    uint32_t nReferences;
-    uint8_t nFrames;
-    uint8_t depth;
-};
 
 template <class TState, derived_from_specialization_of<Resource> TResource>
 class Scattershot;
@@ -28,10 +20,41 @@ class Scattershot;
 template <class TState>
 class StateBin;
 
-template <class TState>
-class Block;
-
 class Configuration;
+
+class Segment
+{
+public:
+    Segment* parent;
+    uint64_t seed;
+    uint32_t nReferences;
+    uint8_t nScripts;
+    uint8_t depth;
+};
+
+template <class TState>
+class Block
+{
+public:
+    float fitness;
+    Segment* tailSegment;
+    StateBin<TState> stateBin;
+
+    int DiffFrameCount()
+    {
+        int nFrames = 0;
+        Segment* currentSegment = tailSegment;
+        //if (tailSeg->depth == 0) { printf("tailSeg depth is 0!\n"); }
+        while (currentSegment != 0)
+        {
+            //if (curSeg->depth == 0) { printf("curSeg depth is 0!\n"); }
+            nFrames += currentSegment->nFrames;
+            currentSegment = currentSegment->parent;
+        }
+
+        return nFrames;
+    }
+};
 
 template <class TState, derived_from_specialization_of<Resource> TResource>
 class ThreadState
@@ -59,7 +82,7 @@ public:
     void Initialize(StateBin<TState> initTruncPos);
     bool SelectBaseBlock(int mainIteration);
     bool ValidateBaseBlock(StateBin<TState> baseBlockStateBin);
-    void ProcessNewBlock(uint64_t prevRngSeed, int nFrames, StateBin<TState> newPos, float newFitness);
+    void ProcessNewBlock(uint64_t baseRngHash, int nScripts, StateBin<TState> newStateBin, float newFitness);
     //void PrintStatus(int mainIteration);
 };
 
@@ -68,14 +91,6 @@ class ScattershotThread : public TopLevelScript<TResource>
 {
 public:
     enum class MovementOptions { };
-
-    class CustomScriptStatus
-    {
-    public:
-        short startCourse;
-        short startArea;
-    };
-    CustomScriptStatus CustomStatus = CustomScriptStatus();
 
     Scattershot<TState, TResource>& scattershot;
     const Configuration& config;
@@ -87,43 +102,88 @@ public:
         tState = ThreadState(scattershot, id);
     }
 
+    template <class TState, derived_from_specialization_of<Resource> TResource>
+    static void Scattershot(const Configuration& configuration)
+    {
+        auto scattershot = Scattershot<TState, TResource>();
+        scattershot.Run(configuration);
+    }
+
+    MovementOptions ChooseMovementOption(uint64_t rngHash, std::map<MovementOptions, double> weightedOptions)
+    {
+        if (weightedOptions.empty)
+            throw std::runtime_error("No movement options provided.");
+
+        double maxRng = 10000.0;
+
+        double totalWeight = 0;
+        for (const auto& pair : weightedOptions)
+            totalWeight += pair.second;
+
+        double rng = rngHash % 10000;
+        double rngRangeMin = 0;
+        for (const auto& pair : weightedOptions)
+        {
+            double rngRangeMax = rngRangeMin + pair.second * maxRng / totalWeight;
+            if (rng >= rngRangeMin && rng < rngRangeMax)
+                return pair.first;
+
+            rngRangeMin = rngRangeMax;
+        }
+
+        return weightedOptions.rbegin()->first;
+    }
+
     bool validation() { return true; }
+
     bool assertion() { return true; }
+
     bool execution()
     {
         LongLoad(config.StartFrame);
         tState.Initialize();
 
         // Record start course/area for validation (generally scattershot has no cross-level value)
-        CustomStatus.startCourse = *(short*)this->resource->addr("gCurrCourseNum");
-        CustomStatus.startArea = *(short*)this->resource->addr("gCurrAreaIndex");
+        startCourse = *(short*)this->resource->addr("gCurrCourseNum");
+        startArea = *(short*)this->resource->addr("gCurrAreaIndex");
 
-        for (int mainIteration = 0; mainIteration <= config.MaxShots; mainIteration++)
+        for (int shot = 0; shot <= config.MaxShots; shot++)
         {
             // ALWAYS START WITH A MERGE SO THE SHARED BLOCKS ARE OK.
-            if (mainIteration % config.ShotsPerMerge == 0)
+            if (shot % config.ShotsPerMerge == 0)
                 SingleThread([&]() { scattershot.gState.MergeState(); });
 
             // Pick a block to "fire a scattershot" at
-            if (!tState.SelectBaseBlock(mainIteration))
+            if (!tState.SelectBaseBlock(shot))
                 break;
 
             ExecuteAdhoc([&]()
                 {
-                    DecodeAndExecuteBaseBlockDiff();
+                    DecodeBaseBlockDiffAndApply();
+
+                    if (tState.ValidateBaseBlock(GetStateBinSafe()))
+                        return false;
+
+                    for (int segment = 0; segment < config.SegmentsPerShot; segment++)
+                        ExecuteFromBaseBlockAndEncode();
 
                     return true;
                 });
-
         }
 
         return true;
     }
 
-    virtual MovementOptions GetMovementOption(uint64_t rngHash) = 0;
-    virtual bool ApplyMovement(MovementOptions movementOption) = 0;
+    virtual std::unordered_set<MovementOptions> GetMovementOptions(uint64_t rngHash) = 0;
+    virtual bool ApplyMovement(std::unordered_set<MovementOptions> movementOptions, uint64_t rngHash) = 0;
+    virtual StateBin<TState> GetStateBin() = 0;
+    virtual bool ValidateBlock() = 0;
+    virtual float GetStateFitness() = 0;
 
 private:
+    short startCourse;
+    short startArea;
+
     template <typename F>
     void SingleThread(F func)
     {
@@ -137,7 +197,52 @@ private:
         return;
     }
 
-    AdhocBaseScriptStatus DecodeAndExecuteBaseBlockDiff()
+    bool ValidateCourseAndArea()
+    {
+        return startCourse == *(short*)this->resource->addr("gCurrCourseNum")
+            && startArea == *(short*)this->resource->addr("gCurrAreaIndex");
+    }
+
+    uint64_t ChooseScriptAndApply(uint64_t rngHash)
+    {
+        std::unordered_set<MovementOptions> movementOptions;
+        ExecuteAdhoc([&]()
+            {
+                movementOptions = GetMovementOptions(rngHash);
+                return true;
+            });
+
+        // Execute script and update rng hash
+        rngHash = Scattershot<TState, TResource>::GetHash(rngHash);
+        ModifyAdhoc([&]() { return ApplyMovement(movementOptions, rngHash); });
+        return rngHash = Scattershot<TState, TResource>::GetHash(rngHash);
+    }
+
+    StateBin<TState> GetStateBinSafe()
+    {
+        StateBin<TState> stateBin;
+        ExecuteAdhoc([&]()
+            {
+                stateBin = GetStateBin();
+                return true;
+            });
+
+        return stateBin;
+    }
+
+    float GetStateFitnessSafe()
+    {
+        float fitness;
+        ExecuteAdhoc([&]()
+            {
+                fitness = GetStateFitness();
+                return true;
+            });
+
+        return fitness;
+    }
+
+    AdhocBaseScriptStatus DecodeBaseBlockDiffAndApply()
     {
         return ModifyAdhoc([&]()
             {
@@ -156,22 +261,35 @@ private:
                     }
 
                     uint64_t inputRngHash = currentSegment->seed;
-                    for (int f = 0; f < currentSegment->nFrames; f++)
-                    {
-                        // Execute script and update rng hash
-                        MovementOptions movementOption;
-                        ExecuteAdhoc([&]()
-                            {
-                                movementOption = GetMovementOption();
-                                return true;
-                            });
-
-                        ModifyAdhoc([&]() { return ApplyMovement(movementOption); });
-                        inputRngHash = Scattershot<TState, TResource>::GetHash(inputRngHash);
-                    }
+                    for (int script = 0; script < currentSegment->nScripts; script++)
+                        inputRngHash = ChooseScriptAndApply();
                 }
 
                 return true;
+            });
+    }
+
+    AdhocBaseScriptStatus ExecuteFromBaseBlockAndEncode()
+    {
+        return ExecuteAdhoc([&]()
+            {
+                StateBin<TState> prevStateBin = GetStateBinSafe();
+                uint64_t baseRngHash = tState.RngHash;
+
+                for (int n = 0; n < config.SegmentLength; n++)
+                {
+                    tState.RngHash = ChooseScriptAndApply();
+                    if (!ValidateCourseAndArea() || !ExecuteAdhoc([&]() { return ValidateBlock(); }).executed)
+                        break;
+
+                    auto newStateBin = GetStateBinSafe();
+                    if (newStateBin != prevStateBin && newStateBin != tState.BaseBlock.stateBin)
+                    {
+                        // Create and add block to list.
+                        tState.ProcessNewBlock(baseRngHash, n, newStateBin, GetStateFitnessSafe());
+                        prevStateBin = newStateBin; // TODO: Why this here?
+                    }
+                }
             });
     }
 };

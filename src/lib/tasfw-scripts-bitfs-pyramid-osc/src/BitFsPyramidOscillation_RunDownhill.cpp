@@ -116,43 +116,46 @@ bool BitFsPyramidOscillation_RunDownhill::execution()
 		// Check if equilibrium point has been passed
 		// The axis we want to check is determined by whichever normal component
 		// is lesser
-		int tiltDirection, targetTiltDirection;
-		float normalDiff;
-		if (fabs(pyramid->oTiltingPyramidNormalX) <
-			fabs(pyramid->oTiltingPyramidNormalZ))
+		if (!_oscillationParams.ignoreXzSum)
 		{
-			tiltDirection =
-				Script::sign(pyramid->oTiltingPyramidNormalX - prevNormalX);
-			targetTiltDirection = targetXDirection;
-			normalDiff = fabs(pyramid->oTiltingPyramidNormalX - prevNormalX);
-		}
-		else
-		{
-			tiltDirection =
-				Script::sign(pyramid->oTiltingPyramidNormalZ - prevNormalZ);
-			targetTiltDirection = targetZDirection;
-			normalDiff = fabs(pyramid->oTiltingPyramidNormalZ - prevNormalZ);
-		}
-
-		if (CustomStatus.framePassedEquilibriumPoint == -1 && tiltDirection == targetTiltDirection && normalDiff >= 0.0099999f)
-		{
-			CustomStatus.passedEquilibriumSpeed = marioState->forwardVel;
-
-			//Calculate distance-based tiebreaker when speeds are close
-			int16_t closestDiagonal = ((marioState->faceAngle[1] + 0x4000) & 0x8000) - 0x4000 * (_oscillationParams.quadrant & 1) + 0x2000;
-			CustomStatus.passedEquilibriumXzDist =
-				sqrtf(powf(sins(closestDiagonal) * marioState->pos[0], 2) + powf(coss(closestDiagonal) * marioState->pos[2], 2))
-				* (_oscillationParams.quadrant & 1 ? sins(closestDiagonal - 0x2000) : coss(closestDiagonal - 0x2000));
-
-			CustomStatus.framePassedEquilibriumPoint = GetCurrentFrame() - 1;
-			CustomStatus.finalXzSum =
-				pyramid->oTiltingPyramidNormalX * (_oscillationParams.quadrant < 3 ? 1 : -1) +
-				pyramid->oTiltingPyramidNormalZ * (_oscillationParams.quadrant == 1 || _oscillationParams.quadrant == 4 ? 1 : -1);
-
-			if (CustomStatus.finalXzSum < _oscillationParams.targetXzSum && CustomStatus.finalXzSum < _oscillationParams.initialXzSum + 0.01f)
+			int tiltDirection, targetTiltDirection;
+			float normalDiff;
+			if (fabs(pyramid->oTiltingPyramidNormalX) <
+				fabs(pyramid->oTiltingPyramidNormalZ))
 			{
-				CustomStatus.tooUphill = true;
-				return true;
+				tiltDirection =
+					Script::sign(pyramid->oTiltingPyramidNormalX - prevNormalX);
+				targetTiltDirection = targetXDirection;
+				normalDiff = fabs(pyramid->oTiltingPyramidNormalX - prevNormalX);
+			}
+			else
+			{
+				tiltDirection =
+					Script::sign(pyramid->oTiltingPyramidNormalZ - prevNormalZ);
+				targetTiltDirection = targetZDirection;
+				normalDiff = fabs(pyramid->oTiltingPyramidNormalZ - prevNormalZ);
+			}
+
+			if (CustomStatus.framePassedEquilibriumPoint == -1 && tiltDirection == targetTiltDirection && normalDiff >= 0.0099999f)
+			{
+				CustomStatus.passedEquilibriumSpeed = marioState->forwardVel;
+
+				//Calculate distance-based tiebreaker when speeds are close
+				int16_t closestDiagonal = ((marioState->faceAngle[1] + 0x4000) & 0x8000) - 0x4000 * (_oscillationParams.quadrant & 1) + 0x2000;
+				CustomStatus.passedEquilibriumXzDist =
+					sqrtf(powf(sins(closestDiagonal) * marioState->pos[0], 2) + powf(coss(closestDiagonal) * marioState->pos[2], 2))
+					* (_oscillationParams.quadrant & 1 ? sins(closestDiagonal - 0x2000) : coss(closestDiagonal - 0x2000));
+
+				CustomStatus.framePassedEquilibriumPoint = GetCurrentFrame() - 1;
+				CustomStatus.finalXzSum =
+					pyramid->oTiltingPyramidNormalX * (_oscillationParams.quadrant < 3 ? 1 : -1) +
+					pyramid->oTiltingPyramidNormalZ * (_oscillationParams.quadrant == 1 || _oscillationParams.quadrant == 4 ? 1 : -1);
+
+				if (CustomStatus.finalXzSum < _oscillationParams.targetXzSum && CustomStatus.finalXzSum < _oscillationParams.initialXzSum + 0.01f)
+				{
+					CustomStatus.tooUphill = true;
+					return true;
+				}
 			}
 		}
 	}
