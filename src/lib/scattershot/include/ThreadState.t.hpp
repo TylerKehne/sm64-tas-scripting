@@ -4,10 +4,9 @@
 #else
 
 template <class TState, derived_from_specialization_of<Resource> TResource>
-ThreadState<TState, TResource>::ThreadState(Scattershot<TState, TResource>& scattershot, int id) : scattershot(scattershot)
+ThreadState<TState, TResource>::ThreadState(Scattershot<TState, TResource>& scattershot, int id) : scattershot(scattershot), config(scattershot.config)
 {
     Id = id;
-    config = scattershot.config;
     Blocks = scattershot.gState.AllBlocks + Id * config.MaxBlocks;
     HashTable = scattershot.gState.AllHashTables + Id * config.MaxHashes;
     RngHash = (uint64_t)(Id + 173) * 5786766484692217813;
@@ -21,7 +20,7 @@ void ThreadState<TState, TResource>::Initialize(StateBin<TState> initStateBin)
     // Initial block
     Blocks[0].stateBin = initStateBin; //CHEAT TODO NOTE
     Blocks[0].tailSegment = (Segment*)malloc(sizeof(Segment)); //Instantiate root segment
-    Blocks[0].tailSegment->numFrames = 0;
+    Blocks[0].tailSegment->nScripts = 0;
     Blocks[0].tailSegment->parent = NULL;
     Blocks[0].tailSegment->nReferences = 0;
     Blocks[0].tailSegment->depth = 1;
@@ -112,7 +111,7 @@ bool ThreadState<TState, TResource>::ValidateBaseBlock(StateBin<TState> baseBloc
 template <class TState, derived_from_specialization_of<Resource> TResource>
 void ThreadState<TState, TResource>::ProcessNewBlock(uint64_t baseRngHash, int nScripts, StateBin<TState> newStateBin, float newFitness)
 {
-    Block newBlock;
+    Block<TState> newBlock;
 
     // Create and add block to list.
     if (scattershot.gState.NBlocks[Id] == config.MaxBlocks)

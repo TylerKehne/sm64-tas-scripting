@@ -14,6 +14,32 @@
 #ifndef SCATTERSHOT_THREAD_H
 #define SCATTERSHOT_THREAD_H
 
+enum class MovementOptions
+{
+    // Joystick mag
+    MAX_MAGNITUDE,
+    ZERO_MAGNITUDE,
+    SAME_MAGNITUDE,
+    RANDOM_MAGNITUDE,
+
+    // Input angle
+    MATCH_FACING_YAW,
+    ANTI_FACING_YAW,
+    SAME_YAW,
+    RANDOM_YAW,
+
+    // Buttons
+    SAME_BUTTONS,
+    NO_BUTTONS,
+    RANDOM_BUTTONS,
+
+    // Scripts
+    NO_SCRIPT,
+    PBDR,
+    RUN_DOWNHILL,
+    REWIND
+};
+
 template <class TState, derived_from_specialization_of<Resource> TResource>
 class Scattershot;
 
@@ -39,6 +65,8 @@ public:
     float fitness;
     Segment* tailSegment;
     StateBin<TState> stateBin;
+
+
 
     int DiffFrameCount()
     {
@@ -90,28 +118,31 @@ template <class TState, derived_from_specialization_of<Resource> TResource>
 class ScattershotThread : public TopLevelScript<TResource>
 {
 public:
-    enum class MovementOptions { };
+    using Script<TResource>::LongLoad;
+    using Script<TResource>::ExecuteAdhoc;
+    using Script<TResource>::ModifyAdhoc;
 
     Scattershot<TState, TResource>& scattershot;
     const Configuration& config;
     ThreadState<TState, TResource> tState;
 
-    ScattershotThread(Scattershot<TState, TResource>& scattershot, int id) : scattershot(scattershot)
+    ScattershotThread(Scattershot<TState, TResource>& scattershot, int id)
+        : scattershot(scattershot), config(scattershot.config), tState(scattershot, id)
     {
-        config = scattershot.config;
-        tState = ThreadState(scattershot, id);
+        //config = scattershot.config;
+        //tState = ThreadState(scattershot, id);
     }
 
-    template <class TState, derived_from_specialization_of<Resource> TResource>
-    static void Scattershot(const Configuration& configuration)
+
+    //template <class TState, derived_from_specialization_of<Resource> TResource>
+    static Scattershot<TState, TResource> CreateScattershot(const Configuration& configuration)
     {
-        auto scattershot = Scattershot<TState, TResource>();
-        scattershot.Run(configuration);
+        return Scattershot<TState, TResource>(configuration);
     }
 
     MovementOptions ChooseMovementOption(uint64_t rngHash, std::map<MovementOptions, double> weightedOptions)
     {
-        if (weightedOptions.empty)
+        if (weightedOptions.empty())
             throw std::runtime_error("No movement options provided.");
 
         double maxRng = 10000.0;
@@ -141,7 +172,7 @@ public:
     bool execution()
     {
         LongLoad(config.StartFrame);
-        tState.Initialize();
+        tState.Initialize(GetStateBinSafe());
 
         // Record start course/area for validation (generally scattershot has no cross-level value)
         startCourse = *(short*)this->resource->addr("gCurrCourseNum");
@@ -151,7 +182,7 @@ public:
         {
             // ALWAYS START WITH A MERGE SO THE SHARED BLOCKS ARE OK.
             if (shot % config.ShotsPerMerge == 0)
-                SingleThread([&]() { scattershot.gState.MergeState(); });
+                SingleThread([&]() { scattershot.gState.MergeState(shot); });
 
             // Pick a block to "fire a scattershot" at
             if (!tState.SelectBaseBlock(shot))
@@ -262,7 +293,7 @@ private:
 
                     uint64_t inputRngHash = currentSegment->seed;
                     for (int script = 0; script < currentSegment->nScripts; script++)
-                        inputRngHash = ChooseScriptAndApply();
+                        inputRngHash = ChooseScriptAndApply(inputRngHash);
                 }
 
                 return true;
@@ -278,7 +309,7 @@ private:
 
                 for (int n = 0; n < config.SegmentLength; n++)
                 {
-                    tState.RngHash = ChooseScriptAndApply();
+                    tState.RngHash = ChooseScriptAndApply(tState.RngHash);
                     if (!ValidateCourseAndArea() || !ExecuteAdhoc([&]() { return ValidateBlock(); }).executed)
                         break;
 
@@ -290,6 +321,8 @@ private:
                         prevStateBin = newStateBin; // TODO: Why this here?
                     }
                 }
+
+                return true;
             });
     }
 };

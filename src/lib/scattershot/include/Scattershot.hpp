@@ -30,12 +30,40 @@ class StateBin {
 public:
     TState state;
 
-    int FindNewHashIndex(int* hashTable, int maxHashes)
+    StateBin() = default;
+    StateBin(TState state) : state(state) {}
+
+    /*
+    StateBin(const StateBin<TState>& toCopy)
+    {
+        state = toCopy.state;
+    }
+
+    template <typename... T>
+    StateBin(T&&... args)
+    {
+        state = TState(std::forward<T>(args)...);
+    }
+    */
+
+    template <typename T>
+    uint64_t GetHash(const T& toHash) const
+    {
+        std::hash<std::byte> byteHasher;
+        const std::byte* data = reinterpret_cast<const std::byte*>(&toHash);
+        uint64_t hashValue = 0;
+        for (std::size_t i = 0; i < sizeof(toHash); ++i)
+            hashValue ^= static_cast<uint64_t>(byteHasher(data[i])) + 0x9e3779b97f4a7c15ull + (hashValue << 6) + (hashValue >> 2);
+
+        return hashValue;
+    }
+
+    int FindNewHashIndex(int* hashTable, int maxHashes) const
     {
         uint64_t hash;
         for (int i = 0; i < 100; i++)
         {
-            hash = Scattershot::GetHash(hash);
+            hash = GetHash(hash);
             int hashIndex = hash % maxHashes;
             
             if (hashTable[hashIndex] == -1)
@@ -46,9 +74,9 @@ public:
         return -1;
     }
 
-    int GetBlockIndex(Block<TState>* blocks, int* hashTable, int maxHashes, int nMin, int nMax)
+    int GetBlockIndex(Block<TState>* blocks, int* hashTable, int maxHashes, int nMin, int nMax) const
     {
-        uint64_t hash = Scattershot::GetHash(state);
+        uint64_t hash = GetHash(state);
         for (int i = 0; i < 100; i++)
         {
             int blockIndex = hashTable[hash % maxHashes];
@@ -58,7 +86,7 @@ public:
             if (blockIndex >= nMin && blockIndex < nMax && blocks[blockIndex].stateBin == *this)
                 return blockIndex;
 
-            hash = Scattershot::GetHash(hash);
+            hash = GetHash(hash);
         }
 
         //printf("Failed to find block from hash after 100 tries!\n");
@@ -67,8 +95,7 @@ public:
 
     bool operator==(const StateBin<TState>& toCompare) const {
         // Compare byte representations
-        return (sizeof(*this.state) == sizeof(toCompare.state)) &&
-            (std::memcmp(state, &toCompare.state, sizeof(*this.state)) == 0);
+        return std::memcmp(&state, &toCompare.state, sizeof(TState)) == 0;
     }
 
     bool operator!=(const StateBin<TState>& toCompare) const
@@ -122,6 +149,7 @@ public:
     int* SharedHashTable;
     const Configuration& config;
 
+
     GlobalState(const Configuration& config);
 
     void MergeState(int mainIteration);
@@ -134,19 +162,29 @@ template <class TState, derived_from_specialization_of<Resource> TResource>
 class Scattershot
 {
 public:
+    const Configuration& config;
+    GlobalState<TState> gState;
     friend class ScattershotThread<TState, TResource>;
 
-    void Run(const Configuration& configuration)
+    Scattershot(const Configuration& configuration) : config(configuration), gState(configuration)
     {
-        config = configuration;
-        gState = GlobalState<TState>(config);
-        MultiThread(configuration.TotalThreads, [&]()
+        //gState = GlobalState<TState>(config);
+    }
+
+    template <derived_from_specialization_of<ScattershotThread> TScattershotThread>
+    static void Run(const Configuration& configuration)
+    {
+        auto scattershot = TScattershotThread::CreateScattershot(configuration);
+        scattershot.MultiThread(configuration.TotalThreads, [&]()
             {
                 int threadId = omp_get_thread_num();
-                if (threadId < config.ResourcePaths.size())
+                if (threadId < configuration.ResourcePaths.size())
                 {
-                    auto resourcePath = config.ResourcePaths[threadId];
-                    auto status = ScattershotThread::Main<ScattershotThread>(config.M64Path, resourcePath, *this, threadId);
+                    M64 m64 = M64(configuration.M64Path);
+                    m64.load();
+
+                    auto resourcePath = configuration.ResourcePaths[threadId];
+                    auto status = TScattershotThread::template MainConfig<TScattershotThread>(m64, resourcePath, scattershot, threadId);
                 }
             });
     }
@@ -167,8 +205,6 @@ protected:
     
 
 private:
-    const Configuration& config;
-    GlobalState<TState> gState;
 
     template <typename F>
     void MultiThread(int nThreads, F func)

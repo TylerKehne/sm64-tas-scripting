@@ -12,6 +12,8 @@ public:
     uint8_t z;
     uint64_t s;
 
+    SShotState_BitfsDr() = default;
+
     SShotState_BitfsDr(uint8_t x, uint8_t y, uint8_t z, uint64_t s) : x(x), y(y), z(z), s(s) { }
 };
 
@@ -23,38 +25,19 @@ public:
     using Script<TResource>::GetCurrentFrame;
     using Script<TResource>::AdvanceFrameWrite;
     using ScattershotThread<TState, TResource>::config;
+    using ScattershotThread<TState, TResource>::ChooseMovementOption;
+    using Script<TResource>::template Modify;
+    using Script<TResource>::Load;
+    using Script<TResource>::GetInputs;
+    using Script<TResource>::ModifyAdhoc;
 
-    enum class MovementOptions
-    {
-        // Joystick mag
-        MAX_MAGNITUDE,
-        ZERO_MAGNITUDE,
-        SAME_MAGNITUDE,
-        RANDOM_MAGNITUDE,
-
-        // Input angle
-        MATCH_FACING_YAW,
-        ANTI_FACING_YAW,
-        SAME_YAW,
-        RANDOM_YAW,
-
-        // Buttons
-        SAME_BUTTONS,
-        NO_BUTTONS,
-        RANDOM_BUTTONS,
-
-        // Scripts
-        NO_SCRIPT,
-        PBDR,
-        RUN_DOWNHILL,
-        REWIND
-    };
+    Scattershot_BitfsDr(Scattershot<TState, TResource>& scattershot, int id) : ScattershotThread<TState, TResource>(scattershot, id) {}
 
     std::unordered_set<MovementOptions> GetMovementOptions(uint64_t rngHash)
     {
         std::unordered_set<MovementOptions> movementOptions;
 
-        movementOptions.insert(ChooseMovementOption(rngHash, 
+        movementOptions.insert(ChooseMovementOption(rngHash,
             {
                 {MovementOptions::MAX_MAGNITUDE, 4},
                 {MovementOptions::ZERO_MAGNITUDE, 1},
@@ -101,7 +84,8 @@ public:
                     BitFsPyramidOscillation_ParamsDto params;
                     params.roughTargetAngle = marioState->faceAngle[1];
                     params.ignoreXzSum = true;
-                    if (Modify<BitFsPyramidOscillation_RunDownhill>(params).asserted)
+                    auto status = Modify<BitFsPyramidOscillation_RunDownhill>(params);
+                    if (status.asserted)
                         return true;
                 }
                 else if (movementOptions.contains(MovementOptions::PBDR) && Pbdr(rngHash))
@@ -209,13 +193,13 @@ public:
             s *= 2;
             s += 1; //mark bad norm regime
 
-            return SShotState_BitfsDr
-            (
+            return StateBin<SShotState_BitfsDr>
+            (SShotState_BitfsDr(
                 (uint8_t)floor((marioState->pos[0] + 2330) / 200),
                 (uint8_t)floor((marioState->pos[1] + 3200) / 400),
                 (uint8_t)floor((marioState->pos[2] + 1090) / 200),
                 s
-            );
+            ));
         }
 
         s *= 200;
@@ -239,13 +223,13 @@ public:
 
         s *= 2; //mark good norm regime
 
-        return SShotState_BitfsDr
-        (
+        return StateBin<SShotState_BitfsDr>
+        (SShotState_BitfsDr(
             (uint8_t)floor((marioState->pos[0] + 2330) / 10),
             (uint8_t)floor((marioState->pos[1] + 3200) / 50),
             (uint8_t)floor((marioState->pos[2] + 1090) / 10),
             s
-        );
+        ));
     }
 
     bool ValidateBlock()
@@ -310,7 +294,7 @@ private:
     uint64_t UpdateHashReturnPrev(uint64_t& rngHash)
     {
         uint64_t prevHash = rngHash;
-        rngHash = Scattershot<TState, TResource>(rngHash);
+        rngHash = Scattershot<TState, TResource>::GetHash(rngHash);
         return prevHash;
     }
 
@@ -333,7 +317,7 @@ private:
                 AdvanceFrameWrite(Inputs(0, 0, 0));
 
                 int16_t intendedYaw2 = marioState->faceAngle[1] + UpdateHashReturnPrev(rngHash) % 32768 - 16384;
-                auto stick = Inputs::GetClosestInputByYawHau(intendedYaw, 32, camera->yaw);
+                stick = Inputs::GetClosestInputByYawHau(intendedYaw, 32, camera->yaw);
                 AdvanceFrameWrite(Inputs(Buttons::B, stick.first, stick.second));
 
                 return true;

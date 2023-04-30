@@ -6,7 +6,7 @@
 template <class TState>
 GlobalState<TState>::GlobalState(const Configuration& config) : config(config)
 {
-    AllBlocks = (Block*)calloc(config.TotalThreads * config.MaxBlocks + config.MaxSharedBlocks, sizeof(Block));
+    AllBlocks = (Block<TState>*)calloc(config.TotalThreads * config.MaxBlocks + config.MaxSharedBlocks, sizeof(Block<TState>));
     AllSegments = (Segment**)malloc((config.MaxSharedSegments + config.TotalThreads * config.MaxLocalSegments) * sizeof(Segment*));
     AllHashTables = (int*)calloc(config.TotalThreads * config.MaxHashes + config.MaxSharedHashes, sizeof(int));
     NBlocks = (int*)calloc(config.TotalThreads + 1, sizeof(int));
@@ -78,7 +78,7 @@ void GlobalState<TState>::SegmentGarbageCollection()
         segmentIndex < config.TotalThreads * config.MaxLocalSegments + NSegments[config.TotalThreads];
         segmentIndex++)
     {
-        AllSegments[segmentIndex]->refCount = 0;
+        AllSegments[segmentIndex]->nReferences = 0;
     }
 
     for (int segmentIndex = config.TotalThreads * config.MaxLocalSegments;
@@ -86,11 +86,11 @@ void GlobalState<TState>::SegmentGarbageCollection()
         segmentIndex++)
     {
         if (AllSegments[segmentIndex]->parent != 0)
-            AllSegments[segmentIndex]->parent->refCount++;
+            AllSegments[segmentIndex]->parent->nReferences++;
     }
 
     for (int blockIndex = 0; blockIndex < NBlocks[config.TotalThreads]; blockIndex++)
-        SharedBlocks[blockIndex].tailSeg->refCount++;
+        SharedBlocks[blockIndex].tailSegment->nReferences++;
 
     for (int segmentIndex = config.TotalThreads * config.MaxLocalSegments;
         segmentIndex < config.TotalThreads * config.MaxLocalSegments + NSegments[config.TotalThreads];
