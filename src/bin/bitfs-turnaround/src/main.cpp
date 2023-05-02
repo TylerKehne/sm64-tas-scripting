@@ -92,6 +92,7 @@ void InitConfiguration(Configuration& configuration)
 	configuration.SegmentsPerShot = 200;
 	configuration.ShotsPerMerge = 300;
 	configuration.MergesPerSegmentGC = 10;
+	configuration.StartFromRootEveryNShots = 15;
 	configuration.M64Path = std::filesystem::path("C:\\Users\\Tyler\\Documents\\repos\\sm64_tas_scripting\\res\\4_units_from_edge.m64");
 
 	configuration.SetResourcePaths(std::vector<std::string>

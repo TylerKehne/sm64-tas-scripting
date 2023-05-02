@@ -35,7 +35,7 @@ enum class MovementOptions
 
     // Scripts
     NO_SCRIPT,
-    PBDR,
+    PBD,
     RUN_DOWNHILL,
     REWIND
 };
@@ -121,6 +121,7 @@ public:
     using Script<TResource>::LongLoad;
     using Script<TResource>::ExecuteAdhoc;
     using Script<TResource>::ModifyAdhoc;
+    using Script<TResource>::Save;
 
     Scattershot<TState, TResource>& scattershot;
     const Configuration& config;
@@ -188,18 +189,21 @@ public:
             if (!tState.SelectBaseBlock(shot))
                 break;
 
-            ExecuteAdhoc([&]()
+            auto status = ExecuteAdhoc([&]()
                 {
                     DecodeBaseBlockDiffAndApply();
 
-                    if (tState.ValidateBaseBlock(GetStateBinSafe()))
+                    if (!tState.ValidateBaseBlock(GetStateBinSafe()))
                         return false;
 
+                    Save();
                     for (int segment = 0; segment < config.SegmentsPerShot; segment++)
                         ExecuteFromBaseBlockAndEncode();
 
                     return true;
                 });
+
+            //printf("%d %d %d %d\n", status.nLoads, status.nSaves, status.nFrameAdvances, status.executionDuration);
         }
 
         return true;

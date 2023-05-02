@@ -40,32 +40,32 @@ public:
         movementOptions.insert(ChooseMovementOption(rngHash,
             {
                 {MovementOptions::MAX_MAGNITUDE, 4},
-                {MovementOptions::ZERO_MAGNITUDE, 1},
-                {MovementOptions::SAME_MAGNITUDE, 1},
-                {MovementOptions::RANDOM_MAGNITUDE, 2}
+                {MovementOptions::ZERO_MAGNITUDE, 0},
+                {MovementOptions::SAME_MAGNITUDE, 0},
+                {MovementOptions::RANDOM_MAGNITUDE, 1}
             }));
 
         movementOptions.insert(ChooseMovementOption(rngHash,
             {
                 {MovementOptions::MATCH_FACING_YAW, 4},
-                {MovementOptions::ANTI_FACING_YAW, 0.5},
-                {MovementOptions::SAME_YAW, 1},
+                {MovementOptions::ANTI_FACING_YAW, 2},
+                {MovementOptions::SAME_YAW, 0},
                 {MovementOptions::RANDOM_YAW, 4}
             }));
 
         movementOptions.insert(ChooseMovementOption(rngHash,
             {
-                {MovementOptions::SAME_BUTTONS, 1},
-                {MovementOptions::NO_BUTTONS, 2},
-                {MovementOptions::RANDOM_BUTTONS, 1}
+                {MovementOptions::SAME_BUTTONS, 0},
+                {MovementOptions::NO_BUTTONS, 10},
+                {MovementOptions::RANDOM_BUTTONS, 10}
             }));
 
         movementOptions.insert(ChooseMovementOption(rngHash,
             {
                 {MovementOptions::NO_SCRIPT, 95},
-                {MovementOptions::PBDR, 10},
-                {MovementOptions::RUN_DOWNHILL, 20},
-                {MovementOptions::REWIND, 5}
+                {MovementOptions::PBD, 20},
+                {MovementOptions::RUN_DOWNHILL, 0},
+                {MovementOptions::REWIND, 0}
             }));
 
         return movementOptions;
@@ -88,7 +88,7 @@ public:
                     if (status.asserted)
                         return true;
                 }
-                else if (movementOptions.contains(MovementOptions::PBDR) && Pbdr(rngHash))
+                else if (movementOptions.contains(MovementOptions::PBD) && Pbd(rngHash))
                     return true;
                 else if (movementOptions.contains(MovementOptions::REWIND))
                 {
@@ -130,8 +130,8 @@ public:
                 else if (movementOptions.contains(MovementOptions::RANDOM_BUTTONS))
                 {
                     buttons |= Buttons::B & UpdateHashReturnPrev(rngHash) % 2;
-                    buttons |= Buttons::Z & UpdateHashReturnPrev(rngHash) % 2;
-                    buttons |= Buttons::C_UP & UpdateHashReturnPrev(rngHash) % 2;
+                    //buttons |= Buttons::Z & UpdateHashReturnPrev(rngHash) % 2;
+                    //buttons |= Buttons::C_UP & UpdateHashReturnPrev(rngHash) % 2;
                 }
                     
                 // Calculate and execute input
@@ -193,13 +193,14 @@ public:
             s *= 2;
             s += 1; //mark bad norm regime
 
-            return StateBin<SShotState_BitfsDr>
-            (SShotState_BitfsDr(
-                (uint8_t)floor((marioState->pos[0] + 2330) / 200),
-                (uint8_t)floor((marioState->pos[1] + 3200) / 400),
-                (uint8_t)floor((marioState->pos[2] + 1090) / 200),
-                s
-            ));
+            return StateBin<SShotState_BitfsDr> (
+                SShotState_BitfsDr
+                    (
+                        (uint8_t)floor((marioState->pos[0] + 2330) / 200),
+                        (uint8_t)floor((marioState->pos[1] + 3200) / 400),
+                        (uint8_t)floor((marioState->pos[2] + 1090) / 200),
+                        s
+                    ));
         }
 
         s *= 200;
@@ -223,13 +224,14 @@ public:
 
         s *= 2; //mark good norm regime
 
-        return StateBin<SShotState_BitfsDr>
-        (SShotState_BitfsDr(
-            (uint8_t)floor((marioState->pos[0] + 2330) / 10),
-            (uint8_t)floor((marioState->pos[1] + 3200) / 50),
-            (uint8_t)floor((marioState->pos[2] + 1090) / 10),
-            s
-        ));
+        return StateBin<SShotState_BitfsDr> (
+            SShotState_BitfsDr
+            (
+                (uint8_t)floor((marioState->pos[0] + 2330) / 10),
+                (uint8_t)floor((marioState->pos[1] + 3200) / 50),
+                (uint8_t)floor((marioState->pos[2] + 1090) / 10),
+                s
+            ));
     }
 
     bool ValidateBlock()
@@ -253,7 +255,7 @@ public:
             return false;
         } //not useful action, such as lava boost
         if (marioState->action == ACT_FREEFALL && marioState->vel[1] > -20.0) return false;//freefall without having done nut spot chain
-        if (marioState->floorHeight > -3071 && marioState->vel[1] > marioState->floorHeight + 4 &&
+        if (marioState->floorHeight > -3071 && marioState->pos[1] > marioState->floorHeight + 4 &&
             marioState->vel[1] != 22.0) return false;//above pyra by over 4 units
         if (marioState->floorHeight == -3071 && marioState->action != ACT_FREEFALL) return false; //diving/dring above lava
 
@@ -261,7 +263,7 @@ public:
             marioState->pos[0] + marioState->pos[2] > (-1945 - 715)) //make sure Mario is going toward the right/east edge
         {  
             char fileName[128];
-            //printf("dr\n");
+            printf("dr\n");
             //sprintf(fileName, "C:\\Users\\Tyler\\Documents\\repos\\scattershot\\x64\\Debug\\m64s\\dr\\bitfs_dr_%f_%f_%f_%f_%d.m64",
             //    pyramid->oTiltingPyramidNormalX, pyramid->oTiltingPyramidNormalY, pyramid->oTiltingPyramidNormalZ, marioState->vel[1], omp_get_thread_num());
             //Utils::writeFile(fileName, "C:\\Users\\Tyler\\Documents\\repos\\scattershot\\x64\\Debug\\4_units_from_edge.m64", m64Diff, config.StartFrame, frame + 1);
@@ -273,7 +275,7 @@ public:
             && fabs(pyramid->oTiltingPyramidNormalX) > .29 && fabs(marioState->pos[0]) > -1680)
         {
             char fileName[128];
-            //printf("dr\n");
+            printf("dr\n");
             //sprintf(fileName, "C:\\Users\\Tyler\\Documents\\repos\\scattershot\\x64\\Debug\\m64s\\drland\\bitfs_dr_%f_%f_%f_%f_%d.m64",
             //    pyramid->oTiltingPyramidNormalX, pyramid->oTiltingPyramidNormalY, pyramid->oTiltingPyramidNormalZ, marioState->vel[1], omp_get_thread_num());
             //Utils::writeFile(fileName, "C:\\Users\\Tyler\\Documents\\repos\\scattershot\\x64\\Debug\\4_units_from_edge.m64", m64Diff, config.StartFrame, frame + 1);
@@ -298,7 +300,7 @@ private:
         return prevHash;
     }
 
-    bool Pbdr(uint64_t rngHash)
+    bool Pbd(uint64_t rngHash)
     {
         return ModifyAdhoc([&]()
             {
@@ -316,9 +318,9 @@ private:
                 AdvanceFrameWrite(Inputs(Buttons::START, 0, 0));
                 AdvanceFrameWrite(Inputs(0, 0, 0));
 
-                int16_t intendedYaw2 = marioState->faceAngle[1] + UpdateHashReturnPrev(rngHash) % 32768 - 16384;
-                stick = Inputs::GetClosestInputByYawHau(intendedYaw, 32, camera->yaw);
-                AdvanceFrameWrite(Inputs(Buttons::B, stick.first, stick.second));
+                //int16_t intendedYaw2 = marioState->faceAngle[1] + UpdateHashReturnPrev(rngHash) % 32768 - 16384;
+                //stick = Inputs::GetClosestInputByYawHau(intendedYaw, 32, camera->yaw);
+                //AdvanceFrameWrite(Inputs(Buttons::B, stick.first, stick.second));
 
                 return true;
             }).executed;

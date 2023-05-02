@@ -49,7 +49,7 @@ template <class TState, derived_from_specialization_of<Resource> TResource>
 bool ThreadState<TState, TResource>::SelectBaseBlock(int mainIteration)
 {
     int sharedBlockIndex = scattershot.gState.NBlocks[config.TotalThreads];
-    if (mainIteration % 15 == 0)
+    if (mainIteration % config.StartFromRootEveryNShots == 0)
         sharedBlockIndex = 0;
     else
     {
