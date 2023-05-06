@@ -21,6 +21,7 @@ template <class TState, derived_from_specialization_of<Resource> TResource>
 class Scattershot_BitfsDr : public ScattershotThread<TState, TResource>
 {
 public:
+    //TODO: hopefully moving implementations to template imp. file removes the need for this
     using Script<TResource>::resource;
     using Script<TResource>::GetCurrentFrame;
     using Script<TResource>::AdvanceFrameWrite;
@@ -30,6 +31,7 @@ public:
     using Script<TResource>::Load;
     using Script<TResource>::GetInputs;
     using Script<TResource>::ModifyAdhoc;
+    using Script<TResource>::sign;
 
     Scattershot_BitfsDr(Scattershot<TState, TResource>& scattershot, int id) : ScattershotThread<TState, TResource>(scattershot, id) {}
 
@@ -37,7 +39,7 @@ public:
     {
         std::unordered_set<MovementOptions> movementOptions;
 
-        movementOptions.insert(ChooseMovementOption(rngHash,
+        movementOptions.insert(ChooseMovementOption(UpdateHashReturnPrev(rngHash),
             {
                 {MovementOptions::MAX_MAGNITUDE, 4},
                 {MovementOptions::ZERO_MAGNITUDE, 0},
@@ -45,27 +47,28 @@ public:
                 {MovementOptions::RANDOM_MAGNITUDE, 1}
             }));
 
-        movementOptions.insert(ChooseMovementOption(rngHash,
+        movementOptions.insert(ChooseMovementOption(UpdateHashReturnPrev(rngHash),
             {
-                {MovementOptions::MATCH_FACING_YAW, 4},
+                {MovementOptions::MATCH_FACING_YAW, 1},
                 {MovementOptions::ANTI_FACING_YAW, 2},
-                {MovementOptions::SAME_YAW, 0},
-                {MovementOptions::RANDOM_YAW, 4}
+                {MovementOptions::SAME_YAW, 4},
+                {MovementOptions::RANDOM_YAW, 8}
             }));
 
-        movementOptions.insert(ChooseMovementOption(rngHash,
+        movementOptions.insert(ChooseMovementOption(UpdateHashReturnPrev(rngHash),
             {
                 {MovementOptions::SAME_BUTTONS, 0},
-                {MovementOptions::NO_BUTTONS, 10},
+                {MovementOptions::NO_BUTTONS, 0},
                 {MovementOptions::RANDOM_BUTTONS, 10}
             }));
 
-        movementOptions.insert(ChooseMovementOption(rngHash,
+        movementOptions.insert(ChooseMovementOption(UpdateHashReturnPrev(rngHash),
             {
                 {MovementOptions::NO_SCRIPT, 95},
-                {MovementOptions::PBD, 20},
+                {MovementOptions::PBD, 95},
                 {MovementOptions::RUN_DOWNHILL, 0},
-                {MovementOptions::REWIND, 0}
+                {MovementOptions::REWIND, 0},
+                {MovementOptions::TURN_UPHILL, 95}
             }));
 
         return movementOptions;
@@ -98,6 +101,8 @@ public:
                     Load(currentFrame - rewindFrames);
                     return true;
                 }
+                else if (movementOptions.contains(MovementOptions::TURN_UPHILL) && TurnUphill())
+                    return true;
 
                 // stick mag
                 float intendedMag = 0;
@@ -129,7 +134,7 @@ public:
                     buttons = 0;
                 else if (movementOptions.contains(MovementOptions::RANDOM_BUTTONS))
                 {
-                    buttons |= Buttons::B & UpdateHashReturnPrev(rngHash) % 2;
+                    buttons |= Buttons::B * (UpdateHashReturnPrev(rngHash) % 2);
                     //buttons |= Buttons::Z & UpdateHashReturnPrev(rngHash) % 2;
                     //buttons |= Buttons::C_UP & UpdateHashReturnPrev(rngHash) % 2;
                 }
@@ -242,28 +247,73 @@ public:
         Object* objectPool = (Object*)(resource->addr("gObjectPool"));
         Object* pyramid = &objectPool[84];
 
-        if (marioState->pos[0] < -2330) return false;
-        if (marioState->pos[0] > -1550) return false;
-        if (marioState->pos[2] < -1090) return false;
-        if (marioState->pos[2] > -300) return false;
-        if (marioState->pos[1] > -2760) return false;
-        if (pyramid->oTiltingPyramidNormalZ < -.15 || pyramid->oTiltingPyramidNormalX > 0.15) return false; //stay in desired quadrant
+        //bool rollout = false;
+        //if (marioState->action == ACT_FORWARD_ROLLOUT)
+        //    rollout = true;
+        std::vector<Inputs> inputs;
+        /*
+        bool diveLand = false;
+        std::vector<Inputs> inputs;
+        if (marioState->action == ACT_FORWARD_ROLLOUT && GetCurrentFrame() == 3553)
+        {
+            diveLand = true;
+            
+            for (int frame = 3545; frame <= 3552; frame++)
+            {
+                inputs.emplace_back(GetInputs(frame));
+            }
+
+            bool pb = false;
+            if (inputs[3].buttons & Buttons::START && inputs[3].buttons & Buttons::B)
+                pb = true;
+        }
+        */
+            
+
+        if (marioState->pos[0] < -2330 || marioState->pos[0] > -1550)
+            return false;
+
+        if (marioState->pos[2] < -1090 || marioState->pos[2] > -300)
+            return false;
+
+        if (marioState->pos[1] > -2760)
+            return false;
+
+        if (pyramid->oTiltingPyramidNormalZ < -.15 || pyramid->oTiltingPyramidNormalX > 0.15)
+            return false; //stay in desired quadrant
+
         if (marioState->action != ACT_BRAKING && marioState->action != ACT_DIVE && marioState->action != ACT_DIVE_SLIDE &&
             marioState->action != ACT_FORWARD_ROLLOUT && marioState->action != ACT_FREEFALL_LAND_STOP && marioState->action != ACT_FREEFALL &&
             marioState->action != ACT_FREEFALL_LAND && marioState->action != ACT_TURNING_AROUND &&
-            marioState->action != ACT_FINISH_TURNING_AROUND && marioState->action != ACT_WALKING) {
+            marioState->action != ACT_FINISH_TURNING_AROUND && marioState->action != ACT_WALKING) //not useful action, such as lava boost
+        {
             return false;
-        } //not useful action, such as lava boost
-        if (marioState->action == ACT_FREEFALL && marioState->vel[1] > -20.0) return false;//freefall without having done nut spot chain
-        if (marioState->floorHeight > -3071 && marioState->pos[1] > marioState->floorHeight + 4 &&
-            marioState->vel[1] != 22.0) return false;//above pyra by over 4 units
-        if (marioState->floorHeight == -3071 && marioState->action != ACT_FREEFALL) return false; //diving/dring above lava
+        } 
 
-        if (marioState->action == ACT_FORWARD_ROLLOUT && fabs(pyramid->oTiltingPyramidNormalX) > .3 && fabs(pyramid->oTiltingPyramidNormalX) + fabs(pyramid->oTiltingPyramidNormalZ) > .65 &&
+        if (marioState->action == ACT_FREEFALL && marioState->vel[1] > -20.0)
+            return false;//freefall without having done nut spot chain
+
+        if (marioState->floorHeight > -3071 && marioState->pos[1] > marioState->floorHeight + 4 &&
+            marioState->vel[1] != 22.0)
+            return false;//above pyra by over 4 units
+
+        if (marioState->floorHeight == -3071 && marioState->action != ACT_FREEFALL)
+            return false; //diving/dring above lava
+
+        float xNorm = pyramid->oTiltingPyramidNormalX;
+        float zNorm = pyramid->oTiltingPyramidNormalZ;
+
+        if (marioState->action == ACT_FORWARD_ROLLOUT && fabs(xNorm) > .3 && fabs(xNorm) + fabs(zNorm) > .65 &&
             marioState->pos[0] + marioState->pos[2] > (-1945 - 715)) //make sure Mario is going toward the right/east edge
         {  
             char fileName[128];
-            printf("dr\n");
+            printf("\ndr\n");
+
+            for (int frame = 3545; frame < GetCurrentFrame(); frame++)
+            {
+                inputs.emplace_back(GetInputs(frame));
+            }
+
             //sprintf(fileName, "C:\\Users\\Tyler\\Documents\\repos\\scattershot\\x64\\Debug\\m64s\\dr\\bitfs_dr_%f_%f_%f_%f_%d.m64",
             //    pyramid->oTiltingPyramidNormalX, pyramid->oTiltingPyramidNormalY, pyramid->oTiltingPyramidNormalZ, marioState->vel[1], omp_get_thread_num());
             //Utils::writeFile(fileName, "C:\\Users\\Tyler\\Documents\\repos\\scattershot\\x64\\Debug\\4_units_from_edge.m64", m64Diff, config.StartFrame, frame + 1);
@@ -272,10 +322,10 @@ public:
         //check on hspd > 1 confirms we're in dr land rather than quickstopping,
         //which gives the same action
         if (marioState->action == ACT_FREEFALL_LAND_STOP && marioState->pos[1] > -2980 && marioState->forwardVel > 1
-            && fabs(pyramid->oTiltingPyramidNormalX) > .29 && fabs(marioState->pos[0]) > -1680)
+            && fabs(xNorm) > .29 && fabs(marioState->pos[0]) > -1680)
         {
             char fileName[128];
-            printf("dr\n");
+            printf("\ndrland\n");
             //sprintf(fileName, "C:\\Users\\Tyler\\Documents\\repos\\scattershot\\x64\\Debug\\m64s\\drland\\bitfs_dr_%f_%f_%f_%f_%d.m64",
             //    pyramid->oTiltingPyramidNormalX, pyramid->oTiltingPyramidNormalY, pyramid->oTiltingPyramidNormalZ, marioState->vel[1], omp_get_thread_num());
             //Utils::writeFile(fileName, "C:\\Users\\Tyler\\Documents\\repos\\scattershot\\x64\\Debug\\4_units_from_edge.m64", m64Diff, config.StartFrame, frame + 1);
@@ -322,6 +372,35 @@ private:
                 //stick = Inputs::GetClosestInputByYawHau(intendedYaw, 32, camera->yaw);
                 //AdvanceFrameWrite(Inputs(Buttons::B, stick.first, stick.second));
 
+                return true;
+            }).executed;
+    }
+
+    bool TurnUphill()
+    {
+        return ModifyAdhoc([&]()
+            {
+                MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
+                Camera* camera = *(Camera**)(resource->addr("gCamera"));
+                Object* objectPool = (Object*)(resource->addr("gObjectPool"));
+                Object* pyramid = &objectPool[84];
+
+                // Turn 2048 towrds uphill
+                auto m64 = M64();
+                auto save = ImportedSave(PyramidUpdateMem(*resource, pyramid), GetCurrentFrame());
+                auto status = BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle::MainFromSave<BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>(m64, save, 0);
+                if (!status.validated)
+                    return false;
+
+                int16_t uphillAngle = status.floorAngle + 0x8000;
+
+                //cap intended yaw diff at 2048
+                int16_t intendedYaw = uphillAngle;
+                if (abs(int16_t(uphillAngle - marioState->faceAngle[1])) >= 16384)
+                    intendedYaw = marioState->faceAngle[1] + 2048 * sign(int16_t(uphillAngle - marioState->faceAngle[1]));
+
+                auto inputs = Inputs::GetClosestInputByYawHau(intendedYaw, 32, camera->yaw);
+                AdvanceFrameWrite(Inputs(0, inputs.first, inputs.second));
                 return true;
             }).executed;
     }

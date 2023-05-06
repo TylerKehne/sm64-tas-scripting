@@ -37,7 +37,8 @@ enum class MovementOptions
     NO_SCRIPT,
     PBD,
     RUN_DOWNHILL,
-    REWIND
+    REWIND,
+    TURN_UPHILL
 };
 
 template <class TState, derived_from_specialization_of<Resource> TResource>
