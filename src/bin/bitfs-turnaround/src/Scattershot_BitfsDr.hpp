@@ -13,8 +13,8 @@ public:
     uint64_t s;
 
     SShotState_BitfsDr() = default;
-
     SShotState_BitfsDr(uint8_t x, uint8_t y, uint8_t z, uint64_t s) : x(x), y(y), z(z), s(s) { }
+    bool operator==(const SShotState_BitfsDr&) const = default;
 };
 
 template <class TState, derived_from_specialization_of<Resource> TResource>
@@ -27,7 +27,6 @@ public:
     using Script<TResource>::AdvanceFrameWrite;
     using ScattershotThread<TState, TResource>::config;
     using ScattershotThread<TState, TResource>::ChooseMovementOption;
-    using Script<TResource>::template Modify;
     using Script<TResource>::Load;
     using Script<TResource>::GetInputs;
     using Script<TResource>::ModifyAdhoc;
@@ -87,7 +86,7 @@ public:
                     BitFsPyramidOscillation_ParamsDto params;
                     params.roughTargetAngle = marioState->faceAngle[1];
                     params.ignoreXzSum = true;
-                    auto status = Modify<BitFsPyramidOscillation_RunDownhill>(params);
+                    auto status = this->Modify<BitFsPyramidOscillation_RunDownhill>(params);
                     if (status.asserted)
                         return true;
                 }
@@ -247,29 +246,6 @@ public:
         Object* objectPool = (Object*)(resource->addr("gObjectPool"));
         Object* pyramid = &objectPool[84];
 
-        //bool rollout = false;
-        //if (marioState->action == ACT_FORWARD_ROLLOUT)
-        //    rollout = true;
-        std::vector<Inputs> inputs;
-        /*
-        bool diveLand = false;
-        std::vector<Inputs> inputs;
-        if (marioState->action == ACT_FORWARD_ROLLOUT && GetCurrentFrame() == 3553)
-        {
-            diveLand = true;
-            
-            for (int frame = 3545; frame <= 3552; frame++)
-            {
-                inputs.emplace_back(GetInputs(frame));
-            }
-
-            bool pb = false;
-            if (inputs[3].buttons & Buttons::START && inputs[3].buttons & Buttons::B)
-                pb = true;
-        }
-        */
-            
-
         if (marioState->pos[0] < -2330 || marioState->pos[0] > -1550)
             return false;
 
@@ -308,11 +284,6 @@ public:
         {  
             char fileName[128];
             printf("\ndr\n");
-
-            for (int frame = 3545; frame < GetCurrentFrame(); frame++)
-            {
-                inputs.emplace_back(GetInputs(frame));
-            }
 
             //sprintf(fileName, "C:\\Users\\Tyler\\Documents\\repos\\scattershot\\x64\\Debug\\m64s\\dr\\bitfs_dr_%f_%f_%f_%f_%d.m64",
             //    pyramid->oTiltingPyramidNormalX, pyramid->oTiltingPyramidNormalY, pyramid->oTiltingPyramidNormalZ, marioState->vel[1], omp_get_thread_num());

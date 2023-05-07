@@ -25,6 +25,7 @@
 #include "Scattershot_BitfsDr.hpp"
 #include "Scattershot.hpp"
 
+#define SOURCE_DIR "${CMAKE_SOURCE_DIR}"
 
 using namespace std;
 
@@ -121,7 +122,7 @@ int main(int argc, const char* argv[])
 	//M64 m64 = M64(config.M64Path);
 	//m64.load();
 
-	Scattershot<SShotState_BitfsDr, LibSm64>::Run<Scattershot_BitfsDr<SShotState_BitfsDr, LibSm64>>(config);
+	Scattershot<SShotState_BitfsDr, LibSm64>::Run<Scattershot_BitfsDr>(config);
 	//auto status = MainScript::MainConfig<MainScript>(m64, lib_path);
 
 	//m64.save();

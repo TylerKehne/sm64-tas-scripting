@@ -1,10 +1,97 @@
 #pragma once
 #ifndef SCATTERSHOT_H
-#error "GlobalState.t.hpp should only be included by Scattershot.hpp"
+#error "Scattershot.t.hpp should only be included by Scattershot.hpp"
 #else
 
 template <class TState>
-GlobalState<TState>::GlobalState(const Configuration& config) : config(config)
+template <typename T>
+uint64_t StateBin<TState>::GetHash(const T& toHash) const
+{
+    std::hash<std::byte> byteHasher;
+    const std::byte* data = reinterpret_cast<const std::byte*>(&toHash);
+    uint64_t hashValue = 0;
+    for (std::size_t i = 0; i < sizeof(toHash); ++i)
+        hashValue ^= static_cast<uint64_t>(byteHasher(data[i])) + 0x9e3779b97f4a7c15ull + (hashValue << 6) + (hashValue >> 2);
+
+    return hashValue;
+}
+
+template <class TState>
+int StateBin<TState>::FindNewHashIndex(int* hashTable, int maxHashes) const
+{
+    uint64_t hash;
+    for (int i = 0; i < 100; i++)
+    {
+        hash = GetHash(hash);
+        int hashIndex = hash % maxHashes;
+
+        if (hashTable[hashIndex] == -1)
+            return hashIndex;
+    }
+
+    //printf("Failed to find new hash index after 100 tries!\n");
+    return -1;
+}
+
+template <class TState>
+void StateBin<TState>::print() const
+{
+    #pragma omp critical
+    {
+        // cast the instance to a char pointer
+        const char* ptr = reinterpret_cast<const char*>(&state);
+
+        // print the bytes in hex format using printf
+        for (std::size_t i = 0; i < sizeof(TState); i++)
+            printf("%02X ", static_cast<unsigned char>(ptr[i]));
+
+        printf("\n");
+    }
+}
+
+template <class TContainer, typename TElement>
+    requires std::is_same_v<TElement, std::string>
+void Configuration::SetResourcePaths(const TContainer& container)
+{
+    for (const std::string& item : container)
+    {
+        ResourcePaths.emplace_back(item);
+    }
+}
+
+template <class TState>
+int StateBin<TState>::GetBlockIndex(Block<TState>* blocks, int* hashTable, int maxHashes, int nMin, int nMax) const
+{
+    uint64_t hash = GetHash(state);
+    for (int i = 0; i < 100; i++)
+    {
+        int blockIndex = hashTable[hash % maxHashes];
+        if (blockIndex == -1)
+            return nMax;
+
+        if (blockIndex >= nMin && blockIndex < nMax && blocks[blockIndex].stateBin == *this)
+            return blockIndex;
+
+        hash = GetHash(hash);
+    }
+
+    //printf("Failed to find block from hash after 100 tries!\n");
+    return -1; // TODO: Should be nMax?
+}
+
+template <class TState, derived_from_specialization_of<Resource> TResource>
+template <typename F>
+void Scattershot<TState, TResource>::MultiThread(int nThreads, F func)
+{
+    omp_set_num_threads(nThreads);
+    #pragma omp parallel
+    {
+        func();
+    }
+}
+
+template <class TState, derived_from_specialization_of<Resource> TResource>
+Scattershot<TState, TResource>::Scattershot(const Configuration& config) : config(config)
 {
     AllBlocks = (Block<TState>*)calloc(config.TotalThreads * config.MaxBlocks + config.MaxSharedBlocks, sizeof(Block<TState>));
     AllSegments = (Segment**)malloc((config.MaxSharedSegments + config.TotalThreads * config.MaxLocalSegments) * sizeof(Segment*));
@@ -19,8 +106,8 @@ GlobalState<TState>::GlobalState(const Configuration& config) : config(config)
         SharedHashTable[hashInx] = -1;
 }
 
-template <class TState>
-void GlobalState<TState>::GlobalState::MergeBlocks()
+template <class TState, derived_from_specialization_of<Resource> TResource>
+void Scattershot<TState, TResource>::MergeBlocks()
 {
     //printer.printfQ("Merging blocks.\n");
     for (int threadId = 0; threadId < config.TotalThreads; threadId++)
@@ -48,8 +135,8 @@ void GlobalState<TState>::GlobalState::MergeBlocks()
         NBlocks[threadId] = 0; // Clear all local blocks.
 }
 
-template <class TState>
-void GlobalState<TState>::MergeSegments()
+template <class TState, derived_from_specialization_of<Resource> TResource>
+void Scattershot<TState, TResource>::MergeSegments()
 {
     //printf("Merging segments\n");
 
@@ -69,8 +156,8 @@ void GlobalState<TState>::MergeSegments()
     }
 }
 
-template <class TState>
-void GlobalState<TState>::SegmentGarbageCollection()
+template <class TState, derived_from_specialization_of<Resource> TResource>
+void Scattershot<TState, TResource>::SegmentGarbageCollection()
 {
     //printf("Segment garbage collection. Start with %d segments\n", NSegments[config.TotalThreads]);
 
@@ -112,8 +199,8 @@ void GlobalState<TState>::SegmentGarbageCollection()
     //printf("Segment garbage collection finished. Ended with %d segments\n", NSegments[config.TotalThreads]);
 }
 
-template <class TState>
-void GlobalState<TState>::MergeState(int mainIteration)
+template <class TState, derived_from_specialization_of<Resource> TResource>
+void Scattershot<TState, TResource>::MergeState(int mainIteration)
 {
     // Merge all blocks from all threads and redistribute info.
     MergeBlocks();
