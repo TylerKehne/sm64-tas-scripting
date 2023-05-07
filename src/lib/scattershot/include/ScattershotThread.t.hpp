@@ -10,7 +10,7 @@ ScattershotThread<TState, TResource>::ScattershotThread(Scattershot<TState, TRes
     Id = id;
     Blocks = scattershot.AllBlocks + Id * config.MaxBlocks;
     HashTable = scattershot.AllHashTables + Id * config.MaxHashes;
-    RngHash = (uint64_t)(Id + 173) * 5786766484692217813;
+    SetRng((uint64_t)(Id + 173) * 5786766484692217813);
     
     //printf("Thread %d\n", Id);
 }
@@ -94,12 +94,6 @@ void ScattershotThread<TState, TResource>::InitializeMemory(StateBin<TState> ini
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource>
-uint64_t ScattershotThread<TState, TResource>::UpdateRngHash()
-{
-    return RngHash = Scattershot<TState, TResource>::GetHash(&RngHash);
-}
-
-template <class TState, derived_from_specialization_of<Resource> TResource>
 bool ScattershotThread<TState, TResource>::SelectBaseBlock(int mainIteration)
 {
     int sharedBlockIndex = scattershot.NBlocks[config.TotalThreads];
@@ -107,9 +101,8 @@ bool ScattershotThread<TState, TResource>::SelectBaseBlock(int mainIteration)
         sharedBlockIndex = 0;
     else
     {
-        int weighted = UpdateRngHash() % 5;
         for (int attempt = 0; attempt < 100000; attempt++) {
-            sharedBlockIndex = UpdateRngHash() % scattershot.NBlocks[config.TotalThreads];
+            sharedBlockIndex = GetRng() % scattershot.NBlocks[config.TotalThreads];
 
             if (scattershot.SharedBlocks[sharedBlockIndex].tailSegment == 0)
             {
@@ -237,19 +230,17 @@ bool ScattershotThread<TState, TResource>::ValidateCourseAndArea()
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource>
-uint64_t ScattershotThread<TState, TResource>::ChooseScriptAndApply(uint64_t rngHash)
+void ScattershotThread<TState, TResource>::ChooseScriptAndApply()
 {
     std::unordered_set<MovementOptions> movementOptions;
     ExecuteAdhoc([&]()
         {
-            movementOptions = GetMovementOptions(rngHash);
+            movementOptions = SelectMovementOptions();
             return true;
         });
 
     // Execute script and update rng hash
-    rngHash = Scattershot<TState, TResource>::GetHash(rngHash);
-    ModifyAdhoc([&]() { return ApplyMovement(movementOptions, rngHash); });
-    return rngHash = Scattershot<TState, TResource>::GetHash(rngHash);
+    ModifyAdhoc([&]() { return ApplyMovement(movementOptions); });
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource>
@@ -297,9 +288,9 @@ AdhocBaseScriptStatus ScattershotThread<TState, TResource>::DecodeBaseBlockDiffA
                     currentSegment = currentSegment->parent;
                 }
 
-                uint64_t inputRngHash = currentSegment->seed;
+                SetTempRng(currentSegment->seed);
                 for (int script = 0; script < currentSegment->nScripts; script++)
-                    inputRngHash = ChooseScriptAndApply(inputRngHash);
+                    ChooseScriptAndApply();
             }
 
             return true;
@@ -316,7 +307,10 @@ AdhocBaseScriptStatus ScattershotThread<TState, TResource>::ExecuteFromBaseBlock
 
             for (int n = 0; n < config.SegmentLength; n++)
             {
-                RngHash = ChooseScriptAndApply(RngHash);
+                SetTempRng(RngHash);
+                ChooseScriptAndApply();
+                SetRng(RngHashTemp);
+
                 if (!ValidateCourseAndArea() || !ExecuteAdhoc([&]() { return ValidateBlock(); }).executed)
                     break;
 
@@ -357,6 +351,47 @@ MovementOptions ScattershotThread<TState, TResource>::ChooseMovementOption(uint6
     }
 
     return weightedOptions.rbegin()->first;
+}
+
+template <class TState, derived_from_specialization_of<Resource> TResource>
+uint64_t ScattershotThread<TState, TResource>::GetRng()
+{
+    uint64_t rngHashPrev = RngHash;
+    RngHash = GetHash(RngHash);
+    return rngHashPrev;
+}
+
+template <class TState, derived_from_specialization_of<Resource> TResource>
+void ScattershotThread<TState, TResource>::SetRng(uint64_t rngHash)
+{
+    RngHash = rngHash;
+}
+
+template <class TState, derived_from_specialization_of<Resource> TResource>
+uint64_t ScattershotThread<TState, TResource>::GetTempRng()
+{
+    uint64_t rngHashPrev = RngHashTemp;
+    RngHashTemp = GetHash(RngHashTemp);
+    return rngHashPrev;
+}
+
+template <class TState, derived_from_specialization_of<Resource> TResource>
+void ScattershotThread<TState, TResource>::SetTempRng(uint64_t rngHash)
+{
+    RngHashTemp = rngHash;
+}
+
+template <class TState, derived_from_specialization_of<Resource> TResource>
+template <typename T>
+uint64_t ScattershotThread<TState, TResource>::GetHash(const T& toHash) const
+{
+    std::hash<std::byte> byteHasher;
+    const std::byte* data = reinterpret_cast<const std::byte*>(&toHash);
+    uint64_t hashValue = 0;
+    for (std::size_t i = 0; i < sizeof(T); ++i)
+        hashValue ^= static_cast<uint64_t>(byteHasher(data[i])) + 0x9e3779b97f4a7c15ull + (hashValue << 6) + (hashValue >> 2);
+
+    return hashValue;
 }
 
 #endif

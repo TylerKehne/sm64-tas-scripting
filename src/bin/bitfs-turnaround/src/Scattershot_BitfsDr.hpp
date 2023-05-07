@@ -31,14 +31,15 @@ public:
     using Script<TResource>::GetInputs;
     using Script<TResource>::ModifyAdhoc;
     using Script<TResource>::sign;
+    using ScattershotThread<TState, TResource>::GetTempRng;
 
     Scattershot_BitfsDr(Scattershot<TState, TResource>& scattershot, int id) : ScattershotThread<TState, TResource>(scattershot, id) {}
 
-    std::unordered_set<MovementOptions> GetMovementOptions(uint64_t rngHash)
+    std::unordered_set<MovementOptions> SelectMovementOptions()
     {
         std::unordered_set<MovementOptions> movementOptions;
 
-        movementOptions.insert(ChooseMovementOption(UpdateHashReturnPrev(rngHash),
+        movementOptions.insert(ChooseMovementOption(GetTempRng(),
             {
                 {MovementOptions::MAX_MAGNITUDE, 4},
                 {MovementOptions::ZERO_MAGNITUDE, 0},
@@ -46,7 +47,7 @@ public:
                 {MovementOptions::RANDOM_MAGNITUDE, 1}
             }));
 
-        movementOptions.insert(ChooseMovementOption(UpdateHashReturnPrev(rngHash),
+        movementOptions.insert(ChooseMovementOption(GetTempRng(),
             {
                 {MovementOptions::MATCH_FACING_YAW, 1},
                 {MovementOptions::ANTI_FACING_YAW, 2},
@@ -54,14 +55,14 @@ public:
                 {MovementOptions::RANDOM_YAW, 8}
             }));
 
-        movementOptions.insert(ChooseMovementOption(UpdateHashReturnPrev(rngHash),
+        movementOptions.insert(ChooseMovementOption(GetTempRng(),
             {
                 {MovementOptions::SAME_BUTTONS, 0},
                 {MovementOptions::NO_BUTTONS, 0},
                 {MovementOptions::RANDOM_BUTTONS, 10}
             }));
 
-        movementOptions.insert(ChooseMovementOption(UpdateHashReturnPrev(rngHash),
+        movementOptions.insert(ChooseMovementOption(GetTempRng(),
             {
                 {MovementOptions::NO_SCRIPT, 95},
                 {MovementOptions::PBD, 95},
@@ -73,7 +74,7 @@ public:
         return movementOptions;
     }
 
-    bool ApplyMovement(std::unordered_set<MovementOptions> movementOptions, uint64_t rngHash)
+    bool ApplyMovement(std::unordered_set<MovementOptions> movementOptions)
     {
         return ModifyAdhoc([&]()
             {
@@ -90,13 +91,13 @@ public:
                     if (status.asserted)
                         return true;
                 }
-                else if (movementOptions.contains(MovementOptions::PBD) && Pbd(rngHash))
+                else if (movementOptions.contains(MovementOptions::PBD) && Pbd())
                     return true;
                 else if (movementOptions.contains(MovementOptions::REWIND))
                 {
                     int64_t currentFrame = GetCurrentFrame();
                     int maxRewind = (currentFrame - config.StartFrame) / 2;
-                    int rewindFrames = (rngHash % 100) * maxRewind / 100;
+                    int rewindFrames = (GetTempRng() % 100) * maxRewind / 100;
                     Load(currentFrame - rewindFrames);
                     return true;
                 }
@@ -112,7 +113,7 @@ public:
                 else if (movementOptions.contains(MovementOptions::SAME_MAGNITUDE))
                     intendedMag = marioState->intendedMag;
                 else if (movementOptions.contains(MovementOptions::RANDOM_MAGNITUDE))
-                    intendedMag = (UpdateHashReturnPrev(rngHash) % 10000) / 32.0f;
+                    intendedMag = (GetTempRng() % 10000) / 32.0f;
 
                 // Intended yaw
                 int16_t intendedYaw = 0;
@@ -123,7 +124,7 @@ public:
                 else if (movementOptions.contains(MovementOptions::SAME_YAW))
                     intendedYaw = marioState->intendedYaw;
                 else if (movementOptions.contains(MovementOptions::RANDOM_YAW))
-                    intendedYaw = UpdateHashReturnPrev(rngHash);
+                    intendedYaw = GetTempRng();
 
                 // Buttons
                 uint16_t buttons = 0;
@@ -133,7 +134,7 @@ public:
                     buttons = 0;
                 else if (movementOptions.contains(MovementOptions::RANDOM_BUTTONS))
                 {
-                    buttons |= Buttons::B * (UpdateHashReturnPrev(rngHash) % 2);
+                    buttons |= Buttons::B * (GetTempRng() % 2);
                     //buttons |= Buttons::Z & UpdateHashReturnPrev(rngHash) % 2;
                     //buttons |= Buttons::C_UP & UpdateHashReturnPrev(rngHash) % 2;
                 }
@@ -314,21 +315,14 @@ public:
     }
 
 private:
-    uint64_t UpdateHashReturnPrev(uint64_t& rngHash)
-    {
-        uint64_t prevHash = rngHash;
-        rngHash = Scattershot<TState, TResource>::GetHash(rngHash);
-        return prevHash;
-    }
-
-    bool Pbd(uint64_t rngHash)
+    bool Pbd()
     {
         return ModifyAdhoc([&]()
             {
                 MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
                 Camera* camera = *(Camera**)(resource->addr("gCamera"));
 
-                int16_t intendedYaw = marioState->faceAngle[1] + UpdateHashReturnPrev(rngHash) % 32768 - 16384;
+                int16_t intendedYaw = marioState->faceAngle[1] + GetTempRng() % 32768 - 16384;
                 auto stick = Inputs::GetClosestInputByYawHau(intendedYaw, 32, camera->yaw);
                 AdvanceFrameWrite(Inputs(Buttons::B | Buttons::START, stick.first, stick.second));
 

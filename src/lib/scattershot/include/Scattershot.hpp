@@ -115,21 +115,6 @@ public:
             });
     }
 
-    template <typename T>
-    static uint64_t GetHash(const T& toHash)
-    {
-        std::hash<std::byte> byteHasher;
-        const std::byte* data = reinterpret_cast<const std::byte*>(&toHash);
-        uint64_t hashValue = 0;
-        for (std::size_t i = 0; i < sizeof(T); ++i)
-            hashValue ^= static_cast<uint64_t>(byteHasher(data[i])) + 0x9e3779b97f4a7c15ull + (hashValue << 6) + (hashValue >> 2);
-
-        return hashValue;
-    }
-
-protected:
-    
-
 private:
     // Global State
     Segment** AllSegments;

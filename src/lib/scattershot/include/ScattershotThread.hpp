@@ -88,26 +88,41 @@ protected:
 
     MovementOptions ChooseMovementOption(uint64_t rngHash, std::map<MovementOptions, double> weightedOptions);
 
-    virtual std::unordered_set<MovementOptions> GetMovementOptions(uint64_t rngHash) = 0;
-    virtual bool ApplyMovement(std::unordered_set<MovementOptions> movementOptions, uint64_t rngHash) = 0;
+    virtual std::unordered_set<MovementOptions> SelectMovementOptions() = 0;
+    virtual bool ApplyMovement(std::unordered_set<MovementOptions> movementOptions) = 0;
     virtual StateBin<TState> GetStateBin() = 0;
     virtual bool ValidateBlock() = 0;
     virtual float GetStateFitness() = 0;
 
-    
+    uint64_t GetTempRng();
+
+    /*
+    template <template<class, class> class TScattershotThread>
+        requires derived_from_specialization_of<TScattershotThread<TState, TResource>, ScattershotThread>
+    void AddMovementOption()
+    {
+
+    }
+    */
 
 private:
     Block<TState>* Blocks;
     int* HashTable;
     int Id;
-    uint64_t RngHash;
+    uint64_t RngHash = 0;
+    uint64_t RngHashTemp = 0;
     Block<TState> BaseBlock;
 
     short startCourse;
     short startArea;
 
+    
+    
+
     // Thread state methods
-    uint64_t UpdateRngHash();
+    uint64_t GetRng();
+    void SetRng(uint64_t rngHash);
+    void SetTempRng(uint64_t rngHash);
     void InitializeMemory(StateBin<TState> initTruncPos);
     bool SelectBaseBlock(int mainIteration);
     bool ValidateBaseBlock(const StateBin<TState>& baseBlockStateBin) const;
@@ -117,7 +132,7 @@ private:
     void SingleThread(F func);
 
     bool ValidateCourseAndArea();
-    uint64_t ChooseScriptAndApply(uint64_t rngHash);
+    void ChooseScriptAndApply();
     StateBin<TState> GetStateBinSafe();
     float GetStateFitnessSafe();
     AdhocBaseScriptStatus DecodeBaseBlockDiffAndApply();
@@ -127,6 +142,9 @@ private:
     {
         return Scattershot<TState, TResource>(configuration);
     }
+
+    template <typename T>
+    uint64_t GetHash(const T& toHash) const;
 };
 
 //Include template method implementations
