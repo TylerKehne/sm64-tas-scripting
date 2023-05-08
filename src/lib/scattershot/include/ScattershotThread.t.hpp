@@ -22,7 +22,7 @@ template <class TState, derived_from_specialization_of<Resource> TResource>
 bool ScattershotThread<TState, TResource>::execution()
 {
     LongLoad(config.StartFrame);
-    InitializeMemory(GetStateBinSafe());
+    InitializeMemory();
 
     // Record start course/area for validation (generally scattershot has no cross-level value)
     startCourse = *(short*)this->resource->addr("gCurrCourseNum");
@@ -42,7 +42,7 @@ bool ScattershotThread<TState, TResource>::execution()
             {
                 DecodeBaseBlockDiffAndApply();
 
-                if (!ValidateBaseBlock(GetStateBinSafe()))
+                if (!ValidateBaseBlock())
                     return false;
 
                 this->Save();
@@ -61,18 +61,11 @@ bool ScattershotThread<TState, TResource>::execution()
 template <class TState, derived_from_specialization_of<Resource> TResource>
 bool ScattershotThread<TState, TResource>::assertion() { return true; }
 
-/*
 template <class TState, derived_from_specialization_of<Resource> TResource>
-static Scattershot<TState, TResource> CreateScattershot(const Configuration& configuration)
-{
-    return Scattershot<TState, TResource>(configuration);
-}
-*/
-template <class TState, derived_from_specialization_of<Resource> TResource>
-void ScattershotThread<TState, TResource>::InitializeMemory(StateBin<TState> initStateBin)
+void ScattershotThread<TState, TResource>::InitializeMemory()
 {
     // Initial block
-    Blocks[0].stateBin = initStateBin; //CHEAT TODO NOTE
+    Blocks[0].stateBin = GetStateBinSafe(); //CHEAT TODO NOTE
     Blocks[0].tailSegment = (Segment*)malloc(sizeof(Segment)); //Instantiate root segment
     Blocks[0].tailSegment->nScripts = 0;
     Blocks[0].tailSegment->parent = NULL;
@@ -134,13 +127,10 @@ bool ScattershotThread<TState, TResource>::SelectBaseBlock(int mainIteration)
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource>
-bool ScattershotThread<TState, TResource>::ValidateBaseBlock(const StateBin<TState>& baseBlockStateBin) const
+bool ScattershotThread<TState, TResource>::ValidateBaseBlock()
 {
-    if (BaseBlock.stateBin != baseBlockStateBin) {
-        //printf("ORIG %d %d %d %ld AND BLOCK %d %d %d %ld NOT EQUAL\n",
-        //    baseBlockStateBin.x, baseBlockStateBin.y, baseBlockStateBin.z, baseBlockStateBin.s,
-        //    BaseBlock.pos.x, BaseBlock.pos.y, BaseBlock.pos.z, BaseBlock.pos.s);
-
+    StateBin<TState> currentStateBin = GetStateBinSafe();
+    if (BaseBlock.stateBin != currentStateBin) {
         Segment* currentSegmentDebug = BaseBlock.tailSegment;
         while (currentSegmentDebug != 0) {  //inefficient but probably doesn't matter
             if (currentSegmentDebug->parent == 0)
@@ -150,7 +140,7 @@ bool ScattershotThread<TState, TResource>::ValidateBaseBlock(const StateBin<TSta
         }
 
         BaseBlock.stateBin.print();
-        baseBlockStateBin.print();
+        currentStateBin.print();
         return false;
     }
 
@@ -158,7 +148,7 @@ bool ScattershotThread<TState, TResource>::ValidateBaseBlock(const StateBin<TSta
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource>
-void ScattershotThread<TState, TResource>::ProcessNewBlock(uint64_t baseRngHash, int nScripts, StateBin<TState> newStateBin, float newFitness)
+void ScattershotThread<TState, TResource>::ProcessNewBlock(uint64_t baseRngHash, int nScripts, StateBin<TState> newStateBin)
 {
     Block<TState> newBlock;
 
@@ -171,7 +161,7 @@ void ScattershotThread<TState, TResource>::ProcessNewBlock(uint64_t baseRngHash,
         //UPDATED FOR SEGMENTS STRUCT
         newBlock = BaseBlock;
         newBlock.stateBin = newStateBin;
-        newBlock.fitness = newFitness;
+        newBlock.fitness = GetStateFitnessSafe();
         int blockIndexLocal = newStateBin.GetBlockIndex(Blocks, HashTable, config.MaxHashes, 0, scattershot.NBlocks[Id]);
         int blockIndex = newStateBin.GetBlockIndex(
             scattershot.SharedBlocks, scattershot.SharedHashTable, config.MaxSharedHashes, 0, scattershot.NBlocks[config.TotalThreads]);
@@ -230,17 +220,18 @@ bool ScattershotThread<TState, TResource>::ValidateCourseAndArea()
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource>
-void ScattershotThread<TState, TResource>::ChooseScriptAndApply()
+bool ScattershotThread<TState, TResource>::ChooseScriptAndApply()
 {
-    std::unordered_set<MovementOptions> movementOptions;
+    movementOptions = std::unordered_set<MovementOption>();
+
     ExecuteAdhoc([&]()
         {
-            movementOptions = SelectMovementOptions();
+            SelectMovementOptions();
             return true;
         });
 
     // Execute script and update rng hash
-    ModifyAdhoc([&]() { return ApplyMovement(movementOptions); });
+    return ModifyAdhoc([&]() { return ApplyMovement(); }).executed;
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource>
@@ -249,7 +240,7 @@ StateBin<TState> ScattershotThread<TState, TResource>::GetStateBinSafe()
     StateBin<TState> stateBin;
     ExecuteAdhoc([&]()
         {
-            stateBin = GetStateBin();
+            stateBin = StateBin<TState>(GetStateBin());
             return true;
         });
 
@@ -308,49 +299,23 @@ AdhocBaseScriptStatus ScattershotThread<TState, TResource>::ExecuteFromBaseBlock
             for (int n = 0; n < config.SegmentLength; n++)
             {
                 SetTempRng(RngHash);
-                ChooseScriptAndApply();
+                bool updated = ChooseScriptAndApply();
                 SetRng(RngHashTemp);
 
-                if (!ValidateCourseAndArea() || !ExecuteAdhoc([&]() { return ValidateBlock(); }).executed)
+                if (!updated || !ValidateCourseAndArea() || !ExecuteAdhoc([&]() { return ValidateState(); }).executed)
                     break;
 
                 auto newStateBin = GetStateBinSafe();
                 if (newStateBin != prevStateBin && newStateBin != BaseBlock.stateBin)
                 {
                     // Create and add block to list.
-                    ProcessNewBlock(baseRngHash, n, newStateBin, GetStateFitnessSafe());
+                    ProcessNewBlock(baseRngHash, n, newStateBin);
                     prevStateBin = newStateBin; // TODO: Why this here?
                 }
             }
 
             return true;
         });
-}
-
-template <class TState, derived_from_specialization_of<Resource> TResource>
-MovementOptions ScattershotThread<TState, TResource>::ChooseMovementOption(uint64_t rngHash, std::map<MovementOptions, double> weightedOptions)
-{
-    if (weightedOptions.empty())
-        throw std::runtime_error("No movement options provided.");
-
-    double maxRng = 10000.0;
-
-    double totalWeight = 0;
-    for (const auto& pair : weightedOptions)
-        totalWeight += pair.second;
-
-    double rng = rngHash % 10000;
-    double rngRangeMin = 0;
-    for (const auto& pair : weightedOptions)
-    {
-        double rngRangeMax = rngRangeMin + pair.second * maxRng / totalWeight;
-        if (rng >= rngRangeMin && rng < rngRangeMax)
-            return pair.first;
-
-        rngRangeMin = rngRangeMax;
-    }
-
-    return weightedOptions.rbegin()->first;
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource>
@@ -392,6 +357,44 @@ uint64_t ScattershotThread<TState, TResource>::GetHash(const T& toHash) const
         hashValue ^= static_cast<uint64_t>(byteHasher(data[i])) + 0x9e3779b97f4a7c15ull + (hashValue << 6) + (hashValue >> 2);
 
     return hashValue;
+}
+
+template <class TState, derived_from_specialization_of<Resource> TResource>
+void ScattershotThread<TState, TResource>::AddRandomMovementOption(std::map<MovementOption, double> weightedOptions)
+{
+    if (weightedOptions.empty())
+        return;
+
+    double maxRng = 10000.0;
+
+    double totalWeight = 0;
+    for (const auto& pair : weightedOptions)
+        totalWeight += pair.second;
+
+    if (totalWeight == 0)
+        return;
+
+    double rng = GetTempRng() % (int)maxRng;
+    double rngRangeMin = 0;
+    for (const auto& pair : weightedOptions)
+    {
+        double rngRangeMax = rngRangeMin + pair.second * maxRng / totalWeight;
+        if (rng >= rngRangeMin && rng < rngRangeMax)
+        {
+            movementOptions.insert(pair.first);
+            return;
+        }
+
+        rngRangeMin = rngRangeMax;
+    }
+
+    movementOptions.insert(weightedOptions.rbegin()->first);
+}
+
+template <class TState, derived_from_specialization_of<Resource> TResource>
+bool ScattershotThread<TState, TResource>::CheckMovementOptions(MovementOption movementOption)
+{
+    return movementOptions.contains(movementOption);
 }
 
 #endif

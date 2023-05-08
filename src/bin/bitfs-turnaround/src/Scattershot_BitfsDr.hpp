@@ -1,8 +1,6 @@
 #pragma once
 #include <Scattershot.hpp>
 #include <tasfw/scripts/BitFSPyramidOscillation.hpp>
-//#include <tasfw/SharedLib.hpp>
-//#include <unordered_set>
 
 class SShotState_BitfsDr
 {
@@ -17,64 +15,48 @@ public:
     bool operator==(const SShotState_BitfsDr&) const = default;
 };
 
-template <class TState, derived_from_specialization_of<Resource> TResource>
-class Scattershot_BitfsDr : public ScattershotThread<TState, TResource>
+class Scattershot_BitfsDr : public ScattershotThread<SShotState_BitfsDr, LibSm64>
 {
 public:
-    //TODO: hopefully moving implementations to template imp. file removes the need for this
-    using Script<TResource>::resource;
-    using Script<TResource>::GetCurrentFrame;
-    using Script<TResource>::AdvanceFrameWrite;
-    using ScattershotThread<TState, TResource>::config;
-    using ScattershotThread<TState, TResource>::ChooseMovementOption;
-    using Script<TResource>::Load;
-    using Script<TResource>::GetInputs;
-    using Script<TResource>::ModifyAdhoc;
-    using Script<TResource>::sign;
-    using ScattershotThread<TState, TResource>::GetTempRng;
+    Scattershot_BitfsDr(Scattershot<SShotState_BitfsDr, LibSm64>& scattershot, int id)
+        : ScattershotThread<SShotState_BitfsDr, LibSm64>(scattershot, id) {}
 
-    Scattershot_BitfsDr(Scattershot<TState, TResource>& scattershot, int id) : ScattershotThread<TState, TResource>(scattershot, id) {}
-
-    std::unordered_set<MovementOptions> SelectMovementOptions()
+    void SelectMovementOptions()
     {
-        std::unordered_set<MovementOptions> movementOptions;
-
-        movementOptions.insert(ChooseMovementOption(GetTempRng(),
+        AddRandomMovementOption(
             {
-                {MovementOptions::MAX_MAGNITUDE, 4},
-                {MovementOptions::ZERO_MAGNITUDE, 0},
-                {MovementOptions::SAME_MAGNITUDE, 0},
-                {MovementOptions::RANDOM_MAGNITUDE, 1}
-            }));
+                {MovementOption::MAX_MAGNITUDE, 4},
+                {MovementOption::ZERO_MAGNITUDE, 0},
+                {MovementOption::SAME_MAGNITUDE, 0},
+                {MovementOption::RANDOM_MAGNITUDE, 1}
+            });
 
-        movementOptions.insert(ChooseMovementOption(GetTempRng(),
+        AddRandomMovementOption(
             {
-                {MovementOptions::MATCH_FACING_YAW, 1},
-                {MovementOptions::ANTI_FACING_YAW, 2},
-                {MovementOptions::SAME_YAW, 4},
-                {MovementOptions::RANDOM_YAW, 8}
-            }));
+                {MovementOption::MATCH_FACING_YAW, 1},
+                {MovementOption::ANTI_FACING_YAW, 2},
+                {MovementOption::SAME_YAW, 4},
+                {MovementOption::RANDOM_YAW, 8}
+            });
 
-        movementOptions.insert(ChooseMovementOption(GetTempRng(),
+        AddRandomMovementOption(
             {
-                {MovementOptions::SAME_BUTTONS, 0},
-                {MovementOptions::NO_BUTTONS, 0},
-                {MovementOptions::RANDOM_BUTTONS, 10}
-            }));
+                {MovementOption::SAME_BUTTONS, 0},
+                {MovementOption::NO_BUTTONS, 0},
+                {MovementOption::RANDOM_BUTTONS, 10}
+            });
 
-        movementOptions.insert(ChooseMovementOption(GetTempRng(),
+        AddRandomMovementOption(
             {
-                {MovementOptions::NO_SCRIPT, 95},
-                {MovementOptions::PBD, 95},
-                {MovementOptions::RUN_DOWNHILL, 0},
-                {MovementOptions::REWIND, 0},
-                {MovementOptions::TURN_UPHILL, 95}
-            }));
-
-        return movementOptions;
+                {MovementOption::NO_SCRIPT, 95},
+                {MovementOption::PBD, 95},
+                {MovementOption::RUN_DOWNHILL, 0},
+                {MovementOption::REWIND, 0},
+                {MovementOption::TURN_UPHILL, 95}
+            });
     }
 
-    bool ApplyMovement(std::unordered_set<MovementOptions> movementOptions)
+    bool ApplyMovement()
     {
         return ModifyAdhoc([&]()
             {
@@ -82,18 +64,16 @@ public:
                 Camera* camera = *(Camera**)(resource->addr("gCamera"));
 
                 // Scripts
-                if (movementOptions.contains(MovementOptions::RUN_DOWNHILL))
+                if (CheckMovementOptions(MovementOption::RUN_DOWNHILL))
                 {
                     BitFsPyramidOscillation_ParamsDto params;
                     params.roughTargetAngle = marioState->faceAngle[1];
                     params.ignoreXzSum = true;
-                    auto status = this->Modify<BitFsPyramidOscillation_RunDownhill>(params);
-                    if (status.asserted)
-                        return true;
+                    return Modify<BitFsPyramidOscillation_RunDownhill>(params).asserted;
                 }
-                else if (movementOptions.contains(MovementOptions::PBD) && Pbd())
-                    return true;
-                else if (movementOptions.contains(MovementOptions::REWIND))
+                else if (CheckMovementOptions(MovementOption::PBD))
+                    return Pbd();
+                else if (CheckMovementOptions(MovementOption::REWIND))
                 {
                     int64_t currentFrame = GetCurrentFrame();
                     int maxRewind = (currentFrame - config.StartFrame) / 2;
@@ -101,38 +81,38 @@ public:
                     Load(currentFrame - rewindFrames);
                     return true;
                 }
-                else if (movementOptions.contains(MovementOptions::TURN_UPHILL) && TurnUphill())
-                    return true;
+                else if (CheckMovementOptions(MovementOption::TURN_UPHILL))
+                    return TurnUphill();
 
                 // stick mag
                 float intendedMag = 0;
-                if (movementOptions.contains(MovementOptions::MAX_MAGNITUDE))
+                if (CheckMovementOptions(MovementOption::MAX_MAGNITUDE))
                     intendedMag = 32.0f;
-                else if (movementOptions.contains(MovementOptions::ZERO_MAGNITUDE))
+                else if (CheckMovementOptions(MovementOption::ZERO_MAGNITUDE))
                     intendedMag = 0;
-                else if (movementOptions.contains(MovementOptions::SAME_MAGNITUDE))
+                else if (CheckMovementOptions(MovementOption::SAME_MAGNITUDE))
                     intendedMag = marioState->intendedMag;
-                else if (movementOptions.contains(MovementOptions::RANDOM_MAGNITUDE))
+                else if (CheckMovementOptions(MovementOption::RANDOM_MAGNITUDE))
                     intendedMag = (GetTempRng() % 10000) / 32.0f;
 
                 // Intended yaw
                 int16_t intendedYaw = 0;
-                if (movementOptions.contains(MovementOptions::MATCH_FACING_YAW))
+                if (CheckMovementOptions(MovementOption::MATCH_FACING_YAW))
                     intendedYaw = marioState->faceAngle[1];
-                else if (movementOptions.contains(MovementOptions::ANTI_FACING_YAW))
+                else if (CheckMovementOptions(MovementOption::ANTI_FACING_YAW))
                     intendedYaw = marioState->faceAngle[1] + 0x8000;
-                else if (movementOptions.contains(MovementOptions::SAME_YAW))
+                else if (CheckMovementOptions(MovementOption::SAME_YAW))
                     intendedYaw = marioState->intendedYaw;
-                else if (movementOptions.contains(MovementOptions::RANDOM_YAW))
+                else if (CheckMovementOptions(MovementOption::RANDOM_YAW))
                     intendedYaw = GetTempRng();
 
                 // Buttons
                 uint16_t buttons = 0;
-                if (movementOptions.contains(MovementOptions::SAME_BUTTONS))
+                if (CheckMovementOptions(MovementOption::SAME_BUTTONS))
                     buttons = GetInputs(GetCurrentFrame() - 1).buttons;
-                else if (movementOptions.contains(MovementOptions::NO_BUTTONS))
+                else if (CheckMovementOptions(MovementOption::NO_BUTTONS))
                     buttons = 0;
-                else if (movementOptions.contains(MovementOptions::RANDOM_BUTTONS))
+                else if (CheckMovementOptions(MovementOption::RANDOM_BUTTONS))
                 {
                     buttons |= Buttons::B * (GetTempRng() % 2);
                     //buttons |= Buttons::Z & UpdateHashReturnPrev(rngHash) % 2;
@@ -147,7 +127,7 @@ public:
             }).executed;
     }
 
-    StateBin<SShotState_BitfsDr> GetStateBin()
+    SShotState_BitfsDr GetStateBin()
     {
         MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
         Camera* camera = *(Camera**)(resource->addr("gCamera"));
@@ -198,14 +178,11 @@ public:
             s *= 2;
             s += 1; //mark bad norm regime
 
-            return StateBin<SShotState_BitfsDr> (
-                SShotState_BitfsDr
-                    (
-                        (uint8_t)floor((marioState->pos[0] + 2330) / 200),
-                        (uint8_t)floor((marioState->pos[1] + 3200) / 400),
-                        (uint8_t)floor((marioState->pos[2] + 1090) / 200),
-                        s
-                    ));
+            return SShotState_BitfsDr(
+                (uint8_t)floor((marioState->pos[0] + 2330) / 200),
+                (uint8_t)floor((marioState->pos[1] + 3200) / 400),
+                (uint8_t)floor((marioState->pos[2] + 1090) / 200),
+                s);
         }
 
         s *= 200;
@@ -229,17 +206,14 @@ public:
 
         s *= 2; //mark good norm regime
 
-        return StateBin<SShotState_BitfsDr> (
-            SShotState_BitfsDr
-            (
-                (uint8_t)floor((marioState->pos[0] + 2330) / 10),
-                (uint8_t)floor((marioState->pos[1] + 3200) / 50),
-                (uint8_t)floor((marioState->pos[2] + 1090) / 10),
-                s
-            ));
+        return SShotState_BitfsDr(
+            (uint8_t)floor((marioState->pos[0] + 2330) / 10),
+            (uint8_t)floor((marioState->pos[1] + 3200) / 50),
+            (uint8_t)floor((marioState->pos[2] + 1090) / 10),
+            s);
     }
 
-    bool ValidateBlock()
+    bool ValidateState()
     {
         MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
         Camera* camera = *(Camera**)(resource->addr("gCamera"));
@@ -322,6 +296,9 @@ private:
                 MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
                 Camera* camera = *(Camera**)(resource->addr("gCamera"));
 
+                if (marioState->action != ACT_WALKING || marioState->forwardVel < 29.0f)
+                    return false;
+
                 int16_t intendedYaw = marioState->faceAngle[1] + GetTempRng() % 32768 - 16384;
                 auto stick = Inputs::GetClosestInputByYawHau(intendedYaw, 32, camera->yaw);
                 AdvanceFrameWrite(Inputs(Buttons::B | Buttons::START, stick.first, stick.second));
@@ -332,10 +309,6 @@ private:
                 AdvanceFrameWrite(Inputs(0, 0, 0));
                 AdvanceFrameWrite(Inputs(Buttons::START, 0, 0));
                 AdvanceFrameWrite(Inputs(0, 0, 0));
-
-                //int16_t intendedYaw2 = marioState->faceAngle[1] + UpdateHashReturnPrev(rngHash) % 32768 - 16384;
-                //stick = Inputs::GetClosestInputByYawHau(intendedYaw, 32, camera->yaw);
-                //AdvanceFrameWrite(Inputs(Buttons::B, stick.first, stick.second));
 
                 return true;
             }).executed;
@@ -353,7 +326,8 @@ private:
                 // Turn 2048 towrds uphill
                 auto m64 = M64();
                 auto save = ImportedSave(PyramidUpdateMem(*resource, pyramid), GetCurrentFrame());
-                auto status = BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle::MainFromSave<BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>(m64, save, 0);
+                auto status = BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle
+                    ::MainFromSave<BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>(m64, save, 0);
                 if (!status.validated)
                     return false;
 

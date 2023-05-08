@@ -108,7 +108,7 @@ public:
     template <derived_from_specialization_of<ScattershotThread> TScattershotThread>
     static void Run(const Configuration& configuration)
     {
-        auto scattershot = TScattershotThread::CreateScattershot(configuration);
+        auto scattershot = Scattershot(configuration);
         scattershot.MultiThread(configuration.TotalThreads, [&]()
             {
                 int threadId = omp_get_thread_num();
@@ -127,7 +127,7 @@ public:
         requires derived_from_specialization_of<TScattershotThread<TState, TResource>, ScattershotThread>
     static void Run(const Configuration& configuration)
     {
-        auto scattershot = TScattershotThread<TState, TResource>::CreateScattershot(configuration);
+        auto scattershot = Scattershot(configuration);
         scattershot.MultiThread(configuration.TotalThreads, [&]()
             {
                 int threadId = omp_get_thread_num();
