@@ -190,7 +190,10 @@ void Script<TResource>::ApplyChildDiff(const BaseScriptStatus& status, std::map<
 
 		//Forward state to end of diff
 		Load(lastFrame + 1);
+		return;
 	}
+
+	Load(initialFrame);
 }
 
 template <derived_from_specialization_of<Resource> TResource>
