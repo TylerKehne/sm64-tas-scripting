@@ -35,11 +35,38 @@ public:
     bool operator==(const StateBin<TState>&) const = default;
 
     template <typename T>
-    uint64_t GetHash(const T& toHash) const;
+    uint64_t GetHash(const T& toHash, bool ignoreFillerBytes) const;
 
     int FindNewHashIndex(int* hashTable, int maxHashes) const;
     int GetBlockIndex(Block<TState>* blocks, int* hashTable, int maxHashes, int nMin, int nMax) const;
     void print() const;
+
+    static std::unordered_set<int> GetStateBinRuntimeFillerBytes()
+    {
+        std::unordered_set<int> fillerBytes;
+
+        StateBin<TState> stateBin;
+        std::byte* binPtr = reinterpret_cast<std::byte*>(&stateBin.state);
+
+        // initialize to specific garbage data compatible with all primitives;
+        for (int i = 0; i < sizeof(TState); i++)
+            binPtr[i] = (std::byte)0x3f;
+
+        // Check which bytes identity depends on
+        StateBin<TState> stateBinCopy = stateBin;
+        std::byte* binCopyPtr = reinterpret_cast<std::byte*>(&stateBin.state);
+        for (int i = 0; i < sizeof(TState); i++)
+        {
+            binCopyPtr[i] = (std::byte)0x00;
+            if (stateBin == stateBinCopy)
+                fillerBytes.insert(i);
+            binCopyPtr[i] = (std::byte)0x3f;
+        }
+
+        return fillerBytes;
+    }
+
+    inline const static std::unordered_set<int> FillerBytes = GetStateBinRuntimeFillerBytes();
 };
 
 class Configuration
@@ -124,6 +151,7 @@ private:
     int* NSegments;
     Block<TState>* SharedBlocks;
     int* SharedHashTable;
+    std::unordered_set<int> StateBinFillerBytes;
 
     void MergeState(int mainIteration);
     void MergeBlocks();

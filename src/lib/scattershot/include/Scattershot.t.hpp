@@ -5,28 +5,32 @@
 
 template <class TState>
 template <typename T>
-uint64_t StateBin<TState>::GetHash(const T& toHash) const
+uint64_t StateBin<TState>::GetHash(const T& toHash, bool ignoreFillerBytes) const
 {
     std::hash<std::byte> byteHasher;
     const std::byte* data = reinterpret_cast<const std::byte*>(&toHash);
     uint64_t hashValue = 0;
     for (std::size_t i = 0; i < sizeof(toHash); ++i)
-        hashValue ^= static_cast<uint64_t>(byteHasher(data[i])) + 0x9e3779b97f4a7c15ull + (hashValue << 6) + (hashValue >> 2);
-
+    {
+        if (ignoreFillerBytes || !StateBin<TState>::FillerBytes.contains(i))
+            hashValue ^= static_cast<uint64_t>(byteHasher(data[i])) + 0x9e3779b97f4a7c15ull + (hashValue << 6) + (hashValue >> 2);
+    }
+   
     return hashValue;
 }
 
 template <class TState>
 int StateBin<TState>::FindNewHashIndex(int* hashTable, int maxHashes) const
 {
-    uint64_t hash;
+    uint64_t hash = GetHash(state, false);
     for (int i = 0; i < 100; i++)
     {
-        hash = GetHash(hash);
         int hashIndex = hash % maxHashes;
 
         if (hashTable[hashIndex] == -1)
             return hashIndex;
+
+        hash = GetHash(hash, true);
     }
 
     //printf("Failed to find new hash index after 100 tries!\n");
@@ -62,7 +66,7 @@ void Configuration::SetResourcePaths(const TContainer& container)
 template <class TState>
 int StateBin<TState>::GetBlockIndex(Block<TState>* blocks, int* hashTable, int maxHashes, int nMin, int nMax) const
 {
-    uint64_t hash = GetHash(state);
+    uint64_t hash = GetHash(state, false);
     for (int i = 0; i < 100; i++)
     {
         int blockIndex = hashTable[hash % maxHashes];
@@ -72,7 +76,7 @@ int StateBin<TState>::GetBlockIndex(Block<TState>* blocks, int* hashTable, int m
         if (blockIndex >= nMin && blockIndex < nMax && blocks[blockIndex].stateBin == *this)
             return blockIndex;
 
-        hash = GetHash(hash);
+        hash = GetHash(hash, true);
     }
 
     //printf("Failed to find block from hash after 100 tries!\n");

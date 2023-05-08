@@ -22,8 +22,7 @@ static uint16_t byteswap(uint16_t x)
 
 std::pair<
 	std::unordered_map<int16_t, std::map<float, std::pair<int8_t, int8_t>>>,
-	std::unordered_map<
-		int8_t, std::unordered_map<int8_t, std::pair<int16_t, float>>>>
+	std::unordered_map<int8_t, std::unordered_map<int8_t, std::pair<int16_t, float>>>>
 PopulateInputMappings()
 {
 	std::unordered_map<int16_t, std::map<float, std::pair<int8_t, int8_t>>>
