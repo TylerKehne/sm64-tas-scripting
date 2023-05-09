@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <map>
 #include <unordered_set>
+#include <sm64/Camera.hpp>
 
 #ifndef SCATTERSHOT_THREAD_H
 #define SCATTERSHOT_THREAD_H
@@ -95,6 +96,7 @@ protected:
 
     void AddRandomMovementOption(std::map<MovementOption, double> weightedOptions);
     bool CheckMovementOptions(MovementOption movementOption);
+    Inputs RandomInputs(std::map<Buttons, double> buttonProbabilities);
 
 private:
     Scattershot<TState, TResource>& scattershot;

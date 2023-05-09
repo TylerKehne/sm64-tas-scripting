@@ -84,44 +84,14 @@ public:
                 else if (CheckMovementOptions(MovementOption::TURN_UPHILL) && TurnUphill())
                     return true;
 
-                // stick mag
-                float intendedMag = 0;
-                if (CheckMovementOptions(MovementOption::MAX_MAGNITUDE))
-                    intendedMag = 32.0f;
-                else if (CheckMovementOptions(MovementOption::ZERO_MAGNITUDE))
-                    intendedMag = 0;
-                else if (CheckMovementOptions(MovementOption::SAME_MAGNITUDE))
-                    intendedMag = marioState->intendedMag;
-                else if (CheckMovementOptions(MovementOption::RANDOM_MAGNITUDE))
-                    intendedMag = (GetTempRng() % 1024) / 32.0f;
-
-                // Intended yaw
-                int16_t intendedYaw = 0;
-                if (CheckMovementOptions(MovementOption::MATCH_FACING_YAW))
-                    intendedYaw = marioState->faceAngle[1];
-                else if (CheckMovementOptions(MovementOption::ANTI_FACING_YAW))
-                    intendedYaw = marioState->faceAngle[1] + 0x8000;
-                else if (CheckMovementOptions(MovementOption::SAME_YAW))
-                    intendedYaw = marioState->intendedYaw;
-                else if (CheckMovementOptions(MovementOption::RANDOM_YAW))
-                    intendedYaw = GetTempRng();
-
-                // Buttons
-                uint16_t buttons = 0;
-                if (CheckMovementOptions(MovementOption::SAME_BUTTONS))
-                    buttons = GetInputs(GetCurrentFrame() - 1).buttons;
-                else if (CheckMovementOptions(MovementOption::NO_BUTTONS))
-                    buttons = 0;
-                else if (CheckMovementOptions(MovementOption::RANDOM_BUTTONS))
-                {
-                    buttons |= Buttons::B * (GetTempRng() % 2);
-                    //buttons |= Buttons::Z & UpdateHashReturnPrev(rngHash) % 2;
-                    //buttons |= Buttons::C_UP & UpdateHashReturnPrev(rngHash) % 2;
-                }
-                    
-                // Calculate and execute input
-                auto stick = Inputs::GetClosestInputByYawHau(intendedYaw, intendedMag, camera->yaw);
-                AdvanceFrameWrite(Inputs(buttons, stick.first, stick.second));
+                // Random input
+                AdvanceFrameWrite(RandomInputs(
+                    {
+                        {Buttons::A, 0},
+                        {Buttons::B, 0.5},
+                        {Buttons::Z, 0},
+                        {Buttons::C_UP, 0}
+                    }));
 
                 return true;
             }).executed;
@@ -306,8 +276,8 @@ private:
                 auto stick = Inputs::GetClosestInputByYawHau(intendedYaw, 32, camera->yaw);
                 AdvanceFrameWrite(Inputs(Buttons::B | Buttons::START, stick.first, stick.second));
 
-                //if (marioState->action != ACT_DIVE_SLIDE)
-                //    return false;
+                if (marioState->action != ACT_DIVE_SLIDE)
+                    return false;
 
                 AdvanceFrameWrite(Inputs(0, 0, 0));
                 AdvanceFrameWrite(Inputs(Buttons::START, 0, 0));

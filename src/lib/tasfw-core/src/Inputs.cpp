@@ -374,8 +374,6 @@ int M64::load()
 	return 1;
 }
 
-
-
 int M64::save(long initFrame)
 {
 	if (fileName.empty())

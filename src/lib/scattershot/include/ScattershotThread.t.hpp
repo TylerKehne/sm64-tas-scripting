@@ -366,11 +366,14 @@ void ScattershotThread<TState, TResource>::AddRandomMovementOption(std::map<Move
     if (weightedOptions.empty())
         return;
 
-    double maxRng = 10000.0;
+    double maxRng = 65536.0;
 
     double totalWeight = 0;
     for (const auto& pair : weightedOptions)
-        totalWeight += pair.second;
+    {
+        if (pair.second > 0)
+            totalWeight += pair.second;
+    }
 
     if (totalWeight == 0)
         return;
@@ -379,6 +382,9 @@ void ScattershotThread<TState, TResource>::AddRandomMovementOption(std::map<Move
     double rngRangeMin = 0;
     for (const auto& pair : weightedOptions)
     {
+        if (pair.second <= 0)
+            continue;
+
         double rngRangeMax = rngRangeMin + pair.second * maxRng / totalWeight;
         if (rng >= rngRangeMin && rng < rngRangeMax)
         {
@@ -396,6 +402,71 @@ template <class TState, derived_from_specialization_of<Resource> TResource>
 bool ScattershotThread<TState, TResource>::CheckMovementOptions(MovementOption movementOption)
 {
     return movementOptions.contains(movementOption);
+}
+
+template <class TState, derived_from_specialization_of<Resource> TResource>
+Inputs ScattershotThread<TState, TResource>::RandomInputs(std::map<Buttons, double> buttonProbabilities)
+{
+    Inputs inputs;
+
+    ExecuteAdhoc([&]()
+        {
+            MarioState* marioState = *(MarioState**)(this->resource->addr("gMarioState"));
+            Camera* camera = *(Camera**)(this->resource->addr("gCamera"));
+
+            // stick mag
+            float intendedMag = 0;
+            if (CheckMovementOptions(MovementOption::MAX_MAGNITUDE))
+                intendedMag = 32.0f;
+            else if (CheckMovementOptions(MovementOption::ZERO_MAGNITUDE))
+                intendedMag = 0;
+            else if (CheckMovementOptions(MovementOption::SAME_MAGNITUDE))
+                intendedMag = marioState->intendedMag;
+            else if (CheckMovementOptions(MovementOption::RANDOM_MAGNITUDE))
+                intendedMag = (GetTempRng() % 1024) / 32.0f;
+
+            // Intended yaw
+            int16_t intendedYaw = 0;
+            if (CheckMovementOptions(MovementOption::MATCH_FACING_YAW))
+                intendedYaw = marioState->faceAngle[1];
+            else if (CheckMovementOptions(MovementOption::ANTI_FACING_YAW))
+                intendedYaw = marioState->faceAngle[1] + 0x8000;
+            else if (CheckMovementOptions(MovementOption::SAME_YAW))
+                intendedYaw = marioState->intendedYaw;
+            else if (CheckMovementOptions(MovementOption::RANDOM_YAW))
+                intendedYaw = GetTempRng();
+
+            // Buttons
+            uint16_t buttons = 0;
+            if (CheckMovementOptions(MovementOption::SAME_BUTTONS))
+                buttons = this->GetInputs(this->GetCurrentFrame() - 1).buttons;
+            else if (CheckMovementOptions(MovementOption::NO_BUTTONS))
+                buttons = 0;
+            else if (CheckMovementOptions(MovementOption::RANDOM_BUTTONS))
+            {
+                for (const auto& pair : buttonProbabilities)
+                {
+                    if (pair.second <= 0)
+                        continue;
+
+                    if (pair.second >= 1.0)
+                    {
+                        buttons |= pair.first;
+                        continue;
+                    }
+
+                    if (double(GetTempRng()) / double(0xFFFFFFFFFFFFFFFFull) <= pair.second)
+                        buttons |= pair.first;
+                }
+            }
+
+            // Calculate and execute input
+            auto stick = Inputs::GetClosestInputByYawHau(intendedYaw, intendedMag, camera->yaw);
+            inputs = Inputs(buttons, stick.first, stick.second);
+            return true;
+        });
+
+    return inputs;
 }
 
 #endif
