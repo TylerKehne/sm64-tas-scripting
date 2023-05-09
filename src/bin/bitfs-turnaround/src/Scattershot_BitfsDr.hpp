@@ -64,6 +64,14 @@ public:
                 Camera* camera = *(Camera**)(resource->addr("gCamera"));
 
                 // Scripts
+                if (CheckMovementOptions(MovementOption::REWIND))
+                {
+                    int64_t currentFrame = GetCurrentFrame();
+                    int maxRewind = (currentFrame - config.StartFrame) / 2;
+                    int rewindFrames = (GetTempRng() % 100) * maxRewind / 100;
+                    Load(currentFrame - rewindFrames);
+                }
+
                 if (CheckMovementOptions(MovementOption::RUN_DOWNHILL))
                 {
                     BitFsPyramidOscillation_ParamsDto params;
@@ -71,18 +79,10 @@ public:
                     params.ignoreXzSum = true;
                     return Modify<BitFsPyramidOscillation_RunDownhill>(params).asserted;
                 }
-                else if (CheckMovementOptions(MovementOption::PBD))
-                    return Pbd();
-                else if (CheckMovementOptions(MovementOption::REWIND))
-                {
-                    int64_t currentFrame = GetCurrentFrame();
-                    int maxRewind = (currentFrame - config.StartFrame) / 2;
-                    int rewindFrames = (GetTempRng() % 100) * maxRewind / 100;
-                    Load(currentFrame - rewindFrames);
+                else if (CheckMovementOptions(MovementOption::PBD) && Pbd())
                     return true;
-                }
-                else if (CheckMovementOptions(MovementOption::TURN_UPHILL))
-                    return TurnUphill();
+                else if (CheckMovementOptions(MovementOption::TURN_UPHILL) && TurnUphill())
+                    return true;
 
                 // stick mag
                 float intendedMag = 0;
@@ -93,7 +93,7 @@ public:
                 else if (CheckMovementOptions(MovementOption::SAME_MAGNITUDE))
                     intendedMag = marioState->intendedMag;
                 else if (CheckMovementOptions(MovementOption::RANDOM_MAGNITUDE))
-                    intendedMag = (GetTempRng() % 10000) / 32.0f;
+                    intendedMag = (GetTempRng() % 1024) / 32.0f;
 
                 // Intended yaw
                 int16_t intendedYaw = 0;
@@ -257,12 +257,14 @@ public:
         if (marioState->action == ACT_FORWARD_ROLLOUT && fabs(xNorm) > .3 && fabs(xNorm) + fabs(zNorm) > .65 &&
             marioState->pos[0] + marioState->pos[2] > (-1945 - 715)) //make sure Mario is going toward the right/east edge
         {  
-            char fileName[128];
-            printf("\ndr\n");
-
-            //sprintf(fileName, "C:\\Users\\Tyler\\Documents\\repos\\scattershot\\x64\\Debug\\m64s\\dr\\bitfs_dr_%f_%f_%f_%f_%d.m64",
-            //    pyramid->oTiltingPyramidNormalX, pyramid->oTiltingPyramidNormalY, pyramid->oTiltingPyramidNormalZ, marioState->vel[1], omp_get_thread_num());
-            //Utils::writeFile(fileName, "C:\\Users\\Tyler\\Documents\\repos\\scattershot\\x64\\Debug\\4_units_from_edge.m64", m64Diff, config.StartFrame, frame + 1);
+            #pragma omp critical
+            {
+                char fileName[128];
+                printf("\ndr\n");
+                sprintf(fileName, "C:\\Users\\Tyler\\Documents\\repos\\sm64_tas_scripting\\res\\bitfs_dr_%f_%f_%f_%f.m64",
+                    pyramid->oTiltingPyramidNormalX, pyramid->oTiltingPyramidNormalY, pyramid->oTiltingPyramidNormalZ, marioState->vel[1]);
+                ExportM64(fileName);
+            }
         }
 
         //check on hspd > 1 confirms we're in dr land rather than quickstopping,
@@ -296,6 +298,7 @@ private:
                 MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
                 Camera* camera = *(Camera**)(resource->addr("gCamera"));
 
+                // Validate consitions for dive
                 if (marioState->action != ACT_WALKING || marioState->forwardVel < 29.0f)
                     return false;
 
@@ -303,8 +306,8 @@ private:
                 auto stick = Inputs::GetClosestInputByYawHau(intendedYaw, 32, camera->yaw);
                 AdvanceFrameWrite(Inputs(Buttons::B | Buttons::START, stick.first, stick.second));
 
-                if (marioState->action != ACT_DIVE_SLIDE)
-                    return false;
+                //if (marioState->action != ACT_DIVE_SLIDE)
+                //    return false;
 
                 AdvanceFrameWrite(Inputs(0, 0, 0));
                 AdvanceFrameWrite(Inputs(Buttons::START, 0, 0));

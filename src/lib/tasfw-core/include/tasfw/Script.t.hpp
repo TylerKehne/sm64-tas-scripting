@@ -179,13 +179,11 @@ void Script<TResource>::ApplyChildDiff(const BaseScriptStatus& status, std::map<
 		saveCache[_adhocLevel].erase(saveCache[_adhocLevel].upper_bound(firstFrame), saveCache[_adhocLevel].end());
 
 		//Apply diff. State is already synced from child script, so no need to update it
-		uint64_t frame = firstFrame;
-		while (frame <= lastFrame)
+		
+		for (uint64_t frame = firstFrame; frame <= lastFrame; frame++)
 		{
 			if (status.m64Diff.frames.count(frame))
 				BaseStatus[_adhocLevel].m64Diff.frames[frame] = status.m64Diff.frames.at(frame);
-
-			frame++;
 		}
 
 		//Forward state to end of diff
@@ -200,6 +198,37 @@ template <derived_from_specialization_of<Resource> TResource>
 Inputs Script<TResource>::GetInputs(int64_t frame)
 {
 	return GetInputsMetadataAndCache(frame).inputs;
+}
+
+template <derived_from_specialization_of<Resource> TResource>
+M64Diff Script<TResource>::GetInputs(int64_t firstFrame, int64_t lastFrame)
+{
+	M64Diff diff;
+	for (int64_t frame = firstFrame; frame <= lastFrame; frame++)
+		diff.frames[frame] = GetInputsMetadata(frame).inputs;
+
+	return diff;
+}
+
+template <derived_from_specialization_of<Resource> TResource>
+bool Script<TResource>::ExportM64(std::filesystem::path fileName)
+{
+	return ExportM64(fileName, GetCurrentFrame());
+}
+
+template <derived_from_specialization_of<Resource> TResource>
+bool Script<TResource>::ExportM64(std::filesystem::path fileName, int64_t maxFrame)
+{
+	if (maxFrame == 0)
+		return false;
+
+	M64 outM64 = M64(fileName);
+	for (int64_t frame = 0; frame < maxFrame; frame++)
+	{
+		outM64.frames[frame] = GetInputsMetadata(frame).inputs;
+	}
+
+	return (bool)outM64.save();
 }
 
 template <derived_from_specialization_of<Resource> TResource>

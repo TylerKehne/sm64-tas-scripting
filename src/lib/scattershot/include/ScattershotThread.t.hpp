@@ -231,7 +231,8 @@ bool ScattershotThread<TState, TResource>::ChooseScriptAndApply()
         });
 
     // Execute script and update rng hash
-    return ModifyAdhoc([&]() { return ApplyMovement(); }).executed;
+    auto status = ModifyAdhoc([&]() { return ApplyMovement(); });
+    return status.executed && !status.m64Diff.frames.empty();
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource>
