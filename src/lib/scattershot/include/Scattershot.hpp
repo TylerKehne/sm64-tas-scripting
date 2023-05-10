@@ -90,8 +90,6 @@ public:
     int StartFromRootEveryNShots;
     std::filesystem::path M64Path;
     std::vector<std::filesystem::path> ResourcePaths;
-    bool Lightweight;
-    CountryCode CountryCode;
 
     template <class TContainer, typename TElement = typename TContainer::value_type>
         requires std::is_same_v<TElement, std::string>
