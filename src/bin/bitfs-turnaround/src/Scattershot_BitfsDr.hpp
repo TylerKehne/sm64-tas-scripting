@@ -230,10 +230,10 @@ public:
             #pragma omp critical
             {
                 char fileName[128];
-                printf("\ndr\n");
+                //printf("\ndr\n");
                 sprintf(fileName, "C:\\Users\\Tyler\\Documents\\repos\\sm64_tas_scripting\\res\\bitfs_dr_%f_%f_%f_%f.m64",
                     pyramid->oTiltingPyramidNormalX, pyramid->oTiltingPyramidNormalY, pyramid->oTiltingPyramidNormalZ, marioState->vel[1]);
-                ExportM64(fileName);
+                //ExportM64(fileName);
             }
         }
 

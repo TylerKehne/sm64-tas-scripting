@@ -7,6 +7,16 @@
 #ifndef INPUTS_H
 #define INPUTS_H
 
+enum class Rom : uint32_t
+{
+	SUPER_MARIO_64 = 0x4EAA3D0E
+};
+
+enum class CountryCode : uint16_t
+{
+	SUPER_MARIO_64_J = 0x4A00
+};
+
 class Rotation
 {
 public:

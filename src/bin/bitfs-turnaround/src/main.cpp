@@ -85,7 +85,7 @@ void InitConfiguration(Configuration& configuration)
 	configuration.MaxHashes = 10 * configuration.MaxBlocks;
 	configuration.MaxSharedBlocks = 20000000;
 	configuration.MaxSharedHashes = 10 * configuration.MaxSharedBlocks;
-	configuration.TotalThreads = 4;
+	configuration.TotalThreads = 1;
 	configuration.MaxSharedSegments = 25000000;
 	configuration.MaxLocalSegments = 2000000;
 	configuration.MaxLightningLength = 10000;
@@ -95,6 +95,8 @@ void InitConfiguration(Configuration& configuration)
 	configuration.MergesPerSegmentGC = 10;
 	configuration.StartFromRootEveryNShots = 5;
 	configuration.M64Path = std::filesystem::path("C:\\Users\\Tyler\\Documents\\repos\\sm64_tas_scripting\\res\\4_units_from_edge.m64");
+	configuration.Lightweight = true;
+	configuration.CountryCode = CountryCode::SUPER_MARIO_64_J;
 
 	configuration.SetResourcePaths(std::vector<std::string>
 		{
@@ -122,7 +124,15 @@ int main(int argc, const char* argv[])
 	//M64 m64 = M64(config.M64Path);
 	//m64.load();
 
-	Scattershot<SShotState_BitfsDr, LibSm64>::Run<Scattershot_BitfsDr>(config);
+	Scattershot<SShotState_BitfsDr, LibSm64>::Run<Scattershot_BitfsDr, LibSm64Config>(config, [&](auto path)
+		{
+			LibSm64Config resourceConfig;
+			resourceConfig.dllPath = path;
+			resourceConfig.lightweight = true;
+			resourceConfig.countryCode = CountryCode::SUPER_MARIO_64_J;
+
+			return resourceConfig;
+		});
 	//auto status = MainScript::MainConfig<MainScript>(m64, lib_path);
 
 	//m64.save();

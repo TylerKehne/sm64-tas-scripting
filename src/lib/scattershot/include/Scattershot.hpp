@@ -90,6 +90,8 @@ public:
     int StartFromRootEveryNShots;
     std::filesystem::path M64Path;
     std::vector<std::filesystem::path> ResourcePaths;
+    bool Lightweight;
+    CountryCode CountryCode;
 
     template <class TContainer, typename TElement = typename TContainer::value_type>
         requires std::is_same_v<TElement, std::string>
@@ -105,8 +107,9 @@ public:
 
     Scattershot(const Configuration& configuration);
 
-    template <derived_from_specialization_of<ScattershotThread> TScattershotThread>
-    static void Run(const Configuration& configuration)
+    template <derived_from_specialization_of<ScattershotThread> TScattershotThread, class TResourceConfig, typename F>
+        requires std::same_as<std::invoke_result_t<F, std::filesystem::path>, TResourceConfig>
+    static void Run(const Configuration& configuration, F resourceConfigGenerator)
     {
         auto scattershot = Scattershot(configuration);
         scattershot.MultiThread(configuration.TotalThreads, [&]()
@@ -117,8 +120,8 @@ public:
                     M64 m64 = M64(configuration.M64Path);
                     m64.load();
 
-                    auto resourcePath = configuration.ResourcePaths[threadId];
-                    auto status = TScattershotThread::template MainConfig<TScattershotThread>(m64, resourcePath, scattershot, threadId);
+                    auto status = TScattershotThread::template MainConfig<TScattershotThread>
+                        (m64, resourceConfigGenerator(configuration.ResourcePaths[threadId]), scattershot, threadId);
                 }
             });
     }
