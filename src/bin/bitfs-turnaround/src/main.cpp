@@ -78,7 +78,7 @@ public:
 
 void InitConfiguration(Configuration& configuration)
 {
-	configuration.StartFrame = 3545;
+	configuration.StartFrame = 3515;
 	configuration.SegmentLength = 10;
 	configuration.MaxSegments = 1024;
 	configuration.MaxBlocks = 500000;
