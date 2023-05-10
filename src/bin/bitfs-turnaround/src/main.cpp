@@ -85,7 +85,7 @@ void InitConfiguration(Configuration& configuration)
 	configuration.MaxHashes = 10 * configuration.MaxBlocks;
 	configuration.MaxSharedBlocks = 20000000;
 	configuration.MaxSharedHashes = 10 * configuration.MaxSharedBlocks;
-	configuration.TotalThreads = 1;
+	configuration.TotalThreads = 3;
 	configuration.MaxSharedSegments = 25000000;
 	configuration.MaxLocalSegments = 2000000;
 	configuration.MaxLightningLength = 10000;
@@ -95,8 +95,6 @@ void InitConfiguration(Configuration& configuration)
 	configuration.MergesPerSegmentGC = 10;
 	configuration.StartFromRootEveryNShots = 5;
 	configuration.M64Path = std::filesystem::path("C:\\Users\\Tyler\\Documents\\repos\\sm64_tas_scripting\\res\\4_units_from_edge.m64");
-	configuration.Lightweight = true;
-	configuration.CountryCode = CountryCode::SUPER_MARIO_64_J;
 
 	configuration.SetResourcePaths(std::vector<std::string>
 		{
