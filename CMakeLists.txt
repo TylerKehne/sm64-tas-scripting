@@ -6,6 +6,8 @@ project(sm64-tas-scripting
 	LANGUAGES CXX
 )
 
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /openmp")
+
 # Check build type
 # https://www.kitware.com/cmake-and-the-default-build-type/
 set(SM64_TASFW_DEFAULT_BUILD "Release")

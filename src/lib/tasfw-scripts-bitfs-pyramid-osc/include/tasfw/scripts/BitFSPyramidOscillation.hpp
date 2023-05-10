@@ -17,6 +17,7 @@ public:
 	float initialXzSum = 0;
 	int16_t roughTargetAngle = 0;
 	bool optimizeMaxSpeed = false;
+	bool ignoreXzSum = false;
 };
 
 class BitFsPyramidOscillation : public Script<LibSm64>

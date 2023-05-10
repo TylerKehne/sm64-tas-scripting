@@ -27,7 +27,7 @@ static void handler(int sig, siginfo_t* si, void* unused)
 }
 
 #endif
-LibSm64::LibSm64(const std::filesystem::path& dllPath) : dll(dllPath)
+LibSm64::LibSm64(const LibSm64Config& config) : config(config), dll(config.dllPath)
 {
 	slotManager._saveMemLimit = 1024 * 1024 * 1024; //1 GB
 
@@ -81,6 +81,23 @@ LibSm64::LibSm64(const std::filesystem::path& dllPath) : dll(dllPath)
 void LibSm64::save(LibSm64Mem& state) const
 {
 #if defined(_WIN32)
+	if (config.lightweight)
+	{
+		state.buf1.resize(200000);
+		state.buf2.resize(1300000);
+
+		uint8_t* dataPtr = reinterpret_cast<uint8_t*>(segment[0].address);
+		memcpy(state.buf1.data(), dataPtr, 100000);
+		memcpy(state.buf1.data() + 100000, dataPtr + 20 * 100000, 100000);
+
+		uint8_t* bssPtr = reinterpret_cast<uint8_t*>(segment[1].address);
+		memcpy(state.buf2.data(), bssPtr, 6 * 100000);
+		memcpy(state.buf2.data() + 6 * 100000, bssPtr + 17 * 100000, 6 * 100000);
+		memcpy(state.buf2.data() + 12 * 100000, bssPtr + 47 * 100000, 100000);
+
+		return;
+	}
+
 	state.buf1.resize(segment[0].length);
 	state.buf2.resize(segment[1].length);
 
@@ -102,6 +119,20 @@ void LibSm64::save(LibSm64Mem& state) const
 void LibSm64::load(const LibSm64Mem& state)
 {
 #if defined(_WIN32)
+	if (config.lightweight)
+	{
+		uint8_t* dataPtr = reinterpret_cast<uint8_t*>(segment[0].address);
+		memcpy(dataPtr, state.buf1.data(), 100000);
+		memcpy(dataPtr + 20 * 100000, state.buf1.data() + 100000, 100000);
+
+		uint8_t* bssPtr = reinterpret_cast<uint8_t*>(segment[1].address);
+		memcpy(bssPtr, state.buf2.data(), 6 * 100000);
+		memcpy(bssPtr + 17 * 100000, state.buf2.data() + 6 * 100000, 6 * 100000);
+		memcpy(bssPtr + 47 * 100000, state.buf2.data() + 12 * 100000, 100000);
+
+		return;
+}
+
 	memcpy(segment[0].address, state.buf1.data(), segment[0].length);
 	memcpy(segment[1].address, state.buf2.data(), segment[1].length);
 #else

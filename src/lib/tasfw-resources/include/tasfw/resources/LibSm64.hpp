@@ -2,9 +2,18 @@
 #include <unordered_map>
 #include <vector>
 #include "tasfw/Resource.hpp"
+#include <tasfw/Inputs.hpp>
 
 #ifndef LIBSM64_H
 #define LIBSM64_H
+
+class LibSm64Config
+{
+public:
+	std::filesystem::path dllPath;
+	CountryCode countryCode;
+	bool lightweight; // true = faster, but accuracy not guaranteed in all situations
+};
 
 constexpr int pagesize = 4096;
 class LibSm64Mem
@@ -24,13 +33,14 @@ class LibSm64 : public Resource<LibSm64Mem>
 public:
 	SharedLib dll;
 	std::vector<SegVal> segment;
+	const LibSm64Config config;
 
 #if !defined(_WIN32)
 	std::vector<uint8_t> original_buf1;
 	std::vector<uint8_t> original_buf2;
 #endif
 
-	LibSm64(const std::filesystem::path& dllPath);
+	LibSm64(const LibSm64Config& config);
 	void save(LibSm64Mem& state) const;
 	void load(const LibSm64Mem& state);
 	void advance();

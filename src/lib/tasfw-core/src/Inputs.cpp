@@ -19,11 +19,14 @@ static uint16_t byteswap(uint16_t x)
 	return (x >> 8U) | (x << 8U);
 }
 
+static uint32_t byteswap(uint32_t x)
+{
+	return (x >> 24U) | (((x << 8U) >> 24U ) << 8U) | (((x >> 8U) << 24U) >> 8U) | (x << 24U);
+}
 
 std::pair<
 	std::unordered_map<int16_t, std::map<float, std::pair<int8_t, int8_t>>>,
-	std::unordered_map<
-		int8_t, std::unordered_map<int8_t, std::pair<int16_t, float>>>>
+	std::unordered_map<int8_t, std::unordered_map<int8_t, std::pair<int16_t, float>>>>
 PopulateInputMappings()
 {
 	std::unordered_map<int16_t, std::map<float, std::pair<int8_t, int8_t>>>
@@ -361,8 +364,6 @@ int M64::load()
 	return 1;
 }
 
-
-
 int M64::save(long initFrame)
 {
 	if (fileName.empty())
@@ -370,7 +371,14 @@ int M64::save(long initFrame)
 
 	if (frames.empty())
 		return 1;
-	std::ofstream f(fileName, ios_base::in | ios_base::out | ios_base::binary);
+
+	std::ofstream f;
+	bool newFile = !std::filesystem::exists(fileName);
+	if (!newFile)
+		f = std::ofstream(fileName, ios_base::in | ios_base::out | ios_base::binary);
+	else
+		f = std::ofstream(fileName, ios_base::trunc | ios_base::binary);	
+
 	f.exceptions(ios_base::failbit | ios_base::badbit);
 
 
@@ -378,10 +386,30 @@ int M64::save(long initFrame)
 
 	try
 	{
+		// Write signature/version number (see https://tasvideos.org/EmulatorResources/Mupen/M64)
+		if (newFile)
+		{
+			f.seekp(0x0, ios_base::beg);
+			uint32_t signature = byteswap(uint32_t(0x4D36341A));
+			uint8_t versionNumber = 3;
+			f.write(reinterpret_cast<char*>(&signature), sizeof(uint32_t));
+			f.write(reinterpret_cast<char*>(&versionNumber), sizeof(uint8_t));
+		}
+
 		// Write number of frames
 		f.seekp(0xC, ios_base::beg);
 		uint32_t value = std::numeric_limits<uint32_t>::max();
 		f.write(reinterpret_cast<char*>(&value), sizeof(uint32_t));
+
+		// Write ROM signature + country code
+		if (newFile)
+		{
+			f.seekp(0xE4, ios_base::beg);
+			uint32_t rom = byteswap((uint32_t)Rom::SUPER_MARIO_64);
+			uint16_t countryCode = byteswap((uint16_t)CountryCode::SUPER_MARIO_64_J);
+			f.write(reinterpret_cast<char*>(&rom), sizeof(uint32_t));
+			f.write(reinterpret_cast<char*>(&countryCode), sizeof(uint16_t));
+		}
 
 		// Write frames
 		f.seekp(0x400 + 4 * initFrame, ios_base::beg);

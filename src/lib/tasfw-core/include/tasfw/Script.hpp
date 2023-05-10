@@ -561,6 +561,9 @@ protected:
 	void RollForward(int64_t frame);
 	void Restore(int64_t frame);
 	Inputs GetInputs(int64_t frame);
+	M64Diff GetInputs(int64_t firstFrame, int64_t lastFrame);
+	bool ExportM64(std::filesystem::path fileName);
+	bool ExportM64(std::filesystem::path fileName, int64_t maxFrame);
 
 	virtual bool validation() = 0;
 	virtual bool execution() = 0;
