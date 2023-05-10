@@ -50,8 +50,8 @@ public:
             {
                 {MovementOption::NO_SCRIPT, 95},
                 {MovementOption::PBD, 95},
-                {MovementOption::RUN_DOWNHILL, 0},
-                {MovementOption::REWIND, 0},
+                {MovementOption::RUN_DOWNHILL, 20},
+                {MovementOption::REWIND, 5},
                 {MovementOption::TURN_UPHILL, 95}
             });
     }
@@ -88,7 +88,7 @@ public:
                 AdvanceFrameWrite(RandomInputs(
                     {
                         {Buttons::A, 0},
-                        {Buttons::B, 0.5},
+                        {Buttons::B, 0.2},
                         {Buttons::Z, 0},
                         {Buttons::C_UP, 0}
                     }));
@@ -242,11 +242,14 @@ public:
         if (marioState->action == ACT_FREEFALL_LAND_STOP && marioState->pos[1] > -2980 && marioState->forwardVel > 1
             && fabs(xNorm) > .29 && fabs(marioState->pos[0]) > -1680)
         {
-            char fileName[128];
-            printf("\ndrland\n");
-            //sprintf(fileName, "C:\\Users\\Tyler\\Documents\\repos\\scattershot\\x64\\Debug\\m64s\\drland\\bitfs_dr_%f_%f_%f_%f_%d.m64",
-            //    pyramid->oTiltingPyramidNormalX, pyramid->oTiltingPyramidNormalY, pyramid->oTiltingPyramidNormalZ, marioState->vel[1], omp_get_thread_num());
-            //Utils::writeFile(fileName, "C:\\Users\\Tyler\\Documents\\repos\\scattershot\\x64\\Debug\\4_units_from_edge.m64", m64Diff, config.StartFrame, frame + 1);
+            #pragma omp critical
+            {
+                char fileName[128];
+                printf("\ndrland\n");
+                sprintf(fileName, "C:\\Users\\Tyler\\Documents\\repos\\sm64_tas_scripting\\res\\bitfs_drland_%f_%f_%f_%f.m64",
+                    pyramid->oTiltingPyramidNormalX, pyramid->oTiltingPyramidNormalY, pyramid->oTiltingPyramidNormalZ, marioState->vel[1]);
+                ExportM64(fileName);
+            }
         }
 
         return true;

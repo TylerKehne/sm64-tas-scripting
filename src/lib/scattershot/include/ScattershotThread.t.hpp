@@ -264,7 +264,8 @@ float ScattershotThread<TState, TResource>::GetStateFitnessSafe()
 template <class TState, derived_from_specialization_of<Resource> TResource>
 AdhocBaseScriptStatus ScattershotThread<TState, TResource>::DecodeBaseBlockDiffAndApply()
 {
-    return ModifyAdhoc([&]()
+    int64_t postScriptFrame = -1;
+    auto status = ModifyAdhoc([&]()
         {
             //if (tState.BaseBlock.tailSeg == 0) printf("origBlock has null tailSeg");
 
@@ -285,8 +286,13 @@ AdhocBaseScriptStatus ScattershotThread<TState, TResource>::DecodeBaseBlockDiffA
                     ChooseScriptAndApply();
             }
 
+            postScriptFrame = this->GetCurrentFrame();
             return true;
         });
+
+    // Needed to sync with original execution (block is saved after individual script diff is applied)
+    this->Load(postScriptFrame);
+    return status;
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource>
