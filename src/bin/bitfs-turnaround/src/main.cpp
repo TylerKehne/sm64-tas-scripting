@@ -79,7 +79,7 @@ public:
 void InitConfiguration(Configuration& configuration)
 {
 	configuration.StartFrame = 3515;
-	configuration.SegmentLength = 10;
+	configuration.SegmentLength = 20;
 	configuration.MaxSegments = 1024;
 	configuration.MaxBlocks = 500000;
 	configuration.MaxHashes = 10 * configuration.MaxBlocks;
@@ -91,9 +91,10 @@ void InitConfiguration(Configuration& configuration)
 	configuration.MaxLightningLength = 10000;
 	configuration.MaxShots = 1000000000;
 	configuration.SegmentsPerShot = 200;
-	configuration.ShotsPerMerge = 300;
-	configuration.MergesPerSegmentGC = 10;
-	configuration.StartFromRootEveryNShots = 5;
+	configuration.ShotsPerMerge = 100;
+	configuration.MergesPerSegmentGC = 30;
+	configuration.StartFromRootEveryNShots = 50;
+	configuration.SampleRatio = 0.005;
 	configuration.M64Path = std::filesystem::path("C:\\Users\\Tyler\\Documents\\repos\\sm64_tas_scripting\\res\\4_units_from_edge.m64");
 
 	configuration.SetResourcePaths(std::vector<std::string>

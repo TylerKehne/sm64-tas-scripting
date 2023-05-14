@@ -32,7 +32,12 @@ bool ScattershotThread<TState, TResource>::execution()
     {
         // ALWAYS START WITH A MERGE SO THE SHARED BLOCKS ARE OK.
         if (shot % config.ShotsPerMerge == 0)
-            SingleThread([&]() { scattershot.MergeState(shot); });
+            SingleThread([&]()
+                {
+                    scattershot.MergeState(shot);
+
+                    QueryBlock(shot);
+                });
 
         // Pick a block to "fire a scattershot" at
         if (!SelectBaseBlock(shot))
@@ -56,6 +61,72 @@ bool ScattershotThread<TState, TResource>::execution()
     }
 
     return true;
+}
+
+template <class TState, derived_from_specialization_of<Resource> TResource>
+std::string ScattershotThread<TState, TResource>::GetCsvLabels()
+{
+    return "";
+}
+
+template <class TState, derived_from_specialization_of<Resource> TResource>
+void ScattershotThread<TState, TResource>::QueryBlock(int shot)
+{
+    double sampleRatio = config.SampleRatio <= 0 ? 0
+        : config.SampleRatio >= 1.0 ? 1.0 : config.SampleRatio;
+
+    std::string csvLabels = GetCsvLabels();
+    if (csvLabels == "" || sampleRatio == 0)
+        return;
+
+    std::cout << "Exporting to CSV...\n";
+
+    std::string fileName = "C:/Users/Tyler/Documents/repos/sm64_tas_scripting/res/csv_" + std::to_string(shot) + "_" + std::to_string(scattershot.StartTime) + ".csv";
+
+    std::ofstream fout(fileName);
+    fout << GetCsvLabels() << "\n";
+
+    // Don't persist rng changes
+    auto threadRng = RngHash;
+
+    for (int i = 0; i < scattershot.NBlocks[config.TotalThreads] * sampleRatio; i++)
+    {
+        if (sampleRatio == 1.0)
+        {
+            if (i >= scattershot.NBlocks[config.TotalThreads])
+                break;
+
+            BaseBlock = scattershot.SharedBlocks[i];
+        }
+        else
+            BaseBlock = scattershot.SharedBlocks[GetRng() % scattershot.NBlocks[config.TotalThreads]];
+
+        auto status = ExecuteAdhoc([&]()
+            {
+                DecodeBaseBlockDiffAndApply();
+
+                if (!ValidateBaseBlock())
+                    return false;
+
+                std::string blockString = BlockToString();
+                if (blockString != "")
+                {
+                    fout << blockString << "\n";
+                }
+            });
+    }
+
+    fout.close();
+
+    SetRng(threadRng);
+
+    std::cout << "Finished exporting to CSV.\n";
+}
+
+template <class TState, derived_from_specialization_of<Resource> TResource>
+std::string ScattershotThread<TState, TResource>::BlockToString()
+{
+    return "";
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource>
@@ -167,9 +238,9 @@ void ScattershotThread<TState, TResource>::ProcessNewBlock(uint64_t baseRngHash,
             scattershot.SharedBlocks, scattershot.SharedHashTable, config.MaxSharedHashes, 0, scattershot.NBlocks[config.TotalThreads]);
 
         bool bestlocalBlock = blockIndexLocal < scattershot.NBlocks[Id]
-            && newBlock.fitness >= Blocks[blockIndexLocal].fitness;
+            && newBlock.fitness > Blocks[blockIndexLocal].fitness;
         bool bestSharedBlockOrNew = !(blockIndex < scattershot.NBlocks[config.TotalThreads]
-            && newBlock.fitness < scattershot.SharedBlocks[blockIndex].fitness);
+            && newBlock.fitness <= scattershot.SharedBlocks[blockIndex].fitness);
 
         if (bestlocalBlock || bestSharedBlockOrNew)
         {

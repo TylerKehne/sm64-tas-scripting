@@ -97,6 +97,9 @@ void Scattershot<TState, TResource>::MultiThread(int nThreads, F func)
 template <class TState, derived_from_specialization_of<Resource> TResource>
 Scattershot<TState, TResource>::Scattershot(const Configuration& config) : config(config)
 {
+    auto now = std::chrono::system_clock::now();
+    StartTime = std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count();
+
     AllBlocks = (Block<TState>*)calloc(config.TotalThreads * config.MaxBlocks + config.MaxSharedBlocks, sizeof(Block<TState>));
     AllSegments = (Segment**)malloc((config.MaxSharedSegments + config.TotalThreads * config.MaxLocalSegments) * sizeof(Segment*));
     AllHashTables = (int*)calloc(config.TotalThreads * config.MaxHashes + config.MaxSharedHashes, sizeof(int));
@@ -116,6 +119,8 @@ void Scattershot<TState, TResource>::MergeBlocks()
     //printer.printfQ("Merging blocks.\n");
     for (int threadId = 0; threadId < config.TotalThreads; threadId++)
     {
+        //printf("Thread blocks: %d\n", NBlocks[threadId]);
+        //int newBlocks = 0;
         for (int n = 0; n < NBlocks[threadId]; n++)
         {
             const Block<TState>& block = AllBlocks[threadId * config.MaxBlocks + n];
@@ -130,7 +135,10 @@ void Scattershot<TState, TResource>::MergeBlocks()
 
             SharedHashTable[block.stateBin.FindNewHashIndex(SharedHashTable, config.MaxSharedHashes)] = NBlocks[config.TotalThreads];
             SharedBlocks[NBlocks[config.TotalThreads]++] = block;
+            //newBlocks++;
         }
+
+        //printf("New blocks: %d\n", newBlocks);
     }
 
     memset(AllHashTables, 0xFF, config.MaxHashes * config.TotalThreads * sizeof(int)); // Clear all local hash tables.

@@ -6,6 +6,7 @@
 #include <omp.h>
 #include <vector>
 #include <filesystem>
+#include <chrono>
 
 #ifndef SCATTERSHOT_H
 #define SCATTERSHOT_H
@@ -88,6 +89,7 @@ public:
     int ShotsPerMerge;
     int MergesPerSegmentGC;
     int StartFromRootEveryNShots;
+    double SampleRatio;
     std::filesystem::path M64Path;
     std::vector<std::filesystem::path> ResourcePaths;
 
@@ -153,6 +155,7 @@ private:
     Block<TState>* SharedBlocks;
     int* SharedHashTable;
     std::unordered_set<int> StateBinFillerBytes;
+    long long StartTime;
 
     void MergeState(int mainIteration);
     void MergeBlocks();

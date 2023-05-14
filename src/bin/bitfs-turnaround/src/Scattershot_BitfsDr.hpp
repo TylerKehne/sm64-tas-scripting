@@ -23,6 +23,8 @@ public:
 
     void SelectMovementOptions()
     {
+        MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
+
         AddRandomMovementOption(
             {
                 {MovementOption::MAX_MAGNITUDE, 4},
@@ -31,12 +33,13 @@ public:
                 {MovementOption::RANDOM_MAGNITUDE, 1}
             });
 
+        bool turningAround = marioState->action == ACT_TURNING_AROUND && marioState->action > 0;
         AddRandomMovementOption(
             {
                 {MovementOption::MATCH_FACING_YAW, 1},
-                {MovementOption::ANTI_FACING_YAW, 2},
+                {MovementOption::ANTI_FACING_YAW, turningAround ? 20 : 2},
                 {MovementOption::SAME_YAW, 4},
-                {MovementOption::RANDOM_YAW, 8}
+                {MovementOption::RANDOM_YAW, 16}
             });
 
         AddRandomMovementOption(
@@ -48,11 +51,11 @@ public:
 
         AddRandomMovementOption(
             {
-                {MovementOption::NO_SCRIPT, 95},
-                {MovementOption::PBD, 95},
-                {MovementOption::RUN_DOWNHILL, 20},
-                {MovementOption::REWIND, 5},
-                {MovementOption::TURN_UPHILL, 95}
+                {MovementOption::NO_SCRIPT, 200},
+                {MovementOption::PBD, 100},
+                {MovementOption::RUN_DOWNHILL, 200},
+                {MovementOption::REWIND, 0},
+                {MovementOption::TURN_UPHILL, 100}
             });
     }
 
@@ -64,31 +67,29 @@ public:
                 Camera* camera = *(Camera**)(resource->addr("gCamera"));
 
                 // Scripts
-                if (CheckMovementOptions(MovementOption::REWIND))
+                if (!CheckMovementOptions(MovementOption::NO_SCRIPT))
                 {
-                    int64_t currentFrame = GetCurrentFrame();
-                    int maxRewind = (currentFrame - config.StartFrame) / 2;
-                    int rewindFrames = (GetTempRng() % 100) * maxRewind / 100;
-                    Load(currentFrame - rewindFrames);
-                }
+                    if (CheckMovementOptions(MovementOption::REWIND))
+                    {
+                        int64_t currentFrame = GetCurrentFrame();
+                        int maxRewind = (currentFrame - config.StartFrame) / 2;
+                        int rewindFrames = (GetTempRng() % 100) * maxRewind / 100;
+                        Load(currentFrame - rewindFrames);
+                    }
 
-                if (CheckMovementOptions(MovementOption::RUN_DOWNHILL))
-                {
-                    BitFsPyramidOscillation_ParamsDto params;
-                    params.roughTargetAngle = marioState->faceAngle[1];
-                    params.ignoreXzSum = true;
-                    return Modify<BitFsPyramidOscillation_RunDownhill>(params).asserted;
+                    if (CheckMovementOptions(MovementOption::RUN_DOWNHILL) && RunDownhill())
+                        return true;
+                    else if (CheckMovementOptions(MovementOption::PBD) && Pbd())
+                        return true;
+                    else if (CheckMovementOptions(MovementOption::TURN_UPHILL) && TurnUphill())
+                        return true;
                 }
-                else if (CheckMovementOptions(MovementOption::PBD) && Pbd())
-                    return true;
-                else if (CheckMovementOptions(MovementOption::TURN_UPHILL) && TurnUphill())
-                    return true;
 
                 // Random input
                 AdvanceFrameWrite(RandomInputs(
                     {
                         {Buttons::A, 0},
-                        {Buttons::B, 0.2},
+                        {Buttons::B, marioState->action == ACT_DIVE_SLIDE ? 1 : 0},
                         {Buttons::Z, 0},
                         {Buttons::C_UP, 0}
                     }));
@@ -263,6 +264,19 @@ public:
         return pyramid->oTiltingPyramidNormalY;
     }
 
+    std::string GetCsvLabels() override
+    {
+        return std::string("Mario X,Mario Y,Mario Z,Mario FacingYaw");
+    }
+
+    std::string BlockToString() override
+    {
+        MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
+        char line[128];
+        sprintf(line, "%f,%f,%f,%d", marioState->pos[0], marioState->pos[1], marioState->pos[2], marioState->faceAngle[1]);
+        return std::string(line);
+    }
+
 private:
     bool Pbd()
     {
@@ -316,6 +330,32 @@ private:
 
                 auto inputs = Inputs::GetClosestInputByYawHau(intendedYaw, 32, camera->yaw);
                 AdvanceFrameWrite(Inputs(0, inputs.first, inputs.second));
+                return true;
+            }).executed;
+    }
+
+    bool RunDownhill()
+    {
+        return ModifyAdhoc([&]()
+            {
+                MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
+                Camera* camera = *(Camera**)(resource->addr("gCamera"));
+                Object* objectPool = (Object*)(resource->addr("gObjectPool"));
+                Object* pyramid = &objectPool[84];
+
+                // Turn 2048 towrds uphill
+                auto m64 = M64();
+                auto save = ImportedSave(PyramidUpdateMem(*resource, pyramid), GetCurrentFrame());
+                auto status = BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle
+                    ::MainFromSave<BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>(m64, save, 0);
+                if (!status.validated)
+                    return false;
+
+                // Attempt to run downhill with minimum angle
+                int16_t intendedYaw = marioState->action == ACT_TURNING_AROUND ? status.angleFacingAnalogBack : status.angleFacing;
+                auto stick = Inputs::GetClosestInputByYawExact(intendedYaw, 32, camera->yaw, status.downhillRotation);
+                AdvanceFrameWrite(Inputs(0, stick.first, stick.second));
+
                 return true;
             }).executed;
     }

@@ -8,6 +8,10 @@
 #include <map>
 #include <unordered_set>
 #include <sm64/Camera.hpp>
+#include <iostream>
+#include <fstream>
+#include <string>
+#include <chrono>
 
 #ifndef SCATTERSHOT_THREAD_H
 #define SCATTERSHOT_THREAD_H
@@ -92,6 +96,9 @@ protected:
     virtual bool ValidateState() = 0;
     virtual float GetStateFitness() = 0;
 
+    virtual std::string GetCsvLabels();
+    virtual std::string BlockToString();
+
     uint64_t GetTempRng();
 
     void AddRandomMovementOption(std::map<MovementOption, double> weightedOptions);
@@ -129,6 +136,8 @@ private:
     float GetStateFitnessSafe();
     AdhocBaseScriptStatus DecodeBaseBlockDiffAndApply();
     AdhocBaseScriptStatus ExecuteFromBaseBlockAndEncode();
+
+    void QueryBlock(int shot);
 
     template <typename T>
     uint64_t GetHash(const T& toHash) const;
