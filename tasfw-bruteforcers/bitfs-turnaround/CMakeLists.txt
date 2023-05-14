@@ -23,8 +23,7 @@ set_target_properties(tasfw-bitfs-turnaround PROPERTIES
 
 add_optimization_flags(tasfw-bitfs-turnaround)
 
-# Slightly janky workaround, would be nice to copy incrementally
-add_custom_target(bitfs-turn-config ALL
+add_custom_target(tasfw-bitfs-turnaround-config ALL
 	${CMAKE_COMMAND} -P "${PROJECT_SOURCE_DIR}/cmake/IncrementalCopy.cmake" ${CMAKE_CURRENT_SOURCE_DIR}/config.json "$<TARGET_FILE_DIR:tasfw-bitfs-turnaround>/config.json"
 	COMMENT "Copying config.json for bitfs-turn"
 	VERBATIM

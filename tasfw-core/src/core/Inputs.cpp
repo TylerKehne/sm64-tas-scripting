@@ -12,7 +12,6 @@
 
 #undef max
 #undef min
-#undef sjfiosdjfsdjfsjdofjsdfjio
 
 static uint16_t byteswap(uint16_t x)
 {

@@ -37,24 +37,39 @@ check_ipo_supported(RESULT _ipo_supported LANGUAGES CXX)
 find_package(OpenMP REQUIRED)
 
 function(add_optimization_flags target)
-	# add -march=native type flag
-	if(_arch_flag)
-		target_compile_options(${target} PUBLIC ${_arch_flag})
-	endif()
-	
-	# add LTO
-	if(_ipo_supported)
-		set_target_properties(${target} PROPERTIES
-			INTERPROCEDURAL_OPTIMIZATION yes
-		)
-	endif()
-	
-	# add OpenMP
-	target_link_libraries(${target} PUBLIC OpenMP::OpenMP_CXX)
-	
-	# disable a warning on GCC/Clang (-Wno-missing-requires)
 	check_cxx_compiler_flag("-Wno-missing-requires" has_missing_requires_warning)
-	if (${has_missing_requires_warning})
-		target_compile_options(${target} PRIVATE "-Wno-missing-requires")
+	get_target_property(target_type ${target} TYPE)
+	message("Target type: ${target_type}")
+	if (target_type STREQUAL "INTERFACE_LIBRARY")
+		# for header-only libraries
+		if(_arch_flag)
+			target_compile_options(${target} INTERFACE ${_arch_flag})
+		endif()
+
+		# add OpenMP
+		target_link_libraries(${target} INTERFACE OpenMP::OpenMP_CXX)
+	else()
+		# for libraries with compiled sources
+		if(_arch_flag)
+			target_compile_options(${target} PUBLIC ${_arch_flag})
+		endif()
+
+		# add LTO
+		if(_ipo_supported)
+			set_target_properties(${target} PROPERTIES
+				INTERPROCEDURAL_OPTIMIZATION yes
+				)
+		endif()
+
+		# add OpenMP
+		target_link_libraries(${target} PUBLIC OpenMP::OpenMP_CXX)
+
+		# disable a warning on GCC/Clang (-Wno-missing-requires)
+		if (${has_missing_requires_warning})
+			target_compile_options(${target} PRIVATE "-Wno-missing-requires")
+		endif()
 	endif()
+
+	# add -march=native type flag
+
 endfunction()

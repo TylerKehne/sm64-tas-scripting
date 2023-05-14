@@ -10,7 +10,7 @@ project(sm64-tas-scripting
 # https://www.kitware.com/cmake-and-the-default-build-type/
 set(SM64_TASFW_DEFAULT_BUILD "Release")
 
-if(EXISTS "${CMAKE_PROJECT_DIR}/.git")
+if(EXISTS "${PROJECT_SOURCE_DIR}/.git")
 	set(SM64_TASFW_DEFAULT_BUILD "Debug")
 endif()
 

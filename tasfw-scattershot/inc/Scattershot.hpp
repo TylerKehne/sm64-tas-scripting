@@ -37,7 +37,7 @@ public:
     template <typename T>
     uint64_t GetHash(const T& toHash, bool ignoreFillerBytes) const;
 
-    int FindNewHashIndex(int* hashTable, int maxHashes) const;
+    int FindNewHashIndex(const int* hashTable, int maxHashes) const;
     int GetBlockIndex(Block<TState>* blocks, int* hashTable, int maxHashes, int nMin, int nMax) const;
     void print() const;
 

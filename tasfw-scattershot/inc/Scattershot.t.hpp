@@ -8,7 +8,7 @@ template <typename T>
 uint64_t StateBin<TState>::GetHash(const T& toHash, bool ignoreFillerBytes) const
 {
     std::hash<std::byte> byteHasher;
-    const std::byte* data = reinterpret_cast<const std::byte*>(&toHash);
+    const auto* data = reinterpret_cast<const std::byte*>(&toHash);
     uint64_t hashValue = 0;
     for (std::size_t i = 0; i < sizeof(toHash); ++i)
     {
@@ -20,7 +20,7 @@ uint64_t StateBin<TState>::GetHash(const T& toHash, bool ignoreFillerBytes) cons
 }
 
 template <class TState>
-int StateBin<TState>::FindNewHashIndex(int* hashTable, int maxHashes) const
+int StateBin<TState>::FindNewHashIndex(const int* hashTable, int maxHashes) const
 {
     uint64_t hash = GetHash(state, false);
     for (int i = 0; i < 100; i++)
