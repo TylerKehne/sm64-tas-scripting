@@ -1,4 +1,5 @@
 #include <tasfw/scripts/BitFsScApproach.hpp>
+#include <cmath>
 
 bool BitFsScApproach::validation()
 {

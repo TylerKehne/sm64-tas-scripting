@@ -36,15 +36,25 @@ check_ipo_supported(RESULT _ipo_supported LANGUAGES CXX)
 # Check for OpenMP
 find_package(OpenMP REQUIRED)
 
-macro(add_optimization_flags target)
+function(add_optimization_flags target)
+	# add -march=native type flag
 	if(_arch_flag)
 		target_compile_options(${target} PUBLIC ${_arch_flag})
 	endif()
-
+	
+	# add LTO
 	if(_ipo_supported)
 		set_target_properties(${target} PROPERTIES
 			INTERPROCEDURAL_OPTIMIZATION yes
 		)
 	endif()
+	
+	# add OpenMP
 	target_link_libraries(${target} PUBLIC OpenMP::OpenMP_CXX)
-endmacro()
+	
+	# disable a warning on GCC/Clang (-Wno-missing-requires)
+	check_cxx_compiler_flag("-Wno-missing-requires" has_missing_requires_warning)
+	if (${has_missing_requires_warning})
+		target_compile_options(${target} PRIVATE "-Wno-missing-requires")
+	endif()
+endfunction()

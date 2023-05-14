@@ -2,6 +2,7 @@
 #ifndef SCATTERSHOT_THREAD_H
 #error "ThreadState.t.hpp should only be included by Scattershot.hpp"
 #else
+#include <Scattershot.hpp>
 
 template <class TState, derived_from_specialization_of<Resource> TResource>
 ScattershotThread<TState, TResource>::ScattershotThread(Scattershot<TState, TResource>& scattershot, int id)
