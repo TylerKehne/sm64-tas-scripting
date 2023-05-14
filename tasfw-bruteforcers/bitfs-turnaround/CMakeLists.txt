@@ -1,28 +1,31 @@
 # BitFS turnaround script. Scripts can likely be moved to /lib, given that they will be chained together?
 
-add_executable(bitfs-turn
+add_executable(tasfw-bitfs-turnaround
 	"src/BitFsConfig.cpp"
 	"src/BitFsConfig.hpp"
 	"src/main.cpp"
 	"src/Scattershot_BitfsDr.hpp"
 )
-target_compile_definitions(bitfs-turn PRIVATE cxx_std_20)
-target_link_libraries(bitfs-turn PRIVATE 
+target_compile_definitions(tasfw-bitfs-turnaround PRIVATE cxx_std_20)
+target_link_libraries(tasfw-bitfs-turnaround PRIVATE 
 	tasfw::core 
-	tasfw::decomp 
 	tasfw::scripts_general 
 	tasfw::scripts_bitfs_pyramid_osc 
-	tasfw-bitfs-sc-setup
-	nlohmann_json::nlohmann_json
+	tasfw::scripts_bitfs_sc_setup
 	tasfw::scattershot
+	nlohmann_json::nlohmann_json
+)
+set_target_properties(tasfw-bitfs-turnaround PROPERTIES
+	OUTPUT_NAME "bitfs-turn"
+	RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/out"
 )
 
 
-add_optimization_flags(bitfs-turn)
+add_optimization_flags(tasfw-bitfs-turnaround)
 
 # Slightly janky workaround, would be nice to copy incrementally
 add_custom_target(bitfs-turn-config ALL
-	${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/config.json "$<TARGET_FILE_DIR:bitfs-turn>/config.json"
+	${CMAKE_COMMAND} -P "${PROJECT_SOURCE_DIR}/cmake/IncrementalCopy.cmake" ${CMAKE_CURRENT_SOURCE_DIR}/config.json "$<TARGET_FILE_DIR:tasfw-bitfs-turnaround>/config.json"
 	COMMENT "Copying config.json for bitfs-turn"
 	VERBATIM
 )

@@ -39,7 +39,7 @@ FetchContent_MakeAvailable(json)
 
 
 # Library components
-add_subdirectory(src/lib)
-add_subdirectory(src/bin)
-
-set(target_list tasfw-core tasfw-decomp bitfs-turn)
+add_subdirectory(tasfw-core)
+add_subdirectory(tasfw-scripts)
+add_subdirectory(tasfw-scattershot)
+add_subdirectory(tasfw-bruteforcers)
