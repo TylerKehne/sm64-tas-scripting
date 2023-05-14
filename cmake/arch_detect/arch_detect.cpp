@@ -1,3 +1,4 @@
+#if defined(__x86_64__) || defined(_M_AMD64)
 #if defined(_MSC_VER)
 #include <intrin.h>
 #elif defined(__GNUC__)
@@ -15,6 +16,8 @@
     "a"(x), "c"(y)
   );
 }
+#else
+#endif
 #endif
 #include <cstdio>
 
@@ -26,6 +29,7 @@ const char* arch_flags[] = {
 };
 
 int main() {
+	#if defined(__x86_64__) || defined(_M_AMD64)
 	int regs[4];
 	int max_cpuid;
 	int result = 0;
@@ -51,4 +55,9 @@ int main() {
 	puts(arch_flags[result]);
 	
 	return result == 0? 1 : 0;
+	#else
+	// not x86-64, CBA checking for ARM
+	puts("");
+	return 1;
+	#endif
 }
