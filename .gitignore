@@ -45,6 +45,9 @@ sm64-tas-scripting/Debug/
 sm64-tas-scripting/x64/
 .vs/
 
+# clangd
+.cache
+
 build/
 out/
 local/

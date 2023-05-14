@@ -1,7 +1,0 @@
-add_subdirectory(tasfw-decomp)
-add_subdirectory(tasfw-core)
-add_subdirectory(tasfw-scripts-general)
-add_subdirectory(tasfw-scripts-bitfs-pyramid-osc)
-add_subdirectory(tasfw-resources)
-add_subdirectory(tasfw-bitfs-sc-setup)
-add_subdirectory(scattershot)
