@@ -1,6 +1,6 @@
 #pragma once
-#ifndef SCATTERSHOT_THREAD_H
-#error "ThreadState.t.hpp should only be included by Scattershot.hpp"
+#ifndef SCATTERSHOT_H
+#error "ScattershotThread.t.hpp should only be included by Scattershot.hpp"
 #else
 #include <Scattershot.hpp>
 
