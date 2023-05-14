@@ -8,7 +8,7 @@ target_link_libraries(scattershot PUBLIC
 	tasfw::core
 	tasfw::resources)
 
-include(MatchArchFlag)
-match_arch_and_ipo(scattershot)
+
+add_optimization_flags(scattershot)
 
 add_library(tasfw::scattershot ALIAS scattershot)

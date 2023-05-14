@@ -12,7 +12,7 @@ target_include_directories(tasfw-scripts-bitfs-pyramid-osc PUBLIC include)
 target_compile_features(tasfw-scripts-bitfs-pyramid-osc PUBLIC cxx_std_20)
 target_link_libraries(tasfw-scripts-bitfs-pyramid-osc PUBLIC tasfw::decomp tasfw::core tasfw::scripts_general tasfw::resources)
 
-include(MatchArchFlag)
-match_arch_and_ipo(tasfw-scripts-bitfs-pyramid-osc)
+
+add_optimization_flags(tasfw-scripts-bitfs-pyramid-osc)
 
 add_library(tasfw::scripts_bitfs_pyramid_osc ALIAS tasfw-scripts-bitfs-pyramid-osc)

@@ -17,8 +17,8 @@ target_link_libraries(bitfs-turn PRIVATE
 	tasfw::scattershot
 )
 
-include(MatchArchFlag)
-match_arch_and_ipo(bitfs-turn)
+
+add_optimization_flags(bitfs-turn)
 
 # Slightly janky workaround, would be nice to copy incrementally
 add_custom_target(bitfs-turn-config ALL

@@ -9,7 +9,7 @@ target_include_directories(tasfw-scripts-general PUBLIC include)
 target_compile_features(tasfw-scripts-general PUBLIC cxx_std_20)
 target_link_libraries(tasfw-scripts-general PUBLIC tasfw::decomp tasfw::core tasfw::resources)
 
-include(MatchArchFlag)
-match_arch_and_ipo(tasfw-scripts-general)
+
+add_optimization_flags(tasfw-scripts-general)
 
 add_library(tasfw::scripts_general ALIAS tasfw-scripts-general)
