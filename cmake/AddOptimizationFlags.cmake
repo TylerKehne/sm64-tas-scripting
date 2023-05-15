@@ -2,7 +2,9 @@
 include(CheckCXXCompilerFlag)
 
 function(msvc_arch_check)
+	message(STATUS "Detecting MSVC /arch flag")
 	try_run(run_result compile_result "${PROJECT_BINARY_DIR}/CMakeFiles/_arch_detect" "arch_detect/arch_detect.cpp" RUN_OUTPUT_VARIABLE msvc_flag)
+	message(STATUS "Detecting MSVC /arch flag - done")
 
 	if(${run_result} EQUAL 0)
 		set(_arch_flag "${msvc_flag}" CACHE INTERNAL "Architecture optimization flag.")
@@ -39,7 +41,6 @@ find_package(OpenMP REQUIRED)
 function(add_optimization_flags target)
 	check_cxx_compiler_flag("-Wno-missing-requires" has_missing_requires_warning)
 	get_target_property(target_type ${target} TYPE)
-	message("Target type: ${target_type}")
 	if (target_type STREQUAL "INTERFACE_LIBRARY")
 		# for header-only libraries
 		if(_arch_flag)
