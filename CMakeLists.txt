@@ -1,6 +1,6 @@
 set(CMAKE_EXPORT_COMPILE_COMMANDS true)
 
-cmake_minimum_required(VERSION 3.20 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.22.1 FATAL_ERROR)
 project(sm64-tas-scripting
 	DESCRIPTION "TASing framework for SM64"
 	LANGUAGES CXX

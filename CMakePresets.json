@@ -1,0 +1,63 @@
+{
+	"version": 3,
+	"cmakeMinimumRequired": {
+		"major": 3,
+		"minor": 22,
+		"patch": 1
+	},
+	"configurePresets": [
+        {
+            "name": "base",
+            "displayName": "BASE PRESET (DO NOT USE)",
+            "hidden": true,
+            "binaryDir": "${sourceDir}/build"
+        },
+		{
+			"name": "ninja-multi",
+            "inherits": "base",
+			"displayName": "Ninja Multi-Config",
+			"generator": "Ninja Multi-Config",
+			"cacheVariables": {
+				"CMAKE_EXPORT_COMPILE_COMMANDS": true
+			}
+		},
+		{
+			"name": "win32-vs2022-amd64",
+            "inherits": "base",
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Windows"
+            },
+			"displayName": "Visual Studio 2022 (Windows-only)",
+			"generator": "Visual Studio 17 2022",
+			"architecture": "x64"
+		}
+	],
+	"buildPresets": [
+		{
+			"name": "ninja-multi-debug",
+			"displayName": "Ninja (Debug)",
+			"configurePreset": "ninja-multi",
+			"configuration": "Debug"
+		},
+		{
+			"name": "ninja-multi-release",
+			"displayName": "Ninja (Release)",
+			"configurePreset": "ninja-multi",
+			"configuration": "Release"
+		},
+        {
+			"name": "win32-vs2022-amd64-debug",
+			"displayName": "Visual Studio 2022 (Debug)",
+			"configurePreset": "win32-vs2022-amd64",
+			"configuration": "Debug"
+		},
+		{
+			"name": "win32-vs2022-amd64-release",
+			"displayName": "Visual Studio 2022 (Release)",
+			"configurePreset": "win32-vs2022-amd64",
+			"configuration": "Release"
+		}
+	]
+}
