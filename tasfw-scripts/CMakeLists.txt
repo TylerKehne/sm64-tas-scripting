@@ -4,7 +4,7 @@ add_library(tasfw-scripts-general STATIC
 	"src/general/TryHackedWalkOutOfBounds.cpp"
 )
 target_include_directories(tasfw-scripts-general PUBLIC inc)
-target_link_libraries(tasfw-scripts-general PUBLIC tasfw::core)
+target_link_libraries(tasfw-scripts-general PUBLIC tasfw::core tasfw::resources)
 add_optimization_flags(tasfw-scripts-general)
 add_library(tasfw::scripts_general ALIAS tasfw-scripts-general)
 

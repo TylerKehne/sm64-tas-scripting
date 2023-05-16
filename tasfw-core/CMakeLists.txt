@@ -1,7 +1,4 @@
 add_library(tasfw-core STATIC
-	"src/resources/LibSm64.cpp"
-	"src/resources/PyramidUpdate.cpp"
-	"src/resources/PyramidUpdate_Mario.cpp"
 	"src/core/SharedLib.cpp"
 	"src/core/Inputs.cpp"
 	"src/decomp/Pyramid.cpp"
