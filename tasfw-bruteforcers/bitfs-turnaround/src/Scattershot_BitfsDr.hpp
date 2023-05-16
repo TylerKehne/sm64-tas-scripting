@@ -1,6 +1,6 @@
 #pragma once
 #include <Scattershot.hpp>
-#include <tasfw/scripts/BitFSPyramidOscillation.hpp>
+#include <BitFSPyramidOscillation.hpp>
 #include <cmath>
 
 class SShotState_BitfsDr

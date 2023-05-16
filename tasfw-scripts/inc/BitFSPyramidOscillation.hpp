@@ -1,8 +1,8 @@
 #pragma once
 
 #include <tasfw/Script.hpp>
-#include "tasfw/resources/LibSm64.hpp"
-#include <tasfw/resources/PyramidUpdate.hpp>
+#include "LibSm64.hpp"
+#include <PyramidUpdate.hpp>
 
 #ifndef SCRIPT_BITFS_PYRAMID_OSCILLATION_H
 #define SCRIPT_BITFS_PYRAMID_OSCILLATION_H

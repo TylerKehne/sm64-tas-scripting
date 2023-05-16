@@ -1,4 +1,4 @@
-#include <tasfw/scripts/BitFSPyramidOscillation.hpp>
+#include <BitFSPyramidOscillation.hpp>
 
 #include <sm64/Camera.hpp>
 #include <sm64/Sm64.hpp>

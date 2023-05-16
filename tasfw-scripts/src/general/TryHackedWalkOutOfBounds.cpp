@@ -1,4 +1,4 @@
-#include <tasfw/scripts/General.hpp>
+#include <General.hpp>
 
 #include <sm64/Camera.hpp>
 #include <sm64/Sm64.hpp>

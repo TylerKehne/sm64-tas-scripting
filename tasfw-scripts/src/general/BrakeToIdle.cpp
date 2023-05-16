@@ -1,4 +1,4 @@
-#include <tasfw/scripts/General.hpp>
+#include <General.hpp>
 
 #include <cmath>
 #include <tasfw/Script.hpp>

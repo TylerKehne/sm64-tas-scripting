@@ -1,4 +1,4 @@
-#include <tasfw/scripts/General.hpp>
+#include <General.hpp>
 
 #include <tasfw/Script.hpp>
 #include <sm64/Sm64.hpp>

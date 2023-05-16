@@ -1,4 +1,4 @@
-#include <tasfw/scripts/BitFsScApproach.hpp>
+#include <BitFsScApproach.hpp>
 #include <sm64/Camera.hpp>
 #include <sm64/Sm64.hpp>
 #include <sm64/ObjectFields.hpp>

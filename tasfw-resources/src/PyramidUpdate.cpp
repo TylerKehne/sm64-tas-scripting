@@ -1,4 +1,4 @@
-#include "tasfw/resources/PyramidUpdate.hpp"
+#include "PyramidUpdate.hpp"
 #include <math.h>
 #include <sm64/Surface.hpp>
 #include <sm64/ObjectFields.hpp>

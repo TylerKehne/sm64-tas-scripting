@@ -1,5 +1,5 @@
-#include <tasfw/scripts/BitFSPyramidOscillation.hpp>
-#include <tasfw/scripts/General.hpp>
+#include <BitFSPyramidOscillation.hpp>
+#include <General.hpp>
 
 #include <sm64/Camera.hpp>
 #include <sm64/ObjectFields.hpp>

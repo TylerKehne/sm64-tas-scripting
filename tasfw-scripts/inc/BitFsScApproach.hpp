@@ -1,9 +1,9 @@
 #pragma once
 
 #include <tasfw/Script.hpp>
-#include <tasfw/resources/LibSm64.hpp>
-#include <tasfw/resources/PyramidUpdate.hpp>
-#include <tasfw/scripts/BitFSPyramidOscillation.hpp>
+#include <LibSm64.hpp>
+#include <PyramidUpdate.hpp>
+#include <BitFSPyramidOscillation.hpp>
 
 #ifndef BITFS_SC_APPROACH_H
 #define BITFS_SC_APPROACH_H

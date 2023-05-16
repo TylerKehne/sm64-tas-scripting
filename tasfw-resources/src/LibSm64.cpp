@@ -1,4 +1,4 @@
-#include "tasfw/resources/LibSm64.hpp"
+#include "LibSm64.hpp"
 
 #if !defined(_WIN32)
 #include <sys/mman.h>

@@ -2,7 +2,7 @@
 #include <vector>
 #include "tasfw/Resource.hpp"
 #include <sm64/Types.hpp>
-#include "tasfw/resources/LibSm64.hpp"
+#include "LibSm64.hpp"
 
 #ifndef PYRAMIDUPDATE_H
 #define PYRAMIDUPDATE_H

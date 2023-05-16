@@ -15,12 +15,12 @@
 #include <sm64/Types.hpp>
 #include <sm64/ObjectFields.hpp>
 
-#include <tasfw/scripts/General.hpp>
-#include <tasfw/scripts/BitFSPyramidOscillation.hpp>
+#include <General.hpp>
+#include <BitFSPyramidOscillation.hpp>
 
 #include <omp.h>
 #include "BitFsConfig.hpp"
-#include <tasfw/scripts/BitFsScApproach.hpp>
+#include <BitFsScApproach.hpp>
 #include <sm64/Sm64.hpp>
 #include "Scattershot_BitfsDr.hpp"
 #include "Scattershot.hpp"

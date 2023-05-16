@@ -1,7 +1,7 @@
 #pragma once
 
 #include <tasfw/Script.hpp>
-#include "tasfw/resources/LibSm64.hpp"
+#include <LibSm64.hpp>
 
 class GetMinimumDownhillWalkingAngle : public Script<LibSm64>
 {
