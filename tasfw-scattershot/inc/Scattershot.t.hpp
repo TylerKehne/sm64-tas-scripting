@@ -97,9 +97,6 @@ void Scattershot<TState, TResource>::MultiThread(int nThreads, F func)
 template <class TState, derived_from_specialization_of<Resource> TResource>
 Scattershot<TState, TResource>::Scattershot(const Configuration& config) : config(config)
 {
-    auto now = std::chrono::system_clock::now();
-    StartTime = std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count();
-
     AllBlocks = (Block<TState>*)calloc(config.TotalThreads * config.MaxBlocks + config.MaxSharedBlocks, sizeof(Block<TState>));
     AllSegments = (Segment**)malloc((config.MaxSharedSegments + config.TotalThreads * config.MaxLocalSegments) * sizeof(Segment*));
     AllHashTables = (int*)calloc(config.TotalThreads * config.MaxHashes + config.MaxSharedHashes, sizeof(int));
@@ -226,7 +223,39 @@ void Scattershot<TState, TResource>::MergeState(int mainIteration)
     #pragma omp critical
     {
         printf("\nThread ALL Loop %d blocks %d\n", mainIteration, NBlocks[config.TotalThreads]);
+
+        // Print cumulative script results
+        if (ScriptCount != 0)
+        {
+            int futility = double(FailedScripts) / double(ScriptCount) * 100;
+            int redundancy = double(RedundantScripts) / double(ScriptCount) * 100;
+            int discovery = double(NovelScripts) / double(ScriptCount) * 100;
+
+            printf("Futility: %d%% Redundancy: %d%% Discovery: %d%%\n", futility, redundancy, discovery);
+        }
+
+        if (CsvRows != -1)
+            printf("CSV rows: %d\n", CsvRows);
     }
+}
+
+template <class TState, derived_from_specialization_of<Resource> TResource>
+void Scattershot<TState, TResource>::OpenCsv()
+{
+    if (config.CsvSamplePeriod == 0)
+        return;
+
+    auto now = std::chrono::system_clock::now();
+    long long startTime = std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count();
+
+    std::string fileName = config.CsvOutputDirectory + "csv_" + std::to_string(startTime) + ".csv";
+    Csv = std::ofstream(fileName);
+}
+
+template <class TState, derived_from_specialization_of<Resource> TResource>
+Scattershot<TState, TResource>::~Scattershot()
+{
+    Csv.close();
 }
 
 #endif

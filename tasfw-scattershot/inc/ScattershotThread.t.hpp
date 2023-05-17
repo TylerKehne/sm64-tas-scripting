@@ -25,6 +25,9 @@ bool ScattershotThread<TState, TResource>::execution()
     LongLoad(config.StartFrame);
     InitializeMemory();
 
+    // Add CSV columns if present
+    SingleThread([&]() { AddCsvLabels(); });
+
     // Record start course/area for validation (generally scattershot has no cross-level value)
     startCourse = *(short*)this->resource->addr("gCurrCourseNum");
     startArea = *(short*)this->resource->addr("gCurrAreaIndex");
@@ -33,14 +36,9 @@ bool ScattershotThread<TState, TResource>::execution()
     {
         // ALWAYS START WITH A MERGE SO THE SHARED BLOCKS ARE OK.
         if (shot % config.ShotsPerMerge == 0)
-            SingleThread([&]()
-                {
-                    scattershot.MergeState(shot);
+            SingleThread([&]() { scattershot.MergeState(shot); });
 
-                    QueryBlock(shot);
-                });
-
-        // Pick a block to "fire a scattershot" at
+        // Pick a block to "fire a shot" at
         if (!SelectBaseBlock(shot))
             break;
 
@@ -52,8 +50,8 @@ bool ScattershotThread<TState, TResource>::execution()
                     return false;
 
                 this->Save();
-                for (int segment = 0; segment < config.SegmentsPerShot; segment++)
-                    ExecuteFromBaseBlockAndEncode();
+                for (int segment = 0; segment < config.PelletsPerShot; segment++)
+                    ExecuteFromBaseBlockAndEncode(shot);
 
                 return true;
             });
@@ -71,61 +69,30 @@ std::string ScattershotThread<TState, TResource>::GetCsvLabels()
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource>
-void ScattershotThread<TState, TResource>::QueryBlock(int shot)
+bool ScattershotThread<TState, TResource>::ForceAddToCsv()
 {
-    double sampleRatio = config.SampleRatio <= 0 ? 0
-        : config.SampleRatio >= 1.0 ? 1.0 : config.SampleRatio;
-
-    std::string csvLabels = GetCsvLabels();
-    if (csvLabels == "" || sampleRatio == 0)
-        return;
-
-    std::cout << "Exporting to CSV...\n";
-
-    std::string fileName = "C:/Users/Tyler/Documents/repos/sm64_tas_scripting/res/csv_" + std::to_string(shot) + "_" + std::to_string(scattershot.StartTime) + ".csv";
-
-    std::ofstream fout(fileName);
-    fout << GetCsvLabels() << "\n";
-
-    // Don't persist rng changes
-    auto threadRng = RngHash;
-
-    for (int i = 0; i < scattershot.NBlocks[config.TotalThreads] * sampleRatio; i++)
-    {
-        if (sampleRatio == 1.0)
-        {
-            if (i >= scattershot.NBlocks[config.TotalThreads])
-                break;
-
-            BaseBlock = scattershot.SharedBlocks[i];
-        }
-        else
-            BaseBlock = scattershot.SharedBlocks[GetRng() % scattershot.NBlocks[config.TotalThreads]];
-
-        auto status = ExecuteAdhoc([&]()
-            {
-                DecodeBaseBlockDiffAndApply();
-
-                if (!ValidateBaseBlock())
-                    return false;
-
-                std::string blockString = BlockToString();
-                if (blockString != "")
-                {
-                    fout << blockString << "\n";
-                }
-            });
-    }
-
-    fout.close();
-
-    SetRng(threadRng);
-
-    std::cout << "Finished exporting to CSV.\n";
+    return false;
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource>
-std::string ScattershotThread<TState, TResource>::BlockToString()
+void ScattershotThread<TState, TResource>::AddCsvLabels()
+{
+    ExecuteAdhoc([&]()
+        {
+            std::string labels = "Shot,Frame,Sampled," + GetCsvLabels();
+            if (labels == "" || config.CsvSamplePeriod == 0)
+                return false;
+
+            scattershot.Csv << labels << "\n";
+            scattershot.CsvRows = 0;
+            AddCsvRow(0);
+
+            return true;
+        });
+}
+
+template <class TState, derived_from_specialization_of<Resource> TResource>
+std::string ScattershotThread<TState, TResource>::GetCsvRow()
 {
     return "";
 }
@@ -220,7 +187,7 @@ bool ScattershotThread<TState, TResource>::ValidateBaseBlock()
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource>
-void ScattershotThread<TState, TResource>::ProcessNewBlock(uint64_t baseRngHash, int nScripts, StateBin<TState> newStateBin)
+bool ScattershotThread<TState, TResource>::ProcessNewBlock(uint64_t baseRngHash, int nScripts, StateBin<TState> newStateBin)
 {
     Block<TState> newBlock;
 
@@ -228,46 +195,92 @@ void ScattershotThread<TState, TResource>::ProcessNewBlock(uint64_t baseRngHash,
     if (scattershot.NBlocks[Id] == config.MaxBlocks)
     {
         //printf("Max local blocks reached!\n");
+        return false;
     }
-    else {
-        //UPDATED FOR SEGMENTS STRUCT
-        newBlock = BaseBlock;
-        newBlock.stateBin = newStateBin;
-        newBlock.fitness = GetStateFitnessSafe();
-        int blockIndexLocal = newStateBin.GetBlockIndex(Blocks, HashTable, config.MaxHashes, 0, scattershot.NBlocks[Id]);
-        int blockIndex = newStateBin.GetBlockIndex(
-            scattershot.SharedBlocks, scattershot.SharedHashTable, config.MaxSharedHashes, 0, scattershot.NBlocks[config.TotalThreads]);
 
-        bool bestlocalBlock = blockIndexLocal < scattershot.NBlocks[Id]
-            && newBlock.fitness > Blocks[blockIndexLocal].fitness;
-        bool bestSharedBlockOrNew = !(blockIndex < scattershot.NBlocks[config.TotalThreads]
-            && newBlock.fitness <= scattershot.SharedBlocks[blockIndex].fitness);
+    //UPDATED FOR SEGMENTS STRUCT
+    newBlock = BaseBlock;
+    newBlock.stateBin = newStateBin;
+    newBlock.fitness = GetStateFitnessSafe();
+    int blockIndexLocal = newStateBin.GetBlockIndex(Blocks, HashTable, config.MaxHashes, 0, scattershot.NBlocks[Id]);
+    int blockIndex = newStateBin.GetBlockIndex(
+        scattershot.SharedBlocks, scattershot.SharedHashTable, config.MaxSharedHashes, 0, scattershot.NBlocks[config.TotalThreads]);
 
-        if (bestlocalBlock || bestSharedBlockOrNew)
-        {
-            if (!bestlocalBlock)
-                HashTable[newStateBin.FindNewHashIndex(HashTable, config.MaxHashes)] = scattershot.NBlocks[Id];
+    bool bestlocalBlock = blockIndexLocal < scattershot.NBlocks[Id]
+        && newBlock.fitness > Blocks[blockIndexLocal].fitness;
+    bool bestSharedBlockOrNew = !(blockIndex < scattershot.NBlocks[config.TotalThreads]
+        && newBlock.fitness <= scattershot.SharedBlocks[blockIndex].fitness);
 
-            // Create new segment
-            Segment* newSegment = (Segment*)malloc(sizeof(Segment));
-            newSegment->parent = BaseBlock.tailSegment;
-            newSegment->nReferences = bestlocalBlock ? 0 : 1;
-            newSegment->nScripts = nScripts + 1;
-            newSegment->seed = baseRngHash;
-            newSegment->depth = BaseBlock.tailSegment->depth + 1;
-            //if (newSegment->depth == 0) { printf("newSeg depth is 0!\n"); }
-            //if (BaseBlock.tailSegment->depth == 0) { printf("origBlock tailSeg depth is 0!\n"); }
-            newBlock.tailSegment = newSegment;
-            scattershot.AllSegments[Id * config.MaxLocalSegments + scattershot.NSegments[Id]] = newSegment;
-            scattershot.NSegments[Id] += 1;
+    if (bestlocalBlock || bestSharedBlockOrNew)
+    {
+        if (!bestlocalBlock)
+            HashTable[newStateBin.FindNewHashIndex(HashTable, config.MaxHashes)] = scattershot.NBlocks[Id];
+
+        // Create new segment
+        Segment* newSegment = (Segment*)malloc(sizeof(Segment));
+        newSegment->parent = BaseBlock.tailSegment;
+        newSegment->nReferences = bestlocalBlock ? 0 : 1;
+        newSegment->nScripts = nScripts + 1;
+        newSegment->seed = baseRngHash;
+        newSegment->depth = BaseBlock.tailSegment->depth + 1;
+        //if (newSegment->depth == 0) { printf("newSeg depth is 0!\n"); }
+        //if (BaseBlock.tailSegment->depth == 0) { printf("origBlock tailSeg depth is 0!\n"); }
+        newBlock.tailSegment = newSegment;
+        scattershot.AllSegments[Id * config.MaxLocalSegments + scattershot.NSegments[Id]] = newSegment;
+        scattershot.NSegments[Id] += 1;
+        Blocks[blockIndexLocal] = newBlock;
+
+        if (bestlocalBlock)
             Blocks[blockIndexLocal] = newBlock;
+        else
+            Blocks[scattershot.NBlocks[Id]++] = newBlock;
 
-            if (bestlocalBlock)
-                Blocks[blockIndexLocal] = newBlock;
-            else
-                Blocks[scattershot.NBlocks[Id]++] = newBlock;
-        }
+        return true;
     }
+
+    return false;
+}
+
+template <class TState, derived_from_specialization_of<Resource> TResource>
+void ScattershotThread<TState, TResource>::AddCsvRow(int shot)
+{
+    bool sampled = false;
+    ThreadLock([&]()
+        {
+            if (scattershot.CsvRows == -1)
+                return;
+
+            if (scattershot.CsvCounter++ % config.CsvSamplePeriod == 0)
+                sampled = true;
+        });
+            
+    if (!sampled && !ExecuteAdhoc([&]() { return ForceAddToCsv(); }).executed)
+        return;
+
+    std::string row;
+    bool rowValidated = ExecuteAdhoc([&]()
+        {
+            auto labels = GetCsvLabels();
+            row = GetCsvRow();
+
+            // Validate column count is the same
+            int labelsColumns = std::count(labels.begin(), labels.end(), ',');
+            int rowColumns = std::count(row.begin(), row.end(), ',');
+
+            return labelsColumns == rowColumns;
+        }).executed;
+
+    ThreadLock([&]()
+        {
+            if (!rowValidated)
+            {
+                cout << "Unable to add row to CSV. Labels/Row have different column counts.\n";
+                return;
+            }
+
+            scattershot.Csv << shot << "," << this->GetCurrentFrame() << "," << sampled << "," << row << "\n";
+            scattershot.CsvRows++;
+        });
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource>
@@ -280,6 +293,18 @@ void ScattershotThread<TState, TResource>::SingleThread(F func)
             func();
     }
     #pragma omp barrier
+
+    return;
+}
+
+template <class TState, derived_from_specialization_of<Resource> TResource>
+template <typename F>
+void ScattershotThread<TState, TResource>::ThreadLock(F func)
+{
+    #pragma omp critical
+    {
+        func();
+    }
 
     return;
 }
@@ -363,34 +388,46 @@ AdhocBaseScriptStatus ScattershotThread<TState, TResource>::DecodeBaseBlockDiffA
         });
 
     // Needed to sync with original execution (block is saved after individual script diff is applied)
+    // TODO: Consider changing TASFW Modify methods to persist frame cursor so this isn't necessary
     this->Load(postScriptFrame);
     return status;
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource>
-AdhocBaseScriptStatus ScattershotThread<TState, TResource>::ExecuteFromBaseBlockAndEncode()
+AdhocBaseScriptStatus ScattershotThread<TState, TResource>::ExecuteFromBaseBlockAndEncode(int shot)
 {
     return ExecuteAdhoc([&]()
         {
             StateBin<TState> prevStateBin = GetStateBinSafe();
             uint64_t baseRngHash = RngHash;
 
-            for (int n = 0; n < config.SegmentLength; n++)
+            for (int n = 0; n < config.PelletLength; n++)
             {
+                // Apply next script
                 SetTempRng(RngHash);
                 bool updated = ChooseScriptAndApply();
                 SetRng(RngHashTemp);
 
-                if (!updated || !ValidateCourseAndArea() || !ExecuteAdhoc([&]() { return ValidateState(); }).executed)
-                    break;
+                ThreadLock([&]() { scattershot.ScriptCount++; });
 
-                auto newStateBin = GetStateBinSafe();
-                if (newStateBin != prevStateBin && newStateBin != BaseBlock.stateBin)
+                // Validation
+                if (!updated || !ValidateCourseAndArea() || !ExecuteAdhoc([&]() { return ValidateState(); }).executed)
                 {
-                    // Create and add block to list.
-                    ProcessNewBlock(baseRngHash, n, newStateBin);
-                    prevStateBin = newStateBin; // TODO: Why this here?
+                    ThreadLock([&]() { scattershot.FailedScripts++; });
+                    break;
+                }  
+
+                // Create and add block to list if it is new.
+                auto newStateBin = GetStateBinSafe();
+                if (newStateBin != prevStateBin && newStateBin != BaseBlock.stateBin && ProcessNewBlock(baseRngHash, n, newStateBin))
+                {
+                    ThreadLock([&]() { scattershot.NovelScripts++; });
+                    AddCsvRow(shot);
                 }
+                else
+                    ThreadLock([&]() { scattershot.RedundantScripts++; });
+
+                prevStateBin = newStateBin;
             }
 
             return true;

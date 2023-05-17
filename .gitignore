@@ -44,6 +44,9 @@ sm64-tas-scripting/sm64-tas-scripting/.vs/
 sm64-tas-scripting/Debug/
 sm64-tas-scripting/x64/
 .vs/
+res/
+analysis/*.csv
+analysis/*.png
 
 # clangd
 .cache

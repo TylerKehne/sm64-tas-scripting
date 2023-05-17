@@ -125,17 +125,17 @@ public:
 
         float norm_regime_min = .69;
         //float norm_regime_max = .67;
-        float target_xnorm = -.30725;
-        float target_znorm = .3665;
-        float x_delt = pyramid->oTiltingPyramidNormalX - target_xnorm;
-        float z_delt = pyramid->oTiltingPyramidNormalZ - target_znorm;
-        float x_remainder = x_delt * 100 - floor(x_delt * 100);
-        float z_remainder = z_delt * 100 - floor(z_delt * 100);
+        //float target_xnorm = -.30725;
+        //float target_znorm = .3665;
+        //float x_delt = pyramid->oTiltingPyramidNormalX - target_xnorm;
+        //float z_delt = pyramid->oTiltingPyramidNormalZ - target_znorm;
+        //float x_remainder = x_delt * 100 - floor(x_delt * 100);
+        //float z_remainder = z_delt * 100 - floor(z_delt * 100);
 
 
         //if((fabs(pyraXNorm) + fabs(pyraZNorm) < norm_regime_min) ||
         //   (fabs(pyraXNorm) + fabs(pyraZNorm) > norm_regime_max)){  //coarsen for bad norm regime
-        if ((x_remainder > .001 && x_remainder < .999) || (z_remainder > .001 && z_remainder < .999) ||
+        if (//(x_remainder > .001 && x_remainder < .999) || (z_remainder > .001 && z_remainder < .999) ||
             (fabs(pyramid->oTiltingPyramidNormalX) + fabs(pyramid->oTiltingPyramidNormalZ) < norm_regime_min)) //coarsen for not target norm envelope
         { 
             s *= 14;
@@ -267,14 +267,38 @@ public:
 
     std::string GetCsvLabels() override
     {
-        return std::string("Mario X,Mario Y,Mario Z,Mario FacingYaw");
+        return std::string("MarioX,MarioY,MarioZ,MarioFYaw,MarioFSpd,MarioAction,PlatNormX,PlatNormY,PlatNormZ");
     }
 
-    std::string BlockToString() override
+    bool ForceAddToCsv() override
     {
         MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-        char line[128];
-        sprintf(line, "%f,%f,%f,%d", marioState->pos[0], marioState->pos[1], marioState->pos[2], marioState->faceAngle[1]);
+
+        if (marioState->action == ACT_DIVE_SLIDE || marioState->action == ACT_FORWARD_ROLLOUT || marioState->action == ACT_FREEFALL_LAND_STOP)
+            return true;
+
+        return false;
+    }
+
+    std::string GetCsvRow() override
+    {
+        MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
+        const BehaviorScript* pyramidmBehavior = (const BehaviorScript*)(resource->addr("bhvLllTiltingInvertedPyramid"));
+        Object* objectPool = (Object*)(resource->addr("gObjectPool"));
+        Object* pyramid = &objectPool[84];
+
+        char line[256];
+        sprintf(line, "%f,%f,%f,%d,%f,%d,%f,%f,%f",
+            marioState->pos[0],
+            marioState->pos[1],
+            marioState->pos[2],
+            marioState->faceAngle[1],
+            marioState->forwardVel,
+            marioState->action,
+            pyramid->oTiltingPyramidNormalX,
+            pyramid->oTiltingPyramidNormalY,
+            pyramid->oTiltingPyramidNormalZ
+            );
         return std::string(line);
     }
 
