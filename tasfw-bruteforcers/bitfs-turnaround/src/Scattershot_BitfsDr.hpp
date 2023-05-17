@@ -24,6 +24,8 @@ public:
 
     void SelectMovementOptions()
     {
+        MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
+
         AddRandomMovementOption(
             {
                 {MovementOption::MAX_MAGNITUDE, 4},
@@ -32,12 +34,13 @@ public:
                 {MovementOption::RANDOM_MAGNITUDE, 1}
             });
 
+        bool turningAround = marioState->action == ACT_TURNING_AROUND && marioState->action > 0;
         AddRandomMovementOption(
             {
                 {MovementOption::MATCH_FACING_YAW, 1},
-                {MovementOption::ANTI_FACING_YAW, 2},
+                {MovementOption::ANTI_FACING_YAW, turningAround ? 20 : 2},
                 {MovementOption::SAME_YAW, 4},
-                {MovementOption::RANDOM_YAW, 8}
+                {MovementOption::RANDOM_YAW, 16}
             });
 
         AddRandomMovementOption(
@@ -49,11 +52,11 @@ public:
 
         AddRandomMovementOption(
             {
-                {MovementOption::NO_SCRIPT, 95},
-                {MovementOption::PBD, 95},
-                {MovementOption::RUN_DOWNHILL, 20},
-                {MovementOption::REWIND, 5},
-                {MovementOption::TURN_UPHILL, 95}
+                {MovementOption::NO_SCRIPT, 200},
+                {MovementOption::PBD, 100},
+                {MovementOption::RUN_DOWNHILL, 200},
+                {MovementOption::REWIND, 0},
+                {MovementOption::TURN_UPHILL, 100}
             });
     }
 
@@ -65,31 +68,29 @@ public:
                 Camera* camera = *(Camera**)(resource->addr("gCamera"));
 
                 // Scripts
-                if (CheckMovementOptions(MovementOption::REWIND))
+                if (!CheckMovementOptions(MovementOption::NO_SCRIPT))
                 {
-                    int64_t currentFrame = GetCurrentFrame();
-                    int maxRewind = (currentFrame - config.StartFrame) / 2;
-                    int rewindFrames = (GetTempRng() % 100) * maxRewind / 100;
-                    Load(currentFrame - rewindFrames);
-                }
+                    if (CheckMovementOptions(MovementOption::REWIND))
+                    {
+                        int64_t currentFrame = GetCurrentFrame();
+                        int maxRewind = (currentFrame - config.StartFrame) / 2;
+                        int rewindFrames = (GetTempRng() % 100) * maxRewind / 100;
+                        Load(currentFrame - rewindFrames);
+                    }
 
-                if (CheckMovementOptions(MovementOption::RUN_DOWNHILL))
-                {
-                    BitFsPyramidOscillation_ParamsDto params;
-                    params.roughTargetAngle = marioState->faceAngle[1];
-                    params.ignoreXzSum = true;
-                    return Modify<BitFsPyramidOscillation_RunDownhill>(params).asserted;
+                    if (CheckMovementOptions(MovementOption::RUN_DOWNHILL) && RunDownhill())
+                        return true;
+                    else if (CheckMovementOptions(MovementOption::PBD) && Pbd())
+                        return true;
+                    else if (CheckMovementOptions(MovementOption::TURN_UPHILL) && TurnUphill())
+                        return true;
                 }
-                else if (CheckMovementOptions(MovementOption::PBD) && Pbd())
-                    return true;
-                else if (CheckMovementOptions(MovementOption::TURN_UPHILL) && TurnUphill())
-                    return true;
 
                 // Random input
                 AdvanceFrameWrite(RandomInputs(
                     {
                         {Buttons::A, 0},
-                        {Buttons::B, 0.2},
+                        {Buttons::B, marioState->action == ACT_DIVE_SLIDE ? 1 : 0},
                         {Buttons::Z, 0},
                         {Buttons::C_UP, 0}
                     }));
@@ -124,17 +125,17 @@ public:
 
         float norm_regime_min = .69;
         //float norm_regime_max = .67;
-        float target_xnorm = -.30725;
-        float target_znorm = .3665;
-        float x_delt = pyramid->oTiltingPyramidNormalX - target_xnorm;
-        float z_delt = pyramid->oTiltingPyramidNormalZ - target_znorm;
-        float x_remainder = x_delt * 100 - floor(x_delt * 100);
-        float z_remainder = z_delt * 100 - floor(z_delt * 100);
+        //float target_xnorm = -.30725;
+        //float target_znorm = .3665;
+        //float x_delt = pyramid->oTiltingPyramidNormalX - target_xnorm;
+        //float z_delt = pyramid->oTiltingPyramidNormalZ - target_znorm;
+        //float x_remainder = x_delt * 100 - floor(x_delt * 100);
+        //float z_remainder = z_delt * 100 - floor(z_delt * 100);
 
 
         //if((fabs(pyraXNorm) + fabs(pyraZNorm) < norm_regime_min) ||
         //   (fabs(pyraXNorm) + fabs(pyraZNorm) > norm_regime_max)){  //coarsen for bad norm regime
-        if ((x_remainder > .001 && x_remainder < .999) || (z_remainder > .001 && z_remainder < .999) ||
+        if (//(x_remainder > .001 && x_remainder < .999) || (z_remainder > .001 && z_remainder < .999) ||
             (fabs(pyramid->oTiltingPyramidNormalX) + fabs(pyramid->oTiltingPyramidNormalZ) < norm_regime_min)) //coarsen for not target norm envelope
         { 
             s *= 14;
@@ -264,6 +265,43 @@ public:
         return pyramid->oTiltingPyramidNormalY;
     }
 
+    std::string GetCsvLabels() override
+    {
+        return std::string("MarioX,MarioY,MarioZ,MarioFYaw,MarioFSpd,MarioAction,PlatNormX,PlatNormY,PlatNormZ");
+    }
+
+    bool ForceAddToCsv() override
+    {
+        MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
+
+        if (marioState->action == ACT_DIVE_SLIDE || marioState->action == ACT_FORWARD_ROLLOUT || marioState->action == ACT_FREEFALL_LAND_STOP)
+            return true;
+
+        return false;
+    }
+
+    std::string GetCsvRow() override
+    {
+        MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
+        const BehaviorScript* pyramidmBehavior = (const BehaviorScript*)(resource->addr("bhvLllTiltingInvertedPyramid"));
+        Object* objectPool = (Object*)(resource->addr("gObjectPool"));
+        Object* pyramid = &objectPool[84];
+
+        char line[256];
+        sprintf(line, "%f,%f,%f,%d,%f,%d,%f,%f,%f",
+            marioState->pos[0],
+            marioState->pos[1],
+            marioState->pos[2],
+            marioState->faceAngle[1],
+            marioState->forwardVel,
+            marioState->action,
+            pyramid->oTiltingPyramidNormalX,
+            pyramid->oTiltingPyramidNormalY,
+            pyramid->oTiltingPyramidNormalZ
+            );
+        return std::string(line);
+    }
+
 private:
     bool Pbd()
     {
@@ -317,6 +355,32 @@ private:
 
                 auto inputs = Inputs::GetClosestInputByYawHau(intendedYaw, 32, camera->yaw);
                 AdvanceFrameWrite(Inputs(0, inputs.first, inputs.second));
+                return true;
+            }).executed;
+    }
+
+    bool RunDownhill()
+    {
+        return ModifyAdhoc([&]()
+            {
+                MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
+                Camera* camera = *(Camera**)(resource->addr("gCamera"));
+                Object* objectPool = (Object*)(resource->addr("gObjectPool"));
+                Object* pyramid = &objectPool[84];
+
+                // Turn 2048 towrds uphill
+                auto m64 = M64();
+                auto save = ImportedSave(PyramidUpdateMem(*resource, pyramid), GetCurrentFrame());
+                auto status = BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle
+                    ::MainFromSave<BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>(m64, save, 0);
+                if (!status.validated)
+                    return false;
+
+                // Attempt to run downhill with minimum angle
+                int16_t intendedYaw = marioState->action == ACT_TURNING_AROUND ? status.angleFacingAnalogBack : status.angleFacing;
+                auto stick = Inputs::GetClosestInputByYawExact(intendedYaw, 32, camera->yaw, status.downhillRotation);
+                AdvanceFrameWrite(Inputs(0, stick.first, stick.second));
+
                 return true;
             }).executed;
     }

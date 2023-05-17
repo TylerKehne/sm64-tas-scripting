@@ -6,6 +6,12 @@
 #include <vector>
 #include <filesystem>
 #include <unordered_set>
+#include <chrono>
+#include <iostream>
+#include <fstream>
+#include <string>
+#include <MovementOption.hpp>
+#include <algorithm>
 
 #ifndef SCATTERSHOT_H
 #define SCATTERSHOT_H
@@ -73,7 +79,7 @@ class Configuration
 {
 public:
     int StartFrame;
-    int SegmentLength;
+    int PelletLength;
     int MaxSegments;
     int MaxBlocks;
     int MaxHashes;
@@ -82,13 +88,14 @@ public:
     int TotalThreads;
     int MaxSharedSegments;
     int MaxLocalSegments;
-    int MaxLightningLength;
     long long MaxShots;
-    int SegmentsPerShot;
+    int PelletsPerShot;
     int ShotsPerMerge;
     int MergesPerSegmentGC;
     int StartFromRootEveryNShots;
+    uint32_t CsvSamplePeriod; // Every nth new block per thread will be printed to a CSV. Set to 0 to disable CSV export.
     std::filesystem::path M64Path;
+    std::string CsvOutputDirectory;
     std::vector<std::filesystem::path> ResourcePaths;
 
     template <class TContainer, typename TElement = typename TContainer::value_type>
@@ -110,6 +117,8 @@ public:
     static void Run(const Configuration& configuration, F resourceConfigGenerator)
     {
         auto scattershot = Scattershot(configuration);
+        scattershot.OpenCsv();
+
         scattershot.MultiThread(configuration.TotalThreads, [&]()
             {
                 int threadId = omp_get_thread_num();
@@ -129,6 +138,8 @@ public:
     static void Run(const Configuration& configuration)
     {
         auto scattershot = Scattershot(configuration);
+        scattershot.OpenCsv();
+
         scattershot.MultiThread(configuration.TotalThreads, [&]()
             {
                 int threadId = omp_get_thread_num();
@@ -143,6 +154,8 @@ public:
             });
     }
 
+    ~Scattershot();
+
 private:
     // Global State
     Segment** AllSegments;
@@ -154,10 +167,22 @@ private:
     int* SharedHashTable;
     std::unordered_set<int> StateBinFillerBytes;
 
+    std::ofstream Csv;
+    int CsvSampleFrequency;
+    int64_t CsvCounter = 0;
+    int64_t CsvRows = -1; // Print this each merge so analysis can be run at the same time w/o dealing with partial rows
+
+    uint64_t ScriptCount = 0;
+    uint64_t FailedScripts = 0;
+    uint64_t RedundantScripts = 0;
+    uint64_t NovelScripts = 0;
+
     void MergeState(int mainIteration);
     void MergeBlocks();
     void MergeSegments();
     void SegmentGarbageCollection();
+
+    void OpenCsv();
 
     template <typename F>
     void MultiThread(int nThreads, F func);
@@ -180,33 +205,6 @@ public:
     float fitness;
     Segment* tailSegment;
     StateBin<TState> stateBin;
-};
-
-enum class MovementOption
-{
-    // Joystick mag
-    MAX_MAGNITUDE,
-    ZERO_MAGNITUDE,
-    SAME_MAGNITUDE,
-    RANDOM_MAGNITUDE,
-
-    // Input angle
-    MATCH_FACING_YAW,
-    ANTI_FACING_YAW,
-    SAME_YAW,
-    RANDOM_YAW,
-
-    // Buttons
-    SAME_BUTTONS,
-    NO_BUTTONS,
-    RANDOM_BUTTONS,
-
-    // Scripts
-    NO_SCRIPT,
-    PBD,
-    RUN_DOWNHILL,
-    REWIND,
-    TURN_UPHILL
 };
 
 template <class TState, derived_from_specialization_of<Resource> TResource>
@@ -235,6 +233,10 @@ protected:
     virtual bool ValidateState() = 0;
     virtual float GetStateFitness() = 0;
 
+    virtual std::string GetCsvLabels();
+    virtual std::string GetCsvRow();
+    virtual bool ForceAddToCsv();
+
     uint64_t GetTempRng();
 
     void AddRandomMovementOption(std::map<MovementOption, double> weightedOptions);
@@ -261,17 +263,23 @@ private:
     void InitializeMemory();
     bool SelectBaseBlock(int mainIteration);
     bool ValidateBaseBlock();
-    void ProcessNewBlock(uint64_t baseRngHash, int nScripts, StateBin<TState> newStateBin);
+    bool ProcessNewBlock(uint64_t baseRngHash, int nScripts, StateBin<TState> newStateBin);
+
+    void AddCsvRow(int shot);
+    void AddCsvLabels();
 
     template <typename F>
     void SingleThread(F func);
+
+    template <typename F>
+    void ThreadLock(F func);
 
     bool ValidateCourseAndArea();
     bool ChooseScriptAndApply();
     StateBin<TState> GetStateBinSafe();
     float GetStateFitnessSafe();
     AdhocBaseScriptStatus DecodeBaseBlockDiffAndApply();
-    AdhocBaseScriptStatus ExecuteFromBaseBlockAndEncode();
+    AdhocBaseScriptStatus ExecuteFromBaseBlockAndEncode(int shot);
 
     template <typename T>
     uint64_t GetHash(const T& toHash) const;

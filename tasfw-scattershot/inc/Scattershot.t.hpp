@@ -116,6 +116,8 @@ void Scattershot<TState, TResource>::MergeBlocks()
     //printer.printfQ("Merging blocks.\n");
     for (int threadId = 0; threadId < config.TotalThreads; threadId++)
     {
+        //printf("Thread blocks: %d\n", NBlocks[threadId]);
+        //int newBlocks = 0;
         for (int n = 0; n < NBlocks[threadId]; n++)
         {
             const Block<TState>& block = AllBlocks[threadId * config.MaxBlocks + n];
@@ -130,7 +132,10 @@ void Scattershot<TState, TResource>::MergeBlocks()
 
             SharedHashTable[block.stateBin.FindNewHashIndex(SharedHashTable, config.MaxSharedHashes)] = NBlocks[config.TotalThreads];
             SharedBlocks[NBlocks[config.TotalThreads]++] = block;
+            //newBlocks++;
         }
+
+        //printf("New blocks: %d\n", newBlocks);
     }
 
     memset(AllHashTables, 0xFF, config.MaxHashes * config.TotalThreads * sizeof(int)); // Clear all local hash tables.
@@ -218,7 +223,39 @@ void Scattershot<TState, TResource>::MergeState(int mainIteration)
     #pragma omp critical
     {
         printf("\nThread ALL Loop %d blocks %d\n", mainIteration, NBlocks[config.TotalThreads]);
+
+        // Print cumulative script results
+        if (ScriptCount != 0)
+        {
+            int futility = double(FailedScripts) / double(ScriptCount) * 100;
+            int redundancy = double(RedundantScripts) / double(ScriptCount) * 100;
+            int discovery = double(NovelScripts) / double(ScriptCount) * 100;
+
+            printf("Futility: %d%% Redundancy: %d%% Discovery: %d%%\n", futility, redundancy, discovery);
+        }
+
+        if (CsvRows != -1)
+            printf("CSV rows: %d\n", CsvRows);
     }
+}
+
+template <class TState, derived_from_specialization_of<Resource> TResource>
+void Scattershot<TState, TResource>::OpenCsv()
+{
+    if (config.CsvSamplePeriod == 0)
+        return;
+
+    auto now = std::chrono::system_clock::now();
+    long long startTime = std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count();
+
+    std::string fileName = config.CsvOutputDirectory + "csv_" + std::to_string(startTime) + ".csv";
+    Csv = std::ofstream(fileName);
+}
+
+template <class TState, derived_from_specialization_of<Resource> TResource>
+Scattershot<TState, TResource>::~Scattershot()
+{
+    Csv.close();
 }
 
 #endif

@@ -79,7 +79,7 @@ public:
 void InitConfiguration(Configuration& configuration)
 {
 	configuration.StartFrame = 3515;
-	configuration.SegmentLength = 10;
+	configuration.PelletLength = 20;
 	configuration.MaxSegments = 1024;
 	configuration.MaxBlocks = 500000;
 	configuration.MaxHashes = 10 * configuration.MaxBlocks;
@@ -88,20 +88,21 @@ void InitConfiguration(Configuration& configuration)
 	configuration.TotalThreads = 3;
 	configuration.MaxSharedSegments = 25000000;
 	configuration.MaxLocalSegments = 2000000;
-	configuration.MaxLightningLength = 10000;
 	configuration.MaxShots = 1000000000;
-	configuration.SegmentsPerShot = 200;
-	configuration.ShotsPerMerge = 300;
-	configuration.MergesPerSegmentGC = 10;
-	configuration.StartFromRootEveryNShots = 5;
-	configuration.M64Path = std::filesystem::path("C:\\Users\\Tyler\\Documents\\repos\\sm64_tas_scripting\\res\\4_units_from_edge.m64");
+	configuration.PelletsPerShot = 200;
+	configuration.ShotsPerMerge = 100;
+	configuration.MergesPerSegmentGC = 30;
+	configuration.StartFromRootEveryNShots = 50;
+	configuration.CsvSamplePeriod = 200;
+	configuration.CsvOutputDirectory = std::string("C:/Users/Tyler/Documents/repos/sm64_tas_scripting/analysis/");
+	configuration.M64Path = std::filesystem::path("C:/Users/Tyler/Documents/repos/sm64_tas_scripting/res/4_units_from_edge.m64");
 
 	configuration.SetResourcePaths(std::vector<std::string>
 		{
-			"C:\\Users\\Tyler\\Documents\\repos\\sm64_tas_scripting\\res\\sm64_jp_0.dll",
-			"C:\\Users\\Tyler\\Documents\\repos\\sm64_tas_scripting\\res\\sm64_jp_1.dll",
-			"C:\\Users\\Tyler\\Documents\\repos\\sm64_tas_scripting\\res\\sm64_jp_2.dll",
-			"C:\\Users\\Tyler\\Documents\\repos\\sm64_tas_scripting\\res\\sm64_jp_3.dll"
+			"C:/Users/Tyler/Documents/repos/sm64_tas_scripting/res/sm64_jp_0.dll",
+			"C:/Users/Tyler/Documents/repos/sm64_tas_scripting/res/sm64_jp_1.dll",
+			"C:/Users/Tyler/Documents/repos/sm64_tas_scripting/res/sm64_jp_2.dll",
+			"C:/Users/Tyler/Documents/repos/sm64_tas_scripting/res/sm64_jp_3.dll"
 		});
 }
 
@@ -131,6 +132,7 @@ int main(int argc, const char* argv[])
 
 			return resourceConfig;
 		});
+
 	//auto status = MainScript::MainConfig<MainScript>(m64, lib_path);
 
 	//m64.save();
