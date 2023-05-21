@@ -15,7 +15,14 @@ template <derived_from_specialization_of<Resource> TResource>
 class Script;
 
 template <derived_from_specialization_of<Resource> TResource>
+class DefaultStateTracker;
+
+template <derived_from_specialization_of<Resource> TResource, std::derived_from<Script<TResource>> TStateTracker>
+	requires std::constructible_from<TStateTracker> 
 class TopLevelScript;
+
+template <derived_from_specialization_of<Resource> TResource>
+class ScriptFriend;
 
 template <derived_from_specialization_of<Resource> TResource>
 class SlotHandle
@@ -106,22 +113,7 @@ protected:
 		requires(std::constructible_from<TScript, Us...>)
 	ScriptStatus<TScript> Execute(Us&&... params)
 	{
-		// Save state if performant
-		uint64_t initialFrame = GetCurrentFrame();
-
-		TScript script = TScript(std::forward<Us>(params)...);
-		script.Initialize(this);
-
-		script.Run();
-
-		// Load if necessary
-		Revert(initialFrame, script.BaseStatus[0].m64Diff, script.saveBank[0]);
-
-		BaseStatus[_adhocLevel].nLoads += script.BaseStatus[0].nLoads;
-		BaseStatus[_adhocLevel].nSaves += script.BaseStatus[0].nSaves;
-		BaseStatus[_adhocLevel].nFrameAdvances += script.BaseStatus[0].nFrameAdvances;
-
-		return ScriptStatus<TScript>(script.BaseStatus[0], script.CustomStatus);
+		return ExecuteInternal<TScript>(isStateTracker, std::forward<Us>(params)...);
 	}
 
 	template <derived_from_specialization_of<Script> TScript, typename... Us>
@@ -132,11 +124,13 @@ protected:
 		uint64_t initialFrame = GetCurrentFrame();
 
 		TScript script = TScript(std::forward<Us>(params)...);
+		script.isStateTracker = isStateTracker;
 		script.Initialize(this);
 
 		script.Run();
 
-		ApplyChildDiff(script.BaseStatus[0], script.saveBank[0], initialFrame);
+		ApplyChildDiff(script.BaseStatus[0], script.saveBank[0], initialFrame, &script);
+		_rootScript->PopTrackedStatesContainer(&script, 0);
 
 		BaseStatus[_adhocLevel].nLoads += script.BaseStatus[0].nLoads;
 		BaseStatus[_adhocLevel].nSaves += script.BaseStatus[0].nSaves;
@@ -539,6 +533,19 @@ protected:
 
 	#pragma endregion
 
+	template <std::derived_from<Script<TResource>> TStateTracker>
+		requires std::constructible_from<TStateTracker>
+	typename TStateTracker::CustomScriptStatus GetTrackedState(int64_t frame)
+	{
+		TopLevelScript<TResource, TStateTracker>* root = dynamic_cast<TopLevelScript<TResource, TStateTracker>*>(_rootScript);
+		if (!root) {
+			std::cout << "Type mismatch! Expected TopLevelScript<" << typeid(TResource).name() << ", " << typeid(TStateTracker).name() << ">.\n";
+			throw std::runtime_error("Type mismatch in GetTrackedState<TStateTracker>()");
+		}
+
+		return root->GetTrackedStateInternal(this, GetInputsMetadataAndCache(frame));
+	}
+
 	// TODO: move this method to some utility class
 	template <typename T>
 	int sign(T val)
@@ -570,7 +577,7 @@ protected:
 	virtual bool assertion() = 0;
 
 private:
-	friend class TopLevelScript<TResource>;
+	friend class ScriptFriend<TResource>;
 	friend class SaveMetadata<TResource>;
 	friend class InputsMetadata<TResource>;
 	friend class ScriptCompareHelper<TResource>;
@@ -584,6 +591,8 @@ private:
 	std::unordered_map<int64_t, std::map<int64_t, InputsMetadata<TResource>>> inputsCache;// caches ancestor inputs to save recursion time
 	std::unordered_map<int64_t, std::set<int64_t>> loadTracker;// track past loads to know whether a cached save is optimal
 	Script* _parentScript;
+	Script* _rootScript;
+	bool isStateTracker = false;
 	ScriptCompareHelper<TResource> compareHelper = ScriptCompareHelper<TResource>(this);
 
 	bool Run();
@@ -595,25 +604,137 @@ private:
 	InputsMetadata<TResource> GetInputsMetadataAndCache(int64_t frame);
 	void DeleteSave(int64_t frame, int64_t adhocLevel);
 	void SetInputs(Inputs inputs);
-	void Revert(uint64_t frame, const M64Diff& m64, std::map<int64_t, SlotHandle<TResource>>& childSaveBank);
+	void Revert(uint64_t frame, const M64Diff& m64, std::map<int64_t, SlotHandle<TResource>>& childSaveBank, Script<TResource>* childScript);
 	void AdvanceFrameRead(uint64_t& counter);
 	uint64_t GetFrameCounter(InputsMetadata<TResource> cachedInputs);
 	uint64_t IncrementFrameCounter(InputsMetadata<TResource> cachedInputs);
-	void ApplyChildDiff(const BaseScriptStatus& status, std::map<int64_t, SlotHandle<TResource>>& childSaveBank, int64_t initialFrame);
+	void ApplyChildDiff(const BaseScriptStatus& status, std::map<int64_t, SlotHandle<TResource>>& childSaveBank, int64_t initialFrame, Script<TResource>* childScript);
 	SaveMetadata<TResource> Save(int64_t adhocLevel);
 	void LoadBase(uint64_t frame, bool desync);
 
 	template <typename F>
 	BaseScriptStatus ExecuteAdhocBase(F adhocScript);
+
+	// Needed for state tracking. These do nothing, but TopLevelScript overshadows them. Can't access explicitly (I think) because of lack of template information.
+	virtual void TrackState(Script<TResource>* currentScript, InputsMetadata<TResource> inputsMetadata) { return; }
+	virtual void PushTrackedStatesContainer(Script<TResource>* currentScript, int adhocLevel) { return; }
+	virtual void PopTrackedStatesContainer(Script<TResource>* currentScript, int adhocLevel) { return; }
+	virtual void MoveSyncedTrackedStates(Script<TResource>* sourceScript, int sourceAdhocLevel, Script<TResource>* destScript, int destAdhocLevel) { return; }
+	virtual void EraseTrackedStates(Script<TResource>* currentScript, int adhocLevel, int64_t firstFrame) { return; }
+
+	template <derived_from_specialization_of<Script> TScript, typename... Us>
+		requires(std::constructible_from<TScript, Us...>)
+	ScriptStatus<TScript> ExecuteInternal(bool isStateTracker, Us&&... params)
+	{
+		// Save state if performant
+		uint64_t initialFrame = GetCurrentFrame();
+
+		TScript script = TScript(std::forward<Us>(params)...);
+		script.isStateTracker = isStateTracker;
+		script.Initialize(this);
+
+		// If we are executing the state tracker, we also need to mark the current script as a state tracker temporarily
+		// This is necessary to prevent infinite recursion.
+		bool wasStateTracker = this->isStateTracker;
+		this->isStateTracker = isStateTracker;
+
+		script.Run();
+
+		// Load if necessary
+		Revert(initialFrame, script.BaseStatus[0].m64Diff, script.saveBank[0], &script);
+
+		this->isStateTracker = wasStateTracker;
+
+		BaseStatus[_adhocLevel].nLoads += script.BaseStatus[0].nLoads;
+		BaseStatus[_adhocLevel].nSaves += script.BaseStatus[0].nSaves;
+		BaseStatus[_adhocLevel].nFrameAdvances += script.BaseStatus[0].nFrameAdvances;
+
+		return ScriptStatus<TScript>(script.BaseStatus[0], script.CustomStatus);
+	}
+};
+
+// DO NOT EVER USE THESE METHODS OUTSIDE OF THE TOPLEVELSCRIPT BASE CLASS
+// MSVC's casual relationship with the C++ standard specifications necessitates this class to access certain Script private members.
+// Preferably we could just declare a friend class template for TopLevelScript like we're supposed to be able to do.
+template <derived_from_specialization_of<Resource> TResource>
+class ScriptFriend
+{
+public:
+	static int GetAdhocLevel(Script<TResource>* script)
+	{
+		return script->_adhocLevel;
+	}
+
+	static std::unordered_map<int64_t, BaseScriptStatus>& GetBaseStatus(Script<TResource>* script)
+	{
+		return script->BaseStatus;
+	}
+
+	static std::unordered_map<int64_t, std::map<int64_t, InputsMetadata<TResource>>>& GetInputsCache(Script<TResource>* script)
+	{
+		return script->inputsCache;
+	}
+
+	static void DisposeSlotHandles(Script<TResource>* script)
+	{
+		script->saveBank[0].erase(script->saveBank[0].begin(), script->saveBank[0].end());
+	}
+
+	static void Initialize(Script<TResource>* script, Script<TResource>* parentScript)
+	{
+		script->Initialize(parentScript);
+	}
+
+	static bool Run(Script<TResource>* script)
+	{
+		return script->Run();
+	}
+
+	static Script<TResource>* GetParentScript(Script<TResource>* script)
+	{
+		return script->_parentScript;
+	}
+
+	static bool IsStateTracker(Script<TResource>* script)
+	{
+		return script->isStateTracker;
+	}
+
+	template <derived_from_specialization_of<Script> TStateTracker>
+		requires(std::constructible_from<TStateTracker>)
+	static ScriptStatus<TStateTracker> ExecuteStateTracker(Script<TResource>* script, int64_t frame)
+	{
+		// The information is stored per frame, so we need to make sure we are there before running the state tracking script.
+		script->Load(frame);
+		return script->ExecuteInternal<TStateTracker>(true);
+	}
+
+	static uint64_t GetCurrentFrame(Script<TResource>* script)
+	{
+		return script->GetCurrentFrame();
+	}
 };
 
 template <derived_from_specialization_of<Resource> TResource>
+class DefaultStateTracker : public Script<TResource>
+{
+public:
+	DefaultStateTracker() = default;
+
+	bool validation() { return true; }
+	bool execution() { return true; }
+	bool assertion() { return true; }
+};
+
+template <derived_from_specialization_of<Resource> TResource,
+	std::derived_from<Script<TResource>> TStateTracker = DefaultStateTracker<TResource>>
+	requires std::constructible_from<TStateTracker>
 class TopLevelScript : public Script<TResource>
 {
 public:
 	TopLevelScript() = default;
 
-	template <std::derived_from<TopLevelScript<TResource>> TTopLevelScript, typename... Ts>
+	template <std::derived_from<TopLevelScript<TResource, TStateTracker>> TTopLevelScript, typename... Ts>
 		requires(std::constructible_from<TTopLevelScript, Ts...> && std::constructible_from<TResource>)
 	static ScriptStatus<TTopLevelScript> Main(M64& m64, Ts&&... params) 
 	{
@@ -622,19 +743,10 @@ public:
 		resource.save(resource.startSave);
 		resource.initialFrame = 0;
 
-		script._m64 = &m64;
-		script.resource = &resource;
-		script.Initialize(nullptr);
-
-		script.Run();
-
-		//Dispose of slot handles before resource goes out of scope because they trigger destructor events in the resource.
-		script.saveBank[0].erase(script.saveBank[0].begin(), script.saveBank[0].end());
-
-		return ScriptStatus<TTopLevelScript>(script.BaseStatus[0], script.CustomStatus);		
+		return InitializeAndRun(m64, script, resource);
 	}
 
-	template <std::derived_from<TopLevelScript<TResource>> TTopLevelScript, typename TResourceConfig, typename... Ts>
+	template <std::derived_from<TopLevelScript<TResource, TStateTracker>> TTopLevelScript, typename TResourceConfig, typename... Ts>
 		requires(std::constructible_from<TTopLevelScript, Ts...> && std::constructible_from<TResource, TResourceConfig>)
 	static ScriptStatus<TTopLevelScript> MainConfig(M64& m64, TResourceConfig config, Ts&&... params)
 	{
@@ -643,19 +755,10 @@ public:
 		resource.save(resource.startSave);
 		resource.initialFrame = 0;
 
-		script._m64 = &m64;
-		script.resource = &resource;
-		script.Initialize(nullptr);
-
-		script.Run();
-
-		//Dispose of slot handles before resource goes out of scope because they trigger destructor events in the resource.
-		script.saveBank[0].erase(script.saveBank[0].begin(), script.saveBank[0].end());
-
-		return ScriptStatus<TTopLevelScript>(script.BaseStatus[0], script.CustomStatus);
+		return InitializeAndRun(m64, script, resource);
 	}
 
-	template <std::derived_from<TopLevelScript<TResource>> TTopLevelScript, class TState, typename... Ts>
+	template <std::derived_from<TopLevelScript<TResource, TStateTracker>> TTopLevelScript, class TState, typename... Ts>
 		requires(std::constructible_from<TTopLevelScript, Ts...>
 			&& std::constructible_from<TResource>
 			&& std::derived_from<TResource, Resource<TState>>)
@@ -667,19 +770,10 @@ public:
 		resource.save(resource.startSave);
 		resource.initialFrame = save.initialFrame;
 
-		script._m64 = &m64;
-		script.resource = &resource;
-		script.Initialize(nullptr);
-
-		script.Run();
-
-		//Dispose of slot handles before resource goes out of scope because they trigger destructor events in the resource.
-		script.saveBank[0].erase(script.saveBank[0].begin(), script.saveBank[0].end());
-
-		return ScriptStatus<TTopLevelScript>(script.BaseStatus[0], script.CustomStatus);
+		return InitializeAndRun(m64, script, resource);
 	}
 
-	template <std::derived_from<TopLevelScript<TResource>> TTopLevelScript, class TState, typename TResourceConfig, typename... Ts>
+	template <std::derived_from<TopLevelScript<TResource, TStateTracker>> TTopLevelScript, class TState, typename TResourceConfig, typename... Ts>
 		requires(std::constructible_from<TTopLevelScript, Ts...>
 			&& std::constructible_from<TResource, TResourceConfig>
 			&& std::derived_from<TResource, Resource<TState>>)
@@ -691,16 +785,7 @@ public:
 		resource.save(resource.startSave);
 		resource.initialFrame = save.initialFrame;
 
-		script._m64 = &m64;
-		script.resource = &resource;
-		script.Initialize(nullptr);
-
-		script.Run();
-
-		//Dispose of slot handles before resource goes out of scope because they trigger destructor events in the resource.
-		script.saveBank[0].erase(script.saveBank[0].begin(), script.saveBank[0].end());
-
-		return ScriptStatus<TTopLevelScript>(script.BaseStatus[0], script.CustomStatus);
+		return InitializeAndRun(m64, script, resource);
 	}
 
 	virtual bool validation() override = 0;
@@ -711,7 +796,36 @@ protected:
 	M64* _m64 = nullptr;
 
 private:
+	friend class Script<TResource>;
+
+	// Data: trackedStates[script][adhocLevel][frame] = state;
+	std::unordered_map<Script<TResource>*, std::unordered_map<int64_t, std::map<int64_t, typename TStateTracker::CustomScriptStatus>>> trackedStates;
+
+	void TrackState(Script<TResource>* currentScript, InputsMetadata<TResource> inputsMetadata) override;
+	void PushTrackedStatesContainer(Script<TResource>* currentScript, int adhocLevel) override;
+	void PopTrackedStatesContainer(Script<TResource>* currentScript, int adhocLevel) override;
+	void MoveSyncedTrackedStates(Script<TResource>* sourceScript, int sourceAdhocLevel, Script<TResource>* destScript, int destAdhocLevel) override;
+	void EraseTrackedStates(Script<TResource>* currentScript, int adhocLevel, int64_t firstFrame) override;
+	typename TStateTracker::CustomScriptStatus GetTrackedStateInternal(Script<TResource>* currentScript, InputsMetadata<TResource> inputsMetadata);
+
 	InputsMetadata<TResource> GetInputsMetadata(int64_t frame) override;
+
+	template <std::derived_from<TopLevelScript<TResource, TStateTracker>> TTopLevelScript>
+	static ScriptStatus<TTopLevelScript> InitializeAndRun(M64& m64, TTopLevelScript& script, TResource& resource)
+	{
+		script._m64 = &m64;
+		script.resource = &resource;
+		ScriptFriend<TResource>::Initialize(&script, nullptr);
+
+		script.TrackState(&script, script.GetInputsMetadata(ScriptFriend<TResource>::GetCurrentFrame(&script)));
+
+		ScriptFriend<TResource>::Run(&script);
+
+		//Dispose of slot handles before resource goes out of scope because they trigger destructor events in the resource.
+		ScriptFriend<TResource>::DisposeSlotHandles(&script);
+
+		return ScriptStatus<TTopLevelScript>(ScriptFriend<TResource>::GetBaseStatus(&script)[0], script.CustomStatus);
+	}
 };
 
 //Include template method implementations

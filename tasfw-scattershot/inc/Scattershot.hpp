@@ -16,10 +16,12 @@
 #ifndef SCATTERSHOT_H
 #define SCATTERSHOT_H
 
-template <class TState, derived_from_specialization_of<Resource> TResource>
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker>
 class Scattershot;
 
-template <class TState, derived_from_specialization_of<Resource> TResource>
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker = DefaultStateTracker<TResource>>
 class ScattershotThread;
 
 template <class TState>
@@ -103,12 +105,13 @@ public:
     void SetResourcePaths(const TContainer& container);
 };
 
-template <class TState, derived_from_specialization_of<Resource> TResource>
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker = DefaultStateTracker<TResource>>
 class Scattershot
 {
 public:
     const Configuration& config;
-    friend class ScattershotThread<TState, TResource>;
+    friend class ScattershotThread<TState, TResource, TStateTracker>;
 
     Scattershot(const Configuration& configuration);
 
@@ -133,8 +136,8 @@ public:
             });
     }
 
-    template <template<class, class> class TScattershotThread>
-        requires derived_from_specialization_of<TScattershotThread<TState, TResource>, ScattershotThread>
+    template <template<class, class, class> class TScattershotThread>
+        requires derived_from_specialization_of<ScattershotThread<TState, TResource, TStateTracker>, TScattershotThread>
     static void Run(const Configuration& configuration)
     {
         auto scattershot = Scattershot(configuration);
@@ -149,7 +152,8 @@ public:
                     m64.load();
 
                     auto resourcePath = configuration.ResourcePaths[threadId];
-                    auto status = TScattershotThread<TState, TResource>::template MainConfig<TScattershotThread<TState, TResource>>(m64, resourcePath, scattershot, threadId);
+                    auto status = TScattershotThread<TState, TResource, TStateTracker>
+                        ::template MainConfig<TScattershotThread<TState, TResource, TStateTracker>>(m64, resourcePath, scattershot, threadId);
                 }
             });
     }
@@ -207,9 +211,13 @@ public:
     StateBin<TState> stateBin;
 };
 
-template <class TState, derived_from_specialization_of<Resource> TResource>
-class ScattershotThread : public TopLevelScript<TResource>
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker>
+class ScattershotThread : public TopLevelScript<TResource, TStateTracker>
 {
+public:
+    using TopLevelScript<TResource, TStateTracker>::MainConfig;
+
 protected:
     friend class Scattershot<TState, TResource>;
 
@@ -217,11 +225,11 @@ protected:
     using Script<TResource>::LongLoad;
     using Script<TResource>::ExecuteAdhoc;
     using Script<TResource>::ModifyAdhoc;
-    using TopLevelScript<TResource>::MainConfig;
+    
 
     const Configuration& config;
 
-    ScattershotThread(Scattershot<TState, TResource>& scattershot, int id);
+    ScattershotThread(Scattershot<TState, TResource, TStateTracker>& scattershot, int id);
 
     virtual bool validation();
     bool execution();
@@ -244,7 +252,7 @@ protected:
     Inputs RandomInputs(std::map<Buttons, double> buttonProbabilities);
 
 private:
-    Scattershot<TState, TResource>& scattershot;
+    Scattershot<TState, TResource, TStateTracker>& scattershot;
     Block<TState>* Blocks;
     int* HashTable;
     int Id;
