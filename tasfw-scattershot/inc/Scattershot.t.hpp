@@ -83,9 +83,10 @@ int StateBin<TState>::GetBlockIndex(Block<TState>* blocks, int* hashTable, int m
     return -1; // TODO: Should be nMax?
 }
 
-template <class TState, derived_from_specialization_of<Resource> TResource>
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker>
 template <typename F>
-void Scattershot<TState, TResource>::MultiThread(int nThreads, F func)
+void Scattershot<TState, TResource, TStateTracker>::MultiThread(int nThreads, F func)
 {
     omp_set_num_threads(nThreads);
     #pragma omp parallel
@@ -94,8 +95,9 @@ void Scattershot<TState, TResource>::MultiThread(int nThreads, F func)
     }
 }
 
-template <class TState, derived_from_specialization_of<Resource> TResource>
-Scattershot<TState, TResource>::Scattershot(const Configuration& config) : config(config)
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker>
+Scattershot<TState, TResource, TStateTracker>::Scattershot(const Configuration& config) : config(config)
 {
     AllBlocks = (Block<TState>*)calloc(config.TotalThreads * config.MaxBlocks + config.MaxSharedBlocks, sizeof(Block<TState>));
     AllSegments = (Segment**)malloc((config.MaxSharedSegments + config.TotalThreads * config.MaxLocalSegments) * sizeof(Segment*));
@@ -110,8 +112,9 @@ Scattershot<TState, TResource>::Scattershot(const Configuration& config) : confi
         SharedHashTable[hashInx] = -1;
 }
 
-template <class TState, derived_from_specialization_of<Resource> TResource>
-void Scattershot<TState, TResource>::MergeBlocks()
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker>
+void Scattershot<TState, TResource, TStateTracker>::MergeBlocks()
 {
     //printer.printfQ("Merging blocks.\n");
     for (int threadId = 0; threadId < config.TotalThreads; threadId++)
@@ -144,8 +147,9 @@ void Scattershot<TState, TResource>::MergeBlocks()
         NBlocks[threadId] = 0; // Clear all local blocks.
 }
 
-template <class TState, derived_from_specialization_of<Resource> TResource>
-void Scattershot<TState, TResource>::MergeSegments()
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker>
+void Scattershot<TState, TResource, TStateTracker>::MergeSegments()
 {
     //printf("Merging segments\n");
 
@@ -165,8 +169,9 @@ void Scattershot<TState, TResource>::MergeSegments()
     }
 }
 
-template <class TState, derived_from_specialization_of<Resource> TResource>
-void Scattershot<TState, TResource>::SegmentGarbageCollection()
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker>
+void Scattershot<TState, TResource, TStateTracker>::SegmentGarbageCollection()
 {
     //printf("Segment garbage collection. Start with %d segments\n", NSegments[config.TotalThreads]);
 
@@ -208,8 +213,9 @@ void Scattershot<TState, TResource>::SegmentGarbageCollection()
     //printf("Segment garbage collection finished. Ended with %d segments\n", NSegments[config.TotalThreads]);
 }
 
-template <class TState, derived_from_specialization_of<Resource> TResource>
-void Scattershot<TState, TResource>::MergeState(int mainIteration)
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker>
+void Scattershot<TState, TResource, TStateTracker>::MergeState(int mainIteration)
 {
     // Merge all blocks from all threads and redistribute info.
     MergeBlocks();
@@ -239,8 +245,9 @@ void Scattershot<TState, TResource>::MergeState(int mainIteration)
     }
 }
 
-template <class TState, derived_from_specialization_of<Resource> TResource>
-void Scattershot<TState, TResource>::OpenCsv()
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker>
+void Scattershot<TState, TResource, TStateTracker>::OpenCsv()
 {
     if (config.CsvSamplePeriod == 0)
         return;
@@ -252,8 +259,9 @@ void Scattershot<TState, TResource>::OpenCsv()
     Csv = std::ofstream(fileName);
 }
 
-template <class TState, derived_from_specialization_of<Resource> TResource>
-Scattershot<TState, TResource>::~Scattershot()
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker>
+Scattershot<TState, TResource, TStateTracker>::~Scattershot()
 {
     Csv.close();
 }

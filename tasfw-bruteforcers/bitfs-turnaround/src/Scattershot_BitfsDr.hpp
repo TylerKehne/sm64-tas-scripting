@@ -2,6 +2,10 @@
 #include <Scattershot.hpp>
 #include <BitFSPyramidOscillation.hpp>
 #include <cmath>
+#include <sm64/Camera.hpp>
+#include <sm64/Types.hpp>
+#include <sm64/Sm64.hpp>
+#include <sm64/ObjectFields.hpp>
 
 class SShotState_BitfsDr
 {
@@ -16,11 +20,52 @@ public:
     bool operator==(const SShotState_BitfsDr&) const = default;
 };
 
-class Scattershot_BitfsDr : public ScattershotThread<SShotState_BitfsDr, LibSm64>
+class StateTracker_BitfsDr;
+
+class StateTracker_BitfsDr : public Script<LibSm64>
 {
 public:
-    Scattershot_BitfsDr(Scattershot<SShotState_BitfsDr, LibSm64>& scattershot, int id)
-        : ScattershotThread<SShotState_BitfsDr, LibSm64>(scattershot, id) {}
+    class CustomScriptStatus
+    {
+    public:
+        float marioX = 0;
+        float marioY = 0;
+        float marioZ = 0;
+        int recursions = 0;
+        bool initialized = false;
+    };
+    CustomScriptStatus CustomStatus = CustomScriptStatus();
+
+    StateTracker_BitfsDr() = default;
+
+    bool validation() { return true; }
+
+    bool execution() 
+    {
+        MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
+
+        int64_t currentFrame = GetCurrentFrame();
+        if (currentFrame <= 3515)
+            CustomStatus.recursions = 0;
+        else
+            CustomStatus.recursions = GetTrackedState<StateTracker_BitfsDr>(currentFrame - 1).recursions + 1;
+
+        CustomStatus.marioX = marioState->pos[0];
+        CustomStatus.marioY = marioState->pos[1];
+        CustomStatus.marioZ = marioState->pos[2];
+        CustomStatus.initialized = true;
+
+        return true;
+    }
+
+    bool assertion() { return true; }
+};
+
+class Scattershot_BitfsDr : public ScattershotThread<SShotState_BitfsDr, LibSm64, StateTracker_BitfsDr>
+{
+public:
+    Scattershot_BitfsDr(Scattershot<SShotState_BitfsDr, LibSm64, StateTracker_BitfsDr>& scattershot, int id)
+        : ScattershotThread<SShotState_BitfsDr, LibSm64, StateTracker_BitfsDr>(scattershot, id) {}
 
     void SelectMovementOptions()
     {
@@ -124,19 +169,7 @@ public:
         s += (int)((40 - marioState->vel[1]) / 4);
 
         float norm_regime_min = .69;
-        //float norm_regime_max = .67;
-        //float target_xnorm = -.30725;
-        //float target_znorm = .3665;
-        //float x_delt = pyramid->oTiltingPyramidNormalX - target_xnorm;
-        //float z_delt = pyramid->oTiltingPyramidNormalZ - target_znorm;
-        //float x_remainder = x_delt * 100 - floor(x_delt * 100);
-        //float z_remainder = z_delt * 100 - floor(z_delt * 100);
-
-
-        //if((fabs(pyraXNorm) + fabs(pyraZNorm) < norm_regime_min) ||
-        //   (fabs(pyraXNorm) + fabs(pyraZNorm) > norm_regime_max)){  //coarsen for bad norm regime
-        if (//(x_remainder > .001 && x_remainder < .999) || (z_remainder > .001 && z_remainder < .999) ||
-            (fabs(pyramid->oTiltingPyramidNormalX) + fabs(pyramid->oTiltingPyramidNormalZ) < norm_regime_min)) //coarsen for not target norm envelope
+        if ((fabs(pyramid->oTiltingPyramidNormalX) + fabs(pyramid->oTiltingPyramidNormalZ) < norm_regime_min)) //coarsen for not target norm envelope
         { 
             s *= 14;
             s += (int)((pyramid->oTiltingPyramidNormalX + 1) * 7);
@@ -192,6 +225,14 @@ public:
         const BehaviorScript* pyramidmBehavior = (const BehaviorScript*)(resource->addr("bhvLllTiltingInvertedPyramid"));
         Object* objectPool = (Object*)(resource->addr("gObjectPool"));
         Object* pyramid = &objectPool[84];
+
+        int64_t frame = GetCurrentFrame();
+        if (frame >= 3517)
+        {
+            auto state1 = GetTrackedState<StateTracker_BitfsDr>(frame);
+            auto state2 = GetTrackedState<StateTracker_BitfsDr>(frame - 1);
+            auto state3 = GetTrackedState<StateTracker_BitfsDr>(frame - 2);
+        }
 
         if (marioState->pos[0] < -2330 || marioState->pos[0] > -1550)
             return false;
@@ -299,6 +340,7 @@ public:
             pyramid->oTiltingPyramidNormalY,
             pyramid->oTiltingPyramidNormalZ
             );
+
         return std::string(line);
     }
 

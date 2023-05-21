@@ -47,7 +47,13 @@
 			"configurePreset": "ninja-multi",
 			"configuration": "Release"
 		},
-        {
+		{
+			"name": "ninja-multi-reldbg",
+			"displayName": "Ninja (Release w/ Debug Info)",
+			"configurePreset": "ninja-multi",
+			"configuration": "RelWithDebInfo"
+		},
+		{
 			"name": "win32-vs2022-amd64-debug",
 			"displayName": "Visual Studio 2022 (Debug)",
 			"configurePreset": "win32-vs2022-amd64",
@@ -58,6 +64,12 @@
 			"displayName": "Visual Studio 2022 (Release)",
 			"configurePreset": "win32-vs2022-amd64",
 			"configuration": "Release"
+		},
+		{
+			"name": "win32-vs2022-amd64-reldbg",
+			"displayName": "Visual Studio 2022 (Release w/ Debug Info)",
+			"configurePreset": "win32-vs2022-amd64",
+			"configuration": "RelWithDebInfo"
 		}
 	]
 }

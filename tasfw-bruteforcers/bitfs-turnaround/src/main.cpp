@@ -85,7 +85,7 @@ void InitConfiguration(Configuration& configuration)
 	configuration.MaxHashes = 10 * configuration.MaxBlocks;
 	configuration.MaxSharedBlocks = 20000000;
 	configuration.MaxSharedHashes = 10 * configuration.MaxSharedBlocks;
-	configuration.TotalThreads = 3;
+	configuration.TotalThreads = 1;
 	configuration.MaxSharedSegments = 25000000;
 	configuration.MaxLocalSegments = 2000000;
 	configuration.MaxShots = 1000000000;
@@ -123,7 +123,7 @@ int main(int argc, const char* argv[])
 	//M64 m64 = M64(config.M64Path);
 	//m64.load();
 
-	Scattershot<SShotState_BitfsDr, LibSm64>::Run<Scattershot_BitfsDr, LibSm64Config>(config, [&](auto path)
+	Scattershot<SShotState_BitfsDr, LibSm64, StateTracker_BitfsDr>::Run<Scattershot_BitfsDr, LibSm64Config>(config, [&](auto path)
 		{
 			LibSm64Config resourceConfig;
 			resourceConfig.dllPath = path;

@@ -4,8 +4,9 @@
 #else
 #include <Scattershot.hpp>
 
-template <class TState, derived_from_specialization_of<Resource> TResource>
-ScattershotThread<TState, TResource>::ScattershotThread(Scattershot<TState, TResource>& scattershot, int id)
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker>
+ScattershotThread<TState, TResource, TStateTracker>::ScattershotThread(Scattershot<TState, TResource, TStateTracker>& scattershot, int id)
     : scattershot(scattershot), config(scattershot.config)
 {
     Id = id;
@@ -16,11 +17,13 @@ ScattershotThread<TState, TResource>::ScattershotThread(Scattershot<TState, TRes
     //printf("Thread %d\n", Id);
 }
 
-template <class TState, derived_from_specialization_of<Resource> TResource>
-bool ScattershotThread<TState, TResource>::validation() { return true; }
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker>
+bool ScattershotThread<TState, TResource, TStateTracker>::validation() { return true; }
 
-template <class TState, derived_from_specialization_of<Resource> TResource>
-bool ScattershotThread<TState, TResource>::execution()
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker>
+bool ScattershotThread<TState, TResource, TStateTracker>::execution()
 {
     LongLoad(config.StartFrame);
     InitializeMemory();
@@ -62,20 +65,23 @@ bool ScattershotThread<TState, TResource>::execution()
     return true;
 }
 
-template <class TState, derived_from_specialization_of<Resource> TResource>
-std::string ScattershotThread<TState, TResource>::GetCsvLabels()
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker>
+std::string ScattershotThread<TState, TResource, TStateTracker>::GetCsvLabels()
 {
     return "";
 }
 
-template <class TState, derived_from_specialization_of<Resource> TResource>
-bool ScattershotThread<TState, TResource>::ForceAddToCsv()
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker>
+bool ScattershotThread<TState, TResource, TStateTracker>::ForceAddToCsv()
 {
     return false;
 }
 
-template <class TState, derived_from_specialization_of<Resource> TResource>
-void ScattershotThread<TState, TResource>::AddCsvLabels()
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker>
+void ScattershotThread<TState, TResource, TStateTracker>::AddCsvLabels()
 {
     ExecuteAdhoc([&]()
         {
@@ -91,17 +97,20 @@ void ScattershotThread<TState, TResource>::AddCsvLabels()
         });
 }
 
-template <class TState, derived_from_specialization_of<Resource> TResource>
-std::string ScattershotThread<TState, TResource>::GetCsvRow()
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker>
+std::string ScattershotThread<TState, TResource, TStateTracker>::GetCsvRow()
 {
     return "";
 }
 
-template <class TState, derived_from_specialization_of<Resource> TResource>
-bool ScattershotThread<TState, TResource>::assertion() { return true; }
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker>
+bool ScattershotThread<TState, TResource, TStateTracker>::assertion() { return true; }
 
-template <class TState, derived_from_specialization_of<Resource> TResource>
-void ScattershotThread<TState, TResource>::InitializeMemory()
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker>
+void ScattershotThread<TState, TResource, TStateTracker>::InitializeMemory()
 {
     // Initial block
     Blocks[0].stateBin = GetStateBinSafe(); //CHEAT TODO NOTE
@@ -125,8 +134,9 @@ void ScattershotThread<TState, TResource>::InitializeMemory()
     //LoopTimeStamp = omp_get_wtime();
 }
 
-template <class TState, derived_from_specialization_of<Resource> TResource>
-bool ScattershotThread<TState, TResource>::SelectBaseBlock(int mainIteration)
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker>
+bool ScattershotThread<TState, TResource, TStateTracker>::SelectBaseBlock(int mainIteration)
 {
     int sharedBlockIndex = scattershot.NBlocks[config.TotalThreads];
     if (mainIteration % config.StartFromRootEveryNShots == 0)
@@ -165,8 +175,9 @@ bool ScattershotThread<TState, TResource>::SelectBaseBlock(int mainIteration)
     return true;
 }
 
-template <class TState, derived_from_specialization_of<Resource> TResource>
-bool ScattershotThread<TState, TResource>::ValidateBaseBlock()
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker>
+bool ScattershotThread<TState, TResource, TStateTracker>::ValidateBaseBlock()
 {
     StateBin<TState> currentStateBin = GetStateBinSafe();
     if (BaseBlock.stateBin != currentStateBin) {
@@ -186,8 +197,9 @@ bool ScattershotThread<TState, TResource>::ValidateBaseBlock()
     return true;
 }
 
-template <class TState, derived_from_specialization_of<Resource> TResource>
-bool ScattershotThread<TState, TResource>::ProcessNewBlock(uint64_t baseRngHash, int nScripts, StateBin<TState> newStateBin)
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker>
+bool ScattershotThread<TState, TResource, TStateTracker>::ProcessNewBlock(uint64_t baseRngHash, int nScripts, StateBin<TState> newStateBin)
 {
     Block<TState> newBlock;
 
@@ -241,8 +253,9 @@ bool ScattershotThread<TState, TResource>::ProcessNewBlock(uint64_t baseRngHash,
     return false;
 }
 
-template <class TState, derived_from_specialization_of<Resource> TResource>
-void ScattershotThread<TState, TResource>::AddCsvRow(int shot)
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker>
+void ScattershotThread<TState, TResource, TStateTracker>::AddCsvRow(int shot)
 {
     bool sampled = false;
     ThreadLock([&]()
@@ -283,9 +296,10 @@ void ScattershotThread<TState, TResource>::AddCsvRow(int shot)
         });
 }
 
-template <class TState, derived_from_specialization_of<Resource> TResource>
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker>
 template <typename F>
-void ScattershotThread<TState, TResource>::SingleThread(F func)
+void ScattershotThread<TState, TResource, TStateTracker>::SingleThread(F func)
 {
     #pragma omp barrier
     {
@@ -297,9 +311,10 @@ void ScattershotThread<TState, TResource>::SingleThread(F func)
     return;
 }
 
-template <class TState, derived_from_specialization_of<Resource> TResource>
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker>
 template <typename F>
-void ScattershotThread<TState, TResource>::ThreadLock(F func)
+void ScattershotThread<TState, TResource, TStateTracker>::ThreadLock(F func)
 {
     #pragma omp critical
     {
@@ -309,15 +324,17 @@ void ScattershotThread<TState, TResource>::ThreadLock(F func)
     return;
 }
 
-template <class TState, derived_from_specialization_of<Resource> TResource>
-bool ScattershotThread<TState, TResource>::ValidateCourseAndArea()
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker>
+bool ScattershotThread<TState, TResource, TStateTracker>::ValidateCourseAndArea()
 {
     return startCourse == *(short*)this->resource->addr("gCurrCourseNum")
         && startArea == *(short*)this->resource->addr("gCurrAreaIndex");
 }
 
-template <class TState, derived_from_specialization_of<Resource> TResource>
-bool ScattershotThread<TState, TResource>::ChooseScriptAndApply()
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker>
+bool ScattershotThread<TState, TResource, TStateTracker>::ChooseScriptAndApply()
 {
     movementOptions = std::unordered_set<MovementOption>();
 
@@ -332,8 +349,9 @@ bool ScattershotThread<TState, TResource>::ChooseScriptAndApply()
     return status.executed && !status.m64Diff.frames.empty();
 }
 
-template <class TState, derived_from_specialization_of<Resource> TResource>
-StateBin<TState> ScattershotThread<TState, TResource>::GetStateBinSafe()
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker>
+StateBin<TState> ScattershotThread<TState, TResource, TStateTracker>::GetStateBinSafe()
 {
     StateBin<TState> stateBin;
     ExecuteAdhoc([&]()
@@ -345,8 +363,9 @@ StateBin<TState> ScattershotThread<TState, TResource>::GetStateBinSafe()
     return stateBin;
 }
 
-template <class TState, derived_from_specialization_of<Resource> TResource>
-float ScattershotThread<TState, TResource>::GetStateFitnessSafe()
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker>
+float ScattershotThread<TState, TResource, TStateTracker>::GetStateFitnessSafe()
 {
     float fitness;
     ExecuteAdhoc([&]()
@@ -358,8 +377,9 @@ float ScattershotThread<TState, TResource>::GetStateFitnessSafe()
     return fitness;
 }
 
-template <class TState, derived_from_specialization_of<Resource> TResource>
-AdhocBaseScriptStatus ScattershotThread<TState, TResource>::DecodeBaseBlockDiffAndApply()
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker>
+AdhocBaseScriptStatus ScattershotThread<TState, TResource, TStateTracker>::DecodeBaseBlockDiffAndApply()
 {
     int64_t postScriptFrame = -1;
     auto status = ModifyAdhoc([&]()
@@ -393,8 +413,9 @@ AdhocBaseScriptStatus ScattershotThread<TState, TResource>::DecodeBaseBlockDiffA
     return status;
 }
 
-template <class TState, derived_from_specialization_of<Resource> TResource>
-AdhocBaseScriptStatus ScattershotThread<TState, TResource>::ExecuteFromBaseBlockAndEncode(int shot)
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker>
+AdhocBaseScriptStatus ScattershotThread<TState, TResource, TStateTracker>::ExecuteFromBaseBlockAndEncode(int shot)
 {
     return ExecuteAdhoc([&]()
         {
@@ -434,37 +455,42 @@ AdhocBaseScriptStatus ScattershotThread<TState, TResource>::ExecuteFromBaseBlock
         });
 }
 
-template <class TState, derived_from_specialization_of<Resource> TResource>
-uint64_t ScattershotThread<TState, TResource>::GetRng()
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker>
+uint64_t ScattershotThread<TState, TResource, TStateTracker>::GetRng()
 {
     uint64_t rngHashPrev = RngHash;
     RngHash = GetHash(RngHash);
     return rngHashPrev;
 }
 
-template <class TState, derived_from_specialization_of<Resource> TResource>
-void ScattershotThread<TState, TResource>::SetRng(uint64_t rngHash)
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker>
+void ScattershotThread<TState, TResource, TStateTracker>::SetRng(uint64_t rngHash)
 {
     RngHash = rngHash;
 }
 
-template <class TState, derived_from_specialization_of<Resource> TResource>
-uint64_t ScattershotThread<TState, TResource>::GetTempRng()
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker>
+uint64_t ScattershotThread<TState, TResource, TStateTracker>::GetTempRng()
 {
     uint64_t rngHashPrev = RngHashTemp;
     RngHashTemp = GetHash(RngHashTemp);
     return rngHashPrev;
 }
 
-template <class TState, derived_from_specialization_of<Resource> TResource>
-void ScattershotThread<TState, TResource>::SetTempRng(uint64_t rngHash)
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker>
+void ScattershotThread<TState, TResource, TStateTracker>::SetTempRng(uint64_t rngHash)
 {
     RngHashTemp = rngHash;
 }
 
-template <class TState, derived_from_specialization_of<Resource> TResource>
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker>
 template <typename T>
-uint64_t ScattershotThread<TState, TResource>::GetHash(const T& toHash) const
+uint64_t ScattershotThread<TState, TResource, TStateTracker>::GetHash(const T& toHash) const
 {
     std::hash<std::byte> byteHasher;
     const std::byte* data = reinterpret_cast<const std::byte*>(&toHash);
@@ -475,8 +501,9 @@ uint64_t ScattershotThread<TState, TResource>::GetHash(const T& toHash) const
     return hashValue;
 }
 
-template <class TState, derived_from_specialization_of<Resource> TResource>
-void ScattershotThread<TState, TResource>::AddRandomMovementOption(std::map<MovementOption, double> weightedOptions)
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker>
+void ScattershotThread<TState, TResource, TStateTracker>::AddRandomMovementOption(std::map<MovementOption, double> weightedOptions)
 {
     if (weightedOptions.empty())
         return;
@@ -513,14 +540,16 @@ void ScattershotThread<TState, TResource>::AddRandomMovementOption(std::map<Move
     movementOptions.insert(weightedOptions.rbegin()->first);
 }
 
-template <class TState, derived_from_specialization_of<Resource> TResource>
-bool ScattershotThread<TState, TResource>::CheckMovementOptions(MovementOption movementOption)
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker>
+bool ScattershotThread<TState, TResource, TStateTracker>::CheckMovementOptions(MovementOption movementOption)
 {
     return movementOptions.contains(movementOption);
 }
 
-template <class TState, derived_from_specialization_of<Resource> TResource>
-Inputs ScattershotThread<TState, TResource>::RandomInputs(std::map<Buttons, double> buttonProbabilities)
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker>
+Inputs ScattershotThread<TState, TResource, TStateTracker>::RandomInputs(std::map<Buttons, double> buttonProbabilities)
 {
     Inputs inputs;
 
