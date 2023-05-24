@@ -158,26 +158,7 @@ void Scattershot<TState, TResource, TStateTracker>::MergeBlocks(uint64_t rngHash
 
                 continue;
             }
-            /*
-            else if (config.BlockCannibalismRate > 0 && NBlocks[config.TotalThreads] >= 2) // Occasionally cannibalize old blocks with new ones, to equalize distibution of blocks throughout state space
-            {
-                rngHash = block.stateBin.GetHash(rngHash, true);
 
-                if (config.BlockCannibalismRate >= 1.0 || config.BlockCannibalismRate >= double(rngHash) / double(0xFFFFFFFFFFFFFFFFull))
-                {
-                    rngHash = block.stateBin.GetHash(rngHash, true);
-                    int blockToEraseIndex = (rngHash % ((NBlocks[config.TotalThreads]) - 1)) + 1;
-                    const Block<TState>& blockToErase = SharedBlocks[blockToEraseIndex];
-                    uint64_t blockToEraseHash = blockToErase.stateBin.FindSharedHashIndex(SharedBlocks, SharedHashTable, config.MaxSharedHashes);
-
-                    SharedHashTable[blockToEraseHash] = -1; // mark old block as erased
-                    SharedBlocks[blockToEraseIndex] = block; // replace with new block
-                    SharedHashTable[block.stateBin.FindNewHashIndex(SharedHashTable, config.MaxSharedHashes)] = blockToEraseIndex;
-
-                    continue;
-                }
-            }
-            */
             SharedHashTable[block.stateBin.FindNewHashIndex(SharedHashTable, config.MaxSharedHashes)] = NBlocks[config.TotalThreads];
             SharedBlocks[NBlocks[config.TotalThreads]++] = block;
             //newBlocks++;
@@ -271,22 +252,22 @@ void Scattershot<TState, TResource, TStateTracker>::MergeState(int mainIteration
     if (mainIteration % (config.ShotsPerMerge * config.MergesPerSegmentGC) == 0)
         SegmentGarbageCollection();
 
-    #pragma omp critical
+    printf("\nThread ALL Loop %d blocks %d\n", mainIteration, NBlocks[config.TotalThreads]);
+
+    // Print cumulative script results
+    if (ScriptCount != 0)
     {
-        printf("\nThread ALL Loop %d blocks %d\n", mainIteration, NBlocks[config.TotalThreads]);
+        int futility = double(FailedScripts) / double(ScriptCount) * 100;
+        int redundancy = double(RedundantScripts) / double(ScriptCount) * 100;
+        int discovery = double(NovelScripts) / double(ScriptCount) * 100;
 
-        // Print cumulative script results
-        if (ScriptCount != 0)
-        {
-            int futility = double(FailedScripts) / double(ScriptCount) * 100;
-            int redundancy = double(RedundantScripts) / double(ScriptCount) * 100;
-            int discovery = double(NovelScripts) / double(ScriptCount) * 100;
+        printf("Futility: %d%% Redundancy: %d%% Discovery: %d%%\n", futility, redundancy, discovery);
+    }
 
-            printf("Futility: %d%% Redundancy: %d%% Discovery: %d%%\n", futility, redundancy, discovery);
-        }
-
-        if (CsvRows != -1)
-            printf("CSV rows: %d\n", CsvRows);
+    if (CsvRows != -1)
+    {
+        Csv.flush();
+        printf("CSV rows: %d\n", CsvRows);
     }
 }
 
