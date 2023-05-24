@@ -46,6 +46,7 @@ public:
     uint64_t GetHash(const T& toHash, bool ignoreFillerBytes) const;
 
     int FindNewHashIndex(const int* hashTable, int maxHashes) const;
+    int FindSharedHashIndex(Block<TState>* blocks, const int* hashTable, int maxHashes) const;
     int GetBlockIndex(Block<TState>* blocks, int* hashTable, int maxHashes, int nMin, int nMax) const;
     void print() const;
 
@@ -95,6 +96,8 @@ public:
     int ShotsPerMerge;
     int MergesPerSegmentGC;
     int StartFromRootEveryNShots;
+    int MaxConsecutiveFailedPellets;
+    double BlockCannibalismRate; // Rate at which novel blocks will overwrite a random block
     uint32_t CsvSamplePeriod; // Every nth new block per thread will be printed to a CSV. Set to 0 to disable CSV export.
     std::filesystem::path M64Path;
     std::string CsvOutputDirectory;
@@ -171,18 +174,20 @@ private:
     int* SharedHashTable;
     std::unordered_set<int> StateBinFillerBytes;
 
+    std::string CsvFileName;
     std::ofstream Csv;
     int CsvSampleFrequency;
     int64_t CsvCounter = 0;
     int64_t CsvRows = -1; // Print this each merge so analysis can be run at the same time w/o dealing with partial rows
+    bool CsvEnabled = false;
 
     uint64_t ScriptCount = 0;
     uint64_t FailedScripts = 0;
     uint64_t RedundantScripts = 0;
     uint64_t NovelScripts = 0;
 
-    void MergeState(int mainIteration);
-    void MergeBlocks();
+    void MergeState(int mainIteration, uint64_t rngHash);
+    void MergeBlocks(uint64_t rngHash);
     void MergeSegments();
     void SegmentGarbageCollection();
 
@@ -248,6 +253,7 @@ protected:
     uint64_t GetTempRng();
 
     void AddRandomMovementOption(std::map<MovementOption, double> weightedOptions);
+    void AddMovementOption(MovementOption movementOption, double probability = 1.0);
     bool CheckMovementOptions(MovementOption movementOption);
     Inputs RandomInputs(std::map<Buttons, double> buttonProbabilities);
 
@@ -270,7 +276,7 @@ private:
     void SetTempRng(uint64_t rngHash);
     void InitializeMemory();
     bool SelectBaseBlock(int mainIteration);
-    bool ValidateBaseBlock();
+    bool ValidateBaseBlock(int shot);
     bool ProcessNewBlock(uint64_t baseRngHash, int nScripts, StateBin<TState> newStateBin);
 
     void AddCsvRow(int shot);

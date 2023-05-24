@@ -10,9 +10,8 @@ if (nchar(args[1]) == 0)
 
 # Define the file path and type
 file_path <- "C:/Users/Tyler/Documents/repos/sm64_tas_scripting/analysis/"
-file_suffix <- ".csv"
 
-file_name <- paste0(file_path, args[1], file_suffix)
+file_name <- paste0(file_path, args[1])
 if (!file.exists(file_name))
 {
     print(paste0("'", file_name, "' does not exist."))
@@ -27,6 +26,8 @@ if (!is.na(as.numeric(args[2]))) {
 } else {
     df <- read.csv(file_name)}
 
+print(paste0("CSV rows: ", nrow(df)))
+
 # 
 df$x <- df$MarioZ
 df$y <- df$MarioX
@@ -36,8 +37,8 @@ df$shot <- df$Shot
 df$frame <- df$Frame
 
 # Define state bin size
-x_bins <- seq(range(df$x)[1], range(df$x)[2], by = 20)
-y_bins <- seq(range(df$y)[1], range(df$y)[2], by = 20)
+x_bins <- seq(range(df$x)[1], range(df$x)[2], by = 10)
+y_bins <- seq(range(df$y)[1], range(df$y)[2], by = 10)
 angle_bins <- seq(-32768, 32767, by = 8192)
 speed_bins <- seq(range(df$speed)[1], range(df$speed)[2], by = 5)
 
@@ -51,15 +52,18 @@ df$bin_speed <- cut(df$speed, breaks = speed_bins, include.lowest = TRUE)
 # Without it, newer blocks will overwhelm the data
 df_top <- df %>%
     #filter(frame > quantile(frame, probs = 0.99) & frame < quantile(frame, probs = 1)) %>%
-    #filter(abs(PlatNormX) + abs(PlatNormZ) > 0.69) %>%
+    filter(abs(PlatNormX) + abs(PlatNormZ) > 0.69) %>%
     #filter(MarioAction == 0x00880456) %>% # Dive Slide
     #filter(speed > 20) %>%
+    filter(Sampled == 1) %>%
+    filter(Oscillation > 0) %>%
+    #filter(Crossing > 2) %>%
     group_by(bin_x, bin_y, bin_angle, bin_speed) %>% 
     arrange(shot) %>% 
     slice(1) %>%
     ungroup()
 
-print(paste0("CSV rows: ", nrow(df)))
+
 print(paste0("Rows after filter: ", nrow(df_top)))
 print("Plotting...")
 
