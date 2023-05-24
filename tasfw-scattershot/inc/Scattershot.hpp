@@ -97,7 +97,6 @@ public:
     int MergesPerSegmentGC;
     int StartFromRootEveryNShots;
     int MaxConsecutiveFailedPellets;
-    double BlockCannibalismRate; // Rate at which novel blocks will overwrite a random block
     uint32_t CsvSamplePeriod; // Every nth new block per thread will be printed to a CSV. Set to 0 to disable CSV export.
     std::filesystem::path M64Path;
     std::string CsvOutputDirectory;

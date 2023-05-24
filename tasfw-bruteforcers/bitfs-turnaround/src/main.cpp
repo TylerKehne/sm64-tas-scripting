@@ -95,7 +95,6 @@ void InitConfiguration(Configuration& configuration)
 	configuration.StartFromRootEveryNShots = 50;
 	configuration.CsvSamplePeriod = 200;
 	configuration.MaxConsecutiveFailedPellets = 10;
-	configuration.BlockCannibalismRate = 0.2;
 	configuration.CsvOutputDirectory = std::string("C:/Users/Tyler/Documents/repos/sm64_tas_scripting/analysis/");
 	configuration.M64Path = std::filesystem::path("C:/Users/Tyler/Documents/repos/sm64_tas_scripting/res/4_units_from_edge.m64");
 
