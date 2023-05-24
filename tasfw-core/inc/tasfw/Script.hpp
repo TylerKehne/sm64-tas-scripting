@@ -113,14 +113,28 @@ protected:
 		requires(std::constructible_from<TScript, Us...>)
 	ScriptStatus<TScript> Execute(Us&&... params)
 	{
-		return ExecuteInternal<TScript>(isStateTracker, std::forward<Us>(params)...);
+		uint64_t initialFrame = GetCurrentFrame();
+
+		TScript script = TScript(std::forward<Us>(params)...);
+		script.isStateTracker = isStateTracker;
+		script.Initialize(this);
+
+		script.Run();
+
+		// Load if necessary
+		Revert(initialFrame, script.BaseStatus[0].m64Diff, script.saveBank[0], &script);
+
+		BaseStatus[_adhocLevel].nLoads += script.BaseStatus[0].nLoads;
+		BaseStatus[_adhocLevel].nSaves += script.BaseStatus[0].nSaves;
+		BaseStatus[_adhocLevel].nFrameAdvances += script.BaseStatus[0].nFrameAdvances;
+
+		return ScriptStatus<TScript>(script.BaseStatus[0], script.CustomStatus);
 	}
 
 	template <derived_from_specialization_of<Script> TScript, typename... Us>
 		requires(std::constructible_from<TScript, Us...>)
 	ScriptStatus<TScript> Modify(Us&&... params)
 	{
-		// Save state if performant
 		uint64_t initialFrame = GetCurrentFrame();
 
 		TScript script = TScript(std::forward<Us>(params)...);
@@ -130,7 +144,6 @@ protected:
 		script.Run();
 
 		ApplyChildDiff(script.BaseStatus[0], script.saveBank[0], initialFrame, &script);
-		_rootScript->PopTrackedStatesContainer(&script, 0);
 
 		BaseStatus[_adhocLevel].nLoads += script.BaseStatus[0].nLoads;
 		BaseStatus[_adhocLevel].nSaves += script.BaseStatus[0].nSaves;
@@ -615,42 +628,12 @@ private:
 	template <typename F>
 	BaseScriptStatus ExecuteAdhocBase(F adhocScript);
 
-	// Needed for state tracking. These do nothing, but TopLevelScript overshadows them. Can't access explicitly (I think) because of lack of template information.
-	virtual void TrackState(Script<TResource>* currentScript, InputsMetadata<TResource> inputsMetadata) { return; }
+	// Needed for state tracking. These do nothing, but TopLevelScript overrides them. Can't access explicitly because of lack of template information.
+	virtual void TrackState(Script<TResource>* currentScript, const InputsMetadata<TResource>& inputsMetadata) { return; }
 	virtual void PushTrackedStatesContainer(Script<TResource>* currentScript, int adhocLevel) { return; }
 	virtual void PopTrackedStatesContainer(Script<TResource>* currentScript, int adhocLevel) { return; }
 	virtual void MoveSyncedTrackedStates(Script<TResource>* sourceScript, int sourceAdhocLevel, Script<TResource>* destScript, int destAdhocLevel) { return; }
 	virtual void EraseTrackedStates(Script<TResource>* currentScript, int adhocLevel, int64_t firstFrame) { return; }
-
-	template <derived_from_specialization_of<Script> TScript, typename... Us>
-		requires(std::constructible_from<TScript, Us...>)
-	ScriptStatus<TScript> ExecuteInternal(bool isStateTracker, Us&&... params)
-	{
-		// Save state if performant
-		uint64_t initialFrame = GetCurrentFrame();
-
-		TScript script = TScript(std::forward<Us>(params)...);
-		script.isStateTracker = isStateTracker;
-		script.Initialize(this);
-
-		// If we are executing the state tracker, we also need to mark the current script as a state tracker temporarily
-		// This is necessary to prevent infinite recursion.
-		bool wasStateTracker = this->isStateTracker;
-		this->isStateTracker = isStateTracker;
-
-		script.Run();
-
-		// Load if necessary
-		Revert(initialFrame, script.BaseStatus[0].m64Diff, script.saveBank[0], &script);
-
-		this->isStateTracker = wasStateTracker;
-
-		BaseStatus[_adhocLevel].nLoads += script.BaseStatus[0].nLoads;
-		BaseStatus[_adhocLevel].nSaves += script.BaseStatus[0].nSaves;
-		BaseStatus[_adhocLevel].nFrameAdvances += script.BaseStatus[0].nFrameAdvances;
-
-		return ScriptStatus<TScript>(script.BaseStatus[0], script.CustomStatus);
-	}
 };
 
 // DO NOT EVER USE THESE METHODS OUTSIDE OF THE TOPLEVELSCRIPT BASE CLASS
@@ -704,9 +687,17 @@ public:
 		requires(std::constructible_from<TStateTracker>)
 	static ScriptStatus<TStateTracker> ExecuteStateTracker(Script<TResource>* script, int64_t frame)
 	{
+		bool wasStateTracker = script->isStateTracker;
+		script->isStateTracker = true;
+
 		// The information is stored per frame, so we need to make sure we are there before running the state tracking script.
 		script->Load(frame);
-		return script->ExecuteInternal<TStateTracker>(true);
+
+		auto status = script->Execute<TStateTracker>();
+
+		script->isStateTracker = wasStateTracker;
+
+		return status;
 	}
 
 	static uint64_t GetCurrentFrame(Script<TResource>* script)
@@ -801,12 +792,12 @@ private:
 	// Data: trackedStates[script][adhocLevel][frame] = state;
 	std::unordered_map<Script<TResource>*, std::unordered_map<int64_t, std::map<int64_t, typename TStateTracker::CustomScriptStatus>>> trackedStates;
 
-	void TrackState(Script<TResource>* currentScript, InputsMetadata<TResource> inputsMetadata) override;
+	void TrackState(Script<TResource>* currentScript, const InputsMetadata<TResource>& inputsMetadata) override;
 	void PushTrackedStatesContainer(Script<TResource>* currentScript, int adhocLevel) override;
 	void PopTrackedStatesContainer(Script<TResource>* currentScript, int adhocLevel) override;
 	void MoveSyncedTrackedStates(Script<TResource>* sourceScript, int sourceAdhocLevel, Script<TResource>* destScript, int destAdhocLevel) override;
 	void EraseTrackedStates(Script<TResource>* currentScript, int adhocLevel, int64_t firstFrame) override;
-	typename TStateTracker::CustomScriptStatus GetTrackedStateInternal(Script<TResource>* currentScript, InputsMetadata<TResource> inputsMetadata);
+	typename TStateTracker::CustomScriptStatus GetTrackedStateInternal(Script<TResource>* currentScript, const InputsMetadata<TResource>& inputsMetadata);
 
 	InputsMetadata<TResource> GetInputsMetadata(int64_t frame) override;
 

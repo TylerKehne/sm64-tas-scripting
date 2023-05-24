@@ -85,7 +85,7 @@ void InitConfiguration(Configuration& configuration)
 	configuration.MaxHashes = 10 * configuration.MaxBlocks;
 	configuration.MaxSharedBlocks = 20000000;
 	configuration.MaxSharedHashes = 10 * configuration.MaxSharedBlocks;
-	configuration.TotalThreads = 1;
+	configuration.TotalThreads = 3;
 	configuration.MaxSharedSegments = 25000000;
 	configuration.MaxLocalSegments = 2000000;
 	configuration.MaxShots = 1000000000;
@@ -94,6 +94,8 @@ void InitConfiguration(Configuration& configuration)
 	configuration.MergesPerSegmentGC = 30;
 	configuration.StartFromRootEveryNShots = 50;
 	configuration.CsvSamplePeriod = 200;
+	configuration.MaxConsecutiveFailedPellets = 10;
+	configuration.BlockCannibalismRate = 0.2;
 	configuration.CsvOutputDirectory = std::string("C:/Users/Tyler/Documents/repos/sm64_tas_scripting/analysis/");
 	configuration.M64Path = std::filesystem::path("C:/Users/Tyler/Documents/repos/sm64_tas_scripting/res/4_units_from_edge.m64");
 
@@ -123,7 +125,7 @@ int main(int argc, const char* argv[])
 	//M64 m64 = M64(config.M64Path);
 	//m64.load();
 
-	Scattershot<SShotState_BitfsDr, LibSm64, StateTracker_BitfsDr>::Run<Scattershot_BitfsDr, LibSm64Config>(config, [&](auto path)
+	Scattershot<SShotState_BitfsDr2, LibSm64, StateTracker_BitfsDr>::Run<Scattershot_BitfsDr, LibSm64Config>(config, [&](auto path)
 		{
 			LibSm64Config resourceConfig;
 			resourceConfig.dllPath = path;

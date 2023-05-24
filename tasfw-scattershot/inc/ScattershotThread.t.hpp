@@ -39,7 +39,7 @@ bool ScattershotThread<TState, TResource, TStateTracker>::execution()
     {
         // ALWAYS START WITH A MERGE SO THE SHARED BLOCKS ARE OK.
         if (shot % config.ShotsPerMerge == 0)
-            SingleThread([&]() { scattershot.MergeState(shot); });
+            SingleThread([&]() { scattershot.MergeState(shot, GetRng()); });
 
         // Pick a block to "fire a shot" at
         if (!SelectBaseBlock(shot))
@@ -49,12 +49,19 @@ bool ScattershotThread<TState, TResource, TStateTracker>::execution()
             {
                 DecodeBaseBlockDiffAndApply();
 
-                if (!ValidateBaseBlock())
+                if (!ValidateBaseBlock(shot))
                     return false;
 
                 this->Save();
-                for (int segment = 0; segment < config.PelletsPerShot; segment++)
-                    ExecuteFromBaseBlockAndEncode(shot);
+                int consecutiveFailedPellets = 0;
+                for (int segment = 0; segment < config.PelletsPerShot && consecutiveFailedPellets < config.MaxConsecutiveFailedPellets; segment++)
+                {
+                    if (ExecuteFromBaseBlockAndEncode(shot).executed)
+                        consecutiveFailedPellets = 0;
+                    else
+                        consecutiveFailedPellets++;
+                }
+                    
 
                 return true;
             });
@@ -148,13 +155,13 @@ bool ScattershotThread<TState, TResource, TStateTracker>::SelectBaseBlock(int ma
 
             if (scattershot.SharedBlocks[sharedBlockIndex].tailSegment == 0)
             {
-                //printf("Chosen block tailseg null!\n");
+                printf("Chosen block tailseg null!\n");
                 continue;
             }
 
             if (scattershot.SharedBlocks[sharedBlockIndex].tailSegment->depth == 0)
             {
-                //printf("Chosen block tailseg depth 0!\n");
+                printf("Chosen block tailseg depth 0!\n");
                 continue;
             }
 
@@ -177,7 +184,7 @@ bool ScattershotThread<TState, TResource, TStateTracker>::SelectBaseBlock(int ma
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
     std::derived_from<Script<TResource>> TStateTracker>
-bool ScattershotThread<TState, TResource, TStateTracker>::ValidateBaseBlock()
+bool ScattershotThread<TState, TResource, TStateTracker>::ValidateBaseBlock(int shot)
 {
     StateBin<TState> currentStateBin = GetStateBinSafe();
     if (BaseBlock.stateBin != currentStateBin) {
@@ -189,8 +196,12 @@ bool ScattershotThread<TState, TResource, TStateTracker>::ValidateBaseBlock()
                 currentSegmentDebug = currentSegmentDebug->parent;
         }
 
+        this->ExportM64("C:\\Users\\Tyler\\Documents\\repos\\sm64_tas_scripting\\analysis\\error.m64");
+        cout << Id << " " << shot << "\n";
         BaseBlock.stateBin.print();
         currentStateBin.print();
+        cout << BaseBlock.stateBin.GetHash(BaseBlock.stateBin.state, false) << "\n";
+        cout << currentStateBin.GetHash(currentStateBin.state, false) << "\n";
         return false;
     }
 
@@ -260,16 +271,18 @@ void ScattershotThread<TState, TResource, TStateTracker>::AddCsvRow(int shot)
     bool sampled = false;
     ThreadLock([&]()
         {
-            if (scattershot.CsvRows == -1)
+            if (scattershot.CsvEnabled == false || scattershot.CsvRows == -1)
                 return;
 
             if (scattershot.CsvCounter++ % config.CsvSamplePeriod == 0)
                 sampled = true;
         });
-            
+    
+    // Check if we should force an export for the current state
     if (!sampled && !ExecuteAdhoc([&]() { return ForceAddToCsv(); }).executed)
         return;
 
+    // Get CSV row and validate cell count
     std::string row;
     bool rowValidated = ExecuteAdhoc([&]()
         {
@@ -291,8 +304,29 @@ void ScattershotThread<TState, TResource, TStateTracker>::AddCsvRow(int shot)
                 return;
             }
 
-            scattershot.Csv << shot << "," << this->GetCurrentFrame() << "," << sampled << "," << row << "\n";
-            scattershot.CsvRows++;
+            // CSV row export retry loop
+            auto failedRowPos = scattershot.Csv.tellp();
+            for (int i = 0; i < 5; i++)
+            {
+                if (i > 0)
+                    cout << "Retrying CSV row " << scattershot.CsvRows << ".\n";
+
+                scattershot.Csv << shot << "," << this->GetCurrentFrame() << "," << sampled << "," << row << "\n";
+                if (!scattershot.Csv.fail())
+                {
+                    scattershot.CsvRows++;
+                    return;
+                }
+                else {
+                    cout << "Error writing to CSV row " << scattershot.CsvRows << ": " << scattershot.Csv.rdstate() << "\n";
+                    scattershot.Csv.close();
+                    scattershot.Csv = std::ofstream(scattershot.CsvFileName);
+                    scattershot.Csv.seekp(failedRowPos);
+                }
+            }
+
+            cout << "Exceeded CSV export retry count. Disabling CSV export.\n";
+            scattershot.CsvEnabled = false;
         });
 }
 
@@ -421,6 +455,7 @@ AdhocBaseScriptStatus ScattershotThread<TState, TResource, TStateTracker>::Execu
         {
             StateBin<TState> prevStateBin = GetStateBinSafe();
             uint64_t baseRngHash = RngHash;
+            bool anyNovelScripts = false; // Mark pellet as failed if 0 scripts were successful
 
             for (int n = 0; n < config.PelletLength; n++)
             {
@@ -440,8 +475,18 @@ AdhocBaseScriptStatus ScattershotThread<TState, TResource, TStateTracker>::Execu
 
                 // Create and add block to list if it is new.
                 auto newStateBin = GetStateBinSafe();
+                /*
+                if (newStateBin.GetHash(newStateBin.state, false) == 15818986094471996600ull)
+                {
+                    this->ExportM64("C:\\Users\\Tyler\\Documents\\repos\\sm64_tas_scripting\\analysis\\error0.m64");
+                    cout << Id << " " << shot << "\n";
+                    newStateBin.print();
+                }
+                */
+
                 if (newStateBin != prevStateBin && newStateBin != BaseBlock.stateBin && ProcessNewBlock(baseRngHash, n, newStateBin))
                 {
+                    anyNovelScripts |= true;
                     ThreadLock([&]() { scattershot.NovelScripts++; });
                     AddCsvRow(shot);
                 }
@@ -451,7 +496,7 @@ AdhocBaseScriptStatus ScattershotThread<TState, TResource, TStateTracker>::Execu
                 prevStateBin = newStateBin;
             }
 
-            return true;
+            return anyNovelScripts;
         });
 }
 
@@ -538,6 +583,17 @@ void ScattershotThread<TState, TResource, TStateTracker>::AddRandomMovementOptio
     }
 
     movementOptions.insert(weightedOptions.rbegin()->first);
+}
+
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker>
+void ScattershotThread<TState, TResource, TStateTracker>::AddMovementOption(MovementOption movementOption, double probability)
+{
+    if (probability <= 0.0)
+        return;
+
+    if (probability >= 1.0 || GetTempRng() % 65536 <= int(probability / 65535.0))
+        movementOptions.insert(movementOption);
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,

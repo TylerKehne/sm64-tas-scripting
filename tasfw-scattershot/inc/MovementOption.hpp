@@ -24,5 +24,6 @@ enum class MovementOption
     PBD,
     RUN_DOWNHILL,
     REWIND,
-    TURN_UPHILL
+    TURN_UPHILL,
+    TURN_AROUND
 };
