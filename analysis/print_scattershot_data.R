@@ -53,7 +53,7 @@ df$bin_speed <- cut(df$speed, breaks = speed_bins, include.lowest = TRUE)
 df_top <- df %>%
     #filter(frame > quantile(frame, probs = 0.99) & frame < quantile(frame, probs = 1)) %>%
     filter(abs(PlatNormX) + abs(PlatNormZ) > 0.69) %>%
-    #filter(MarioAction == 0x00880456) %>% # Dive Slide
+    #filter(MarioAction == 0x00000444) %>% # turning around
     #filter(speed > 20) %>%
     filter(Sampled == 1) %>%
     filter(Oscillation > 0) %>%

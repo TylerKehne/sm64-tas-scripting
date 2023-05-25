@@ -8,32 +8,19 @@
 #include <sm64/ObjectFields.hpp>
 #include <sm64/Trig.hpp>
 
-class SShotState_BitfsDr
-{
-public:
-    uint8_t x;
-    uint8_t y;
-    uint8_t z;
-    uint64_t s;
-
-    SShotState_BitfsDr() = default;
-    SShotState_BitfsDr(uint8_t x, uint8_t y, uint8_t z, uint64_t s) : x(x), y(y), z(z), s(s) { }
-    bool operator==(const SShotState_BitfsDr&) const = default;
-};
-
-class SShotState_BitfsDr2
+class BinaryStateBin
 {
 public:
     static const int nBytes = 16;
     std::uint8_t bytes[nBytes];
 
-    SShotState_BitfsDr2()
+    BinaryStateBin()
     {
         for (int i = 0; i < nBytes; i++)
             bytes[i] = 0;
     }
 
-    bool operator==(const SShotState_BitfsDr2&) const = default;
+    bool operator==(const BinaryStateBin&) const = default;
 
     void AddValueBits(uint8_t& bitCursor, uint8_t bitsToAllocate, uint64_t value)
     {
@@ -57,9 +44,12 @@ public:
         if (value < min || value > max)
             throw std::runtime_error("Value out of range.");
 
-        uint64_t maxRegions = uint64_t(1 << uint64_t(bitsToAllocate));
-        if (nRegions == 0 || nRegions > maxRegions || (maxRegions % nRegions) != 0)
+        if (nRegions == 0)
             throw std::runtime_error("Invalid number of regions.");
+
+        uint64_t maxRegions = uint64_t(1 << uint64_t(bitsToAllocate));
+        if (nRegions > maxRegions)
+            nRegions = maxRegions;
 
         double regionSize = double(max - min) / double(nRegions);
         uint64_t region = double(value - min) / regionSize;
@@ -70,8 +60,7 @@ public:
         if (region >= nRegions)
             throw std::runtime_error("Region out of range.");
 
-        uint64_t bitValue = region * maxRegions / nRegions; // already verified divisibility
-        AddBits(bitCursor, bitsToAllocate, bitValue);
+        AddBits(bitCursor, bitsToAllocate, region);
     }
 
 private:
@@ -204,11 +193,11 @@ public:
     bool assertion() { return CustomStatus.initialized == true; }
 };
 
-class Scattershot_BitfsDr : public ScattershotThread<SShotState_BitfsDr2, LibSm64, StateTracker_BitfsDr>
+class Scattershot_BitfsDr : public ScattershotThread<BinaryStateBin, LibSm64, StateTracker_BitfsDr>
 {
 public:
-    Scattershot_BitfsDr(Scattershot<SShotState_BitfsDr2, LibSm64, StateTracker_BitfsDr>& scattershot, int id)
-        : ScattershotThread<SShotState_BitfsDr2, LibSm64, StateTracker_BitfsDr>(scattershot, id) {}
+    Scattershot_BitfsDr(Scattershot<BinaryStateBin, LibSm64, StateTracker_BitfsDr>& scattershot, int id)
+        : ScattershotThread<BinaryStateBin, LibSm64, StateTracker_BitfsDr>(scattershot, id) {}
 
     void SelectMovementOptions()
     {
@@ -222,11 +211,10 @@ public:
                 {MovementOption::RANDOM_MAGNITUDE, 1}
             });
 
-        bool turningAround = marioState->action == ACT_TURNING_AROUND && marioState->forwardVel > 0;
         AddRandomMovementOption(
             {
                 {MovementOption::MATCH_FACING_YAW, 1},
-                {MovementOption::ANTI_FACING_YAW, turningAround ? 8 : 2},
+                {MovementOption::ANTI_FACING_YAW, 2},
                 {MovementOption::SAME_YAW, 4},
                 {MovementOption::RANDOM_YAW, 16}
             });
@@ -239,7 +227,7 @@ public:
             });
 
         auto state = GetTrackedState<StateTracker_BitfsDr>(GetCurrentFrame());
-        AddMovementOption(MovementOption::NO_SCRIPT, state.reachedNormRegime ? 0.1 : 1);
+        AddMovementOption(MovementOption::NO_SCRIPT, state.reachedNormRegime ? 0.1 : 1.0);
 
         switch (marioState->action)
         {
@@ -247,8 +235,8 @@ public:
                 AddRandomMovementOption(
                     {
                         {MovementOption::PBD, 0},
-                        {MovementOption::RUN_DOWNHILL, 10},
-                        {MovementOption::TURN_UPHILL, 5},
+                        {MovementOption::RUN_DOWNHILL, 3},
+                        {MovementOption::TURN_UPHILL, 1},
                         {MovementOption::TURN_AROUND, 0}
                     });
                 break;
@@ -264,10 +252,10 @@ public:
             case ACT_WALKING:
                 AddRandomMovementOption(
                     {
-                        {MovementOption::PBD, marioState->forwardVel >= 29.0f ? 10 : 0},
+                        {MovementOption::PBD, marioState->forwardVel >= 29.0f ? 5 : 0},
                         {MovementOption::RUN_DOWNHILL, 5},
-                        {MovementOption::TURN_UPHILL, 10},
-                        {MovementOption::TURN_AROUND, 5}
+                        {MovementOption::TURN_UPHILL, 5},
+                        {MovementOption::TURN_AROUND, 20}
                     });
                 break;
         }
@@ -314,7 +302,7 @@ public:
             }).executed;
     }
 
-    SShotState_BitfsDr2 GetStateBin()
+    BinaryStateBin GetStateBin()
     {
         MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
         Camera* camera = *(Camera**)(resource->addr("gCamera"));
@@ -324,12 +312,9 @@ public:
 
         auto trackedState = GetTrackedState<StateTracker_BitfsDr>(GetCurrentFrame());
         float norm_regime_min = 0.69f;
-        int regionMultiplier = trackedState.xzSum >= 0.69 ? 1 : 1;
-        //if (regionMultiplier > 1)
-        //    regionMultiplier <<= trackedState.currentOscillation > 6 ? 6 : trackedState.currentOscillation;
-
-        uint8_t bitCursor = 0;
-        SShotState_BitfsDr2 state;
+        int nRegions = trackedState.xzSum >= norm_regime_min ? 16 : 4;
+        if (trackedState.xzSum >= norm_regime_min && trackedState.currentOscillation > 0)
+            nRegions *= trackedState.currentOscillation;
 
         int actionValue;
         switch (marioState->action)
@@ -346,28 +331,7 @@ public:
             case ACT_WALKING: actionValue = 9; break;
             default: actionValue = 10;
         }
-
-        state.AddValueBits(bitCursor, 11, actionValue);
-
-        float ySpeedValue = marioState->vel[1] > 32.0f ? 32.0f
-            : marioState->vel[1] < 0 ? 0 : marioState->vel[1];
-        state.AddRegionBits(bitCursor, 4, ySpeedValue, 0.f, 32.0f, 16);
-
-        float fSpeedValue = marioState->forwardVel > 64.0f ? 64.0f
-            : marioState->forwardVel < 0 ? 0 : marioState->forwardVel;
-        state.AddRegionBits(bitCursor, 8, fSpeedValue, 0.f, 64.0f, trackedState.xzSum >= 0.69 ? 256 : 4);
-
-        state.AddRegionBits(bitCursor, 14, int(marioState->faceAngle[1]), -32768, 32767, 8 * regionMultiplier);
-
-        state.AddValueBits(bitCursor, 4, trackedState.currentCrossing & 15);
-
-        //state.AddRegionBits(bitCursor, 12, pyramid->oTiltingPyramidNormalX, -0.7f, 0.7f, 2 * regionMultiplier);
-        //state.AddRegionBits(bitCursor, 12, pyramid->oTiltingPyramidNormalY, 0.7f, 1.0f, 2 * regionMultiplier);
-        //state.AddRegionBits(bitCursor, 12, pyramid->oTiltingPyramidNormalZ, -0.7f, 0.7f, 2 * regionMultiplier);
-
-        //float xZSum = fabs(pyramid->oTiltingPyramidNormalX) + fabs(pyramid->oTiltingPyramidNormalZ);
-        //state.AddRegionBits(bitCursor, 12, xZSum, 0.f, 0.8f, 2 * regionMultiplier);
-
+        
         float xMin = -2430.0f;
         float xMax = -1450.0f;
         float yMin = -3071.0f;
@@ -376,92 +340,41 @@ public:
         float zMax = -200.0f;
 
         float xPosValue = marioState->pos[0] >= xMax ? xMax
-            : marioState->pos[0] <= xMin ? xMin : marioState->pos[0];
-        state.AddRegionBits(bitCursor, 12, xPosValue, xMin, xMax, 2 * regionMultiplier);
+            : marioState->pos[0] <= xMin ? xMin : marioState->pos[0];  
 
         float yPosValue = marioState->pos[1] >= yMax ? yMax
             : marioState->pos[1] <= yMin ? yMin : marioState->pos[1];
-        state.AddRegionBits(bitCursor, 12, yPosValue, yMin, yMax, 2 * regionMultiplier);
 
         float zPosValue = marioState->pos[2] >= zMax ? zMax
             : marioState->pos[2] <= zMin ? zMin : marioState->pos[2];
-        state.AddRegionBits(bitCursor, 12, zPosValue, zMin, zMax, 2 * regionMultiplier);
+
+        float ySpeedValue = marioState->vel[1] > 32.0f ? 32.0f
+            : marioState->vel[1] < 0 ? 0 : marioState->vel[1];
+
+        float fSpeedValue = marioState->forwardVel > 64.0f ? 64.0f
+            : marioState->forwardVel < 0 ? 0 : marioState->forwardVel;
+        
+        uint8_t bitCursor = 0;
+        BinaryStateBin state;
+
+        state.AddValueBits(bitCursor, 12, nRegions);
+        state.AddValueBits(bitCursor, 11, actionValue);
+        state.AddValueBits(bitCursor, 4, trackedState.currentCrossing > 15 ? 15 : trackedState.currentCrossing);
+        state.AddRegionBits(bitCursor, 4, ySpeedValue, 0.f, 32.0f, 16);
+        state.AddRegionBits(bitCursor, 8, fSpeedValue, 0.f, 64.0f, nRegions <= 4 ? 4 : nRegions);
+        state.AddRegionBits(bitCursor, 14, int(marioState->faceAngle[1]), -32768, 32767, nRegions);
+        state.AddRegionBits(bitCursor, 12, xPosValue, xMin, xMax, nRegions);
+        state.AddRegionBits(bitCursor, 12, yPosValue, yMin, yMax, nRegions);
+        state.AddRegionBits(bitCursor, 12, zPosValue, zMin, zMax, nRegions);
+
+        //state.AddRegionBits(bitCursor, 12, pyramid->oTiltingPyramidNormalX, -0.7f, 0.7f, 2 * regionMultiplier);
+        //state.AddRegionBits(bitCursor, 12, pyramid->oTiltingPyramidNormalY, 0.7f, 1.0f, 2 * regionMultiplier);
+        //state.AddRegionBits(bitCursor, 12, pyramid->oTiltingPyramidNormalZ, -0.7f, 0.7f, 2 * regionMultiplier);
+
+        //float xZSum = fabs(pyramid->oTiltingPyramidNormalX) + fabs(pyramid->oTiltingPyramidNormalZ);
+        //state.AddRegionBits(bitCursor, 12, xZSum, 0.f, 0.8f, 2 * regionMultiplier);
 
         return state;
-    }
-
-    SShotState_BitfsDr GetStateBin3()
-    {
-        MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-        Camera* camera = *(Camera**)(resource->addr("gCamera"));
-        const BehaviorScript* pyramidmBehavior = (const BehaviorScript*)(resource->addr("bhvLllTiltingInvertedPyramid"));
-        Object* objectPool = (Object*)(resource->addr("gObjectPool"));
-        Object* pyramid = &objectPool[84];
-        //if (pyramid->behavior != pyramidmBehavior)
-
-        uint64_t s = 0;
-        if (marioState->action == ACT_BRAKING) s = 0;
-        if (marioState->action == ACT_DIVE) s = 1;
-        if (marioState->action == ACT_DIVE_SLIDE) s = 2;
-        if (marioState->action == ACT_FORWARD_ROLLOUT) s = 3;
-        if (marioState->action == ACT_FREEFALL_LAND_STOP) s = 4;
-        if (marioState->action == ACT_FREEFALL) s = 5;
-        if (marioState->action == ACT_FREEFALL_LAND) s = 6;
-        if (marioState->action == ACT_TURNING_AROUND) s = 7;
-        if (marioState->action == ACT_FINISH_TURNING_AROUND) s = 8;
-        if (marioState->action == ACT_WALKING) s = 9;
-
-        s *= 30;
-        s += (int)((40 - marioState->vel[1]) / 4);
-
-        float norm_regime_min = .69;
-        if ((fabs(pyramid->oTiltingPyramidNormalX) + fabs(pyramid->oTiltingPyramidNormalZ) < norm_regime_min)) //coarsen for not target norm envelope
-        { 
-            s *= 14;
-            s += (int)((pyramid->oTiltingPyramidNormalX + 1) * 7);
-
-            s *= 14;
-            s += (int)((pyramid->oTiltingPyramidNormalZ + 1) * 7);
-
-            s += 1000000 + 1000000 * (int)floor((marioState->forwardVel + 20) / 8);
-            s += 100000000 * (int)floor((float)marioState->faceAngle[1] / 16384.0);
-
-            s *= 2;
-            s += 1; //mark bad norm regime
-
-            return SShotState_BitfsDr(
-                (uint8_t)floor((marioState->pos[0] + 2330) / 200),
-                (uint8_t)floor((marioState->pos[1] + 3200) / 400),
-                (uint8_t)floor((marioState->pos[2] + 1090) / 200),
-                s);
-        }
-
-        s *= 200;
-        s += (int)((pyramid->oTiltingPyramidNormalX + 1) * 100);
-
-        float xzSum = fabs(pyramid->oTiltingPyramidNormalX) + fabs(pyramid->oTiltingPyramidNormalZ);
-
-        s *= 10;
-        xzSum += (int)((xzSum - norm_regime_min) * 100);
-        //s += (int)((pyraZNorm + 1)*100);
-
-        s *= 30;
-        s += (int)((pyramid->oTiltingPyramidNormalY - .7) * 100);
-
-        //fifd: Hspd mapped into sections {0-1, 1-2, ...}
-        s += 30000000 + 30000000 * (int)floor((marioState->forwardVel + 20));
-
-        //fifd: Yaw mapped into sections
-        //s += 100000000 * (int)floor((float)marioYawFacing / 2048.0);
-        s += ((uint64_t)1200000000) * (int)floor((float)marioState->faceAngle[1] / 4096.0);
-
-        s *= 2; //mark good norm regime
-
-        return SShotState_BitfsDr(
-            (uint8_t)floor((marioState->pos[0] + 2330) / 10),
-            (uint8_t)floor((marioState->pos[1] + 3200) / 50),
-            (uint8_t)floor((marioState->pos[2] + 1090) / 10),
-            s);
     }
 
     bool ValidateState()
@@ -480,9 +393,6 @@ public:
             return false;
 
         if (marioState->pos[1] > -2760)
-            return false;
-
-        if (marioState->pos[0] > -2000.0f && marioState->pos[2] < -800.0f)
             return false;
 
         // Quadrant check
@@ -514,7 +424,8 @@ public:
         auto state = GetTrackedState<StateTracker_BitfsDr>(GetCurrentFrame());
         auto lastFrameState = GetTrackedState<StateTracker_BitfsDr>(GetCurrentFrame() - 1);
 
-        if (!state.reachedNormRegime && marioState->pos[0] > -2000.0f)
+        //Herd to correct quadrant initially
+        if (!state.reachedNormRegime && marioState->pos[0] >= -2000.0f)
             return false;
 
         // Reject departures from norm regime
@@ -590,7 +501,7 @@ public:
     {
         MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
 
-        if (marioState->action == ACT_DIVE_SLIDE || marioState->action == ACT_FORWARD_ROLLOUT || marioState->action == ACT_FREEFALL_LAND_STOP)
+        if (marioState->action == ACT_FORWARD_ROLLOUT || marioState->action == ACT_FREEFALL_LAND_STOP)
             return true;
 
         return false;
@@ -630,7 +541,7 @@ private:
                 MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
                 Camera* camera = *(Camera**)(resource->addr("gCamera"));
 
-                // Validate consitions for dive
+                // Validate conditions for dive
                 if (marioState->action != ACT_WALKING || marioState->forwardVel < 29.0f)
                     return false;
 
@@ -694,24 +605,29 @@ private:
                 Object* objectPool = (Object*)(resource->addr("gObjectPool"));
                 Object* pyramid = &objectPool[84];
 
-                if (marioState->action != ACT_FINISH_TURNING_AROUND && marioState->action != ACT_WALKING)
+                if (marioState->action != ACT_FINISH_TURNING_AROUND && marioState->action != ACT_TURNING_AROUND && marioState->action != ACT_WALKING)
                     return false;
 
                 for (int i = 0; i < 10 && GetTempRng() % 10 < 8; i++)
                 {
+                    auto state = GetTrackedState<StateTracker_BitfsDr>(GetCurrentFrame());
+
                     // Turn 2048 towrds uphill
                     auto m64 = M64();
                     auto save = ImportedSave(PyramidUpdateMem(*resource, pyramid), GetCurrentFrame());
                     auto status = BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle
-                        ::MainFromSave<BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>(m64, save, 0);
+                        ::MainFromSave<BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>(m64, save, state.roughTargetAngle, marioState->faceAngle[1]);
                     if (!status.validated)
                         return false;
 
                     // Attempt to run downhill with minimum angle
                     int16_t intendedYaw = marioState->action == ACT_TURNING_AROUND ? status.angleFacingAnalogBack : status.angleFacing;
-                    auto stick = Inputs::GetClosestInputByYawExact(intendedYaw, 32, camera->yaw, status.downhillRotation);
+                    auto stick = Inputs::GetClosestInputByYawExact(
+                        intendedYaw, 32, camera->yaw, status.downhillRotation);
                     AdvanceFrameWrite(Inputs(0, stick.first, stick.second));
 
+                    // This is actually a failure, but reverting here would introduce an extra load.
+                    // Allow scattershot validation to handle it instead.
                     if (marioState->action != ACT_FINISH_TURNING_AROUND && marioState->action != ACT_WALKING)
                         return true;
                 }
@@ -732,19 +648,22 @@ private:
                 if (marioState->action != ACT_WALKING || marioState->forwardVel <= 16.0f)
                     return false;
 
-                for (int i = 0; i < 10 && GetTempRng() % 8 < 6; i++)
+                for (int i = 0; i < 10 && GetTempRng() % 10 < 9; i++)
                 {
+                    auto state = GetTrackedState<StateTracker_BitfsDr>(GetCurrentFrame());
+
                     // Turn 2048 towrds uphill
                     auto m64 = M64();
                     auto save = ImportedSave(PyramidUpdateMem(*resource, pyramid), GetCurrentFrame());
                     auto status = BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle
-                        ::MainFromSave<BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>(m64, save, 0);
+                        ::MainFromSave<BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>(m64, save, state.roughTargetAngle, marioState->faceAngle[1]);
                     if (!status.validated)
                         return false;
 
                     // Attempt to run downhill with minimum angle
                     int16_t intendedYaw = status.angleFacingAnalogBack;
-                    auto stick = Inputs::GetClosestInputByYawExact(intendedYaw, 32, camera->yaw, status.downhillRotation);
+                    auto stick = Inputs::GetClosestInputByYawExact(
+                        intendedYaw, 32, camera->yaw, status.downhillRotation);
                     AdvanceFrameWrite(Inputs(0, stick.first, stick.second));
 
                     if (marioState->action != ACT_TURNING_AROUND)
