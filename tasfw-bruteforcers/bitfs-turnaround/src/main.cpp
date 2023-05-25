@@ -124,7 +124,7 @@ int main(int argc, const char* argv[])
 	//M64 m64 = M64(config.M64Path);
 	//m64.load();
 
-	Scattershot<SShotState_BitfsDr2, LibSm64, StateTracker_BitfsDr>::Run<Scattershot_BitfsDr, LibSm64Config>(config, [&](auto path)
+	Scattershot<BinaryStateBin, LibSm64, StateTracker_BitfsDr>::Run<Scattershot_BitfsDr, LibSm64Config>(config, [&](auto path)
 		{
 			LibSm64Config resourceConfig;
 			resourceConfig.dllPath = path;
