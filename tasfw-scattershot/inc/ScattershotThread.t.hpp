@@ -457,7 +457,8 @@ AdhocBaseScriptStatus ScattershotThread<TState, TResource, TStateTracker>::Execu
             uint64_t baseRngHash = RngHash;
             bool anyNovelScripts = false; // Mark pellet as failed if 0 scripts were successful
 
-            for (int n = 0; n < config.PelletLength; n++)
+            uint64_t baseFrame = this->GetCurrentFrame();
+            for (int n = 0; n < config.PelletMaxScripts && abs(int64_t(this->GetCurrentFrame() - baseFrame)) < config.PelletMaxFrameDistance; n++)
             {
                 // Apply next script
                 SetTempRng(RngHash);

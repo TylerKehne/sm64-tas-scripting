@@ -54,14 +54,14 @@ bool BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle::execution()
 
 	// Get optimal angle for switching from turnaround to finish turnaround
 	int16_t facingDYaw = _faceAngle - CustomStatus.angleFacing;
-	if (abs(facingDYaw) <= 0x471C)
-		CustomStatus.angleFacingAnalogBack = _faceAngle + 0x471D * sign(facingDYaw);
+	if (abs(int32_t(facingDYaw)) <= 0x471C)
+		CustomStatus.angleFacingAnalogBack = _faceAngle + 0x471D * CustomStatus.downhillRotation;
 	else
 		CustomStatus.angleFacingAnalogBack = CustomStatus.angleFacing;
 
 	int16_t notFacingDYaw = _faceAngle - CustomStatus.angleNotFacing;
-	if (abs(notFacingDYaw) <= 0x471C)
-		CustomStatus.angleNotFacingAnalogBack = _faceAngle + 0x471D * sign(notFacingDYaw);
+	if (abs(int32_t(notFacingDYaw)) <= 0x471C)
+		CustomStatus.angleNotFacingAnalogBack = _faceAngle + 0x471D * CustomStatus.downhillRotation.Negate();
 	else
 		CustomStatus.angleNotFacingAnalogBack = CustomStatus.angleNotFacing;
 
