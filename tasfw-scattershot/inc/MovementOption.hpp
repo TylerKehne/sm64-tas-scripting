@@ -23,7 +23,10 @@ enum class MovementOption
     NO_SCRIPT,
     PBD,
     RUN_DOWNHILL,
+    RUN_DOWNHILL_MIN,
     REWIND,
     TURN_UPHILL,
-    TURN_AROUND
+    RUN_FORWARD,
+    TURN_AROUND,
+    QUICKTURN
 };

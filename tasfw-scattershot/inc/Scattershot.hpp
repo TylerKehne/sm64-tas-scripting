@@ -1,5 +1,6 @@
 #pragma once
 
+#include <BinaryStateBin.hpp>
 #include <tasfw/Script.hpp>
 #include <tasfw/SharedLib.hpp>
 #include <omp.h>
@@ -82,7 +83,8 @@ class Configuration
 {
 public:
     int StartFrame;
-    int PelletLength;
+    int PelletMaxScripts;
+    int PelletMaxFrameDistance;
     int MaxSegments;
     int MaxBlocks;
     int MaxHashes;

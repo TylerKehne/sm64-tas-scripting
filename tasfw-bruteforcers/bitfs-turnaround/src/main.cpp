@@ -78,22 +78,23 @@ public:
 
 void InitConfiguration(Configuration& configuration)
 {
-	configuration.StartFrame = 3515;
-	configuration.PelletLength = 20;
+	configuration.StartFrame = 3515;//3317;
+	configuration.PelletMaxScripts = 20;
+	configuration.PelletMaxFrameDistance = 50;
 	configuration.MaxSegments = 1024;
 	configuration.MaxBlocks = 500000;
 	configuration.MaxHashes = 10 * configuration.MaxBlocks;
 	configuration.MaxSharedBlocks = 20000000;
 	configuration.MaxSharedHashes = 10 * configuration.MaxSharedBlocks;
-	configuration.TotalThreads = 3;
+	configuration.TotalThreads = 2;
 	configuration.MaxSharedSegments = 25000000;
 	configuration.MaxLocalSegments = 2000000;
 	configuration.MaxShots = 1000000000;
 	configuration.PelletsPerShot = 200;
 	configuration.ShotsPerMerge = 100;
 	configuration.MergesPerSegmentGC = 30;
-	configuration.StartFromRootEveryNShots = 50;
-	configuration.CsvSamplePeriod = 200;
+	configuration.StartFromRootEveryNShots = 100;
+	configuration.CsvSamplePeriod = 100;
 	configuration.MaxConsecutiveFailedPellets = 10;
 	configuration.CsvOutputDirectory = std::string("C:/Users/Tyler/Documents/repos/sm64_tas_scripting/analysis/");
 	configuration.M64Path = std::filesystem::path("C:/Users/Tyler/Documents/repos/sm64_tas_scripting/res/4_units_from_edge.m64");
@@ -124,7 +125,7 @@ int main(int argc, const char* argv[])
 	//M64 m64 = M64(config.M64Path);
 	//m64.load();
 
-	Scattershot<BinaryStateBin, LibSm64, StateTracker_BitfsDr>::Run<Scattershot_BitfsDr, LibSm64Config>(config, [&](auto path)
+	Scattershot<BinaryStateBin<16>, LibSm64, StateTracker_BitfsDr>::Run<Scattershot_BitfsDr, LibSm64Config>(config, [&](auto path)
 		{
 			LibSm64Config resourceConfig;
 			resourceConfig.dllPath = path;
