@@ -125,15 +125,17 @@ int main(int argc, const char* argv[])
 	//M64 m64 = M64(config.M64Path);
 	//m64.load();
 
-	Scattershot<BinaryStateBin<16>, LibSm64, StateTracker_BitfsDr>::Run<Scattershot_BitfsDr, LibSm64Config>(config, [&](auto path)
-		{
-			LibSm64Config resourceConfig;
-			resourceConfig.dllPath = path;
-			resourceConfig.lightweight = true;
-			resourceConfig.countryCode = CountryCode::SUPER_MARIO_64_J;
+	Scattershot_BitfsDr::ConfigureScattershot(config)
+		.ConfigureResourcePerPath<LibSm64Config>([&](auto path)
+			{
+				LibSm64Config resourceConfig;
+				resourceConfig.dllPath = path;
+				resourceConfig.lightweight = true;
+				resourceConfig.countryCode = CountryCode::SUPER_MARIO_64_J;
 
-			return resourceConfig;
-		});
+				return resourceConfig;
+			})
+		.Run<Scattershot_BitfsDr>();
 
 	//auto status = MainScript::MainConfig<MainScript>(m64, lib_path);
 

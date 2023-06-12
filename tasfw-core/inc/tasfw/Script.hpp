@@ -819,6 +819,60 @@ private:
 	}
 };
 
+class DefaultState {};
+
+class DefaultResourceConfig {};
+
+template <derived_from_specialization_of<TopLevelScript> TTopLevelScript,
+	class TState = DefaultState,
+	class TResourceConfig = DefaultResourceConfig>
+class TopLevelScriptBuilder
+{
+public:
+	TopLevelScriptBuilder(M64& m64) : _m64(m64) {}
+	TopLevelScriptBuilder(M64& m64, ImportedSave<TState> importedSave, TResourceConfig resourceConfig)
+		: _m64(m64), _importedSave(importedSave), _resourceConfig(resourceConfig) {}
+
+	static TopLevelScriptBuilder<TTopLevelScript> Build(M64& m64)
+	{
+		return TopLevelScriptBuilder<TTopLevelScript>(m64);
+	}
+
+	template <class UState, typename... TStateParams>
+	TopLevelScriptBuilder<TTopLevelScript, UState, TResourceConfig> ImportSave(uint64_t frame, TStateParams&&... stateParams)
+	{
+		ImportedSave<UState> importedSave = ImportedSave(UState(std::forward<TStateParams>(stateParams)...), frame);
+		return TopLevelScriptBuilder<TTopLevelScript, UState, TResourceConfig>(_m64, std::move(importedSave), std::move(_resourceConfig));
+	}
+
+	template <typename UResourceConfig>
+	TopLevelScriptBuilder<TTopLevelScript, TState, UResourceConfig> ConfigureResource(UResourceConfig resourceConfig)
+	{
+		return TopLevelScriptBuilder<TTopLevelScript, TState, UResourceConfig>(_m64, std::move(_importedSave), resourceConfig);
+	}
+
+	template <typename... TScriptParams>
+	ScriptStatus<TTopLevelScript> Main(TScriptParams&&... scriptParams)
+	{
+		if constexpr (std::is_same<TState, DefaultState>::value)
+		{
+			if constexpr (std::is_same<TResourceConfig, DefaultResourceConfig>::value)
+				return TTopLevelScript::template Main<TTopLevelScript>(_m64, std::forward<TScriptParams>(scriptParams)...);
+			else
+				return TTopLevelScript::template MainConfig<TTopLevelScript>(_m64, _resourceConfig, std::forward<TScriptParams>(scriptParams)...);
+		}
+		else if constexpr (std::is_same<TResourceConfig, DefaultResourceConfig>::value)
+			return TTopLevelScript::template MainFromSave<TTopLevelScript>(_m64, _importedSave, std::forward<TScriptParams>(scriptParams)...);
+		else
+			return TTopLevelScript::template MainFromSaveConfig<TTopLevelScript>(_m64, _importedSave, _resourceConfig, std::forward<TScriptParams>(scriptParams)...);
+	}
+
+private:
+	M64& _m64;
+	ImportedSave<TState> _importedSave { TState(), -1 };
+	TResourceConfig _resourceConfig;
+};
+
 //Include template method implementations
 #include "tasfw/Script.t.hpp"
 

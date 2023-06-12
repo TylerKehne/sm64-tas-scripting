@@ -290,11 +290,14 @@ private:
     }
 };
 
-class Scattershot_BitfsDr : public ScattershotThread<BinaryStateBin<16>, LibSm64, StateTracker_BitfsDr>
+using Alias_ScattershotThread_BitfsDr = ScattershotThread<BinaryStateBin<16>, LibSm64, StateTracker_BitfsDr>;
+using Alias_Scattershot_BitfsDr = Scattershot<BinaryStateBin<16>, LibSm64, StateTracker_BitfsDr>;
+
+class Scattershot_BitfsDr : public Alias_ScattershotThread_BitfsDr
 {
 public:
-    Scattershot_BitfsDr(Scattershot<BinaryStateBin<16>, LibSm64, StateTracker_BitfsDr>& scattershot, int id)
-        : ScattershotThread<BinaryStateBin<16>, LibSm64, StateTracker_BitfsDr>(scattershot, id) {}
+    Scattershot_BitfsDr(Alias_Scattershot_BitfsDr& scattershot, int id)
+        : Alias_ScattershotThread_BitfsDr(scattershot, id) {}
 
     void SelectMovementOptions()
     {
@@ -917,9 +920,9 @@ private:
                 auto state = GetTrackedState<StateTracker_BitfsDr>(GetCurrentFrame());
 
                 auto m64 = M64();
-                auto save = ImportedSave(PyramidUpdateMem(*resource, pyramid), GetCurrentFrame());
-                auto status = BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle
-                    ::MainFromSave<BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>(m64, save, state.roughTargetAngle, marioState->faceAngle[1]);
+                auto status = TopLevelScriptBuilder<BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>::Build(m64)
+                    .ImportSave<PyramidUpdateMem>(GetCurrentFrame(), *resource, pyramid)
+                    .Main(state.roughTargetAngle, marioState->faceAngle[1]);
                 if (!status.asserted)
                     return true;
 
@@ -998,9 +1001,9 @@ private:
 
                 // Turn 2048 towrds uphill
                 auto m64 = M64();
-                auto save = ImportedSave(PyramidUpdateMem(*resource, pyramid), GetCurrentFrame());
-                auto status = BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle
-                    ::MainFromSave<BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>(m64, save, marioState->faceAngle[1]);
+                auto status = TopLevelScriptBuilder<BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>::Build(m64)
+                    .ImportSave<PyramidUpdateMem>(GetCurrentFrame(), *resource, pyramid)
+                    .Main(marioState->faceAngle[1]);
                 if (!status.asserted)
                     return true;
 

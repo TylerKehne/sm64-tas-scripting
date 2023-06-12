@@ -13,6 +13,7 @@
 #include <string>
 #include <MovementOption.hpp>
 #include <algorithm>
+#include <functional>
 
 #ifndef SCATTERSHOT_H
 #define SCATTERSHOT_H
@@ -134,15 +135,17 @@ public:
                     M64 m64 = M64(configuration.M64Path);
                     m64.load();
 
-                    auto status = TScattershotThread::template MainConfig<TScattershotThread>
-                        (m64, resourceConfigGenerator(configuration.ResourcePaths[threadId]), scattershot, threadId);
+                    auto status = TopLevelScriptBuilder<TScattershotThread>::Build(m64)
+                        .ConfigureResource<TResourceConfig>(resourceConfigGenerator(configuration.ResourcePaths[threadId]))
+                        .Main(scattershot, threadId);
                 }
             });
     }
 
-    template <template<class, class, class> class TScattershotThread>
-        requires derived_from_specialization_of<ScattershotThread<TState, TResource, TStateTracker>, TScattershotThread>
-    static void Run(const Configuration& configuration)
+    template <template<class, class, class> class TScattershotThread, class TResourceConfig, typename F>
+        requires (derived_from_specialization_of<ScattershotThread<TState, TResource, TStateTracker>, TScattershotThread>
+            && std::same_as<std::invoke_result_t<F, std::filesystem::path>, TResourceConfig>)
+    static void Run(const Configuration& configuration, F resourceConfigGenerator)
     {
         auto scattershot = Scattershot(configuration);
         scattershot.OpenCsv();
@@ -155,9 +158,9 @@ public:
                     M64 m64 = M64(configuration.M64Path);
                     m64.load();
 
-                    auto resourcePath = configuration.ResourcePaths[threadId];
-                    auto status = TScattershotThread<TState, TResource, TStateTracker>
-                        ::template MainConfig<TScattershotThread<TState, TResource, TStateTracker>>(m64, resourcePath, scattershot, threadId);
+                    auto status = TopLevelScriptBuilder<TScattershotThread<TState, TResource, TStateTracker>>::Build(m64)
+                        .ConfigureResource<TResourceConfig>(resourceConfigGenerator(configuration.ResourcePaths[threadId]))
+                        .Main(scattershot, threadId);
                 }
             });
     }
@@ -217,12 +220,24 @@ public:
     StateBin<TState> stateBin;
 };
 
+template <class TState,
+    derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TResourceConfig = DefaultResourceConfig,
+    typename FResourceConfigGenerator = TResourceConfig(*)(std::filesystem::path)>
+class ScattershotBuilder;
+
 template <class TState, derived_from_specialization_of<Resource> TResource,
     std::derived_from<Script<TResource>> TStateTracker>
 class ScattershotThread : public TopLevelScript<TResource, TStateTracker>
 {
 public:
     using TopLevelScript<TResource, TStateTracker>::MainConfig;
+
+    static ScattershotBuilder<TState, TResource, TStateTracker> ConfigureScattershot(const Configuration& config)
+    {
+        return ScattershotBuilder<TState, TResource, TStateTracker>(config);
+    }
 
 protected:
     friend class Scattershot<TState, TResource>;
@@ -232,7 +247,6 @@ protected:
     using Script<TResource>::ExecuteAdhoc;
     using Script<TResource>::ModifyAdhoc;
     
-
     const Configuration& config;
 
     ScattershotThread(Scattershot<TState, TResource, TStateTracker>& scattershot, int id);
@@ -298,6 +312,37 @@ private:
 
     template <typename T>
     uint64_t GetHash(const T& toHash) const;
+};
+
+//void DefaultResourceConfigGenerator() {}
+
+template <class TState,
+    derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TResourceConfig,
+    typename FResourceConfigGenerator>
+class ScattershotBuilder
+{
+public:
+    ScattershotBuilder(const Configuration& config) : _config(config) {} // Ignore warning, we want to leave callback uninitialized so it fails to compile if it's not
+    ScattershotBuilder(const Configuration& config, FResourceConfigGenerator callback) : _config(config), _resourceConfigGenerator(callback) {}
+
+    template <class UResourceConfig, typename GResourceConfigGenerator>
+        requires (std::same_as<std::invoke_result_t<GResourceConfigGenerator, std::filesystem::path>, UResourceConfig>)
+    ScattershotBuilder<TState, TResource, TStateTracker, UResourceConfig, GResourceConfigGenerator> ConfigureResourcePerPath(GResourceConfigGenerator callback)
+    {
+        return ScattershotBuilder<TState, TResource, TStateTracker, UResourceConfig, GResourceConfigGenerator>(_config, callback);
+    }
+
+    template <std::derived_from<ScattershotThread<TState, TResource, TStateTracker>> TScattershotThread>
+    void Run()
+    {
+        Scattershot<TState, TResource, TStateTracker>::Run<TScattershotThread, TResourceConfig>(_config, _resourceConfigGenerator);
+    }
+
+private:
+    const Configuration& _config;
+    FResourceConfigGenerator _resourceConfigGenerator;
 };
 
 //Include template method implementations
