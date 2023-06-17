@@ -105,9 +105,10 @@ int StateBin<TState>::GetBlockIndex(Block<TState>* blocks, int* hashTable, int m
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker>
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
 template <typename F>
-void Scattershot<TState, TResource, TStateTracker>::MultiThread(int nThreads, F func)
+void Scattershot<TState, TResource, TStateTracker, TOutputState>::MultiThread(int nThreads, F func)
 {
     omp_set_num_threads(nThreads);
     #pragma omp parallel
@@ -117,8 +118,9 @@ void Scattershot<TState, TResource, TStateTracker>::MultiThread(int nThreads, F 
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker>
-Scattershot<TState, TResource, TStateTracker>::Scattershot(const Configuration& config) : config(config)
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+Scattershot<TState, TResource, TStateTracker, TOutputState>::Scattershot(const Configuration& config) : config(config)
 {
     AllBlocks = (Block<TState>*)calloc(config.TotalThreads * config.MaxBlocks + config.MaxSharedBlocks, sizeof(Block<TState>));
     AllSegments = (Segment**)malloc((config.MaxSharedSegments + config.TotalThreads * config.MaxLocalSegments) * sizeof(Segment*));
@@ -134,8 +136,9 @@ Scattershot<TState, TResource, TStateTracker>::Scattershot(const Configuration& 
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker>
-void Scattershot<TState, TResource, TStateTracker>::MergeBlocks(uint64_t rngHash)
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+void Scattershot<TState, TResource, TStateTracker, TOutputState>::MergeBlocks(uint64_t rngHash)
 {
     //printer.printfQ("Merging blocks.\n");
     for (int threadId = 0; threadId < config.TotalThreads; threadId++)
@@ -174,8 +177,9 @@ void Scattershot<TState, TResource, TStateTracker>::MergeBlocks(uint64_t rngHash
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker>
-void Scattershot<TState, TResource, TStateTracker>::MergeSegments()
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+void Scattershot<TState, TResource, TStateTracker, TOutputState>::MergeSegments()
 {
     //printf("Merging segments\n");
 
@@ -196,8 +200,9 @@ void Scattershot<TState, TResource, TStateTracker>::MergeSegments()
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker>
-void Scattershot<TState, TResource, TStateTracker>::SegmentGarbageCollection()
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+void Scattershot<TState, TResource, TStateTracker, TOutputState>::SegmentGarbageCollection()
 {
     //printf("Segment garbage collection. Start with %d segments\n", NSegments[config.TotalThreads]);
 
@@ -240,8 +245,9 @@ void Scattershot<TState, TResource, TStateTracker>::SegmentGarbageCollection()
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker>
-void Scattershot<TState, TResource, TStateTracker>::MergeState(int mainIteration, uint64_t rngHash)
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+void Scattershot<TState, TResource, TStateTracker, TOutputState>::MergeState(int mainIteration, uint64_t rngHash)
 {
     // Merge all blocks from all threads and redistribute info.
     MergeBlocks(rngHash);
@@ -272,8 +278,9 @@ void Scattershot<TState, TResource, TStateTracker>::MergeState(int mainIteration
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker>
-void Scattershot<TState, TResource, TStateTracker>::OpenCsv()
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+void Scattershot<TState, TResource, TStateTracker, TOutputState>::OpenCsv()
 {
     if (config.CsvSamplePeriod == 0)
         return;
@@ -294,8 +301,9 @@ void Scattershot<TState, TResource, TStateTracker>::OpenCsv()
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker>
-Scattershot<TState, TResource, TStateTracker>::~Scattershot()
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+Scattershot<TState, TResource, TStateTracker, TOutputState>::~Scattershot()
 {
     Csv.close();
 }

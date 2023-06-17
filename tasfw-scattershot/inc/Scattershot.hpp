@@ -19,11 +19,13 @@
 #define SCATTERSHOT_H
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker>
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
 class Scattershot;
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker = DefaultStateTracker<TResource>>
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
 class ScattershotThread;
 
 template <class TState>
@@ -46,6 +48,8 @@ public:
 
     template <typename T>
     uint64_t GetHash(const T& toHash, bool ignoreFillerBytes) const;
+
+
 
     int FindNewHashIndex(const int* hashTable, int maxHashes) const;
     int FindSharedHashIndex(Block<TState>* blocks, const int* hashTable, int maxHashes) const;
@@ -100,6 +104,7 @@ public:
     int MergesPerSegmentGC;
     int StartFromRootEveryNShots;
     int MaxConsecutiveFailedPellets;
+    int MaxSolutions;
     uint32_t CsvSamplePeriod; // Every nth new block per thread will be printed to a CSV. Set to 0 to disable CSV export.
     std::filesystem::path M64Path;
     std::string CsvOutputDirectory;
@@ -111,12 +116,13 @@ public:
 };
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker = DefaultStateTracker<TResource>>
+    std::derived_from<Script<TResource>> TStateTracker = DefaultStateTracker<TResource>,
+    class TOutputState = DefaultState>
 class Scattershot
 {
 public:
     const Configuration& config;
-    friend class ScattershotThread<TState, TResource, TStateTracker>;
+    friend class ScattershotThread<TState, TResource, TStateTracker, TOutputState>;
 
     Scattershot(const Configuration& configuration);
 
@@ -143,7 +149,7 @@ public:
     }
 
     template <template<class, class, class> class TScattershotThread, class TResourceConfig, typename F>
-        requires (derived_from_specialization_of<ScattershotThread<TState, TResource, TStateTracker>, TScattershotThread>
+        requires (derived_from_specialization_of<ScattershotThread<TState, TResource, TStateTracker, TOutputState>, TScattershotThread>
             && std::same_as<std::invoke_result_t<F, std::filesystem::path>, TResourceConfig>)
     static void Run(const Configuration& configuration, F resourceConfigGenerator)
     {
@@ -158,7 +164,7 @@ public:
                     M64 m64 = M64(configuration.M64Path);
                     m64.load();
 
-                    auto status = TopLevelScriptBuilder<TScattershotThread<TState, TResource, TStateTracker>>::Build(m64)
+                    auto status = TopLevelScriptBuilder<TScattershotThread<TState, TResource, TStateTracker, TOutputState>>::Build(m64)
                         .ConfigureResource<TResourceConfig>(resourceConfigGenerator(configuration.ResourcePaths[threadId]))
                         .Main(scattershot, threadId);
                 }
@@ -168,6 +174,8 @@ public:
     ~Scattershot();
 
 private:
+
+
     // Global State
     Segment** AllSegments;
     Block<TState>* AllBlocks;
@@ -177,6 +185,7 @@ private:
     Block<TState>* SharedBlocks;
     int* SharedHashTable;
     std::unordered_set<int> StateBinFillerBytes;
+    std::unordered_set<uint64_t> StateBinHashes;
 
     std::string CsvFileName;
     std::ofstream Csv;
@@ -223,24 +232,26 @@ public:
 template <class TState,
     derived_from_specialization_of<Resource> TResource,
     std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState,
     class TResourceConfig = DefaultResourceConfig,
     typename FResourceConfigGenerator = TResourceConfig(*)(std::filesystem::path)>
 class ScattershotBuilder;
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker>
+    std::derived_from<Script<TResource>> TStateTracker = DefaultStateTracker<TResource>,
+    class TOutputState = DefaultState>
 class ScattershotThread : public TopLevelScript<TResource, TStateTracker>
 {
 public:
     using TopLevelScript<TResource, TStateTracker>::MainConfig;
 
-    static ScattershotBuilder<TState, TResource, TStateTracker> ConfigureScattershot(const Configuration& config)
+    static ScattershotBuilder<TState, TResource, TStateTracker, TOutputState> ConfigureScattershot(const Configuration& config)
     {
-        return ScattershotBuilder<TState, TResource, TStateTracker>(config);
+        return ScattershotBuilder<TState, TResource, TStateTracker, TOutputState>(config);
     }
 
 protected:
-    friend class Scattershot<TState, TResource>;
+    //friend class Scattershot<TState, TResource, TStateTracker, TOutputState>;
 
     // Using directives needed for MSVC >:(
     using Script<TResource>::LongLoad;
@@ -249,7 +260,7 @@ protected:
     
     const Configuration& config;
 
-    ScattershotThread(Scattershot<TState, TResource, TStateTracker>& scattershot, int id);
+    ScattershotThread(Scattershot<TState, TResource, TStateTracker, TOutputState>& scattershot, int id);
 
     virtual bool validation();
     bool execution();
@@ -273,7 +284,7 @@ protected:
     Inputs RandomInputs(std::map<Buttons, double> buttonProbabilities);
 
 private:
-    Scattershot<TState, TResource, TStateTracker>& scattershot;
+    Scattershot<TState, TResource, TStateTracker, TOutputState>& scattershot;
     Block<TState>* Blocks;
     int* HashTable;
     int Id;
@@ -298,10 +309,28 @@ private:
     void AddCsvLabels();
 
     template <typename F>
-    void SingleThread(F func);
+    static void SingleThread(F func)
+    {
+        #pragma omp barrier
+        {
+            if (omp_get_thread_num() == 0)
+                func();
+        }
+        #pragma omp barrier
+
+        return;
+    }
 
     template <typename F>
-    void ThreadLock(F func);
+    static void ThreadLock(F func)
+    {
+        #pragma omp critical
+        {
+            func();
+        }
+
+        return;
+    }
 
     bool ValidateCourseAndArea();
     bool ChooseScriptAndApply();
@@ -319,6 +348,7 @@ private:
 template <class TState,
     derived_from_specialization_of<Resource> TResource,
     std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState,
     class TResourceConfig,
     typename FResourceConfigGenerator>
 class ScattershotBuilder
@@ -329,15 +359,15 @@ public:
 
     template <class UResourceConfig, typename GResourceConfigGenerator>
         requires (std::same_as<std::invoke_result_t<GResourceConfigGenerator, std::filesystem::path>, UResourceConfig>)
-    ScattershotBuilder<TState, TResource, TStateTracker, UResourceConfig, GResourceConfigGenerator> ConfigureResourcePerPath(GResourceConfigGenerator callback)
+    ScattershotBuilder<TState, TResource, TStateTracker, TOutputState, UResourceConfig, GResourceConfigGenerator> ConfigureResourcePerPath(GResourceConfigGenerator callback)
     {
-        return ScattershotBuilder<TState, TResource, TStateTracker, UResourceConfig, GResourceConfigGenerator>(_config, callback);
+        return ScattershotBuilder<TState, TResource, TStateTracker, TOutputState, UResourceConfig, GResourceConfigGenerator>(_config, callback);
     }
 
-    template <std::derived_from<ScattershotThread<TState, TResource, TStateTracker>> TScattershotThread>
+    template <std::derived_from<ScattershotThread<TState, TResource, TStateTracker, TOutputState>> TScattershotThread>
     void Run()
     {
-        Scattershot<TState, TResource, TStateTracker>::Run<TScattershotThread, TResourceConfig>(_config, _resourceConfigGenerator);
+        Scattershot<TState, TResource, TStateTracker, TOutputState>::Run<TScattershotThread, TResourceConfig>(_config, _resourceConfigGenerator);
     }
 
 private:
