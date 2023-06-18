@@ -622,7 +622,7 @@ public:
         if (!StateTracker_BitfsDr::ValidateCrossingData(state))
             return false;
 
-        if (state.currentOscillation >= 5 && lastFrameState.currentOscillation == state.currentOscillation - 1)
+        if (state.currentOscillation >= 8 && lastFrameState.currentOscillation == state.currentOscillation - 1)
         {
             char fileName[128];
             printf("\nosc%d\n", state.currentOscillation);

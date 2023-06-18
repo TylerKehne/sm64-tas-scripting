@@ -13,7 +13,7 @@ public:
             bytes[i] = 0;
     }
 
-    bool operator==(const BinaryStateBin&) const = default;
+    bool operator==(const BinaryStateBin& toCompare) const = default;
 
     void AddValueBits(uint8_t& bitCursor, uint8_t bitsToAllocate, uint64_t value)
     {

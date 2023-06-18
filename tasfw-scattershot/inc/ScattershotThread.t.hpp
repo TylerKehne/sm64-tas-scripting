@@ -11,8 +11,6 @@ ScattershotThread<TState, TResource, TStateTracker, TOutputState>::ScattershotTh
     : scattershot(scattershot), config(scattershot.config)
 {
     Id = id;
-    Blocks = scattershot.AllBlocks + Id * config.MaxBlocks;
-    HashTable = scattershot.AllHashTables + Id * config.MaxHashes;
     SetRng((uint64_t)(Id + 173) * 5786766484692217813);
     
     //printf("Thread %d\n", Id);
@@ -29,10 +27,14 @@ template <class TState, derived_from_specialization_of<Resource> TResource,
 bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::execution()
 {
     LongLoad(config.StartFrame);
-    InitializeMemory();
 
-    // Add CSV columns if present
-    SingleThread([&]() { AddCsvLabels(); });
+    // Initialization
+    SingleThread([&]()
+        {
+            scattershot.UpsertBlock(GetStateBinSafe(), GetStateFitnessSafe(), nullptr, 0, RngHash);
+            AddCsvLabels();
+            scattershot.PrintStatus();
+        });
 
     // Record start course/area for validation (generally scattershot has no cross-level value)
     startCourse = *(short*)this->resource->addr("gCurrCourseNum");
@@ -40,13 +42,8 @@ bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::executio
 
     for (int shot = 0; shot <= config.MaxShots; shot++)
     {
-        // ALWAYS START WITH A MERGE SO THE SHARED BLOCKS ARE OK.
-        if (shot % config.ShotsPerMerge == 0)
-            SingleThread([&]() { scattershot.MergeState(shot, GetRng()); });
-
         // Pick a block to "fire a shot" at
-        if (!SelectBaseBlock(shot))
-            break;
+        ThreadLock([&]() { SelectBaseBlock(shot); });
 
         auto status = ExecuteAdhoc([&]()
             {
@@ -65,8 +62,14 @@ bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::executio
                         consecutiveFailedPellets++;
                 }
                     
-
                 return true;
+            });
+
+        // Periodically print progress to console
+        ThreadLock([&]()
+            {
+                if (++scattershot.TotalShots % config.ShotsPerUpdate == 0)
+                    scattershot.PrintStatus();
             });
 
         //printf("%d %d %d %d\n", status.nLoads, status.nSaves, status.nFrameAdvances, status.executionDuration);
@@ -126,70 +129,16 @@ bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::assertio
 template <class TState, derived_from_specialization_of<Resource> TResource,
     std::derived_from<Script<TResource>> TStateTracker,
     class TOutputState>
-void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::InitializeMemory()
+void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::SelectBaseBlock(int mainIteration)
 {
-    // Initial block
-    Blocks[0].stateBin = GetStateBinSafe(); //CHEAT TODO NOTE
-    Blocks[0].tailSegment = (Segment*)malloc(sizeof(Segment)); //Instantiate root segment
-    Blocks[0].tailSegment->nScripts = 0;
-    Blocks[0].tailSegment->parent = NULL;
-    Blocks[0].tailSegment->nReferences = 0;
-    Blocks[0].tailSegment->depth = 1;
-
-    // Init local hash table.
-    for (int hashIndex = 0; hashIndex < config.MaxHashes; hashIndex++)
-        HashTable[hashIndex] = -1;
-
-    HashTable[Blocks[0].stateBin.FindNewHashIndex(HashTable, config.MaxHashes)] = 0;
-
-    // Synchronize global state
-    scattershot.AllSegments[scattershot.NSegments[Id] + Id * config.MaxLocalSegments] = Blocks[0].tailSegment;
-    scattershot.NSegments[Id]++;
-    scattershot.NBlocks[Id]++;
-
-    //LoopTimeStamp = omp_get_wtime();
-}
-
-template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
-    class TOutputState>
-bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::SelectBaseBlock(int mainIteration)
-{
-    int sharedBlockIndex = scattershot.NBlocks[config.TotalThreads];
+    int blockIndex = -1;
     if (mainIteration % config.StartFromRootEveryNShots == 0)
-        sharedBlockIndex = 0;
+        blockIndex = 0;
     else
-    {
-        for (int attempt = 0; attempt < 100000; attempt++) {
-            sharedBlockIndex = GetRng() % scattershot.NBlocks[config.TotalThreads];
+        blockIndex = GetRng() % scattershot.Blocks.size();
 
-            if (scattershot.SharedBlocks[sharedBlockIndex].tailSegment == 0)
-            {
-                printf("Chosen block tailseg null!\n");
-                continue;
-            }
-
-            if (scattershot.SharedBlocks[sharedBlockIndex].tailSegment->depth == 0)
-            {
-                printf("Chosen block tailseg depth 0!\n");
-                continue;
-            }
-
-            if (scattershot.SharedBlocks[sharedBlockIndex].tailSegment->depth < config.MaxSegments)
-                break;
-        }
-        if (sharedBlockIndex == scattershot.NBlocks[config.TotalThreads])
-        {
-            //printf("Could not find block!\n");
-            return false;
-        }
-    }
-
-    BaseBlock = scattershot.SharedBlocks[sharedBlockIndex];
-    //if (BaseBlock.tailSeg->depth > config.MaxSegments + 2) { printf("BaseBlock depth above max!\n"); }
-    //if (BaseBlock.tailSeg->depth == 0) { printf("BaseBlock depth is zero!\n"); }
-
-    return true;
+    BaseBlockStateBin = scattershot.Blocks[blockIndex].stateBin;
+    BaseBlockTailSegment = scattershot.Blocks[blockIndex].tailSegment;
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
@@ -197,82 +146,18 @@ template <class TState, derived_from_specialization_of<Resource> TResource,
     class TOutputState>
 bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::ValidateBaseBlock(int shot)
 {
-    StateBin<TState> currentStateBin = GetStateBinSafe();
-    if (BaseBlock.stateBin != currentStateBin) {
-        Segment* currentSegmentDebug = BaseBlock.tailSegment;
-        while (currentSegmentDebug != 0) {  //inefficient but probably doesn't matter
-            if (currentSegmentDebug->parent == 0)
-                //printf("Parent is null!");
-            //if (currentSegmentDebug->parent->depth + 1 != currentSegmentDebug->depth) { printf("Depths wrong"); }
-                currentSegmentDebug = currentSegmentDebug->parent;
-        }
-
+    TState currentStateBin = GetStateBinSafe();
+    if (BaseBlockStateBin != currentStateBin) {
         this->ExportM64("C:\\Users\\Tyler\\Documents\\repos\\sm64_tas_scripting\\analysis\\error.m64");
         cout << Id << " " << shot << "\n";
-        BaseBlock.stateBin.print();
-        currentStateBin.print();
-        cout << BaseBlock.stateBin.GetHash(BaseBlock.stateBin.state, false) << "\n";
-        cout << currentStateBin.GetHash(currentStateBin.state, false) << "\n";
+        //BaseBlockStateBin.print();
+        //currentStateBin.print();
+        cout << scattershot.GetHash(BaseBlockStateBin, false) << "\n";
+        cout << scattershot.GetHash(currentStateBin, false) << "\n";
         return false;
     }
 
     return true;
-}
-
-template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
-    class TOutputState>
-bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::ProcessNewBlock(uint64_t baseRngHash, int nScripts, StateBin<TState> newStateBin)
-{
-    Block<TState> newBlock;
-
-    // Create and add block to list.
-    if (scattershot.NBlocks[Id] == config.MaxBlocks)
-    {
-        //printf("Max local blocks reached!\n");
-        return false;
-    }
-
-    //UPDATED FOR SEGMENTS STRUCT
-    newBlock = BaseBlock;
-    newBlock.stateBin = newStateBin;
-    newBlock.fitness = GetStateFitnessSafe();
-    int blockIndexLocal = newStateBin.GetBlockIndex(Blocks, HashTable, config.MaxHashes, 0, scattershot.NBlocks[Id]);
-    int blockIndex = newStateBin.GetBlockIndex(
-        scattershot.SharedBlocks, scattershot.SharedHashTable, config.MaxSharedHashes, 0, scattershot.NBlocks[config.TotalThreads]);
-
-    bool bestlocalBlock = blockIndexLocal < scattershot.NBlocks[Id]
-        && newBlock.fitness > Blocks[blockIndexLocal].fitness;
-    bool bestSharedBlockOrNew = !(blockIndex < scattershot.NBlocks[config.TotalThreads]
-        && newBlock.fitness <= scattershot.SharedBlocks[blockIndex].fitness);
-
-    if (bestlocalBlock || bestSharedBlockOrNew)
-    {
-        // Create new segment
-        Segment* newSegment = (Segment*)malloc(sizeof(Segment));
-        newSegment->parent = BaseBlock.tailSegment;
-        newSegment->nReferences = bestlocalBlock ? 0 : 1;
-        newSegment->nScripts = nScripts + 1;
-        newSegment->seed = baseRngHash;
-        newSegment->depth = BaseBlock.tailSegment->depth + 1;
-        //if (newSegment->depth == 0) { printf("newSeg depth is 0!\n"); }
-        //if (BaseBlock.tailSegment->depth == 0) { printf("origBlock tailSeg depth is 0!\n"); }
-        newBlock.tailSegment = newSegment;
-        scattershot.AllSegments[Id * config.MaxLocalSegments + scattershot.NSegments[Id]] = newSegment;
-        scattershot.NSegments[Id] += 1;
-        
-        if (bestlocalBlock)
-            Blocks[blockIndexLocal] = newBlock;
-        else
-        {
-            HashTable[newStateBin.FindNewHashIndex(HashTable, config.MaxHashes)] = scattershot.NBlocks[Id];
-            Blocks[scattershot.NBlocks[Id]++] = newBlock;
-        }
-
-        return true;
-    }
-
-    return false;
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
@@ -372,12 +257,12 @@ bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::ChooseSc
 template <class TState, derived_from_specialization_of<Resource> TResource,
     std::derived_from<Script<TResource>> TStateTracker,
     class TOutputState>
-StateBin<TState> ScattershotThread<TState, TResource, TStateTracker, TOutputState>::GetStateBinSafe()
+TState ScattershotThread<TState, TResource, TStateTracker, TOutputState>::GetStateBinSafe()
 {
-    StateBin<TState> stateBin;
+    TState stateBin;
     ExecuteAdhoc([&]()
         {
-            stateBin = StateBin<TState>(GetStateBin());
+            stateBin = TState(GetStateBin());
             return true;
         });
 
@@ -407,30 +292,29 @@ AdhocBaseScriptStatus ScattershotThread<TState, TResource, TStateTracker, TOutpu
     int64_t postScriptFrame = -1;
     auto status = ModifyAdhoc([&]()
         {
-            //if (tState.BaseBlock.tailSeg == 0) printf("origBlock has null tailSeg");
+            std::shared_ptr<Segment> tailSegment = BaseBlockTailSegment;
+            std::vector<std::shared_ptr<Segment>> segments(tailSegment->depth);
+            for (auto currentSegment = tailSegment; currentSegment->depth > 0; currentSegment = currentSegment->parent)
+                segments[currentSegment->depth - 1] = currentSegment;
 
-            Segment* tailSegment = BaseBlock.tailSegment;
-            Segment* currentSegment;
-            int tailSegmentDepth = tailSegment->depth;
-            for (int i = 1; i <= tailSegmentDepth; i++) {
-                currentSegment = tailSegment;
-                while (currentSegment->depth != i) // inefficient but probably doesn't matter
-                {
-                    //if (currentSegment->parent == 0) printf("Parent is null!");
-                    //if (currentSegment->parent->depth + 1 != currentSegment->depth) { printf("Depths wrong"); }
-                    currentSegment = currentSegment->parent;
-                }
-
+            for (auto& currentSegment : segments)
+            {
                 SetTempRng(currentSegment->seed);
                 for (int script = 0; script < currentSegment->nScripts; script++)
+                {
                     ChooseScriptAndApply();
+
+                    // This is here so the queued upserts don't block on the entire decoding
+                    QueueThreadById([&]() {});
+                }
             }
 
             postScriptFrame = this->GetCurrentFrame();
             return true;
         });
 
-    // Needed to sync with original execution (block is saved after individual script diff is applied)
+    // Needed to sync with original execution (block is saved after individual script diff is applied).
+    // Note that this often does nothing. It does not hurt performance unless it rewinds.
     // TODO: Consider changing TASFW Modify methods to persist frame cursor so this isn't necessary
     this->Load(postScriptFrame);
     return status;
@@ -443,7 +327,7 @@ AdhocBaseScriptStatus ScattershotThread<TState, TResource, TStateTracker, TOutpu
 {
     return ExecuteAdhoc([&]()
         {
-            StateBin<TState> prevStateBin = GetStateBinSafe();
+            TState prevStateBin = BaseBlockStateBin;
             uint64_t baseRngHash = RngHash;
             bool anyNovelScripts = false; // Mark pellet as failed if 0 scripts were successful
 
@@ -455,34 +339,40 @@ AdhocBaseScriptStatus ScattershotThread<TState, TResource, TStateTracker, TOutpu
                 bool updated = ChooseScriptAndApply();
                 SetRng(RngHashTemp);
 
-                ThreadLock([&]() { scattershot.ScriptCount++; });
-
                 // Validation
-                if (!updated || !ValidateCourseAndArea() || !ExecuteAdhoc([&]() { return ValidateState(); }).executed)
-                {
-                    ThreadLock([&]() { scattershot.FailedScripts++; });
-                    break;
-                }  
+                bool validated = updated && ValidateCourseAndArea() && ExecuteAdhoc([&]() { return ValidateState(); }).executed;
 
                 // Create and add block to list if it is new.
-                auto newStateBin = GetStateBinSafe();
-                /*
-                if (newStateBin.GetHash(newStateBin.state, false) == 15818986094471996600ull)
-                {
-                    this->ExportM64("C:\\Users\\Tyler\\Documents\\repos\\sm64_tas_scripting\\analysis\\error0.m64");
-                    cout << Id << " " << shot << "\n";
-                    newStateBin.print();
-                }
-                */
+                bool novelScript = false;
+                auto newStateBin = validated ? GetStateBinSafe() : TState();
+                float fitness = validated ? GetStateFitness() : 0.f;
+                QueueThreadById([&]()
+                    {
+                        if (validated && newStateBin != prevStateBin && newStateBin != BaseBlockStateBin)
+                            novelScript = scattershot.UpsertBlock(newStateBin, fitness, BaseBlockTailSegment, n + 1, baseRngHash);
+                    });
 
-                if (newStateBin != prevStateBin && newStateBin != BaseBlock.stateBin && ProcessNewBlock(baseRngHash, n, newStateBin))
+                // Update script result count
+                ThreadLock([&]()
+                    {
+                        scattershot.ScriptCount++;
+
+                        if (!validated)
+                            scattershot.FailedScripts++;
+                        else if (novelScript)
+                            scattershot.NovelScripts++;
+                        else
+                            scattershot.RedundantScripts++;
+                    });
+
+                if (!validated)
+                    break;
+
+                if (novelScript)
                 {
                     anyNovelScripts |= true;
-                    ThreadLock([&]() { scattershot.NovelScripts++; });
                     AddCsvRow(shot);
                 }
-                else
-                    ThreadLock([&]() { scattershot.RedundantScripts++; });
 
                 prevStateBin = newStateBin;
             }
@@ -536,7 +426,7 @@ uint64_t ScattershotThread<TState, TResource, TStateTracker, TOutputState>::GetH
     std::hash<std::byte> byteHasher;
     const std::byte* data = reinterpret_cast<const std::byte*>(&toHash);
     uint64_t hashValue = 0;
-    for (std::size_t i = 0; i < sizeof(T); ++i)
+    for (std::size_t i = 0; i < sizeof(T); i++)
         hashValue ^= static_cast<uint64_t>(byteHasher(data[i])) + 0x9e3779b97f4a7c15ull + (hashValue << 6) + (hashValue >> 2);
 
     return hashValue;
