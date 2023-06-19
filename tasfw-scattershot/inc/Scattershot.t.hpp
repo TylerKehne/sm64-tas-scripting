@@ -40,8 +40,28 @@ void Scattershot<TState, TResource, TStateTracker, TOutputState>::MultiThread(in
     omp_set_num_threads(nThreads);
     #pragma omp parallel
     {
+        int threadId = omp_get_thread_num();
+        #pragma omp critical
+        {
+            ActiveThreads.insert(threadId);
+        }
+
         func();
+
+        // Since threads can exit at different times, this ensures the remaining threads will not get stuck at barrier directives
+        while (!ActiveThreads.empty())
+        {
+            #pragma omp critical
+            {
+                ActiveThreads.erase(threadId);
+            }
+
+            #pragma omp barrier
+            continue;
+        }
     }
+
+    return;
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
@@ -60,7 +80,7 @@ template <class TState, derived_from_specialization_of<Resource> TResource,
     std::derived_from<Script<TResource>> TStateTracker,
     class TOutputState>
 bool Scattershot<TState, TResource, TStateTracker, TOutputState>::UpsertBlock(
-    TState stateBin, float fitness, std::shared_ptr<Segment> parentSegment, uint8_t nScripts, uint64_t segmentSeed)
+    TState stateBin, bool isSolution, ScattershotSolution<TOutputState> solution, float fitness, std::shared_ptr<Segment> parentSegment, uint8_t nScripts, uint64_t segmentSeed)
 {
     if (Blocks.size() == Blocks.capacity())
         throw std::runtime_error("Block cap reached");
@@ -72,9 +92,15 @@ bool Scattershot<TState, TResource, TStateTracker, TOutputState>::UpsertBlock(
         // Check for hash collision
         if (blockIndex == -1) 
         {
+            if (isSolution && Solutions.size() >= config.MaxSolutions)
+                return false;
+
             blockIndex = Blocks.size();
             Blocks.emplace_back(std::make_shared<Segment>(parentSegment, segmentSeed, nScripts), stateBin, fitness);
             BlockIndices[stateBinHash % BlockIndices.size()] = blockIndex;
+
+            if (isSolution)
+                Solutions[blockIndex] = solution;
 
             return true;
         }
@@ -83,8 +109,15 @@ bool Scattershot<TState, TResource, TStateTracker, TOutputState>::UpsertBlock(
         {
             if (fitness > Blocks[blockIndex].fitness)
             {
+                // Reject improvements that are not considered solutions if the incumbent is a solution
+                if (Solutions.contains(blockIndex) && !isSolution)
+                    return false;
+
                 Blocks[blockIndex].fitness = fitness;
                 Blocks[blockIndex].tailSegment = std::make_shared<Segment>(parentSegment, segmentSeed, nScripts);
+
+                if (isSolution)
+                    Solutions[blockIndex] = solution;
 
                 return true;
             }
@@ -101,7 +134,7 @@ template <class TState, derived_from_specialization_of<Resource> TResource,
     class TOutputState>
 void Scattershot<TState, TResource, TStateTracker, TOutputState>::PrintStatus()
 {
-    printf("\nCombined Loops: %d Blocks: %d\n", TotalShots, Blocks.size());
+    printf("\nCombined Loops: %d Blocks: %d Solutions: %d\n", TotalShots, Blocks.size(), Solutions.size());
 
     // Print cumulative script results
     if (ScriptCount != 0)

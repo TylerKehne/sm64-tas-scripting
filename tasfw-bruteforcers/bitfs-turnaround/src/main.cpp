@@ -89,7 +89,7 @@ void InitConfiguration(Configuration& configuration)
 	configuration.StartFromRootEveryNShots = 100;
 	configuration.CsvSamplePeriod = 100;
 	configuration.MaxConsecutiveFailedPellets = 10;
-	configuration.MaxSolutions = 100;
+	configuration.MaxSolutions = 0;
 	configuration.CsvOutputDirectory = std::string("C:/Users/Tyler/Documents/repos/sm64_tas_scripting/analysis/");
 	configuration.M64Path = std::filesystem::path("C:/Users/Tyler/Documents/repos/sm64_tas_scripting/res/4_units_from_edge.m64");
 
@@ -119,7 +119,7 @@ int main(int argc, const char* argv[])
 	//M64 m64 = M64(config.M64Path);
 	//m64.load();
 
-	Scattershot_BitfsDr::ConfigureScattershot(config)
+	auto solutions = Scattershot_BitfsDr::ConfigureScattershot(config)
 		.ConfigureResourcePerPath<LibSm64Config>([&](auto path)
 			{
 				LibSm64Config resourceConfig;

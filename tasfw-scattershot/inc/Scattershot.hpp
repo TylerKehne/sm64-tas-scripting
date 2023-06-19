@@ -85,6 +85,14 @@ public:
     float fitness;
 };
 
+template <class TOutputState>
+class ScattershotSolution
+{
+public:
+    TOutputState data;
+    M64Diff m64Diff;
+};
+
 template <class TState, derived_from_specialization_of<Resource> TResource,
     std::derived_from<Script<TResource>> TStateTracker = DefaultStateTracker<TResource>,
     class TOutputState = DefaultState>
@@ -98,7 +106,7 @@ public:
 
     template <derived_from_specialization_of<ScattershotThread> TScattershotThread, class TResourceConfig, typename F>
         requires std::same_as<std::invoke_result_t<F, std::filesystem::path>, TResourceConfig>
-    static void Run(const Configuration& configuration, F resourceConfigGenerator)
+    static std::vector<ScattershotSolution<TOutputState>> Run(const Configuration& configuration, F resourceConfigGenerator)
     {
         auto scattershot = Scattershot(configuration);
         scattershot.OpenCsv();
@@ -116,12 +124,20 @@ public:
                         .Main(scattershot, threadId);
                 }
             });
+
+        std::vector<ScattershotSolution<TOutputState>> solutions;
+        solutions.reserve(configuration.MaxSolutions);
+        for (auto& pair : scattershot.Solutions) {
+            solutions.push_back(std::move(pair.second));
+        }
+
+        return solutions;
     }
 
-    template <template<class, class, class> class TScattershotThread, class TResourceConfig, typename F>
+    template <template<class, class, class, class> class TScattershotThread, class TResourceConfig, typename F>
         requires (derived_from_specialization_of<ScattershotThread<TState, TResource, TStateTracker, TOutputState>, TScattershotThread>
     && std::same_as<std::invoke_result_t<F, std::filesystem::path>, TResourceConfig>)
-        static void Run(const Configuration& configuration, F resourceConfigGenerator)
+        static std::vector<ScattershotSolution<TOutputState>> Run(const Configuration& configuration, F resourceConfigGenerator)
     {
         auto scattershot = Scattershot(configuration);
         scattershot.OpenCsv();
@@ -139,14 +155,23 @@ public:
                         .Main(scattershot, threadId);
                 }
             });
+
+        std::vector<ScattershotSolution<TOutputState>> solutions(configuration.MaxSolutions);
+        for (auto& pair : scattershot.Solutions) {
+            solutions.push_back(std::move(pair.second));
+        }
+
+        return solutions;
     }
 
     ~Scattershot();
 
 private:
     // Global State
+    std::unordered_set<int> ActiveThreads;
     std::vector<Block<TState>> Blocks;
     std::vector<int> BlockIndices; // Indexed by state bin hash
+    std::map<int, ScattershotSolution<TOutputState>> Solutions;
 
     std::string CsvFileName;
     std::ofstream Csv;
@@ -162,7 +187,8 @@ private:
     uint64_t NovelScripts = 0;
 
     void PrintStatus();
-    bool UpsertBlock(TState stateBin, float fitness, std::shared_ptr<Segment> parentSegment, uint8_t nScripts, uint64_t segmentSeed);
+    bool UpsertBlock(TState stateBin, bool isSolution, ScattershotSolution<TOutputState> solution, float fitness,
+        std::shared_ptr<Segment> parentSegment, uint8_t nScripts, uint64_t segmentSeed);
 
     template <typename T>
     uint64_t GetHash(const T& toHash, bool ignoreFillerBytes)
@@ -255,6 +281,8 @@ protected:
     virtual bool ValidateState() = 0;
     virtual float GetStateFitness() = 0;
 
+    virtual TOutputState GetSolutionState() { return TOutputState(); }
+    virtual bool IsSolution() { return false; };
     virtual std::string GetCsvLabels();
     virtual std::string GetCsvRow();
     virtual bool ForceAddToCsv();
@@ -363,9 +391,9 @@ public:
     }
 
     template <std::derived_from<ScattershotThread<TState, TResource, TStateTracker, TOutputState>> TScattershotThread>
-    void Run()
+    std::vector<ScattershotSolution<TOutputState>> Run()
     {
-        Scattershot<TState, TResource, TStateTracker, TOutputState>::Run<TScattershotThread, TResourceConfig>(_config, _resourceConfigGenerator);
+        return Scattershot<TState, TResource, TStateTracker, TOutputState>::Run<TScattershotThread, TResourceConfig>(_config, _resourceConfigGenerator);
     }
 
 private:

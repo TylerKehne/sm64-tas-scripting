@@ -290,8 +290,19 @@ private:
     }
 };
 
-using Alias_ScattershotThread_BitfsDr = ScattershotThread<BinaryStateBin<16>, LibSm64, StateTracker_BitfsDr>;
-using Alias_Scattershot_BitfsDr = Scattershot<BinaryStateBin<16>, LibSm64, StateTracker_BitfsDr>;
+class Scattershot_BitfsDr_Solution
+{
+public:
+    float fSpd = 0;
+    float pyraNormX = 0;
+    float pyraNormY = 0;
+    float pyraNormZ = 0;
+    float xzSum = 0;
+    int currentOscillation = 0;
+};
+
+using Alias_ScattershotThread_BitfsDr = ScattershotThread<BinaryStateBin<16>, LibSm64, StateTracker_BitfsDr, Scattershot_BitfsDr_Solution>;
+using Alias_Scattershot_BitfsDr = Scattershot<BinaryStateBin<16>, LibSm64, StateTracker_BitfsDr, Scattershot_BitfsDr_Solution>;
 
 class Scattershot_BitfsDr : public Alias_ScattershotThread_BitfsDr
 {
@@ -751,6 +762,28 @@ public:
             phaseValue);
 
         return std::string(line);
+    }
+
+    bool IsSolution() override
+    {
+        const auto& state = GetTrackedState<StateTracker_BitfsDr>(GetCurrentFrame());
+
+        return state.currentOscillation == 3;
+    }
+
+    Scattershot_BitfsDr_Solution GetSolutionState() override
+    {
+        const auto& state = GetTrackedState<StateTracker_BitfsDr>(GetCurrentFrame());
+
+        auto solution = Scattershot_BitfsDr_Solution();
+        solution.fSpd = state.fSpd;
+        solution.pyraNormX = state.pyraNormX;
+        solution.pyraNormY = state.pyraNormY;
+        solution.pyraNormZ = state.pyraNormZ;
+        solution.xzSum = state.xzSum;
+        solution.currentOscillation = state.currentOscillation;
+
+        return solution;
     }
 
 private:

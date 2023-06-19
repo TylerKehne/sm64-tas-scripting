@@ -31,7 +31,7 @@ bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::executio
     // Initialization
     SingleThread([&]()
         {
-            scattershot.UpsertBlock(GetStateBinSafe(), GetStateFitnessSafe(), nullptr, 0, RngHash);
+            scattershot.UpsertBlock(GetStateBinSafe(), false, ScattershotSolution<TOutputState>(), GetStateFitnessSafe(), nullptr, 0, RngHash);
             AddCsvLabels();
             scattershot.PrintStatus();
         });
@@ -65,14 +65,20 @@ bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::executio
                 return true;
             });
 
-        // Periodically print progress to console
+        size_t nSolutions = 0;
         ThreadLock([&]()
             {
+                nSolutions = scattershot.Solutions.size();
+
+                // Periodically print progress to console
                 if (++scattershot.TotalShots % config.ShotsPerUpdate == 0)
                     scattershot.PrintStatus();
             });
 
         //printf("%d %d %d %d\n", status.nLoads, status.nSaves, status.nFrameAdvances, status.executionDuration);
+
+        if (config.MaxSolutions > 0 && nSolutions >= config.MaxSolutions)
+            return true;
     }
 
     return true;
@@ -135,7 +141,16 @@ void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::SelectBa
     if (mainIteration % config.StartFromRootEveryNShots == 0)
         blockIndex = 0;
     else
-        blockIndex = GetRng() % scattershot.Blocks.size();
+    {
+        while (true)
+        {
+            blockIndex = GetRng() % scattershot.Blocks.size();
+
+            // Don't explore beyond known solutions
+            if (!scattershot.Solutions.contains(blockIndex))
+                break;
+        }
+    }
 
     BaseBlockStateBin = scattershot.Blocks[blockIndex].stateBin;
     BaseBlockTailSegment = scattershot.Blocks[blockIndex].tailSegment;
@@ -346,10 +361,13 @@ AdhocBaseScriptStatus ScattershotThread<TState, TResource, TStateTracker, TOutpu
                 bool novelScript = false;
                 auto newStateBin = validated ? GetStateBinSafe() : TState();
                 float fitness = validated ? GetStateFitness() : 0.f;
+                bool isSolution = validated ? ExecuteAdhoc([&]() { return IsSolution(); }).executed : false;
+                ScattershotSolution<TOutputState> solution = validated ? ScattershotSolution<TOutputState>(GetSolutionState(), this->GetInputs(config.StartFrame, this->GetCurrentFrame() - 1))
+                    : ScattershotSolution<TOutputState>();
                 QueueThreadById([&]()
                     {
                         if (validated && newStateBin != prevStateBin && newStateBin != BaseBlockStateBin)
-                            novelScript = scattershot.UpsertBlock(newStateBin, fitness, BaseBlockTailSegment, n + 1, baseRngHash);
+                            novelScript = scattershot.UpsertBlock(newStateBin, isSolution, solution, fitness, BaseBlockTailSegment, n + 1, baseRngHash);
                     });
 
                 // Update script result count
