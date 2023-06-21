@@ -307,8 +307,11 @@ using Alias_Scattershot_BitfsDr = Scattershot<BinaryStateBin<16>, LibSm64, State
 class Scattershot_BitfsDr : public Alias_ScattershotThread_BitfsDr
 {
 public:
-    Scattershot_BitfsDr(Alias_Scattershot_BitfsDr& scattershot, int id)
-        : Alias_ScattershotThread_BitfsDr(scattershot, id) {}
+    Scattershot_BitfsDr(Alias_Scattershot_BitfsDr& scattershot, int targetOscillation)
+        : Alias_ScattershotThread_BitfsDr(scattershot)
+    {
+        _targetOscillation = targetOscillation;
+    }
 
     void SelectMovementOptions()
     {
@@ -633,6 +636,7 @@ public:
         if (!StateTracker_BitfsDr::ValidateCrossingData(state))
             return false;
 
+        /*
         if (state.currentOscillation >= 8 && lastFrameState.currentOscillation == state.currentOscillation - 1)
         {
             char fileName[128];
@@ -642,7 +646,6 @@ public:
             ExportM64(fileName);
         }
 
-        /*
         if (marioState->action == ACT_FORWARD_ROLLOUT && fabs(xNorm) > .3 && fabs(xNorm) + fabs(zNorm) > .65 &&
             marioState->pos[0] + marioState->pos[2] > (-1945 - 715)) //make sure Mario is going toward the right/east edge
         {  
@@ -768,7 +771,7 @@ public:
     {
         const auto& state = GetTrackedState<StateTracker_BitfsDr>(GetCurrentFrame());
 
-        return state.currentOscillation == 3;
+        return _targetOscillation > 0 && state.initialized && state.currentOscillation >= _targetOscillation;
     }
 
     Scattershot_BitfsDr_Solution GetSolutionState() override
@@ -787,6 +790,8 @@ public:
     }
 
 private:
+    int _targetOscillation = -1;
+
     bool Pbd()
     {
         return ModifyAdhoc([&]()

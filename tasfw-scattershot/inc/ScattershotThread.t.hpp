@@ -7,10 +7,10 @@
 template <class TState, derived_from_specialization_of<Resource> TResource,
     std::derived_from<Script<TResource>> TStateTracker,
     class TOutputState>
-ScattershotThread<TState, TResource, TStateTracker, TOutputState>::ScattershotThread(Scattershot<TState, TResource, TStateTracker, TOutputState>& scattershot, int id)
+ScattershotThread<TState, TResource, TStateTracker, TOutputState>::ScattershotThread(Scattershot<TState, TResource, TStateTracker, TOutputState>& scattershot)
     : scattershot(scattershot), config(scattershot.config)
 {
-    Id = id;
+    Id = omp_get_thread_num();
     SetRng((uint64_t)(Id + 173) * 5786766484692217813);
     
     //printf("Thread %d\n", Id);
@@ -26,19 +26,7 @@ template <class TState, derived_from_specialization_of<Resource> TResource,
     class TOutputState>
 bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::execution()
 {
-    LongLoad(config.StartFrame);
-
-    // Initialization
-    SingleThread([&]()
-        {
-            scattershot.UpsertBlock(GetStateBinSafe(), false, ScattershotSolution<TOutputState>(), GetStateFitnessSafe(), nullptr, 0, RngHash);
-            AddCsvLabels();
-            scattershot.PrintStatus();
-        });
-
-    // Record start course/area for validation (generally scattershot has no cross-level value)
-    startCourse = *(short*)this->resource->addr("gCurrCourseNum");
-    startArea = *(short*)this->resource->addr("gCurrAreaIndex");
+    Initialize();
 
     for (int shot = 0; shot <= config.MaxShots; shot++)
     {
@@ -82,6 +70,58 @@ bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::executio
     }
 
     return true;
+}
+
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::Initialize()
+{
+    LongLoad(config.StartFrame);
+
+    // Load piped-in diffs as root blocks
+    if (!scattershot.InputSolutions.empty())
+    {
+        bool finishedProcessingDiffs = false;
+        std::shared_ptr<Segment> rootSegment = std::make_shared<Segment>(nullptr, 0, RngHash, 0);
+        while (true)
+        {
+            ThreadLock([&]()
+                {
+                    finishedProcessingDiffs = scattershot.InputSolutionsIndex >= scattershot.InputSolutions.size() || scattershot.InputSolutionsIndex >= 65534;
+                    if (finishedProcessingDiffs)
+                        return;
+
+                    // Execute diff and save block
+                    ExecuteAdhoc([&]()
+                        {
+                            this->Apply(scattershot.InputSolutions[scattershot.InputSolutionsIndex].m64Diff);
+                            scattershot.UpsertBlock(GetStateBinSafe(), false, ScattershotSolution<TOutputState>(),
+                                GetStateFitnessSafe(), rootSegment, 1, GetRng(), scattershot.InputSolutionsIndex + 1);
+                            return true;
+                        });
+
+                    scattershot.InputSolutionsIndex++;
+                });
+
+            if (finishedProcessingDiffs)
+                break;
+        }
+    }
+
+    SingleThread([&]()
+        {
+            // Initialize root block if no diffs are piped in
+            if (scattershot.InputSolutions.empty())
+                scattershot.UpsertBlock(GetStateBinSafe(), false, ScattershotSolution<TOutputState>(), GetStateFitnessSafe(), nullptr, 0, RngHash, 0);
+
+            AddCsvLabels();
+            scattershot.PrintStatus();
+        });
+
+    // Record start course/area for validation (generally scattershot has no cross-level value)
+    startCourse = *(short*)this->resource->addr("gCurrCourseNum");
+    startArea = *(short*)this->resource->addr("gCurrAreaIndex");
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
@@ -317,11 +357,15 @@ AdhocBaseScriptStatus ScattershotThread<TState, TResource, TStateTracker, TOutpu
                 SetTempRng(currentSegment->seed);
                 for (int script = 0; script < currentSegment->nScripts; script++)
                 {
-                    ChooseScriptAndApply();
+                    if (currentSegment->pipedDiff1Index > 0)
+                        this->Apply(scattershot.InputSolutions[currentSegment->pipedDiff1Index - 1].m64Diff);
+                    else
+                        ChooseScriptAndApply();
 
                     // This is here so the queued upserts don't block on the entire decoding
                     QueueThreadById([&]() {});
                 }
+                
             }
 
             postScriptFrame = this->GetCurrentFrame();
@@ -362,12 +406,12 @@ AdhocBaseScriptStatus ScattershotThread<TState, TResource, TStateTracker, TOutpu
                 auto newStateBin = validated ? GetStateBinSafe() : TState();
                 float fitness = validated ? GetStateFitness() : 0.f;
                 bool isSolution = validated ? ExecuteAdhoc([&]() { return IsSolution(); }).executed : false;
-                ScattershotSolution<TOutputState> solution = validated ? ScattershotSolution<TOutputState>(GetSolutionState(), this->GetInputs(config.StartFrame, this->GetCurrentFrame() - 1))
+                ScattershotSolution<TOutputState> solution = isSolution ? ScattershotSolution<TOutputState>(GetSolutionState(), this->GetInputs(config.StartFrame, this->GetCurrentFrame() - 1))
                     : ScattershotSolution<TOutputState>();
                 QueueThreadById([&]()
                     {
                         if (validated && newStateBin != prevStateBin && newStateBin != BaseBlockStateBin)
-                            novelScript = scattershot.UpsertBlock(newStateBin, isSolution, solution, fitness, BaseBlockTailSegment, n + 1, baseRngHash);
+                            novelScript = scattershot.UpsertBlock(newStateBin, isSolution, solution, fitness, BaseBlockTailSegment, n + 1, baseRngHash, 0);
                     });
 
                 // Update script result count

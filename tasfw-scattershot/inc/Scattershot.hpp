@@ -64,10 +64,12 @@ public:
     uint64_t seed;
     uint8_t nScripts;
     uint8_t depth;
+    uint16_t pipedDiff1Index = 0;
 
     bool operator==(const Segment&) const = default;
 
-    Segment(std::shared_ptr<Segment> parent, uint64_t seed, uint8_t nScripts) : parent(parent), seed(seed), nScripts(nScripts)
+    Segment(std::shared_ptr<Segment> parent, uint64_t seed, uint8_t nScripts, uint16_t pipedDiff1Index)
+        : parent(parent), seed(seed), nScripts(nScripts), pipedDiff1Index(pipedDiff1Index)
     {
         if (parent == nullptr)
             depth = 0;
@@ -102,13 +104,14 @@ public:
     const Configuration& config;
     friend class ScattershotThread<TState, TResource, TStateTracker, TOutputState>;
 
-    Scattershot(const Configuration& configuration);
+    Scattershot(const Configuration& configuration, const std::vector<ScattershotSolution<TOutputState>>& inputSolutions);
 
-    template <derived_from_specialization_of<ScattershotThread> TScattershotThread, class TResourceConfig, typename F>
+    template <std::derived_from<ScattershotThread<TState, TResource, TStateTracker, TOutputState>> TScattershotThread, class TResourceConfig, typename F, typename... TParams>
         requires std::same_as<std::invoke_result_t<F, std::filesystem::path>, TResourceConfig>
-    static std::vector<ScattershotSolution<TOutputState>> Run(const Configuration& configuration, F resourceConfigGenerator)
+    static std::vector<ScattershotSolution<TOutputState>> Run(
+        const Configuration& configuration, F resourceConfigGenerator, const std::vector<ScattershotSolution<TOutputState>>& inputSolutions, TParams&&... params)
     {
-        auto scattershot = Scattershot(configuration);
+        auto scattershot = Scattershot(configuration, inputSolutions);
         scattershot.OpenCsv();
 
         scattershot.MultiThread(configuration.TotalThreads, [&]()
@@ -121,25 +124,25 @@ public:
 
                     auto status = TopLevelScriptBuilder<TScattershotThread>::Build(m64)
                         .ConfigureResource<TResourceConfig>(resourceConfigGenerator(configuration.ResourcePaths[threadId]))
-                        .Main(scattershot, threadId);
+                        .Main(scattershot, std::forward<TParams>(params)...);
                 }
             });
 
         std::vector<ScattershotSolution<TOutputState>> solutions;
-        solutions.reserve(configuration.MaxSolutions);
-        for (auto& pair : scattershot.Solutions) {
+        solutions.reserve(scattershot.Solutions.size());
+        for (auto& pair : scattershot.Solutions)
             solutions.push_back(std::move(pair.second));
-        }
 
         return solutions;
     }
 
-    template <template<class, class, class, class> class TScattershotThread, class TResourceConfig, typename F>
-        requires (derived_from_specialization_of<ScattershotThread<TState, TResource, TStateTracker, TOutputState>, TScattershotThread>
+    template <template<class, class, class, class> class TScattershotThread, class TResourceConfig, typename F, typename... TParams>
+        requires (std::derived_from<ScattershotThread<TState, TResource, TStateTracker, TOutputState>, TScattershotThread>
     && std::same_as<std::invoke_result_t<F, std::filesystem::path>, TResourceConfig>)
-        static std::vector<ScattershotSolution<TOutputState>> Run(const Configuration& configuration, F resourceConfigGenerator)
+        static std::vector<ScattershotSolution<TOutputState>> Run(
+            const Configuration& configuration, F resourceConfigGenerator, const std::vector<ScattershotSolution<TOutputState>>& inputSolutions, TParams&&... params)
     {
-        auto scattershot = Scattershot(configuration);
+        auto scattershot = Scattershot(configuration, inputSolutions);
         scattershot.OpenCsv();
 
         scattershot.MultiThread(configuration.TotalThreads, [&]()
@@ -152,14 +155,13 @@ public:
 
                     auto status = TopLevelScriptBuilder<TScattershotThread<TState, TResource, TStateTracker, TOutputState>>::Build(m64)
                         .ConfigureResource<TResourceConfig>(resourceConfigGenerator(configuration.ResourcePaths[threadId]))
-                        .Main(scattershot, threadId);
+                        .Main(scattershot, std::forward<TParams>(params)...);
                 }
             });
 
         std::vector<ScattershotSolution<TOutputState>> solutions(configuration.MaxSolutions);
-        for (auto& pair : scattershot.Solutions) {
+        for (auto& pair : scattershot.Solutions)
             solutions.push_back(std::move(pair.second));
-        }
 
         return solutions;
     }
@@ -172,6 +174,8 @@ private:
     std::vector<Block<TState>> Blocks;
     std::vector<int> BlockIndices; // Indexed by state bin hash
     std::map<int, ScattershotSolution<TOutputState>> Solutions;
+    const std::vector<ScattershotSolution<TOutputState>>& InputSolutions;
+    uint16_t InputSolutionsIndex = 0;
 
     std::string CsvFileName;
     std::ofstream Csv;
@@ -188,7 +192,7 @@ private:
 
     void PrintStatus();
     bool UpsertBlock(TState stateBin, bool isSolution, ScattershotSolution<TOutputState> solution, float fitness,
-        std::shared_ptr<Segment> parentSegment, uint8_t nScripts, uint64_t segmentSeed);
+        std::shared_ptr<Segment> parentSegment, uint8_t nScripts, uint64_t segmentSeed, uint16_t pipedDiff1Index);
 
     template <typename T>
     uint64_t GetHash(const T& toHash, bool ignoreFillerBytes)
@@ -256,7 +260,7 @@ public:
 
     static ScattershotBuilder<TState, TResource, TStateTracker, TOutputState> ConfigureScattershot(const Configuration& config)
     {
-        return ScattershotBuilder<TState, TResource, TStateTracker, TOutputState>(config);
+        return ScattershotBuilder<TState, TResource, TStateTracker, TOutputState>(config, std::vector<ScattershotSolution<TOutputState>>());
     }
 
 protected:
@@ -269,7 +273,7 @@ protected:
 
     const Configuration& config;
 
-    ScattershotThread(Scattershot<TState, TResource, TStateTracker, TOutputState>& scattershot, int id);
+    ScattershotThread(Scattershot<TState, TResource, TStateTracker, TOutputState>& scattershot);
 
     virtual bool validation();
     bool execution();
@@ -307,6 +311,7 @@ private:
     short startArea;
 
     // Thread state methods
+    void Initialize();
     uint64_t GetRng();
     void SetRng(uint64_t rngHash);
     void SetTempRng(uint64_t rngHash);
@@ -380,25 +385,34 @@ template <class TState,
 class ScattershotBuilder
 {
 public:
-    ScattershotBuilder(const Configuration& config) : _config(config) {} // Ignore warning, we want to leave callback uninitialized so it fails to compile if it's not
-    ScattershotBuilder(const Configuration& config, FResourceConfigGenerator callback) : _config(config), _resourceConfigGenerator(callback) {}
+    ScattershotBuilder(const Configuration& config, const std::vector<ScattershotSolution<TOutputState>>& inputSolutions)
+        : _config(config), _inputSolutions(inputSolutions) {} // Ignore warning, we want to leave callback uninitialized so it fails to compile if it's not
+    ScattershotBuilder(const Configuration& config, FResourceConfigGenerator callback, const std::vector<ScattershotSolution<TOutputState>>& inputSolutions)
+        : _config(config), _resourceConfigGenerator(callback), _inputSolutions(inputSolutions) {}
 
     template <class UResourceConfig, typename GResourceConfigGenerator>
         requires (std::same_as<std::invoke_result_t<GResourceConfigGenerator, std::filesystem::path>, UResourceConfig>)
     ScattershotBuilder<TState, TResource, TStateTracker, TOutputState, UResourceConfig, GResourceConfigGenerator> ConfigureResourcePerPath(GResourceConfigGenerator callback)
     {
-        return ScattershotBuilder<TState, TResource, TStateTracker, TOutputState, UResourceConfig, GResourceConfigGenerator>(_config, callback);
+        return ScattershotBuilder<TState, TResource, TStateTracker, TOutputState, UResourceConfig, GResourceConfigGenerator>(_config, callback, _inputSolutions);
     }
 
-    template <std::derived_from<ScattershotThread<TState, TResource, TStateTracker, TOutputState>> TScattershotThread>
-    std::vector<ScattershotSolution<TOutputState>> Run()
+    ScattershotBuilder<TState, TResource, TStateTracker, TOutputState, TResourceConfig, FResourceConfigGenerator> PipeFrom(const std::vector<ScattershotSolution<TOutputState>>& inputSolutions)
     {
-        return Scattershot<TState, TResource, TStateTracker, TOutputState>::Run<TScattershotThread, TResourceConfig>(_config, _resourceConfigGenerator);
+        return ScattershotBuilder<TState, TResource, TStateTracker, TOutputState, TResourceConfig, FResourceConfigGenerator>(_config, _resourceConfigGenerator, inputSolutions);
+    }
+
+    template <std::derived_from<ScattershotThread<TState, TResource, TStateTracker, TOutputState>> TScattershotThread, typename... TParams>
+    std::vector<ScattershotSolution<TOutputState>> Run(TParams&&... params)
+    {
+        return Scattershot<TState, TResource, TStateTracker, TOutputState>::template Run<TScattershotThread, TResourceConfig>(
+            _config, _resourceConfigGenerator, _inputSolutions, std::forward<TParams>(params)...);
     }
 
 private:
     const Configuration& _config;
     FResourceConfigGenerator _resourceConfigGenerator;
+    const std::vector<ScattershotSolution<TOutputState>>& _inputSolutions;
 };
 
 //Include template method implementations

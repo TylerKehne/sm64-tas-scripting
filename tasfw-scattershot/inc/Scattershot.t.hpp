@@ -67,7 +67,8 @@ void Scattershot<TState, TResource, TStateTracker, TOutputState>::MultiThread(in
 template <class TState, derived_from_specialization_of<Resource> TResource,
     std::derived_from<Script<TResource>> TStateTracker,
     class TOutputState>
-Scattershot<TState, TResource, TStateTracker, TOutputState>::Scattershot(const Configuration& config) : config(config)
+Scattershot<TState, TResource, TStateTracker, TOutputState>::Scattershot(const Configuration& config, const std::vector<ScattershotSolution<TOutputState>>& inputSolutions)
+    : config(config), InputSolutions(inputSolutions)
 {
     Blocks.reserve(config.MaxBlocks);
     BlockIndices.reserve(3 * config.MaxBlocks);
@@ -80,7 +81,8 @@ template <class TState, derived_from_specialization_of<Resource> TResource,
     std::derived_from<Script<TResource>> TStateTracker,
     class TOutputState>
 bool Scattershot<TState, TResource, TStateTracker, TOutputState>::UpsertBlock(
-    TState stateBin, bool isSolution, ScattershotSolution<TOutputState> solution, float fitness, std::shared_ptr<Segment> parentSegment, uint8_t nScripts, uint64_t segmentSeed)
+    TState stateBin, bool isSolution, ScattershotSolution<TOutputState> solution, float fitness,
+    std::shared_ptr<Segment> parentSegment, uint8_t nScripts, uint64_t segmentSeed, uint16_t pipedDiff1Index)
 {
     if (Blocks.size() == Blocks.capacity())
         throw std::runtime_error("Block cap reached");
@@ -96,7 +98,7 @@ bool Scattershot<TState, TResource, TStateTracker, TOutputState>::UpsertBlock(
                 return false;
 
             blockIndex = Blocks.size();
-            Blocks.emplace_back(std::make_shared<Segment>(parentSegment, segmentSeed, nScripts), stateBin, fitness);
+            Blocks.emplace_back(std::make_shared<Segment>(parentSegment, segmentSeed, nScripts, pipedDiff1Index), stateBin, fitness);
             BlockIndices[stateBinHash % BlockIndices.size()] = blockIndex;
 
             if (isSolution)
@@ -105,7 +107,7 @@ bool Scattershot<TState, TResource, TStateTracker, TOutputState>::UpsertBlock(
             return true;
         }
 
-        if (Blocks[blockIndex].stateBin == stateBin) // False indicates a hash collision
+        if (Blocks[blockIndex].stateBin == stateBin && pipedDiff1Index == 0) // False indicates a hash collision or piped-in diff
         {
             if (fitness > Blocks[blockIndex].fitness)
             {
@@ -114,7 +116,7 @@ bool Scattershot<TState, TResource, TStateTracker, TOutputState>::UpsertBlock(
                     return false;
 
                 Blocks[blockIndex].fitness = fitness;
-                Blocks[blockIndex].tailSegment = std::make_shared<Segment>(parentSegment, segmentSeed, nScripts);
+                Blocks[blockIndex].tailSegment = std::make_shared<Segment>(parentSegment, segmentSeed, nScripts, pipedDiff1Index);
 
                 if (isSolution)
                     Solutions[blockIndex] = solution;

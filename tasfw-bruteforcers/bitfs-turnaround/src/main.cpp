@@ -76,20 +76,63 @@ public:
 	}
 };
 
+template <class TOutputState>
+class ExportSolutions : public TopLevelScript<LibSm64, StateTracker_BitfsDr>
+{
+public:
+	ExportSolutions(int startFrame, const std::vector<ScattershotSolution<TOutputState>>& solutions) : _startFrame(startFrame), _solutions(solutions) {}
+
+	bool validation() { return true; }
+
+	bool execution()
+	{
+		MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
+		Camera* camera = *(Camera**)(resource->addr("gCamera"));
+		const BehaviorScript* pyramidmBehavior = (const BehaviorScript*)(resource->addr("bhvLllTiltingInvertedPyramid"));
+		Object* objectPool = (Object*)(resource->addr("gObjectPool"));
+		Object* pyramid = &objectPool[84];
+
+		for (auto& solution : _solutions)
+		{
+			ExecuteAdhoc([&]()
+				{
+					Apply(solution.m64Diff);
+
+					auto state = GetTrackedState<StateTracker_BitfsDr>(GetCurrentFrame());
+
+					char fileName[128];
+					sprintf(fileName, "C:\\Users\\Tyler\\Documents\\repos\\sm64_tas_scripting\\res\\bitfs_osc_%d_%f_%f_%f_%f.m64",
+						state.currentOscillation, pyramid->oTiltingPyramidNormalX, pyramid->oTiltingPyramidNormalY, pyramid->oTiltingPyramidNormalZ, marioState->forwardVel);
+					ExportM64(fileName);
+
+					return true;
+				});
+		}
+
+		return true;
+	}
+
+	bool assertion() { return true; }
+
+private:
+	int _startFrame = 0;
+	const std::vector<ScattershotSolution<TOutputState>>& _solutions;
+};
+
 void InitConfiguration(Configuration& configuration)
 {
 	configuration.StartFrame = 3515;//3317;
 	configuration.PelletMaxScripts = 20;
 	configuration.PelletMaxFrameDistance = 50;
 	configuration.MaxBlocks = 1000000;
-	configuration.TotalThreads = 2;
+	configuration.TotalThreads = 3;
 	configuration.MaxShots = 1000000000;
 	configuration.PelletsPerShot = 200;
 	configuration.ShotsPerUpdate = 100;
 	configuration.StartFromRootEveryNShots = 100;
 	configuration.CsvSamplePeriod = 100;
 	configuration.MaxConsecutiveFailedPellets = 10;
-	configuration.MaxSolutions = 0;
+	configuration.MaxSolutions = 100;
 	configuration.CsvOutputDirectory = std::string("C:/Users/Tyler/Documents/repos/sm64_tas_scripting/analysis/");
 	configuration.M64Path = std::filesystem::path("C:/Users/Tyler/Documents/repos/sm64_tas_scripting/res/4_units_from_edge.m64");
 
@@ -119,17 +162,34 @@ int main(int argc, const char* argv[])
 	//M64 m64 = M64(config.M64Path);
 	//m64.load();
 
-	auto solutions = Scattershot_BitfsDr::ConfigureScattershot(config)
-		.ConfigureResourcePerPath<LibSm64Config>([&](auto path)
-			{
-				LibSm64Config resourceConfig;
-				resourceConfig.dllPath = path;
-				resourceConfig.lightweight = true;
-				resourceConfig.countryCode = CountryCode::SUPER_MARIO_64_J;
+	std::vector<ScattershotSolution<Scattershot_BitfsDr_Solution>> solutions;
+	for (int targetOscillation = 2; targetOscillation < 12; targetOscillation++)
+	{
+		solutions = Scattershot_BitfsDr::ConfigureScattershot(config)
+			.ConfigureResourcePerPath<LibSm64Config>([&](auto path)
+				{
+					LibSm64Config resourceConfig;
+					resourceConfig.dllPath = path;
+					resourceConfig.lightweight = true;
+					resourceConfig.countryCode = CountryCode::SUPER_MARIO_64_J;
 
-				return resourceConfig;
-			})
-		.Run<Scattershot_BitfsDr>();
+					return resourceConfig;
+				})
+			.PipeFrom(solutions)
+			.Run<Scattershot_BitfsDr>(targetOscillation);
+	}
+
+	M64 m64 = M64(config.M64Path);
+	m64.load();
+
+	LibSm64Config resourceConfig;
+	resourceConfig.dllPath = "C:/Users/Tyler/Documents/repos/sm64_tas_scripting/res/sm64_jp_0.dll";
+	resourceConfig.lightweight = false;
+	resourceConfig.countryCode = CountryCode::SUPER_MARIO_64_J;
+
+	TopLevelScriptBuilder<ExportSolutions<Scattershot_BitfsDr_Solution>>::Build(m64)
+		.ConfigureResource<LibSm64Config>(resourceConfig)
+		.Main(config.StartFrame, solutions);
 
 	//auto status = MainScript::MainConfig<MainScript>(m64, lib_path);
 
