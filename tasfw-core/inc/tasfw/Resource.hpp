@@ -63,12 +63,13 @@ public:
 	uint64_t nSaveStates = 0;
 
 	TState startSave = TState();
-	int64_t initialFrame = 0;
+	int64_t initialFrame = -1;
 	SlotManager<TState> slotManager = SlotManager<TState>(this);
 
 	Resource() = default;
 
 	Resource(const Resource<TState>&) = delete;
+	Resource(Resource<TState>&&) = default;
 	Resource& operator= (const Resource<TState>&) = delete;
 
 	int64_t SaveState();
@@ -76,6 +77,9 @@ public:
 	void FrameAdvance();
 	bool shouldSave(int64_t framesSinceLastSave) const;
 	bool shouldLoad(int64_t framesAhead) const;
+	uint64_t GetTotalSaveStateTime();
+	uint64_t GetTotalLoadStateTime();
+	uint64_t GetTotalFrameAdvanceTime();
 
 	//Return a conversion of the current state for the user to do with as they like (e.g. pass to a new top-level script)
 	//Requires a matching constructor in the return type that will convert TState to the return type

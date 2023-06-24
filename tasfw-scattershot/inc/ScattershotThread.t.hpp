@@ -5,45 +5,34 @@
 #include <Scattershot.hpp>
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker>
-ScattershotThread<TState, TResource, TStateTracker>::ScattershotThread(Scattershot<TState, TResource, TStateTracker>& scattershot, int id)
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+ScattershotThread<TState, TResource, TStateTracker, TOutputState>::ScattershotThread(Scattershot<TState, TResource, TStateTracker, TOutputState>& scattershot)
     : scattershot(scattershot), config(scattershot.config)
 {
-    Id = id;
-    Blocks = scattershot.AllBlocks + Id * config.MaxBlocks;
-    HashTable = scattershot.AllHashTables + Id * config.MaxHashes;
+    Id = omp_get_thread_num();
     SetRng((uint64_t)(Id + 173) * 5786766484692217813);
     
     //printf("Thread %d\n", Id);
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker>
-bool ScattershotThread<TState, TResource, TStateTracker>::validation() { return true; }
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::validation() { return true; }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker>
-bool ScattershotThread<TState, TResource, TStateTracker>::execution()
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::execution()
 {
-    LongLoad(config.StartFrame);
-    InitializeMemory();
+    Initialize();
 
-    // Add CSV columns if present
-    SingleThread([&]() { AddCsvLabels(); });
-
-    // Record start course/area for validation (generally scattershot has no cross-level value)
-    startCourse = *(short*)this->resource->addr("gCurrCourseNum");
-    startArea = *(short*)this->resource->addr("gCurrAreaIndex");
-
-    for (int shot = 0; shot <= config.MaxShots; shot++)
+    uint64_t totalShots = 0;
+    for (int shot = 0; totalShots <= config.MaxShots; shot++)
     {
-        // ALWAYS START WITH A MERGE SO THE SHARED BLOCKS ARE OK.
-        if (shot % config.ShotsPerMerge == 0)
-            SingleThread([&]() { scattershot.MergeState(shot, GetRng()); });
-
         // Pick a block to "fire a shot" at
-        if (!SelectBaseBlock(shot))
-            break;
+        ThreadLock(CriticalRegions::Blocks, [&]() { SelectBaseBlock(shot); });
 
         auto status = ExecuteAdhoc([&]()
             {
@@ -62,33 +51,114 @@ bool ScattershotThread<TState, TResource, TStateTracker>::execution()
                         consecutiveFailedPellets++;
                 }
                     
-
                 return true;
             });
 
+        size_t nSolutions = 0;
+        ThreadLock(CriticalRegions::Print, [&]()
+            {
+                ThreadLock(CriticalRegions::Solutions, [&]() { nSolutions = scattershot.Solutions.size(); });
+                ThreadLock(CriticalRegions::TotalShots, [&]() { totalShots = ++scattershot.TotalShots; });
+
+                // Periodically print progress to console
+                if (totalShots % config.ShotsPerUpdate == 0)
+                    scattershot.PrintStatus();
+            });
+
         //printf("%d %d %d %d\n", status.nLoads, status.nSaves, status.nFrameAdvances, status.executionDuration);
+
+        if (config.MaxSolutions > 0 && nSolutions >= config.MaxSolutions)
+            return true;
     }
 
     return true;
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker>
-std::string ScattershotThread<TState, TResource, TStateTracker>::GetCsvLabels()
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::Initialize()
+{
+    LongLoad(config.StartFrame);
+
+    // Load piped-in diffs as root blocks
+    if (!scattershot.InputSolutions.empty())
+    {
+        bool finishedProcessingDiffs = false;
+        uint16_t inputSolutionsIndex = 0;
+        std::shared_ptr<Segment> rootSegment = std::make_shared<Segment>(nullptr, 0, RngHash, 0);
+        while (true)
+        {
+            ThreadLock(CriticalRegions::InputSolutions, [&]()
+                {
+                    inputSolutionsIndex = scattershot.InputSolutionsIndex++;
+                    finishedProcessingDiffs = inputSolutionsIndex >= scattershot.InputSolutions.size() || inputSolutionsIndex >= 65534;
+                    if (finishedProcessingDiffs)
+                        return;
+                });
+
+            // Execute diff and save block
+            ExecuteAdhoc([&]()
+                {
+                    if (finishedProcessingDiffs)
+                    {
+                        QueueThreadById(config.Deterministic, [&]() {});
+                        return true;
+                    }
+
+                    this->Apply(scattershot.InputSolutions[inputSolutionsIndex].m64Diff);
+                    QueueThreadById(config.Deterministic, [&]()
+                        {
+                            ThreadLock(CriticalRegions::Blocks, [&]()
+                                {
+                                    scattershot.UpsertBlock(GetStateBinSafe(), false, ScattershotSolution<TOutputState>(),
+                                    GetStateFitnessSafe(), rootSegment, 1, GetRng(), inputSolutionsIndex + 1);
+                                });
+                        });
+
+                    return true;
+                });
+
+            if (finishedProcessingDiffs)
+                break;
+        }
+    }
+
+    SingleThread([&]()
+        {
+            // Initialize root block if no diffs are piped in
+            if (scattershot.InputSolutions.empty())
+                scattershot.UpsertBlock(GetStateBinSafe(), false, ScattershotSolution<TOutputState>(), GetStateFitnessSafe(), nullptr, 0, RngHash, 0);
+
+            AddCsvLabels();
+            scattershot.PrintStatus();
+        });
+
+    // Record start course/area for validation (generally scattershot has no cross-level value)
+    startCourse = *(short*)this->resource->addr("gCurrCourseNum");
+    startArea = *(short*)this->resource->addr("gCurrAreaIndex");
+}
+
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+std::string ScattershotThread<TState, TResource, TStateTracker, TOutputState>::GetCsvLabels()
 {
     return "";
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker>
-bool ScattershotThread<TState, TResource, TStateTracker>::ForceAddToCsv()
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::ForceAddToCsv()
 {
     return false;
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker>
-void ScattershotThread<TState, TResource, TStateTracker>::AddCsvLabels()
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::AddCsvLabels()
 {
     ExecuteAdhoc([&]()
         {
@@ -105,103 +175,62 @@ void ScattershotThread<TState, TResource, TStateTracker>::AddCsvLabels()
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker>
-std::string ScattershotThread<TState, TResource, TStateTracker>::GetCsvRow()
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+std::string ScattershotThread<TState, TResource, TStateTracker, TOutputState>::GetCsvRow()
 {
     return "";
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker>
-bool ScattershotThread<TState, TResource, TStateTracker>::assertion() { return true; }
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::assertion() { return true; }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker>
-void ScattershotThread<TState, TResource, TStateTracker>::InitializeMemory()
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::SelectBaseBlock(int mainIteration)
 {
-    // Initial block
-    Blocks[0].stateBin = GetStateBinSafe(); //CHEAT TODO NOTE
-    Blocks[0].tailSegment = (Segment*)malloc(sizeof(Segment)); //Instantiate root segment
-    Blocks[0].tailSegment->nScripts = 0;
-    Blocks[0].tailSegment->parent = NULL;
-    Blocks[0].tailSegment->nReferences = 0;
-    Blocks[0].tailSegment->depth = 1;
-
-    // Init local hash table.
-    for (int hashIndex = 0; hashIndex < config.MaxHashes; hashIndex++)
-        HashTable[hashIndex] = -1;
-
-    HashTable[Blocks[0].stateBin.FindNewHashIndex(HashTable, config.MaxHashes)] = 0;
-
-    // Synchronize global state
-    scattershot.AllSegments[scattershot.NSegments[Id] + Id * config.MaxLocalSegments] = Blocks[0].tailSegment;
-    scattershot.NSegments[Id]++;
-    scattershot.NBlocks[Id]++;
-
-    //LoopTimeStamp = omp_get_wtime();
-}
-
-template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker>
-bool ScattershotThread<TState, TResource, TStateTracker>::SelectBaseBlock(int mainIteration)
-{
-    int sharedBlockIndex = scattershot.NBlocks[config.TotalThreads];
+    int blockIndex = -1;
     if (mainIteration % config.StartFromRootEveryNShots == 0)
-        sharedBlockIndex = 0;
+    {
+        if (scattershot.InputSolutions.empty())
+            blockIndex = 0;
+        else
+            blockIndex = GetRng() % scattershot.InputSolutions.size();
+    }
     else
     {
-        for (int attempt = 0; attempt < 100000; attempt++) {
-            sharedBlockIndex = GetRng() % scattershot.NBlocks[config.TotalThreads];
+        while (true)
+        {
+            blockIndex = GetRng() % scattershot.Blocks.size();
 
-            if (scattershot.SharedBlocks[sharedBlockIndex].tailSegment == 0)
-            {
-                printf("Chosen block tailseg null!\n");
-                continue;
-            }
-
-            if (scattershot.SharedBlocks[sharedBlockIndex].tailSegment->depth == 0)
-            {
-                printf("Chosen block tailseg depth 0!\n");
-                continue;
-            }
-
-            if (scattershot.SharedBlocks[sharedBlockIndex].tailSegment->depth < config.MaxSegments)
+            // Don't explore beyond known solutions
+            bool isSolution;
+            ThreadLock(CriticalRegions::Solutions, [&]() { isSolution = scattershot.Solutions.contains(blockIndex); });
+            if (!isSolution)
                 break;
         }
-        if (sharedBlockIndex == scattershot.NBlocks[config.TotalThreads])
-        {
-            //printf("Could not find block!\n");
-            return false;
-        }
     }
 
-    BaseBlock = scattershot.SharedBlocks[sharedBlockIndex];
-    //if (BaseBlock.tailSeg->depth > config.MaxSegments + 2) { printf("BaseBlock depth above max!\n"); }
-    //if (BaseBlock.tailSeg->depth == 0) { printf("BaseBlock depth is zero!\n"); }
-
-    return true;
+    BaseBlockStateBin = scattershot.Blocks[blockIndex].stateBin;
+    BaseBlockTailSegment = scattershot.Blocks[blockIndex].tailSegment;
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker>
-bool ScattershotThread<TState, TResource, TStateTracker>::ValidateBaseBlock(int shot)
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::ValidateBaseBlock(int shot)
 {
-    StateBin<TState> currentStateBin = GetStateBinSafe();
-    if (BaseBlock.stateBin != currentStateBin) {
-        Segment* currentSegmentDebug = BaseBlock.tailSegment;
-        while (currentSegmentDebug != 0) {  //inefficient but probably doesn't matter
-            if (currentSegmentDebug->parent == 0)
-                //printf("Parent is null!");
-            //if (currentSegmentDebug->parent->depth + 1 != currentSegmentDebug->depth) { printf("Depths wrong"); }
-                currentSegmentDebug = currentSegmentDebug->parent;
-        }
-
+    TState currentStateBin = GetStateBinSafe();
+    if (BaseBlockStateBin != currentStateBin) {
         this->ExportM64("C:\\Users\\Tyler\\Documents\\repos\\sm64_tas_scripting\\analysis\\error.m64");
         cout << Id << " " << shot << "\n";
-        BaseBlock.stateBin.print();
-        currentStateBin.print();
-        cout << BaseBlock.stateBin.GetHash(BaseBlock.stateBin.state, false) << "\n";
-        cout << currentStateBin.GetHash(currentStateBin.state, false) << "\n";
+        //BaseBlockStateBin.print();
+        //currentStateBin.print();
+        cout << scattershot.GetHash(BaseBlockStateBin, false) << "\n";
+        cout << scattershot.GetHash(currentStateBin, false) << "\n";
         return false;
     }
 
@@ -209,67 +238,12 @@ bool ScattershotThread<TState, TResource, TStateTracker>::ValidateBaseBlock(int 
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker>
-bool ScattershotThread<TState, TResource, TStateTracker>::ProcessNewBlock(uint64_t baseRngHash, int nScripts, StateBin<TState> newStateBin)
-{
-    Block<TState> newBlock;
-
-    // Create and add block to list.
-    if (scattershot.NBlocks[Id] == config.MaxBlocks)
-    {
-        //printf("Max local blocks reached!\n");
-        return false;
-    }
-
-    //UPDATED FOR SEGMENTS STRUCT
-    newBlock = BaseBlock;
-    newBlock.stateBin = newStateBin;
-    newBlock.fitness = GetStateFitnessSafe();
-    int blockIndexLocal = newStateBin.GetBlockIndex(Blocks, HashTable, config.MaxHashes, 0, scattershot.NBlocks[Id]);
-    int blockIndex = newStateBin.GetBlockIndex(
-        scattershot.SharedBlocks, scattershot.SharedHashTable, config.MaxSharedHashes, 0, scattershot.NBlocks[config.TotalThreads]);
-
-    bool bestlocalBlock = blockIndexLocal < scattershot.NBlocks[Id]
-        && newBlock.fitness > Blocks[blockIndexLocal].fitness;
-    bool bestSharedBlockOrNew = !(blockIndex < scattershot.NBlocks[config.TotalThreads]
-        && newBlock.fitness <= scattershot.SharedBlocks[blockIndex].fitness);
-
-    if (bestlocalBlock || bestSharedBlockOrNew)
-    {
-        if (!bestlocalBlock)
-            HashTable[newStateBin.FindNewHashIndex(HashTable, config.MaxHashes)] = scattershot.NBlocks[Id];
-
-        // Create new segment
-        Segment* newSegment = (Segment*)malloc(sizeof(Segment));
-        newSegment->parent = BaseBlock.tailSegment;
-        newSegment->nReferences = bestlocalBlock ? 0 : 1;
-        newSegment->nScripts = nScripts + 1;
-        newSegment->seed = baseRngHash;
-        newSegment->depth = BaseBlock.tailSegment->depth + 1;
-        //if (newSegment->depth == 0) { printf("newSeg depth is 0!\n"); }
-        //if (BaseBlock.tailSegment->depth == 0) { printf("origBlock tailSeg depth is 0!\n"); }
-        newBlock.tailSegment = newSegment;
-        scattershot.AllSegments[Id * config.MaxLocalSegments + scattershot.NSegments[Id]] = newSegment;
-        scattershot.NSegments[Id] += 1;
-        Blocks[blockIndexLocal] = newBlock;
-
-        if (bestlocalBlock)
-            Blocks[blockIndexLocal] = newBlock;
-        else
-            Blocks[scattershot.NBlocks[Id]++] = newBlock;
-
-        return true;
-    }
-
-    return false;
-}
-
-template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker>
-void ScattershotThread<TState, TResource, TStateTracker>::AddCsvRow(int shot)
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::AddCsvRow(int shot)
 {
     bool sampled = false;
-    ThreadLock([&]()
+    ThreadLock(CriticalRegions::CsvCounters, [&]()
         {
             if (scattershot.CsvEnabled == false || scattershot.CsvRows == -1)
                 return;
@@ -296,11 +270,11 @@ void ScattershotThread<TState, TResource, TStateTracker>::AddCsvRow(int shot)
             return labelsColumns == rowColumns;
         }).executed;
 
-    ThreadLock([&]()
+    ThreadLock(CriticalRegions::CsvExport, [&]()
         {
             if (!rowValidated)
             {
-                cout << "Unable to add row to CSV. Labels/Row have different column counts.\n";
+                ThreadLock(CriticalRegions::Print, [&]() { cout << "Unable to add row to CSV. Labels/Row have different column counts.\n"; });
                 return;
             }
 
@@ -309,66 +283,45 @@ void ScattershotThread<TState, TResource, TStateTracker>::AddCsvRow(int shot)
             for (int i = 0; i < 5; i++)
             {
                 if (i > 0)
-                    cout << "Retrying CSV row " << scattershot.CsvRows << ".\n";
+                {
+                    ThreadLock(CriticalRegions::Print, [&]()
+                        {
+                            ThreadLock(CriticalRegions::CsvCounters, [&]() { cout << "Retrying CSV row " << scattershot.CsvRows << ".\n"; });
+                        });
+                }
 
                 scattershot.Csv << shot << "," << this->GetCurrentFrame() << "," << sampled << "," << row << "\n";
                 if (!scattershot.Csv.fail())
                 {
-                    scattershot.CsvRows++;
+                    ThreadLock(CriticalRegions::CsvCounters, [&]() { scattershot.CsvRows++; });
                     return;
                 }
                 else {
-                    cout << "Error writing to CSV row " << scattershot.CsvRows << ": " << scattershot.Csv.rdstate() << "\n";
+                    ThreadLock(CriticalRegions::Print, [&]() { cout << "Error writing to CSV row " << scattershot.CsvRows << ": " << scattershot.Csv.rdstate() << "\n"; });
                     scattershot.Csv.close();
                     scattershot.Csv = std::ofstream(scattershot.CsvFileName);
                     scattershot.Csv.seekp(failedRowPos);
                 }
             }
 
-            cout << "Exceeded CSV export retry count. Disabling CSV export.\n";
+            ThreadLock(CriticalRegions::Print, [&]() { cout << "Exceeded CSV export retry count. Disabling CSV export.\n"; });
             scattershot.CsvEnabled = false;
         });
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker>
-template <typename F>
-void ScattershotThread<TState, TResource, TStateTracker>::SingleThread(F func)
-{
-    #pragma omp barrier
-    {
-        if (omp_get_thread_num() == 0)
-            func();
-    }
-    #pragma omp barrier
-
-    return;
-}
-
-template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker>
-template <typename F>
-void ScattershotThread<TState, TResource, TStateTracker>::ThreadLock(F func)
-{
-    #pragma omp critical
-    {
-        func();
-    }
-
-    return;
-}
-
-template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker>
-bool ScattershotThread<TState, TResource, TStateTracker>::ValidateCourseAndArea()
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::ValidateCourseAndArea()
 {
     return startCourse == *(short*)this->resource->addr("gCurrCourseNum")
         && startArea == *(short*)this->resource->addr("gCurrAreaIndex");
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker>
-bool ScattershotThread<TState, TResource, TStateTracker>::ChooseScriptAndApply()
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::ChooseScriptAndApply()
 {
     movementOptions = std::unordered_set<MovementOption>();
 
@@ -384,13 +337,14 @@ bool ScattershotThread<TState, TResource, TStateTracker>::ChooseScriptAndApply()
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker>
-StateBin<TState> ScattershotThread<TState, TResource, TStateTracker>::GetStateBinSafe()
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+TState ScattershotThread<TState, TResource, TStateTracker, TOutputState>::GetStateBinSafe()
 {
-    StateBin<TState> stateBin;
+    TState stateBin;
     ExecuteAdhoc([&]()
         {
-            stateBin = StateBin<TState>(GetStateBin());
+            stateBin = TState(GetStateBin());
             return true;
         });
 
@@ -398,8 +352,9 @@ StateBin<TState> ScattershotThread<TState, TResource, TStateTracker>::GetStateBi
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker>
-float ScattershotThread<TState, TResource, TStateTracker>::GetStateFitnessSafe()
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+float ScattershotThread<TState, TResource, TStateTracker, TOutputState>::GetStateFitnessSafe()
 {
     float fitness;
     ExecuteAdhoc([&]()
@@ -412,48 +367,53 @@ float ScattershotThread<TState, TResource, TStateTracker>::GetStateFitnessSafe()
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker>
-AdhocBaseScriptStatus ScattershotThread<TState, TResource, TStateTracker>::DecodeBaseBlockDiffAndApply()
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+AdhocBaseScriptStatus ScattershotThread<TState, TResource, TStateTracker, TOutputState>::DecodeBaseBlockDiffAndApply()
 {
     int64_t postScriptFrame = -1;
     auto status = ModifyAdhoc([&]()
         {
-            //if (tState.BaseBlock.tailSeg == 0) printf("origBlock has null tailSeg");
+            std::shared_ptr<Segment> tailSegment = BaseBlockTailSegment;
+            std::vector<std::shared_ptr<Segment>> segments(tailSegment->depth);
+            for (auto currentSegment = tailSegment; currentSegment->depth > 0; currentSegment = currentSegment->parent)
+                segments[currentSegment->depth - 1] = currentSegment;
 
-            Segment* tailSegment = BaseBlock.tailSegment;
-            Segment* currentSegment;
-            int tailSegmentDepth = tailSegment->depth;
-            for (int i = 1; i <= tailSegmentDepth; i++) {
-                currentSegment = tailSegment;
-                while (currentSegment->depth != i) // inefficient but probably doesn't matter
-                {
-                    //if (currentSegment->parent == 0) printf("Parent is null!");
-                    //if (currentSegment->parent->depth + 1 != currentSegment->depth) { printf("Depths wrong"); }
-                    currentSegment = currentSegment->parent;
-                }
-
+            for (auto& currentSegment : segments)
+            {
                 SetTempRng(currentSegment->seed);
                 for (int script = 0; script < currentSegment->nScripts; script++)
-                    ChooseScriptAndApply();
+                {
+                    if (currentSegment->pipedDiff1Index > 0)
+                        this->Apply(scattershot.InputSolutions[currentSegment->pipedDiff1Index - 1].m64Diff);
+                    else
+                        ChooseScriptAndApply();
+
+                    // This is here so the queued upserts don't block on the entire decoding
+                    QueueThreadById(config.Deterministic, [&]() {});
+                }
+                
             }
 
             postScriptFrame = this->GetCurrentFrame();
             return true;
         });
 
-    // Needed to sync with original execution (block is saved after individual script diff is applied)
+    // Needed to sync with original execution (block is saved after individual script diff is applied).
+    // Note that this often does nothing. It does not hurt performance unless it rewinds.
     // TODO: Consider changing TASFW Modify methods to persist frame cursor so this isn't necessary
     this->Load(postScriptFrame);
     return status;
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker>
-AdhocBaseScriptStatus ScattershotThread<TState, TResource, TStateTracker>::ExecuteFromBaseBlockAndEncode(int shot)
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+AdhocBaseScriptStatus ScattershotThread<TState, TResource, TStateTracker, TOutputState>::ExecuteFromBaseBlockAndEncode(int shot)
 {
     return ExecuteAdhoc([&]()
         {
-            StateBin<TState> prevStateBin = GetStateBinSafe();
+            TState prevStateBin = BaseBlockStateBin;
             uint64_t baseRngHash = RngHash;
             bool anyNovelScripts = false; // Mark pellet as failed if 0 scripts were successful
 
@@ -465,34 +425,46 @@ AdhocBaseScriptStatus ScattershotThread<TState, TResource, TStateTracker>::Execu
                 bool updated = ChooseScriptAndApply();
                 SetRng(RngHashTemp);
 
-                ThreadLock([&]() { scattershot.ScriptCount++; });
-
                 // Validation
-                if (!updated || !ValidateCourseAndArea() || !ExecuteAdhoc([&]() { return ValidateState(); }).executed)
-                {
-                    ThreadLock([&]() { scattershot.FailedScripts++; });
-                    break;
-                }  
+                bool validated = updated && ValidateCourseAndArea() && ExecuteAdhoc([&]() { return ValidateState(); }).executed;
 
                 // Create and add block to list if it is new.
-                auto newStateBin = GetStateBinSafe();
-                /*
-                if (newStateBin.GetHash(newStateBin.state, false) == 15818986094471996600ull)
-                {
-                    this->ExportM64("C:\\Users\\Tyler\\Documents\\repos\\sm64_tas_scripting\\analysis\\error0.m64");
-                    cout << Id << " " << shot << "\n";
-                    newStateBin.print();
-                }
-                */
+                bool novelScript = false;
+                auto newStateBin = validated ? GetStateBinSafe() : TState();
+                float fitness = validated ? GetStateFitness() : 0.f;
+                bool isSolution = validated ? ExecuteAdhoc([&]() { return IsSolution(); }).executed : false;
+                ScattershotSolution<TOutputState> solution = isSolution ? ScattershotSolution<TOutputState>(GetSolutionState(), this->GetInputs(config.StartFrame, this->GetCurrentFrame() - 1))
+                    : ScattershotSolution<TOutputState>();
+                QueueThreadById(config.Deterministic, [&]()
+                    {
+                        ThreadLock(CriticalRegions::Blocks, [&]()
+                            {
+                                if (validated && newStateBin != prevStateBin && newStateBin != BaseBlockStateBin)
+                                    novelScript = scattershot.UpsertBlock(newStateBin, isSolution, solution, fitness, BaseBlockTailSegment, n + 1, baseRngHash, 0);
+                            });
+                    });
 
-                if (newStateBin != prevStateBin && newStateBin != BaseBlock.stateBin && ProcessNewBlock(baseRngHash, n, newStateBin))
+                // Update script result count
+                ThreadLock(CriticalRegions::ScriptCounters, [&]()
+                    {
+                        scattershot.ScriptCount++;
+
+                        if (!validated)
+                            scattershot.FailedScripts++;
+                        else if (novelScript)
+                            scattershot.NovelScripts++;
+                        else
+                            scattershot.RedundantScripts++;
+                    });
+
+                if (!validated)
+                    break;
+
+                if (novelScript)
                 {
                     anyNovelScripts |= true;
-                    ThreadLock([&]() { scattershot.NovelScripts++; });
                     AddCsvRow(shot);
                 }
-                else
-                    ThreadLock([&]() { scattershot.RedundantScripts++; });
 
                 prevStateBin = newStateBin;
             }
@@ -502,8 +474,9 @@ AdhocBaseScriptStatus ScattershotThread<TState, TResource, TStateTracker>::Execu
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker>
-uint64_t ScattershotThread<TState, TResource, TStateTracker>::GetRng()
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+uint64_t ScattershotThread<TState, TResource, TStateTracker, TOutputState>::GetRng()
 {
     uint64_t rngHashPrev = RngHash;
     RngHash = GetHash(RngHash);
@@ -511,15 +484,17 @@ uint64_t ScattershotThread<TState, TResource, TStateTracker>::GetRng()
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker>
-void ScattershotThread<TState, TResource, TStateTracker>::SetRng(uint64_t rngHash)
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::SetRng(uint64_t rngHash)
 {
     RngHash = rngHash;
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker>
-uint64_t ScattershotThread<TState, TResource, TStateTracker>::GetTempRng()
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+uint64_t ScattershotThread<TState, TResource, TStateTracker, TOutputState>::GetTempRng()
 {
     uint64_t rngHashPrev = RngHashTemp;
     RngHashTemp = GetHash(RngHashTemp);
@@ -527,29 +502,32 @@ uint64_t ScattershotThread<TState, TResource, TStateTracker>::GetTempRng()
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker>
-void ScattershotThread<TState, TResource, TStateTracker>::SetTempRng(uint64_t rngHash)
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::SetTempRng(uint64_t rngHash)
 {
     RngHashTemp = rngHash;
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker>
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
 template <typename T>
-uint64_t ScattershotThread<TState, TResource, TStateTracker>::GetHash(const T& toHash) const
+uint64_t ScattershotThread<TState, TResource, TStateTracker, TOutputState>::GetHash(const T& toHash) const
 {
     std::hash<std::byte> byteHasher;
     const std::byte* data = reinterpret_cast<const std::byte*>(&toHash);
     uint64_t hashValue = 0;
-    for (std::size_t i = 0; i < sizeof(T); ++i)
+    for (std::size_t i = 0; i < sizeof(T); i++)
         hashValue ^= static_cast<uint64_t>(byteHasher(data[i])) + 0x9e3779b97f4a7c15ull + (hashValue << 6) + (hashValue >> 2);
 
     return hashValue;
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker>
-void ScattershotThread<TState, TResource, TStateTracker>::AddRandomMovementOption(std::map<MovementOption, double> weightedOptions)
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::AddRandomMovementOption(std::map<MovementOption, double> weightedOptions)
 {
     if (weightedOptions.empty())
         return;
@@ -587,8 +565,9 @@ void ScattershotThread<TState, TResource, TStateTracker>::AddRandomMovementOptio
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker>
-void ScattershotThread<TState, TResource, TStateTracker>::AddMovementOption(MovementOption movementOption, double probability)
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::AddMovementOption(MovementOption movementOption, double probability)
 {
     if (probability <= 0.0)
         return;
@@ -598,15 +577,17 @@ void ScattershotThread<TState, TResource, TStateTracker>::AddMovementOption(Move
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker>
-bool ScattershotThread<TState, TResource, TStateTracker>::CheckMovementOptions(MovementOption movementOption)
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::CheckMovementOptions(MovementOption movementOption)
 {
     return movementOptions.contains(movementOption);
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker>
-Inputs ScattershotThread<TState, TResource, TStateTracker>::RandomInputs(std::map<Buttons, double> buttonProbabilities)
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+Inputs ScattershotThread<TState, TResource, TStateTracker, TOutputState>::RandomInputs(std::map<Buttons, double> buttonProbabilities)
 {
     Inputs inputs;
 
