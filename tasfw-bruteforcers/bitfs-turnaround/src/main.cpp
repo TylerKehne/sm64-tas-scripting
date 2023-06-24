@@ -31,7 +31,7 @@ using namespace std;
 
 #pragma comment(lib, "Ws2_32.lib")
 
-class MainScript : public TopLevelScript<LibSm64>
+class TestScript : public TopLevelScript<LibSm64>
 {
 public:
 	bool validation() { return true; }
@@ -181,10 +181,7 @@ int main(int argc, const char* argv[])
 	for (int targetOscillation = 2; targetOscillation < 20; targetOscillation++)
 	{
 		solutions = Scattershot_BitfsDr::ConfigureScattershot(config)
-			.ImportResourcePerThread([&](auto threadId)
-				{
-					return &resources[threadId];
-				})
+			.ImportResourcePerThread([&](auto threadId) { return &resources[threadId]; })
 			.PipeFrom(solutions)
 			.Run<Scattershot_BitfsDr>(targetOscillation);
 	}
@@ -192,13 +189,8 @@ int main(int argc, const char* argv[])
 	M64 m64 = M64(config.M64Path);
 	m64.load();
 
-	LibSm64Config resourceConfig;
-	resourceConfig.dllPath = "C:/Users/Tyler/Documents/repos/sm64_tas_scripting/res/sm64_jp_0.dll";
-	resourceConfig.lightweight = false;
-	resourceConfig.countryCode = CountryCode::SUPER_MARIO_64_J;
-
 	TopLevelScriptBuilder<ExportSolutions<Scattershot_BitfsDr_Solution>>::Build(m64)
-		.ConfigureResource<LibSm64Config>(resourceConfig)
+		.ImportResource(&resources[0])
 		.Main(config.StartFrame, solutions);
 
 	//auto status = MainScript::MainConfig<MainScript>(m64, lib_path);

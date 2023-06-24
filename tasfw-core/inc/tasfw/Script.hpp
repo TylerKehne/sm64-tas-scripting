@@ -774,11 +774,14 @@ public:
 	{
 		TTopLevelScript script = TTopLevelScript(std::forward<Ts>(params)...);
 
+		// Initialize start save if resource is new. If not, load start save to reset resource.
 		if (resource->initialFrame == -1)
 		{
 			resource->save(resource->startSave);
 			resource->initialFrame = 0;
 		}
+		else
+			resource->load(resource->startSave);
 
 		return InitializeAndRun(m64, script, resource);
 	}

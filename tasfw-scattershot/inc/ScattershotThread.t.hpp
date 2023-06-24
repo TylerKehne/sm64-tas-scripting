@@ -193,8 +193,13 @@ template <class TState, derived_from_specialization_of<Resource> TResource,
 void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::SelectBaseBlock(int mainIteration)
 {
     int blockIndex = -1;
-    if (scattershot.InputSolutions.empty() && mainIteration % config.StartFromRootEveryNShots == 0)
-        blockIndex = 0;
+    if (mainIteration % config.StartFromRootEveryNShots == 0)
+    {
+        if (scattershot.InputSolutions.empty())
+            blockIndex = 0;
+        else
+            blockIndex = GetRng() % scattershot.InputSolutions.size();
+    }
     else
     {
         while (true)
