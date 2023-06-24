@@ -69,6 +69,7 @@ public:
 	Resource() = default;
 
 	Resource(const Resource<TState>&) = delete;
+	Resource(Resource<TState>&&) = default;
 	Resource& operator= (const Resource<TState>&) = delete;
 
 	int64_t SaveState();

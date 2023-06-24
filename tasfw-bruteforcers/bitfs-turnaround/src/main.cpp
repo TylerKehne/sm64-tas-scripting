@@ -165,18 +165,25 @@ int main(int argc, const char* argv[])
 	//M64 m64 = M64(config.M64Path);
 	//m64.load();
 
+	std::vector<LibSm64> resources;
+	resources.reserve(config.ResourcePaths.size());
+	for (auto& path : config.ResourcePaths)
+	{
+		LibSm64Config resourceConfig;
+		resourceConfig.dllPath = path;
+		resourceConfig.lightweight = true;
+		resourceConfig.countryCode = CountryCode::SUPER_MARIO_64_J;
+
+		resources.emplace_back(resourceConfig);
+	}
+
 	std::vector<ScattershotSolution<Scattershot_BitfsDr_Solution>> solutions;
 	for (int targetOscillation = 2; targetOscillation < 20; targetOscillation++)
 	{
 		solutions = Scattershot_BitfsDr::ConfigureScattershot(config)
-			.ConfigureResourcePerPath<LibSm64Config>([&](auto path)
+			.ImportResourcePerThread([&](auto threadId)
 				{
-					LibSm64Config resourceConfig;
-					resourceConfig.dllPath = path;
-					resourceConfig.lightweight = true;
-					resourceConfig.countryCode = CountryCode::SUPER_MARIO_64_J;
-
-					return resourceConfig;
+					return &resources[threadId];
 				})
 			.PipeFrom(solutions)
 			.Run<Scattershot_BitfsDr>(targetOscillation);

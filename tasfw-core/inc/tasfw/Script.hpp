@@ -765,22 +765,22 @@ public:
 
 		resource.initialFrame = 0;
 
-		return InitializeAndRun(m64, script, resource);
+		return InitializeAndRun(m64, script, &resource);
 	}
 
 	template <std::derived_from<TopLevelScript<TResource, TStateTracker>> TTopLevelScript, typename... Ts>
-		requires(std::constructible_from<TTopLevelScript, Ts...>&& std::constructible_from<TResource>)
+		requires(std::constructible_from<TTopLevelScript, Ts...>)
 	static ScriptStatus<TTopLevelScript> MainImport(M64& m64, TResource* resource, Ts&&... params)
 	{
 		TTopLevelScript script = TTopLevelScript(std::forward<Ts>(params)...);
 
 		if (resource->initialFrame == -1)
 		{
-			resource->save(resource.startSave);
-			resource.initialFrame = 0;
+			resource->save(resource->startSave);
+			resource->initialFrame = 0;
 		}
 
-		return InitializeAndRun(m64, script, *resource);
+		return InitializeAndRun(m64, script, resource);
 	}
 
 	template <std::derived_from<TopLevelScript<TResource, TStateTracker>> TTopLevelScript, typename TResourceConfig, typename... Ts>
@@ -793,7 +793,7 @@ public:
 
 		resource.initialFrame = 0;
 
-		return InitializeAndRun(m64, script, resource);
+		return InitializeAndRun(m64, script, &resource);
 	}
 
 	template <std::derived_from<TopLevelScript<TResource, TStateTracker>> TTopLevelScript, class TState, typename... Ts>
@@ -809,7 +809,7 @@ public:
 
 		resource.initialFrame = save.initialFrame;
 
-		return InitializeAndRun(m64, script, resource);
+		return InitializeAndRun(m64, script, &resource);
 	}
 
 	template <std::derived_from<TopLevelScript<TResource, TStateTracker>> TTopLevelScript, class TState, typename TResourceConfig, typename... Ts>
@@ -825,7 +825,7 @@ public:
 
 		resource.initialFrame = save.initialFrame;
 
-		return InitializeAndRun(m64, script, resource);
+		return InitializeAndRun(m64, script, &resource);
 	}
 
 	virtual bool validation() override = 0;
@@ -851,26 +851,26 @@ private:
 	InputsMetadata<TResource> GetInputsMetadata(int64_t frame) override;
 
 	template <std::derived_from<TopLevelScript<TResource, TStateTracker>> TTopLevelScript>
-	static ScriptStatus<TTopLevelScript> InitializeAndRun(M64& m64, TTopLevelScript& script, TResource& resource)
+	static ScriptStatus<TTopLevelScript> InitializeAndRun(M64& m64, TTopLevelScript& script, TResource* resource)
 	{
 		script._m64 = &m64;
-		script.resource = &resource;
+		script.resource = resource;
 		ScriptFriend<TResource>::Initialize(&script, nullptr);
 
 		script.TrackState(&script, script.GetInputsMetadata(ScriptFriend<TResource>::GetCurrentFrame(&script)));
 
-		uint64_t loadStateTimeStart = resource.GetTotalLoadStateTime();
-		uint64_t saveStateTimeStart = resource.GetTotalSaveStateTime();
-		uint64_t advanceFrameTimeStart = resource.GetTotalFrameAdvanceTime();
+		uint64_t loadStateTimeStart = resource->GetTotalLoadStateTime();
+		uint64_t saveStateTimeStart = resource->GetTotalSaveStateTime();
+		uint64_t advanceFrameTimeStart = resource->GetTotalFrameAdvanceTime();
 
 		uint64_t start = get_time();
 		ScriptFriend<TResource>::Run(&script);
 		uint64_t finish = get_time();
 
 		auto& baseStatus = ScriptFriend<TResource>::GetBaseStatus(&script)[0];
-		baseStatus.loadDuration = resource.GetTotalLoadStateTime() - loadStateTimeStart;
-		baseStatus.saveDuration = resource.GetTotalSaveStateTime() - saveStateTimeStart;
-		baseStatus.advanceFrameDuration = resource.GetTotalFrameAdvanceTime() - advanceFrameTimeStart;
+		baseStatus.loadDuration = resource->GetTotalLoadStateTime() - loadStateTimeStart;
+		baseStatus.saveDuration = resource->GetTotalSaveStateTime() - saveStateTimeStart;
+		baseStatus.advanceFrameDuration = resource->GetTotalFrameAdvanceTime() - advanceFrameTimeStart;
 		baseStatus.totalDuration = finish - start;
 
 		//Dispose of slot handles before resource goes out of scope because they trigger destructor events in the resource.
