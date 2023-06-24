@@ -102,7 +102,8 @@ bool Scattershot<TState, TResource, TStateTracker, TOutputState>::UpsertBlock(
             BlockIndices[stateBinHash % BlockIndices.size()] = blockIndex;
 
             if (isSolution)
-                Solutions[blockIndex] = solution;
+                ScattershotThread<TState, TResource, TStateTracker, TOutputState>::ThreadLock(
+                    CriticalRegions::Solutions, [&]() { Solutions[blockIndex] = solution; });
 
             return true;
         }
@@ -119,7 +120,8 @@ bool Scattershot<TState, TResource, TStateTracker, TOutputState>::UpsertBlock(
                 Blocks[blockIndex].tailSegment = std::make_shared<Segment>(parentSegment, segmentSeed, nScripts, pipedDiff1Index);
 
                 if (isSolution)
-                    Solutions[blockIndex] = solution;
+                    ScattershotThread<TState, TResource, TStateTracker, TOutputState>::ThreadLock(
+                        CriticalRegions::Solutions, [&]() { Solutions[blockIndex] = solution; });
 
                 return true;
             }
@@ -141,11 +143,14 @@ void Scattershot<TState, TResource, TStateTracker, TOutputState>::PrintStatus()
     // Print cumulative script results
     if (ScriptCount != 0)
     {
-        int futility = double(FailedScripts) / double(ScriptCount) * 100;
-        int redundancy = double(RedundantScripts) / double(ScriptCount) * 100;
-        int discovery = double(NovelScripts) / double(ScriptCount) * 100;
+        ScattershotThread<TState, TResource, TStateTracker, TOutputState>::ThreadLock(CriticalRegions::ScriptCounters, [&]()
+            {
+                int futility = double(FailedScripts) / double(ScriptCount) * 100;
+                int redundancy = double(RedundantScripts) / double(ScriptCount) * 100;
+                int discovery = double(NovelScripts) / double(ScriptCount) * 100;
 
-        printf("Futility: %d%% Redundancy: %d%% Discovery: %d%%\n", futility, redundancy, discovery);
+                printf("Futility: %d%% Redundancy: %d%% Discovery: %d%%\n", futility, redundancy, discovery);
+            });
     }
 
     if (CsvRows != -1)

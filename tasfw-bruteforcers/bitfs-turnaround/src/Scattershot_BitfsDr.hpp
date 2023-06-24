@@ -92,7 +92,10 @@ public:
 
         // Calculate recursive metrics
         int64_t currentFrame = GetCurrentFrame();
-        auto lastFrameState = GetTrackedState<StateTracker_BitfsDr>(currentFrame - 1);
+        CustomScriptStatus lastFrameState;
+        if (currentFrame > 3515)
+            lastFrameState = GetTrackedState<StateTracker_BitfsDr>(currentFrame - 1);
+
         if (!lastFrameState.initialized)
             return true;
 

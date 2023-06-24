@@ -92,6 +92,8 @@ public:
 		Object* objectPool = (Object*)(resource->addr("gObjectPool"));
 		Object* pyramid = &objectPool[84];
 
+		LongLoad(_startFrame);
+
 		for (auto& solution : _solutions)
 		{
 			ExecuteAdhoc([&]()
@@ -125,14 +127,15 @@ void InitConfiguration(Configuration& configuration)
 	configuration.PelletMaxScripts = 20;
 	configuration.PelletMaxFrameDistance = 50;
 	configuration.MaxBlocks = 1000000;
-	configuration.TotalThreads = 3;
-	configuration.MaxShots = 1000000000;
+	configuration.TotalThreads = 2;
+	configuration.MaxShots = 3000;
 	configuration.PelletsPerShot = 200;
-	configuration.ShotsPerUpdate = 100;
+	configuration.ShotsPerUpdate = 300;
 	configuration.StartFromRootEveryNShots = 100;
-	configuration.CsvSamplePeriod = 100;
+	configuration.CsvSamplePeriod = 0;
 	configuration.MaxConsecutiveFailedPellets = 10;
 	configuration.MaxSolutions = 100;
+	configuration.Deterministic = false;
 	configuration.CsvOutputDirectory = std::string("C:/Users/Tyler/Documents/repos/sm64_tas_scripting/analysis/");
 	configuration.M64Path = std::filesystem::path("C:/Users/Tyler/Documents/repos/sm64_tas_scripting/res/4_units_from_edge.m64");
 
@@ -163,7 +166,7 @@ int main(int argc, const char* argv[])
 	//m64.load();
 
 	std::vector<ScattershotSolution<Scattershot_BitfsDr_Solution>> solutions;
-	for (int targetOscillation = 2; targetOscillation < 12; targetOscillation++)
+	for (int targetOscillation = 2; targetOscillation < 20; targetOscillation++)
 	{
 		solutions = Scattershot_BitfsDr::ConfigureScattershot(config)
 			.ConfigureResourcePerPath<LibSm64Config>([&](auto path)

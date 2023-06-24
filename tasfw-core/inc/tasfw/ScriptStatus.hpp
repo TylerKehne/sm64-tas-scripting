@@ -23,6 +23,10 @@ public:
 	uint64_t validationDuration = 0;
 	uint64_t executionDuration = 0;
 	uint64_t assertionDuration = 0;
+	uint64_t totalDuration = 0;
+	uint64_t saveDuration = 0;
+	uint64_t loadDuration = 0;
+	uint64_t advanceFrameDuration = 0;
 	uint64_t nLoads = 0;
 	uint64_t nSaves = 0;
 	uint64_t nFrameAdvances = 0;
@@ -45,7 +49,10 @@ class AdhocBaseScriptStatus
 {
 public:
 	bool executed = false;
-	uint64_t executionDuration = 0;
+	uint64_t totalDuration = 0;
+	uint64_t saveDuration = 0;
+	uint64_t loadDuration = 0;
+	uint64_t advanceFrameDuration = 0;
 	uint64_t nLoads = 0;
 	uint64_t nSaves = 0;
 	uint64_t nFrameAdvances = 0;
@@ -56,11 +63,14 @@ public:
 	AdhocBaseScriptStatus(BaseScriptStatus baseStatus)
 	{
 		executed = baseStatus.executed;
-		executionDuration = baseStatus.executionDuration;
 		nLoads = baseStatus.nLoads;
 		nSaves = baseStatus.nSaves;
 		nFrameAdvances = baseStatus.nFrameAdvances;
 		m64Diff = baseStatus.m64Diff;
+		totalDuration = baseStatus.totalDuration;
+		saveDuration = baseStatus.saveDuration;
+		loadDuration = baseStatus.loadDuration;
+		advanceFrameDuration = baseStatus.advanceFrameDuration;
 	}
 };
 

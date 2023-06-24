@@ -28,10 +28,11 @@ bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::executio
 {
     Initialize();
 
-    for (int shot = 0; shot <= config.MaxShots; shot++)
+    uint64_t totalShots = 0;
+    for (int shot = 0; totalShots <= config.MaxShots; shot++)
     {
         // Pick a block to "fire a shot" at
-        ThreadLock([&]() { SelectBaseBlock(shot); });
+        ThreadLock(CriticalRegions::Blocks, [&]() { SelectBaseBlock(shot); });
 
         auto status = ExecuteAdhoc([&]()
             {
@@ -54,12 +55,13 @@ bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::executio
             });
 
         size_t nSolutions = 0;
-        ThreadLock([&]()
+        ThreadLock(CriticalRegions::Print, [&]()
             {
-                nSolutions = scattershot.Solutions.size();
+                ThreadLock(CriticalRegions::Solutions, [&]() { nSolutions = scattershot.Solutions.size(); });
+                ThreadLock(CriticalRegions::TotalShots, [&]() { totalShots = ++scattershot.TotalShots; });
 
                 // Periodically print progress to console
-                if (++scattershot.TotalShots % config.ShotsPerUpdate == 0)
+                if (totalShots % config.ShotsPerUpdate == 0)
                     scattershot.PrintStatus();
             });
 
@@ -83,25 +85,38 @@ void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::Initiali
     if (!scattershot.InputSolutions.empty())
     {
         bool finishedProcessingDiffs = false;
+        uint16_t inputSolutionsIndex = 0;
         std::shared_ptr<Segment> rootSegment = std::make_shared<Segment>(nullptr, 0, RngHash, 0);
         while (true)
         {
-            ThreadLock([&]()
+            ThreadLock(CriticalRegions::InputSolutions, [&]()
                 {
-                    finishedProcessingDiffs = scattershot.InputSolutionsIndex >= scattershot.InputSolutions.size() || scattershot.InputSolutionsIndex >= 65534;
+                    inputSolutionsIndex = scattershot.InputSolutionsIndex++;
+                    finishedProcessingDiffs = inputSolutionsIndex >= scattershot.InputSolutions.size() || inputSolutionsIndex >= 65534;
                     if (finishedProcessingDiffs)
                         return;
+                });
 
-                    // Execute diff and save block
-                    ExecuteAdhoc([&]()
+            // Execute diff and save block
+            ExecuteAdhoc([&]()
+                {
+                    if (finishedProcessingDiffs)
+                    {
+                        QueueThreadById(config.Deterministic, [&]() {});
+                        return true;
+                    }
+
+                    this->Apply(scattershot.InputSolutions[inputSolutionsIndex].m64Diff);
+                    QueueThreadById(config.Deterministic, [&]()
                         {
-                            this->Apply(scattershot.InputSolutions[scattershot.InputSolutionsIndex].m64Diff);
-                            scattershot.UpsertBlock(GetStateBinSafe(), false, ScattershotSolution<TOutputState>(),
-                                GetStateFitnessSafe(), rootSegment, 1, GetRng(), scattershot.InputSolutionsIndex + 1);
-                            return true;
+                            ThreadLock(CriticalRegions::Blocks, [&]()
+                                {
+                                    scattershot.UpsertBlock(GetStateBinSafe(), false, ScattershotSolution<TOutputState>(),
+                                    GetStateFitnessSafe(), rootSegment, 1, GetRng(), inputSolutionsIndex + 1);
+                                });
                         });
 
-                    scattershot.InputSolutionsIndex++;
+                    return true;
                 });
 
             if (finishedProcessingDiffs)
@@ -178,7 +193,7 @@ template <class TState, derived_from_specialization_of<Resource> TResource,
 void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::SelectBaseBlock(int mainIteration)
 {
     int blockIndex = -1;
-    if (mainIteration % config.StartFromRootEveryNShots == 0)
+    if (scattershot.InputSolutions.empty() && mainIteration % config.StartFromRootEveryNShots == 0)
         blockIndex = 0;
     else
     {
@@ -187,7 +202,9 @@ void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::SelectBa
             blockIndex = GetRng() % scattershot.Blocks.size();
 
             // Don't explore beyond known solutions
-            if (!scattershot.Solutions.contains(blockIndex))
+            bool isSolution;
+            ThreadLock(CriticalRegions::Solutions, [&]() { isSolution = scattershot.Solutions.contains(blockIndex); });
+            if (!isSolution)
                 break;
         }
     }
@@ -221,7 +238,7 @@ template <class TState, derived_from_specialization_of<Resource> TResource,
 void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::AddCsvRow(int shot)
 {
     bool sampled = false;
-    ThreadLock([&]()
+    ThreadLock(CriticalRegions::CsvCounters, [&]()
         {
             if (scattershot.CsvEnabled == false || scattershot.CsvRows == -1)
                 return;
@@ -248,11 +265,11 @@ void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::AddCsvRo
             return labelsColumns == rowColumns;
         }).executed;
 
-    ThreadLock([&]()
+    ThreadLock(CriticalRegions::CsvExport, [&]()
         {
             if (!rowValidated)
             {
-                cout << "Unable to add row to CSV. Labels/Row have different column counts.\n";
+                ThreadLock(CriticalRegions::Print, [&]() { cout << "Unable to add row to CSV. Labels/Row have different column counts.\n"; });
                 return;
             }
 
@@ -261,23 +278,28 @@ void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::AddCsvRo
             for (int i = 0; i < 5; i++)
             {
                 if (i > 0)
-                    cout << "Retrying CSV row " << scattershot.CsvRows << ".\n";
+                {
+                    ThreadLock(CriticalRegions::Print, [&]()
+                        {
+                            ThreadLock(CriticalRegions::CsvCounters, [&]() { cout << "Retrying CSV row " << scattershot.CsvRows << ".\n"; });
+                        });
+                }
 
                 scattershot.Csv << shot << "," << this->GetCurrentFrame() << "," << sampled << "," << row << "\n";
                 if (!scattershot.Csv.fail())
                 {
-                    scattershot.CsvRows++;
+                    ThreadLock(CriticalRegions::CsvCounters, [&]() { scattershot.CsvRows++; });
                     return;
                 }
                 else {
-                    cout << "Error writing to CSV row " << scattershot.CsvRows << ": " << scattershot.Csv.rdstate() << "\n";
+                    ThreadLock(CriticalRegions::Print, [&]() { cout << "Error writing to CSV row " << scattershot.CsvRows << ": " << scattershot.Csv.rdstate() << "\n"; });
                     scattershot.Csv.close();
                     scattershot.Csv = std::ofstream(scattershot.CsvFileName);
                     scattershot.Csv.seekp(failedRowPos);
                 }
             }
 
-            cout << "Exceeded CSV export retry count. Disabling CSV export.\n";
+            ThreadLock(CriticalRegions::Print, [&]() { cout << "Exceeded CSV export retry count. Disabling CSV export.\n"; });
             scattershot.CsvEnabled = false;
         });
 }
@@ -363,7 +385,7 @@ AdhocBaseScriptStatus ScattershotThread<TState, TResource, TStateTracker, TOutpu
                         ChooseScriptAndApply();
 
                     // This is here so the queued upserts don't block on the entire decoding
-                    QueueThreadById([&]() {});
+                    QueueThreadById(config.Deterministic, [&]() {});
                 }
                 
             }
@@ -408,14 +430,17 @@ AdhocBaseScriptStatus ScattershotThread<TState, TResource, TStateTracker, TOutpu
                 bool isSolution = validated ? ExecuteAdhoc([&]() { return IsSolution(); }).executed : false;
                 ScattershotSolution<TOutputState> solution = isSolution ? ScattershotSolution<TOutputState>(GetSolutionState(), this->GetInputs(config.StartFrame, this->GetCurrentFrame() - 1))
                     : ScattershotSolution<TOutputState>();
-                QueueThreadById([&]()
+                QueueThreadById(config.Deterministic, [&]()
                     {
-                        if (validated && newStateBin != prevStateBin && newStateBin != BaseBlockStateBin)
-                            novelScript = scattershot.UpsertBlock(newStateBin, isSolution, solution, fitness, BaseBlockTailSegment, n + 1, baseRngHash, 0);
+                        ThreadLock(CriticalRegions::Blocks, [&]()
+                            {
+                                if (validated && newStateBin != prevStateBin && newStateBin != BaseBlockStateBin)
+                                    novelScript = scattershot.UpsertBlock(newStateBin, isSolution, solution, fitness, BaseBlockTailSegment, n + 1, baseRngHash, 0);
+                            });
                     });
 
                 // Update script result count
-                ThreadLock([&]()
+                ThreadLock(CriticalRegions::ScriptCounters, [&]()
                     {
                         scattershot.ScriptCount++;
 

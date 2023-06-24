@@ -136,7 +136,7 @@ void Resource<TState>::LoadState(int64_t slotId)
 	else
 		slotManager.LoadSlot(slotId);
 
-	_totalLoadStateTime = get_time() - start;
+	_totalLoadStateTime += get_time() - start;
 
 	nLoadStates++;
 }
@@ -145,11 +145,28 @@ template <class TState>
 void Resource<TState>::FrameAdvance()
 {
 	auto start = get_time();
-
 	advance();
-
 	_totalFrameAdvanceTime += get_time() - start;
+
 	nFrameAdvances++;
+}
+
+template <class TState>
+uint64_t Resource<TState>::GetTotalSaveStateTime()
+{
+	return _totalSaveStateTime;
+}
+
+template <class TState>
+uint64_t Resource<TState>::GetTotalLoadStateTime()
+{
+	return _totalLoadStateTime;
+}
+
+template <class TState>
+uint64_t Resource<TState>::GetTotalFrameAdvanceTime()
+{
+	return _totalFrameAdvanceTime;
 }
 
 template <class TState>

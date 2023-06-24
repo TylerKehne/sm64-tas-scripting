@@ -18,6 +18,22 @@
 #ifndef SCATTERSHOT_H
 #define SCATTERSHOT_H
 
+#define OMP_STRINGIFY(content) #content
+#define OMP_CRITICAL(name) _Pragma(OMP_STRINGIFY(omp critical(NAME)))
+
+class CriticalRegions
+{
+public:
+    inline static const char* Print = "print";
+    inline static const char* Solutions = "solutions";
+    inline static const char* TotalShots = "totalshots";
+    inline static const char* Blocks = "blocks";
+    inline static const char* CsvCounters = "csvcounters";
+    inline static const char* CsvExport = "csvexport";
+    inline static const char* InputSolutions = "inputsolutions";
+    inline static const char* ScriptCounters = "scriptcounters";
+};
+
 template <class TState, derived_from_specialization_of<Resource> TResource,
     std::derived_from<Script<TResource>> TStateTracker,
     class TOutputState>
@@ -47,6 +63,7 @@ public:
     int StartFromRootEveryNShots;
     int MaxConsecutiveFailedPellets;
     int MaxSolutions;
+    bool Deterministic;
     uint32_t CsvSamplePeriod; // Every nth new block per thread will be printed to a CSV. Set to 0 to disable CSV export.
     std::filesystem::path M64Path;
     std::string CsvOutputDirectory;
@@ -111,9 +128,14 @@ public:
     static std::vector<ScattershotSolution<TOutputState>> Run(
         const Configuration& configuration, F resourceConfigGenerator, const std::vector<ScattershotSolution<TOutputState>>& inputSolutions, TParams&&... params)
     {
+        auto start = std::chrono::high_resolution_clock::now();
+        
+
         auto scattershot = Scattershot(configuration, inputSolutions);
         scattershot.OpenCsv();
 
+        std::vector<ScriptStatus<TScattershotThread>> statuses;
+        std::vector<uint64_t> totalCycleCounts;
         scattershot.MultiThread(configuration.TotalThreads, [&]()
             {
                 int threadId = omp_get_thread_num();
@@ -122,16 +144,59 @@ public:
                     M64 m64 = M64(configuration.M64Path);
                     m64.load();
 
+                    auto startCycles = get_time();
                     auto status = TopLevelScriptBuilder<TScattershotThread>::Build(m64)
                         .ConfigureResource<TResourceConfig>(resourceConfigGenerator(configuration.ResourcePaths[threadId]))
                         .Main(scattershot, std::forward<TParams>(params)...);
+                    auto finishCycles = get_time();
+                    
+                    #pragma omp critical
+                    {
+                        totalCycleCounts.push_back(finishCycles - startCycles);
+                        statuses.push_back(std::move(status));
+                    }
                 }
+
+
             });
+
+        printf("Found %d solutions in %d shots.\n", scattershot.Solutions.size(), scattershot.TotalShots);
 
         std::vector<ScattershotSolution<TOutputState>> solutions;
         solutions.reserve(scattershot.Solutions.size());
         for (auto& pair : scattershot.Solutions)
             solutions.push_back(std::move(pair.second));
+
+        uint64_t loadDuration = 0;
+        uint64_t saveDuration = 0;
+        uint64_t advanceFrameDuration = 0;
+        uint64_t scriptDuration = 0;
+        uint64_t totalDuration = 0;
+
+        for (auto& status : statuses)
+        {
+            loadDuration += status.loadDuration;
+            saveDuration += status.saveDuration;
+            advanceFrameDuration += status.advanceFrameDuration;
+            scriptDuration += status.totalDuration;
+        }
+
+        for (auto& cycleCount : totalCycleCounts)
+        {
+            totalDuration += cycleCount;
+        }
+
+        auto finish = std::chrono::high_resolution_clock::now();
+        int totalSeconds = std::chrono::duration_cast<std::chrono::seconds>(finish - start).count();
+
+        int loadPercent = double(loadDuration) / double(totalDuration) * 100;
+        int savePercent = double(saveDuration) / double(totalDuration) * 100;
+        int advancePercent = double(advanceFrameDuration) / double(totalDuration) * 100;
+        int otherPercent = double(scriptDuration - (loadDuration + saveDuration + advanceFrameDuration)) / double(totalDuration) * 100;
+        int overheadPercent = double(totalDuration - scriptDuration) / double(totalDuration) * 100;
+
+        printf("Total time (seconds): %d\n", totalSeconds);
+        printf("Load: %d%% Save: %d%% Frame Advance: %d%% Overhead: %d%% Other: %d%%\n", loadPercent, savePercent, advancePercent, overheadPercent, otherPercent);
 
         return solutions;
     }
@@ -263,6 +328,28 @@ public:
         return ScattershotBuilder<TState, TResource, TStateTracker, TOutputState>(config, std::vector<ScattershotSolution<TOutputState>>());
     }
 
+    template <typename F>
+    static void ThreadLock(F func)
+    {
+        #pragma omp critical
+        {
+            func();
+        }
+
+        return;
+    }
+
+    template <typename F>
+    static void ThreadLock(const char* section, F func)
+    {
+        OMP_CRITICAL(section)
+        {
+            func();
+        }
+
+        return;
+    }
+
 protected:
     //friend class Scattershot<TState, TResource, TStateTracker, TOutputState>;
 
@@ -335,19 +422,14 @@ private:
     }
 
     template <typename F>
-    static void ThreadLock(F func)
+    static void QueueThreadById(bool deterministic, F func)
     {
-        #pragma omp critical
+        if (!deterministic)
         {
             func();
+            return;
         }
 
-        return;
-    }
-
-    template <typename F>
-    static void QueueThreadById(F func)
-    {
         #pragma omp barrier
 
         int nThreads = omp_get_num_threads();

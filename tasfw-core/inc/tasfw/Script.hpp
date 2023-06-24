@@ -21,6 +21,14 @@ template <derived_from_specialization_of<Resource> TResource, std::derived_from<
 	requires std::constructible_from<TStateTracker> 
 class TopLevelScript;
 
+template <derived_from_specialization_of<TopLevelScript> TTopLevelScript,
+	class TState,
+	class TResourceConfig>
+class TopLevelScriptBuilderConfigured;
+
+template <derived_from_specialization_of<TopLevelScript> TTopLevelScript, class TResource>
+class TopLevelScriptBuilderImported;
+
 template <derived_from_specialization_of<Resource> TResource>
 class ScriptFriend;
 
@@ -119,7 +127,18 @@ protected:
 		script.isStateTracker = isStateTracker;
 		script.Initialize(this);
 
+		uint64_t loadStateTimeStart = resource->GetTotalLoadStateTime();
+		uint64_t saveStateTimeStart = resource->GetTotalSaveStateTime();
+		uint64_t advanceFrameTimeStart = resource->GetTotalFrameAdvanceTime();
+
+		uint64_t start = get_time();
 		script.Run();
+		uint64_t finish = get_time();
+
+		BaseStatus[_adhocLevel].loadDuration = resource->GetTotalLoadStateTime() - loadStateTimeStart;
+		BaseStatus[_adhocLevel].saveDuration = resource->GetTotalSaveStateTime() - saveStateTimeStart;
+		BaseStatus[_adhocLevel].advanceFrameDuration = resource->GetTotalFrameAdvanceTime() - advanceFrameTimeStart;
+		BaseStatus[_adhocLevel].totalDuration = finish - start;
 
 		// Load if necessary
 		Revert(initialFrame, script.BaseStatus[0].m64Diff, script.saveBank[0], &script);
@@ -141,7 +160,18 @@ protected:
 		script.isStateTracker = isStateTracker;
 		script.Initialize(this);
 
+		uint64_t loadStateTimeStart = resource->GetTotalLoadStateTime();
+		uint64_t saveStateTimeStart = resource->GetTotalSaveStateTime();
+		uint64_t advanceFrameTimeStart = resource->GetTotalFrameAdvanceTime();
+
+		uint64_t start = get_time();
 		script.Run();
+		uint64_t finish = get_time();
+
+		BaseStatus[_adhocLevel].loadDuration = resource->GetTotalLoadStateTime() - loadStateTimeStart;
+		BaseStatus[_adhocLevel].saveDuration = resource->GetTotalSaveStateTime() - saveStateTimeStart;
+		BaseStatus[_adhocLevel].advanceFrameDuration = resource->GetTotalFrameAdvanceTime() - advanceFrameTimeStart;
+		BaseStatus[_adhocLevel].totalDuration = finish - start;
 
 		ApplyChildDiff(script.BaseStatus[0], script.saveBank[0], initialFrame, &script);
 
@@ -732,9 +762,25 @@ public:
 		TTopLevelScript script = TTopLevelScript(std::forward<Ts>(params)...);
 		TResource resource = TResource();
 		resource.save(resource.startSave);
+
 		resource.initialFrame = 0;
 
 		return InitializeAndRun(m64, script, resource);
+	}
+
+	template <std::derived_from<TopLevelScript<TResource, TStateTracker>> TTopLevelScript, typename... Ts>
+		requires(std::constructible_from<TTopLevelScript, Ts...>&& std::constructible_from<TResource>)
+	static ScriptStatus<TTopLevelScript> MainImport(M64& m64, TResource* resource, Ts&&... params)
+	{
+		TTopLevelScript script = TTopLevelScript(std::forward<Ts>(params)...);
+
+		if (resource->initialFrame == -1)
+		{
+			resource->save(resource.startSave);
+			resource.initialFrame = 0;
+		}
+
+		return InitializeAndRun(m64, script, *resource);
 	}
 
 	template <std::derived_from<TopLevelScript<TResource, TStateTracker>> TTopLevelScript, typename TResourceConfig, typename... Ts>
@@ -744,6 +790,7 @@ public:
 		TTopLevelScript script = TTopLevelScript(std::forward<Ts>(params)...);
 		TResource resource = TResource(config);
 		resource.save(resource.startSave);
+
 		resource.initialFrame = 0;
 
 		return InitializeAndRun(m64, script, resource);
@@ -759,6 +806,7 @@ public:
 		TResource resource = TResource();
 		resource.load(save.state);
 		resource.save(resource.startSave);
+
 		resource.initialFrame = save.initialFrame;
 
 		return InitializeAndRun(m64, script, resource);
@@ -774,6 +822,7 @@ public:
 		TResource resource = TResource(config);
 		resource.load(save.state);
 		resource.save(resource.startSave);
+
 		resource.initialFrame = save.initialFrame;
 
 		return InitializeAndRun(m64, script, resource);
@@ -810,12 +859,24 @@ private:
 
 		script.TrackState(&script, script.GetInputsMetadata(ScriptFriend<TResource>::GetCurrentFrame(&script)));
 
+		uint64_t loadStateTimeStart = resource.GetTotalLoadStateTime();
+		uint64_t saveStateTimeStart = resource.GetTotalSaveStateTime();
+		uint64_t advanceFrameTimeStart = resource.GetTotalFrameAdvanceTime();
+
+		uint64_t start = get_time();
 		ScriptFriend<TResource>::Run(&script);
+		uint64_t finish = get_time();
+
+		auto& baseStatus = ScriptFriend<TResource>::GetBaseStatus(&script)[0];
+		baseStatus.loadDuration = resource.GetTotalLoadStateTime() - loadStateTimeStart;
+		baseStatus.saveDuration = resource.GetTotalSaveStateTime() - saveStateTimeStart;
+		baseStatus.advanceFrameDuration = resource.GetTotalFrameAdvanceTime() - advanceFrameTimeStart;
+		baseStatus.totalDuration = finish - start;
 
 		//Dispose of slot handles before resource goes out of scope because they trigger destructor events in the resource.
 		ScriptFriend<TResource>::DisposeSlotHandles(&script);
 
-		return ScriptStatus<TTopLevelScript>(ScriptFriend<TResource>::GetBaseStatus(&script)[0], script.CustomStatus);
+		return ScriptStatus<TTopLevelScript>(baseStatus, script.CustomStatus);
 	}
 };
 
@@ -823,32 +884,63 @@ class DefaultState {};
 
 class DefaultResourceConfig {};
 
-template <derived_from_specialization_of<TopLevelScript> TTopLevelScript,
-	class TState = DefaultState,
-	class TResourceConfig = DefaultResourceConfig>
+template <derived_from_specialization_of<TopLevelScript> TTopLevelScript>
 class TopLevelScriptBuilder
 {
 public:
 	TopLevelScriptBuilder(M64& m64) : _m64(m64) {}
-	TopLevelScriptBuilder(M64& m64, ImportedSave<TState> importedSave, TResourceConfig resourceConfig)
-		: _m64(m64), _importedSave(importedSave), _resourceConfig(resourceConfig) {}
 
 	static TopLevelScriptBuilder<TTopLevelScript> Build(M64& m64)
 	{
 		return TopLevelScriptBuilder<TTopLevelScript>(m64);
 	}
 
+	template <class TState, typename... TStateParams>
+	TopLevelScriptBuilderConfigured<TTopLevelScript, TState, DefaultResourceConfig> ImportSave(uint64_t frame, TStateParams&&... stateParams)
+	{
+		ImportedSave<TState> importedSave = ImportedSave(TState(std::forward<TStateParams>(stateParams)...), frame);
+		return TopLevelScriptBuilderConfigured<TTopLevelScript, TState, DefaultResourceConfig>(_m64, std::move(importedSave), DefaultResourceConfig());
+	}
+
+	template <typename TResourceConfig>
+	TopLevelScriptBuilderConfigured<TTopLevelScript, DefaultState, TResourceConfig> ConfigureResource(TResourceConfig resourceConfig)
+	{
+		return TopLevelScriptBuilderConfigured<TTopLevelScript, DefaultState, TResourceConfig>(
+			_m64, ImportedSave<DefaultState>(DefaultState(), -1), resourceConfig);
+	}
+
+	template <class TResource>
+	TopLevelScriptBuilderImported<TTopLevelScript, TResource> ImportResource(TResource* resource)
+	{
+		return TopLevelScriptBuilderImported<TTopLevelScript, TResource>(_m64, resource);
+	}
+
+protected:
+	M64& _m64;
+};
+
+template <derived_from_specialization_of<TopLevelScript> TTopLevelScript,
+	class TState = DefaultState,
+	class TResourceConfig = DefaultResourceConfig>
+class TopLevelScriptBuilderConfigured : public TopLevelScriptBuilder<TTopLevelScript>
+{
+public:
+	using TopLevelScriptBuilder<TTopLevelScript>::_m64;
+
+	TopLevelScriptBuilderConfigured(M64& m64, ImportedSave<TState> importedSave, TResourceConfig resourceConfig)
+		: TopLevelScriptBuilder<TTopLevelScript>(m64), _importedSave(importedSave), _resourceConfig(resourceConfig) {}
+
 	template <class UState, typename... TStateParams>
-	TopLevelScriptBuilder<TTopLevelScript, UState, TResourceConfig> ImportSave(uint64_t frame, TStateParams&&... stateParams)
+	TopLevelScriptBuilderConfigured<TTopLevelScript, UState, TResourceConfig> ImportSave(uint64_t frame, TStateParams&&... stateParams)
 	{
 		ImportedSave<UState> importedSave = ImportedSave(UState(std::forward<TStateParams>(stateParams)...), frame);
-		return TopLevelScriptBuilder<TTopLevelScript, UState, TResourceConfig>(_m64, std::move(importedSave), std::move(_resourceConfig));
+		return TopLevelScriptBuilderConfigured<TTopLevelScript, UState, TResourceConfig>(_m64, std::move(importedSave), std::move(_resourceConfig));
 	}
 
 	template <typename UResourceConfig>
-	TopLevelScriptBuilder<TTopLevelScript, TState, UResourceConfig> ConfigureResource(UResourceConfig resourceConfig)
+	TopLevelScriptBuilderConfigured<TTopLevelScript, TState, UResourceConfig> ConfigureResource(UResourceConfig resourceConfig)
 	{
-		return TopLevelScriptBuilder<TTopLevelScript, TState, UResourceConfig>(_m64, std::move(_importedSave), resourceConfig);
+		return TopLevelScriptBuilderConfigured<TTopLevelScript, TState, UResourceConfig>(_m64, std::move(_importedSave), resourceConfig);
 	}
 
 	template <typename... TScriptParams>
@@ -868,9 +960,26 @@ public:
 	}
 
 private:
-	M64& _m64;
 	ImportedSave<TState> _importedSave { TState(), -1 };
 	TResourceConfig _resourceConfig;
+};
+
+template <derived_from_specialization_of<TopLevelScript> TTopLevelScript, class TResource>
+class TopLevelScriptBuilderImported : public TopLevelScriptBuilder<TTopLevelScript>
+{
+public:
+	using TopLevelScriptBuilder<TTopLevelScript>::_m64;
+
+	TopLevelScriptBuilderImported(M64& m64, TResource* resource) : TopLevelScriptBuilder<TTopLevelScript>(m64), _resource(resource) {}
+
+	template <typename... TScriptParams>
+	ScriptStatus<TTopLevelScript> Main(TScriptParams&&... scriptParams)
+	{
+		return TTopLevelScript::template MainImport<TTopLevelScript>(_m64, _resource, std::forward<TScriptParams>(scriptParams)...);
+	}
+
+private:
+	TResource* _resource;
 };
 
 //Include template method implementations
