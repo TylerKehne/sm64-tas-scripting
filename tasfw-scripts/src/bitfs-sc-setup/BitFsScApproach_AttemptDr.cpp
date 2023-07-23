@@ -79,8 +79,9 @@ bool BitFsScApproach_AttemptDr::execution()
 	AdvanceFrameWrite(Inputs(0, 0, 0));
 
 	auto m64 = M64();
-	auto save = ImportedSave(PyramidUpdateMem(*resource, pyramid), GetCurrentFrame());
-	auto uphillAngleStatus = BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle::MainFromSave<BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>(m64, save, 0);
+	auto uphillAngleStatus = TopLevelScriptBuilder<BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>::Build(m64)
+		.ImportSave<PyramidUpdateMem>(GetCurrentFrame(), *resource, pyramid)
+		.Run(0);
 	if (!uphillAngleStatus.validated)
 		return false;
 

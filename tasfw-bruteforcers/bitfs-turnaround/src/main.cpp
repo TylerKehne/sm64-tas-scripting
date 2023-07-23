@@ -23,11 +23,9 @@
 #include <BitFsScApproach.hpp>
 #include <sm64/Sm64.hpp>
 #include "Scattershot_BitfsDr.hpp"
-#include "Scattershot.hpp"
-
-#define SOURCE_DIR "${CMAKE_SOURCE_DIR}"
-
-using namespace std;
+#include "Scattershot_BitfsDrApproach.hpp"
+#include "Scattershot_BitfsDrRecover.hpp"
+#include <range/v3/all.hpp>
 
 #pragma comment(lib, "Ws2_32.lib")
 
@@ -77,7 +75,7 @@ public:
 };
 
 template <class TOutputState>
-class ExportSolutions : public TopLevelScript<LibSm64, StateTracker_BitfsDr>
+class ExportSolutions : public TopLevelScript<LibSm64>
 {
 public:
 	ExportSolutions(int startFrame, const std::vector<ScattershotSolution<TOutputState>>& solutions) : _startFrame(startFrame), _solutions(solutions) {}
@@ -100,11 +98,9 @@ public:
 				{
 					Apply(solution.m64Diff);
 
-					auto state = GetTrackedState<StateTracker_BitfsDr>(GetCurrentFrame());
-
 					char fileName[128];
-					sprintf(fileName, "C:\\Users\\Tyler\\Documents\\repos\\sm64_tas_scripting\\res\\bitfs_osc_%d_%f_%f_%f_%f.m64",
-						state.currentOscillation, pyramid->oTiltingPyramidNormalX, pyramid->oTiltingPyramidNormalY, pyramid->oTiltingPyramidNormalZ, marioState->forwardVel);
+					sprintf(fileName, "C:\\Users\\Tyler\\Documents\\repos\\sm64_tas_scripting\\res\\bitfs_nut_%f_%f_%f_%f_%f.m64",
+						pyramid->oTiltingPyramidNormalX, pyramid->oTiltingPyramidNormalY, pyramid->oTiltingPyramidNormalZ, marioState->forwardVel, marioState->vel[1]);
 					ExportM64(fileName);
 
 					return true;
@@ -148,6 +144,16 @@ void InitConfiguration(Configuration& configuration)
 		});
 }
 
+template<typename F>
+auto SortBy(F func) {
+	return ranges::actions::sort([=](const auto& a, const auto& b) { return func(a) < func(b); });
+}
+
+template<typename F>
+auto SortByDescending(F func) {
+	return ranges::actions::sort([=](const auto& a, const auto& b) { return func(a) >= func(b); });
+}
+
 int main(int argc, const char* argv[])
 {
 	namespace fs = std::filesystem;
@@ -178,20 +184,90 @@ int main(int argc, const char* argv[])
 	}
 
 	std::vector<ScattershotSolution<Scattershot_BitfsDr_Solution>> solutions;
-	for (int targetOscillation = 2; targetOscillation < 20; targetOscillation++)
+	solutions.reserve(config.MaxSolutions);
+
+	int maxOscillations = 4;
+	config.MaxSolutions = 1000;
+	for (int targetOscillation = 1; targetOscillation < maxOscillations; targetOscillation++)
 	{
 		solutions = Scattershot_BitfsDr::ConfigureScattershot(config)
 			.ImportResourcePerThread([&](auto threadId) { return &resources[threadId]; })
 			.PipeFrom(solutions)
-			.Run<Scattershot_BitfsDr>(targetOscillation);
+			.ConfigureStateTracker(4, 0.69f, 0.5f, 15)
+			.Run<Scattershot_BitfsDr>(targetOscillation, 0.69f, 0.5f);
+
+		if (solutions.empty())
+			return false;
+
+		if (targetOscillation == 1)
+		{
+			if (solutions[0].data.roughTargetAngle != -24576)
+			{
+				solutions |= ranges::actions::remove_if([](const auto& x) { return x.data.roughTargetAngle == -24576; });
+				maxOscillations++;
+			}
+			else
+				solutions |= ranges::actions::remove_if([](const auto& x) { return x.data.roughTargetAngle == 8192; });
+		}
+
+		if (targetOscillation < 3)
+			solutions |= SortByDescending([](const auto& x) { return x.data.fSpd; }) | ranges::actions::take(10);
+		else
+		{
+			int parityCheck = maxOscillations % 2;
+
+			if (targetOscillation % 2 == parityCheck)
+				solutions |= SortByDescending([](const auto& x) { return fabs(x.data.pyraNormZ); }) | ranges::actions::take(100);
+			else
+				solutions |= SortByDescending([](const auto& x) { return fabs(x.data.pyraNormX); }) | ranges::actions::take(100);
+		}
 	}
+
+	// TODO: only pipe in m64diff container
+	std::vector<ScattershotSolution<Scattershot_BitfsDrApproach_Solution>> inputSolutions;
+	inputSolutions.reserve(solutions.size());
+	for (auto& solution : solutions)
+	{
+		inputSolutions.push_back(ScattershotSolution<Scattershot_BitfsDrApproach_Solution>(
+			Scattershot_BitfsDrApproach_Solution(), solution.m64Diff));
+	}
+
+	config.CsvSamplePeriod = 10;
+	config.MaxShots = 50000;
+	config.MaxSolutions = 1000;
+	auto diveSolutions = Scattershot_BitfsDrApproach::ConfigureScattershot(config)
+		.ImportResourcePerThread([&](auto threadId) { return &resources[threadId]; })
+		.PipeFrom(inputSolutions)
+		.Run<Scattershot_BitfsDrApproach>();
+
+	// TODO: only pipe in m64diff container
+	std::vector<ScattershotSolution<Scattershot_BitfsDrRecover_Solution>> inputSolutions2;
+	inputSolutions2.reserve(diveSolutions.size());
+	for (auto& solution : diveSolutions)
+	{
+		inputSolutions2.push_back(ScattershotSolution<Scattershot_BitfsDrRecover_Solution>(
+			Scattershot_BitfsDrRecover_Solution(), solution.m64Diff));
+	}
+
+	config.CsvSamplePeriod = 1;
+	config.MaxSolutions = 100;
+	auto drLandSolutions = Scattershot_BitfsDrRecover::ConfigureScattershot(config)
+		.ImportResourcePerThread([&](auto threadId) { return &resources[threadId]; })
+		.PipeFrom(inputSolutions2)
+		.Run<Scattershot_BitfsDrRecover>(StateTracker_BitfsDrRecover::Phase::ATTEMPT_DR);
+
+	config.MaxShots = 10000;
+	auto nutSolutions = Scattershot_BitfsDrRecover::ConfigureScattershot(config)
+		.ImportResourcePerThread([&](auto threadId) { return &resources[threadId]; })
+		.PipeFrom(drLandSolutions)
+		.Run<Scattershot_BitfsDrRecover>(StateTracker_BitfsDrRecover::Phase::C_UP_TRICK);
 
 	M64 m64 = M64(config.M64Path);
 	m64.load();
 
-	TopLevelScriptBuilder<ExportSolutions<Scattershot_BitfsDr_Solution>>::Build(m64)
+	TopLevelScriptBuilder<ExportSolutions<Scattershot_BitfsDrRecover_Solution>>::Build(m64)
 		.ImportResource(&resources[0])
-		.Main(config.StartFrame, solutions);
+		.Run(config.StartFrame, nutSolutions);
 
 	//auto status = MainScript::MainConfig<MainScript>(m64, lib_path);
 

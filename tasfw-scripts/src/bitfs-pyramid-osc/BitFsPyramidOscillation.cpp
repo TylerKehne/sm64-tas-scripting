@@ -42,8 +42,10 @@ bool BitFsPyramidOscillation::execution()
 
 	int16_t initAngle	 = -32768;
 	auto m64 = M64();
-	auto save = ImportedSave(PyramidUpdateMem(*resource, pyramid), GetCurrentFrame());
-	auto initAngleStatus = BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle::MainFromSave<BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>(m64, save, initAngle);
+	auto initAngleStatus = TopLevelScriptBuilder<BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>::Build(m64)
+		.ImportSave<PyramidUpdateMem>(GetCurrentFrame(), *resource, pyramid)
+		.Run(initAngle);
+
 	if (!initAngleStatus.validated)
 		return false;
 	//auto initAngleStatus = Test<GetMinimumDownhillWalkingAngle>(initAngle);

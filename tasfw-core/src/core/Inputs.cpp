@@ -315,8 +315,8 @@ bool Inputs::HauEquals(int16_t angle1, int16_t angle2)
 
 int M64::load()
 {
-	std::ifstream f(fileName.c_str(), ios_base::binary);
-	f.exceptions(ios_base::failbit | ios_base::badbit);
+	std::ifstream f(fileName.c_str(), std::ios_base::binary);
+	f.exceptions(std::ios_base::failbit | std::ios_base::badbit);
 
 	uint16_t buttons;
 	int8_t stick_x, stick_y;
@@ -324,14 +324,14 @@ int M64::load()
 
 	try
 	{
-		f.seekg(0, ios::end);
+		f.seekg(0, std::ios::end);
 		int length = f.tellg();
 		if (length == 0)
 		{
 			std::cerr << "empty M64\n";
 			return 0;
 		}
-		f.seekg(0x400, ios_base::beg);
+		f.seekg(0x400, std::ios_base::beg);
 
 		uint64_t index = 0;
 		while (true)
@@ -374,11 +374,11 @@ int M64::save(long initFrame)
 	std::ofstream f;
 	bool newFile = !std::filesystem::exists(fileName);
 	if (!newFile)
-		f = std::ofstream(fileName, ios_base::in | ios_base::out | ios_base::binary);
+		f = std::ofstream(fileName, std::ios_base::in | std::ios_base::out | std::ios_base::binary);
 	else
-		f = std::ofstream(fileName, ios_base::trunc | ios_base::binary);	
+		f = std::ofstream(fileName, std::ios_base::trunc | std::ios_base::binary);
 
-	f.exceptions(ios_base::failbit | ios_base::badbit);
+	f.exceptions(std::ios_base::failbit | std::ios_base::badbit);
 
 
 	uint64_t lastFrame = frames.rbegin()->first;
@@ -388,7 +388,7 @@ int M64::save(long initFrame)
 		// Write signature/version number (see https://tasvideos.org/EmulatorResources/Mupen/M64)
 		if (newFile)
 		{
-			f.seekp(0x0, ios_base::beg);
+			f.seekp(0x0, std::ios_base::beg);
 			uint32_t signature = byteswap(uint32_t(0x4D36341A));
 			uint8_t versionNumber = 3;
 			f.write(reinterpret_cast<char*>(&signature), sizeof(uint32_t));
@@ -396,14 +396,14 @@ int M64::save(long initFrame)
 		}
 
 		// Write number of frames
-		f.seekp(0xC, ios_base::beg);
+		f.seekp(0xC, std::ios_base::beg);
 		uint32_t value = std::numeric_limits<uint32_t>::max();
 		f.write(reinterpret_cast<char*>(&value), sizeof(uint32_t));
 
 		// Write ROM signature + country code
 		if (newFile)
 		{
-			f.seekp(0xE4, ios_base::beg);
+			f.seekp(0xE4, std::ios_base::beg);
 			uint32_t rom = byteswap((uint32_t)Rom::SUPER_MARIO_64);
 			uint16_t countryCode = byteswap((uint16_t)CountryCode::SUPER_MARIO_64_J);
 			f.write(reinterpret_cast<char*>(&rom), sizeof(uint32_t));
@@ -411,7 +411,7 @@ int M64::save(long initFrame)
 		}
 
 		// Write frames
-		f.seekp(0x400 + 4 * initFrame, ios_base::beg);
+		f.seekp(0x400 + 4 * initFrame, std::ios_base::beg);
 		for (uint64_t i = 0; i <= lastFrame; i++)
 		{
 			uint16_t bigEndianButtons = 0;

@@ -324,7 +324,6 @@ InputsMetadata<TResource> Script<TResource>::GetInputsMetadata(int64_t frame)
 }
 
 template <derived_from_specialization_of<Resource> TResource, std::derived_from<Script<TResource>> TStateTracker>
-	requires std::constructible_from<TStateTracker>
 InputsMetadata<TResource> TopLevelScript<TResource, TStateTracker>::GetInputsMetadata(int64_t frame)
 {
 	//State owner determines what frame counter needs to be incremented
@@ -944,7 +943,6 @@ bool SaveMetadata<TResource>::IsValid()
 }
 
 template <derived_from_specialization_of<Resource> TResource, std::derived_from<Script<TResource>> TStateTracker>
-	requires std::constructible_from<TStateTracker>
 void TopLevelScript<TResource, TStateTracker>::TrackState(Script<TResource>* currentScript, const InputsMetadata<TResource>& inputsMetadata)
 {
 	if constexpr (std::is_same<TStateTracker, DefaultStateTracker<TResource>>::value)
@@ -955,7 +953,6 @@ void TopLevelScript<TResource, TStateTracker>::TrackState(Script<TResource>* cur
 }
 
 template <derived_from_specialization_of<Resource> TResource, std::derived_from<Script<TResource>> TStateTracker>
-	requires std::constructible_from<TStateTracker>
 typename TStateTracker::CustomScriptStatus TopLevelScript<TResource, TStateTracker>
 	::GetTrackedStateInternal(Script<TResource>* currentScript, const InputsMetadata<TResource>& inputsMetadata)
 {
@@ -967,7 +964,7 @@ typename TStateTracker::CustomScriptStatus TopLevelScript<TResource, TStateTrack
 
 	uint64_t currentFrame = ScriptFriend<TResource>::GetCurrentFrame(currentScript);
 
-	auto status = ScriptFriend<TResource>::ExecuteStateTracker<TStateTracker>(currentScript, inputsMetadata.frame);
+	auto status = ScriptFriend<TResource>::ExecuteStateTracker<TStateTracker>(inputsMetadata.frame, currentScript, stateTrackerFactory);
 	if (!status.asserted)
 		return typename TStateTracker::CustomScriptStatus();
 
@@ -978,7 +975,6 @@ typename TStateTracker::CustomScriptStatus TopLevelScript<TResource, TStateTrack
 }
 
 template <derived_from_specialization_of<Resource> TResource, std::derived_from<Script<TResource>> TStateTracker>
-	requires std::constructible_from<TStateTracker>
 void TopLevelScript<TResource, TStateTracker>::PushTrackedStatesContainer(Script<TResource>* currentScript, int adhocLevel)
 {
 	if constexpr (std::is_same<TStateTracker, DefaultStateTracker<TResource>>::value)
@@ -988,7 +984,6 @@ void TopLevelScript<TResource, TStateTracker>::PushTrackedStatesContainer(Script
 }
 
 template <derived_from_specialization_of<Resource> TResource, std::derived_from<Script<TResource>> TStateTracker>
-	requires std::constructible_from<TStateTracker>
 void TopLevelScript<TResource, TStateTracker>::PopTrackedStatesContainer(Script<TResource>* currentScript, int adhocLevel)
 {
 	if constexpr (std::is_same<TStateTracker, DefaultStateTracker<TResource>>::value)
@@ -1001,7 +996,6 @@ void TopLevelScript<TResource, TStateTracker>::PopTrackedStatesContainer(Script<
 }
 
 template <derived_from_specialization_of<Resource> TResource, std::derived_from<Script<TResource>> TStateTracker>
-	requires std::constructible_from<TStateTracker>
 void TopLevelScript<TResource, TStateTracker>::MoveSyncedTrackedStates(Script<TResource>* sourceScript, int sourceAdhocLevel, Script<TResource>* destScript, int destAdhocLevel)
 {
 	if constexpr (std::is_same<TStateTracker, DefaultStateTracker<TResource>>::value)
@@ -1016,7 +1010,6 @@ void TopLevelScript<TResource, TStateTracker>::MoveSyncedTrackedStates(Script<TR
 }
 
 template <derived_from_specialization_of<Resource> TResource, std::derived_from<Script<TResource>> TStateTracker>
-	requires std::constructible_from<TStateTracker>
 void TopLevelScript<TResource, TStateTracker>::EraseTrackedStates(Script<TResource>* currentScript, int adhocLevel, int64_t firstFrame)
 {
 	if constexpr (std::is_same<TStateTracker, DefaultStateTracker<TResource>>::value)

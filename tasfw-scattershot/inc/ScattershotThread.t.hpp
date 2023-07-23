@@ -3,6 +3,7 @@
 #error "ScattershotThread.t.hpp should only be included by Scattershot.hpp"
 #else
 #include <Scattershot.hpp>
+#include <sm64/Camera.hpp>
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
     std::derived_from<Script<TResource>> TStateTracker,
@@ -32,7 +33,10 @@ bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::executio
     for (int shot = 0; totalShots <= config.MaxShots; shot++)
     {
         // Pick a block to "fire a shot" at
-        ThreadLock(CriticalRegions::Blocks, [&]() { SelectBaseBlock(shot); });
+        #pragma omp critical (blocks)
+        {
+            SelectBaseBlock(shot);
+        }
 
         auto status = ExecuteAdhoc([&]()
             {
@@ -55,19 +59,32 @@ bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::executio
             });
 
         size_t nSolutions = 0;
-        ThreadLock(CriticalRegions::Print, [&]()
+        bool maxShotsReached = false;
+        #pragma omp critical (print)
+        {
+            //const char* x = "solutions";
+            #pragma omp critical (solutions)
             {
-                ThreadLock(CriticalRegions::Solutions, [&]() { nSolutions = scattershot.Solutions.size(); });
-                ThreadLock(CriticalRegions::TotalShots, [&]() { totalShots = ++scattershot.TotalShots; });
+                nSolutions = scattershot.Solutions.size();
+            }
 
-                // Periodically print progress to console
-                if (totalShots % config.ShotsPerUpdate == 0)
-                    scattershot.PrintStatus();
-            });
+            //ThreadLock(x, [&]() { nSolutions = scattershot.Solutions.size(); });
+            //ThreadLock(CriticalRegions::Solutions, [&]() { nSolutions = scattershot.Solutions.size(); });
+            #pragma omp critical (totalshots)
+            {
+                totalShots = ++scattershot.TotalShots;
+                if (totalShots + omp_get_num_threads() - 1 >= config.MaxShots)
+                    maxShotsReached = true;
+            }
+
+            // Periodically print progress to console
+            if (totalShots % config.ShotsPerUpdate == 0)
+                scattershot.PrintStatus();
+        }
 
         //printf("%d %d %d %d\n", status.nLoads, status.nSaves, status.nFrameAdvances, status.executionDuration);
 
-        if (config.MaxSolutions > 0 && nSolutions >= config.MaxSolutions)
+        if (maxShotsReached || config.MaxSolutions > 0 && nSolutions >= config.MaxSolutions)
             return true;
     }
 
@@ -89,13 +106,11 @@ void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::Initiali
         std::shared_ptr<Segment> rootSegment = std::make_shared<Segment>(nullptr, 0, RngHash, 0);
         while (true)
         {
-            ThreadLock(CriticalRegions::InputSolutions, [&]()
-                {
-                    inputSolutionsIndex = scattershot.InputSolutionsIndex++;
-                    finishedProcessingDiffs = inputSolutionsIndex >= scattershot.InputSolutions.size() || inputSolutionsIndex >= 65534;
-                    if (finishedProcessingDiffs)
-                        return;
-                });
+            #pragma omp critical (inputsolutions)
+            {
+                inputSolutionsIndex = scattershot.InputSolutionsIndex++;
+                finishedProcessingDiffs = inputSolutionsIndex >= scattershot.InputSolutions.size() || inputSolutionsIndex >= 65534;
+            }
 
             // Execute diff and save block
             ExecuteAdhoc([&]()
@@ -109,11 +124,11 @@ void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::Initiali
                     this->Apply(scattershot.InputSolutions[inputSolutionsIndex].m64Diff);
                     QueueThreadById(config.Deterministic, [&]()
                         {
-                            ThreadLock(CriticalRegions::Blocks, [&]()
-                                {
-                                    scattershot.UpsertBlock(GetStateBinSafe(), false, ScattershotSolution<TOutputState>(),
+                            #pragma omp critical (blocks)
+                            {
+                                scattershot.UpsertBlock(GetStateBinSafe(), false, ScattershotSolution<TOutputState>(),
                                     GetStateFitnessSafe(), rootSegment, 1, GetRng(), inputSolutionsIndex + 1);
-                                });
+                            }
                         });
 
                     return true;
@@ -208,7 +223,10 @@ void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::SelectBa
 
             // Don't explore beyond known solutions
             bool isSolution;
-            ThreadLock(CriticalRegions::Solutions, [&]() { isSolution = scattershot.Solutions.contains(blockIndex); });
+            #pragma omp critical (solutions)
+            {
+                isSolution = scattershot.Solutions.contains(blockIndex);
+            }
             if (!isSolution)
                 break;
         }
@@ -226,11 +244,11 @@ bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::Validate
     TState currentStateBin = GetStateBinSafe();
     if (BaseBlockStateBin != currentStateBin) {
         this->ExportM64("C:\\Users\\Tyler\\Documents\\repos\\sm64_tas_scripting\\analysis\\error.m64");
-        cout << Id << " " << shot << "\n";
+        std::cout << Id << " " << shot << "\n";
         //BaseBlockStateBin.print();
         //currentStateBin.print();
-        cout << scattershot.GetHash(BaseBlockStateBin, false) << "\n";
-        cout << scattershot.GetHash(currentStateBin, false) << "\n";
+        std::cout << scattershot.GetHash(BaseBlockStateBin, false) << "\n";
+        std::cout << scattershot.GetHash(currentStateBin, false) << "\n";
         return false;
     }
 
@@ -243,14 +261,10 @@ template <class TState, derived_from_specialization_of<Resource> TResource,
 void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::AddCsvRow(int shot)
 {
     bool sampled = false;
-    ThreadLock(CriticalRegions::CsvCounters, [&]()
-        {
-            if (scattershot.CsvEnabled == false || scattershot.CsvRows == -1)
-                return;
-
-            if (scattershot.CsvCounter++ % config.CsvSamplePeriod == 0)
-                sampled = true;
-        });
+    #pragma omp critical (csvcounters)
+    {
+        sampled = scattershot.CsvEnabled == true && scattershot.CsvRows != -1 && scattershot.CsvCounter++ % config.CsvSamplePeriod == 0;
+    }
     
     // Check if we should force an export for the current state
     if (!sampled && !ExecuteAdhoc([&]() { return ForceAddToCsv(); }).executed)
@@ -270,43 +284,67 @@ void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::AddCsvRo
             return labelsColumns == rowColumns;
         }).executed;
 
-    ThreadLock(CriticalRegions::CsvExport, [&]()
+    if (!rowValidated)
+    {
+        #pragma omp critical (print)
         {
-            if (!rowValidated)
-            {
-                ThreadLock(CriticalRegions::Print, [&]() { cout << "Unable to add row to CSV. Labels/Row have different column counts.\n"; });
-                return;
-            }
+            std::cout << "Unable to add row to CSV. Labels/Row have different column counts.\n";
+        }
 
-            // CSV row export retry loop
-            auto failedRowPos = scattershot.Csv.tellp();
-            for (int i = 0; i < 5; i++)
-            {
-                if (i > 0)
-                {
-                    ThreadLock(CriticalRegions::Print, [&]()
-                        {
-                            ThreadLock(CriticalRegions::CsvCounters, [&]() { cout << "Retrying CSV row " << scattershot.CsvRows << ".\n"; });
-                        });
-                }
+        return;
+    }
 
-                scattershot.Csv << shot << "," << this->GetCurrentFrame() << "," << sampled << "," << row << "\n";
-                if (!scattershot.Csv.fail())
+    int retries = 0;
+    #pragma omp critical (csvexport)
+    {
+        // CSV row export retry loop
+        auto failedRowPos = scattershot.Csv.tellp();
+        for (int retries = 0; retries < 5; retries++)
+        {
+            if (retries > 0)
+            {
+                #pragma omp critical (print)
                 {
-                    ThreadLock(CriticalRegions::CsvCounters, [&]() { scattershot.CsvRows++; });
-                    return;
-                }
-                else {
-                    ThreadLock(CriticalRegions::Print, [&]() { cout << "Error writing to CSV row " << scattershot.CsvRows << ": " << scattershot.Csv.rdstate() << "\n"; });
-                    scattershot.Csv.close();
-                    scattershot.Csv = std::ofstream(scattershot.CsvFileName);
-                    scattershot.Csv.seekp(failedRowPos);
+                    #pragma omp critical (csvcounters)
+                    {
+                        std::cout << "Retrying CSV row " << scattershot.CsvRows << ".\n";
+                    }
                 }
             }
 
-            ThreadLock(CriticalRegions::Print, [&]() { cout << "Exceeded CSV export retry count. Disabling CSV export.\n"; });
+            scattershot.Csv << shot << "," << this->GetCurrentFrame() << "," << sampled << "," << row << "\n";
+            if (!scattershot.Csv.fail())
+            {
+                #pragma omp critical (csvcounters)
+                {
+                    scattershot.CsvRows++;
+                }
+
+                break;
+            }
+            else
+            {
+                #pragma omp critical (print)
+                {
+                    std::cout << "Error writing to CSV row " << scattershot.CsvRows << ": " << scattershot.Csv.rdstate() << "\n";
+                }
+
+                scattershot.Csv.close();
+                scattershot.Csv = std::ofstream(scattershot.CsvFileName);
+                scattershot.Csv.seekp(failedRowPos);
+            }
+        }
+
+        if (retries == 5)
+        {
+            #pragma omp critical (print)
+            {
+                std::cout << "Exceeded CSV export retry count. Disabling CSV export.\n";
+            }
+
             scattershot.CsvEnabled = false;
-        });
+        }
+    }
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
@@ -332,8 +370,21 @@ bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::ChooseSc
         });
 
     // Execute script and update rng hash
-    auto status = ModifyAdhoc([&]() { return ApplyMovement(); });
-    return status.executed && !status.m64Diff.frames.empty();
+    int64_t postScriptFrame = -1;
+    auto status = ModifyAdhoc([&]()
+        {
+            bool success = ApplyMovement();
+            postScriptFrame = this->GetCurrentFrame();
+            return success;
+        });
+
+    // Needed to sync with original execution (block is saved after individual script diff is applied).
+    // Note that this often does nothing. It does not hurt performance unless it rewinds.
+    // TODO: Consider changing TASFW Modify methods to persist frame cursor so this isn't necessary
+    if (status.executed)
+        this->Load(postScriptFrame);
+
+    return status.executed;
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
@@ -392,7 +443,6 @@ AdhocBaseScriptStatus ScattershotThread<TState, TResource, TStateTracker, TOutpu
                     // This is here so the queued upserts don't block on the entire decoding
                     QueueThreadById(config.Deterministic, [&]() {});
                 }
-                
             }
 
             postScriptFrame = this->GetCurrentFrame();
@@ -437,25 +487,26 @@ AdhocBaseScriptStatus ScattershotThread<TState, TResource, TStateTracker, TOutpu
                     : ScattershotSolution<TOutputState>();
                 QueueThreadById(config.Deterministic, [&]()
                     {
-                        ThreadLock(CriticalRegions::Blocks, [&]()
-                            {
-                                if (validated && newStateBin != prevStateBin && newStateBin != BaseBlockStateBin)
-                                    novelScript = scattershot.UpsertBlock(newStateBin, isSolution, solution, fitness, BaseBlockTailSegment, n + 1, baseRngHash, 0);
-                            });
+                        #pragma omp critical (blocks)
+                        {
+                            //if (validated && newStateBin != prevStateBin && newStateBin != BaseBlockStateBin)
+                            if (validated)
+                                novelScript = scattershot.UpsertBlock(newStateBin, isSolution, solution, fitness, BaseBlockTailSegment, n + 1, baseRngHash, 0);
+                        }
                     });
 
                 // Update script result count
-                ThreadLock(CriticalRegions::ScriptCounters, [&]()
-                    {
-                        scattershot.ScriptCount++;
+                #pragma omp critical (scriptcounters)
+                {
+                    scattershot.ScriptCount++;
 
-                        if (!validated)
-                            scattershot.FailedScripts++;
-                        else if (novelScript)
-                            scattershot.NovelScripts++;
-                        else
-                            scattershot.RedundantScripts++;
-                    });
+                    if (!validated)
+                        scattershot.FailedScripts++;
+                    else if (novelScript)
+                        scattershot.NovelScripts++;
+                    else
+                        scattershot.RedundantScripts++;
+                }
 
                 if (!validated)
                     break;
@@ -465,6 +516,9 @@ AdhocBaseScriptStatus ScattershotThread<TState, TResource, TStateTracker, TOutpu
                     anyNovelScripts |= true;
                     AddCsvRow(shot);
                 }
+
+                if (isSolution)
+                    break;
 
                 prevStateBin = newStateBin;
             }

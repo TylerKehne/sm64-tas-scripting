@@ -137,11 +137,11 @@ void PyramidUpdateMem::LoadSurfaces(Object* pyramidLibSm64, Sm64Object& pyramid)
 
 	int surfaceCount = CountSurfaces(collisionData);
 
-	pyramid.surfaces[0].resize(surfaceCount);
-	pyramid.surfaces[1].resize(surfaceCount);
-	pyramid.surfaces[2].resize(surfaceCount);
+	pyramid.surfaces[0].reserve(surfaceCount);
+	pyramid.surfaces[1].reserve(surfaceCount);
+	pyramid.surfaces[2].reserve(surfaceCount);
 
-	Sm64Surface* surfaces[3] = { &(*pyramid.surfaces[0].begin()), &(*pyramid.surfaces[1].begin()), &(*pyramid.surfaces[2].begin()) };
+	std::vector<Sm64Surface>* surfaces[3] = { &(pyramid.surfaces[0]), &(pyramid.surfaces[1]), &(pyramid.surfaces[2]) };
 	while (*collisionData != TERRAIN_LOAD_CONTINUE)
 		LoadObjectSurfaces(&collisionData, vertexData, surfaces);
 }
@@ -223,7 +223,7 @@ short PyramidUpdateMem::SurfaceHasForce(short surfaceType)
 	return hasForce;
 }
 
-void PyramidUpdateMem::LoadObjectSurfaces(short** data, short* vertexData, Sm64Surface** surfaceArrays)
+void PyramidUpdateMem::LoadObjectSurfaces(short** data, short* vertexData, std::vector<Sm64Surface>* surfaceArrays[3])
 {
 	int surfaceType;
 	int i;
@@ -249,7 +249,7 @@ void PyramidUpdateMem::LoadObjectSurfaces(short** data, short* vertexData, Sm64S
 	}
 }
 
-void PyramidUpdateMem::ReadSurfaceData(short* vertexData, short** vertexIndices, Sm64Surface** surfaceArrays, int surfaceType)
+void PyramidUpdateMem::ReadSurfaceData(short* vertexData, short** vertexIndices, std::vector<Sm64Surface>* surfaceArrays[3], int surfaceType)
 {
 	int x1, y1, z1;
 	int x2, y2, z2;
@@ -314,34 +314,34 @@ void PyramidUpdateMem::ReadSurfaceData(short* vertexData, short** vertexIndices,
 	else if (ny < -0.01)
 		surfaceIndex = 2;
 
-	Sm64Surface* surface = surfaceArrays[surfaceIndex];
+	Sm64Surface surface;
 
-	surface->vertex1[0] = x1;
-	surface->vertex2[0] = x2;
-	surface->vertex3[0] = x3;
+	surface.vertex1[0] = x1;
+	surface.vertex2[0] = x2;
+	surface.vertex3[0] = x3;
 
-	surface->vertex1[1] = y1;
-	surface->vertex2[1] = y2;
-	surface->vertex3[1] = y3;
+	surface.vertex1[1] = y1;
+	surface.vertex2[1] = y2;
+	surface.vertex3[1] = y3;
 
-	surface->vertex1[2] = z1;
-	surface->vertex2[2] = z2;
-	surface->vertex3[2] = z3;
+	surface.vertex1[2] = z1;
+	surface.vertex2[2] = z2;
+	surface.vertex3[2] = z3;
 
-	surface->normal.x = nx;
-	surface->normal.y = ny;
-	surface->normal.z = nz;
+	surface.normal.x = nx;
+	surface.normal.y = ny;
+	surface.normal.z = nz;
 
-	surface->originOffset = -(nx * x1 + ny * y1 + nz * z1);
+	surface.originOffset = -(nx * x1 + ny * y1 + nz * z1);
 
-	surface->lowerY = minY - 5;
-	surface->upperY = maxY + 5;
+	surface.lowerY = minY - 5;
+	surface.upperY = maxY + 5;
 
-	surface->type = surfaceType;
-	surface->objectIsPyramid = true;
+	surface.type = surfaceType;
+	surface.objectIsPyramid = true;
 
 	//Should be safe as vector was resized to equal surface count for all 3 surface types.
-	surfaceArrays[surfaceIndex]++;
+	surfaceArrays[surfaceIndex]->push_back(surface);
 }
 
 bool PyramidUpdateMem::FloorIsSlope(Sm64Surface* floor, u32 action)
@@ -603,7 +603,7 @@ void PyramidUpdate::TransformSurfaces(int surfaceIndex)
 	float nx, ny, nz;
 	float mag;
 
-	PyramidUpdateMem::Sm64Surface* surfaces = &(*_state.pyramid.surfaces[surfaceIndex].begin());;
+	PyramidUpdateMem::Sm64Surface* surfaces = !_state.pyramid.surfaces[surfaceIndex].empty() ? &(*_state.pyramid.surfaces[surfaceIndex].begin()) : nullptr;
 	Mat4* transform = &_state.pyramid.transform;
 	for (size_t i = 0; i < _state.pyramid.surfaces[surfaceIndex].size(); i++)
 	{

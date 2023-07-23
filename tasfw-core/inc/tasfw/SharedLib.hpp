@@ -17,10 +17,10 @@
 	#define TAS_FW_STDCALL
 #endif
 
-template <template <class...> class Template, class... Args>
+template <template <typename...> class Template, typename... Args>
 void derived_from_specialization_impl(const Template<Args...>&);
 
-template <class T, template <class...> class Template>
+template <class T, template <typename...> class Template>
 concept derived_from_specialization_of = requires(const T& t)
 {
 	derived_from_specialization_impl<Template>(t);

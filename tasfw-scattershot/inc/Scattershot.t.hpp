@@ -102,15 +102,20 @@ bool Scattershot<TState, TResource, TStateTracker, TOutputState>::UpsertBlock(
             BlockIndices[stateBinHash % BlockIndices.size()] = blockIndex;
 
             if (isSolution)
-                ScattershotThread<TState, TResource, TStateTracker, TOutputState>::ThreadLock(
-                    CriticalRegions::Solutions, [&]() { Solutions[blockIndex] = solution; });
+            {
+                #pragma omp critical (solutions)
+                {
+                    Solutions[blockIndex] = solution;
+                }
+            }
 
             return true;
         }
 
         if (Blocks[blockIndex].stateBin == stateBin && pipedDiff1Index == 0) // False indicates a hash collision or piped-in diff
         {
-            if (fitness > Blocks[blockIndex].fitness)
+            // Override fitness check if this block is a new solution
+            if (fitness > Blocks[blockIndex].fitness || isSolution && !Solutions.contains(blockIndex))
             {
                 // Reject improvements that are not considered solutions if the incumbent is a solution
                 if (Solutions.contains(blockIndex) && !isSolution)
@@ -119,9 +124,13 @@ bool Scattershot<TState, TResource, TStateTracker, TOutputState>::UpsertBlock(
                 Blocks[blockIndex].fitness = fitness;
                 Blocks[blockIndex].tailSegment = std::make_shared<Segment>(parentSegment, segmentSeed, nScripts, pipedDiff1Index);
 
-                if (isSolution)
-                    ScattershotThread<TState, TResource, TStateTracker, TOutputState>::ThreadLock(
-                        CriticalRegions::Solutions, [&]() { Solutions[blockIndex] = solution; });
+                if (isSolution && Solutions.size() < config.MaxSolutions)
+                {
+                    #pragma omp critical (solutions)
+                    {
+                        Solutions[blockIndex] = solution;
+                    }
+                }
 
                 return true;
             }
@@ -143,14 +152,14 @@ void Scattershot<TState, TResource, TStateTracker, TOutputState>::PrintStatus()
     // Print cumulative script results
     if (ScriptCount != 0)
     {
-        ScattershotThread<TState, TResource, TStateTracker, TOutputState>::ThreadLock(CriticalRegions::ScriptCounters, [&]()
-            {
-                int futility = double(FailedScripts) / double(ScriptCount) * 100;
-                int redundancy = double(RedundantScripts) / double(ScriptCount) * 100;
-                int discovery = double(NovelScripts) / double(ScriptCount) * 100;
+        #pragma omp critical (scriptcounters)
+        {
+            int futility = double(FailedScripts) / double(ScriptCount) * 100;
+            int redundancy = double(RedundantScripts) / double(ScriptCount) * 100;
+            int discovery = double(NovelScripts) / double(ScriptCount) * 100;
 
-                printf("Futility: %d%% Redundancy: %d%% Discovery: %d%%\n", futility, redundancy, discovery);
-            });
+            printf("Futility: %d%% Redundancy: %d%% Discovery: %d%%\n", futility, redundancy, discovery);
+        }
     }
 
     if (CsvRows != -1)
@@ -177,10 +186,10 @@ void Scattershot<TState, TResource, TStateTracker, TOutputState>::OpenCsv()
     if (!Csv.fail())
     {
         CsvEnabled = true;
-        cout << "CSV file name: " << CsvFileName << "\n";
+        std::cout << "CSV file name: " << CsvFileName << "\n";
     }
     else
-        cout << "Unable to create CSV file.";
+        std::cout << "Unable to create CSV file.";
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,

@@ -3,9 +3,7 @@
 #include <array>
 #include <cstdint>
 
-using namespace std;
-
-constexpr array<float, 4096> gSineTable = {
+constexpr std::array<float, 4096> gSineTable = {
 	0.000000000f,	0.0015339801f,	0.0030679568f,	0.004601926f,
 	0.0061358847f,	0.007669829f,	0.009203754f,	0.010737659f,
 	0.012271538f,	0.0138053885f,	0.015339206f,	0.016872987f,
@@ -1031,7 +1029,7 @@ constexpr array<float, 4096> gSineTable = {
 	-0.012271538f,	-0.010737659f,	-0.009203754f,	-0.007669829f,
 	-0.0061358847f, -0.004601926f,	-0.0030679568f, -0.0015339801f};
 
-constexpr array<float, 4096> gCosineTable = {
+constexpr std::array<float, 4096> gCosineTable = {
 	1.000000000f,	0.999998808f,	0.999995291f,	0.999989390f,
 	0.999981165f,	0.999970615f,	0.999957621f,	0.999942362f,
 	0.999924719f,	0.999904692f,	0.999882340f,	0.999857664f,
@@ -2058,7 +2056,7 @@ constexpr array<float, 4096> gCosineTable = {
 	0.999981165f,	0.999989390f,	0.999995291f,	0.999998808f,
 };
 
-constexpr array<int16_t, 1025> gArctanTable = {
+constexpr std::array<int16_t, 1025> gArctanTable = {
 	0x0000, 0x000A, 0x0014, 0x001F, 0x0029, 0x0033, 0x003D, 0x0047, 0x0051,
 	0x005C, 0x0066, 0x0070, 0x007A, 0x0084, 0x008F, 0x0099, 0x00A3, 0x00AD,
 	0x00B7, 0x00C2, 0x00CC, 0x00D6, 0x00E0, 0x00EA, 0x00F4, 0x00FF, 0x0109,

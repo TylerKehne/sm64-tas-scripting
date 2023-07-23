@@ -4,7 +4,6 @@ add_executable(tasfw-bitfs-turnaround
 	"src/BitFsConfig.cpp"
 	"src/BitFsConfig.hpp"
 	"src/main.cpp"
-	"src/Scattershot_BitfsDr.hpp"
 )
 target_compile_definitions(tasfw-bitfs-turnaround PRIVATE cxx_std_20)
 target_link_libraries(tasfw-bitfs-turnaround PRIVATE 
@@ -12,8 +11,9 @@ target_link_libraries(tasfw-bitfs-turnaround PRIVATE
 	tasfw::scripts_general 
 	tasfw::scripts_bitfs_pyramid_osc 
 	tasfw::scripts_bitfs_sc_setup
-	tasfw::scattershot
 	nlohmann_json::nlohmann_json
+	range-v3::range-v3
+	tasfw-scripts-scattershot-bitfs-dr
 )
 set_target_properties(tasfw-bitfs-turnaround PROPERTIES
 	OUTPUT_NAME "bitfs-turn"
