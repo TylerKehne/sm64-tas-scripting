@@ -719,7 +719,7 @@ template <derived_from_specialization_of<Script> TStateTracker, typename... TSta
 class StateTrackerFactory : public StateTrackerFactoryBase<TStateTracker>
 {
 public:
-	StateTrackerFactory(std::shared_ptr<std::tuple<const TStateTrackerParams&...>> stateTrackerParams) : _stateTrackerParams(stateTrackerParams) {}
+	StateTrackerFactory(std::shared_ptr<std::tuple<TStateTrackerParams...>> stateTrackerParams) : _stateTrackerParams(stateTrackerParams) {}
 
 	TStateTracker Generate()
 	{
@@ -729,7 +729,7 @@ public:
 	}
 
 private:
-	std::shared_ptr<std::tuple<const TStateTrackerParams&...>> _stateTrackerParams;
+	std::shared_ptr<std::tuple<TStateTrackerParams...>> _stateTrackerParams;
 };
 
 // DO NOT EVER USE THESE METHODS OUTSIDE OF THE TOPLEVELSCRIPT BASE CLASS
@@ -812,7 +812,7 @@ public:
 
 	template <derived_from_specialization_of<TopLevelScript> TTopLevelScript, typename... TStateTrackerParams, typename... Ts>
 		requires(std::constructible_from<TTopLevelScript, Ts...> && std::constructible_from<TResource> && std::constructible_from<TStateTracker, TStateTrackerParams...>)
-	static ScriptStatus<TTopLevelScript> Main(M64& m64, std::shared_ptr<std::tuple<const TStateTrackerParams&...>> stateTrackerParams, Ts&&... params)
+	static ScriptStatus<TTopLevelScript> Main(M64& m64, std::shared_ptr<std::tuple<TStateTrackerParams...>> stateTrackerParams, Ts&&... params)
 	{
 		TTopLevelScript script = TTopLevelScript(std::forward<Ts>(params)...);
 		script.stateTrackerFactory = std::make_shared<StateTrackerFactory<TStateTracker, TStateTrackerParams...>>(stateTrackerParams);
@@ -827,7 +827,7 @@ public:
 
 	template <derived_from_specialization_of<TopLevelScript> TTopLevelScript, typename... TStateTrackerParams, typename... Ts>
 		requires(std::constructible_from<TTopLevelScript, Ts...> && std::constructible_from<TStateTracker, TStateTrackerParams...>)
-	static ScriptStatus<TTopLevelScript> MainImport(M64& m64, std::shared_ptr<std::tuple<const TStateTrackerParams&...>> stateTrackerParams, TResource* resource, Ts&&... params)
+	static ScriptStatus<TTopLevelScript> MainImport(M64& m64, std::shared_ptr<std::tuple<TStateTrackerParams...>> stateTrackerParams, TResource* resource, Ts&&... params)
 	{
 		TTopLevelScript script = TTopLevelScript(std::forward<Ts>(params)...);
 		script.stateTrackerFactory = std::make_shared<StateTrackerFactory<TStateTracker, TStateTrackerParams...>>(stateTrackerParams);
@@ -846,7 +846,7 @@ public:
 
 	template <derived_from_specialization_of<TopLevelScript> TTopLevelScript, typename TResourceConfig, typename... TStateTrackerParams, typename... Ts>
 		requires(std::constructible_from<TTopLevelScript, Ts...> && std::constructible_from<TResource, TResourceConfig> && std::constructible_from<TStateTracker, TStateTrackerParams...>)
-	static ScriptStatus<TTopLevelScript> MainConfig(M64& m64, std::shared_ptr<std::tuple<const TStateTrackerParams&...>> stateTrackerParams, TResourceConfig config, Ts&&... params)
+	static ScriptStatus<TTopLevelScript> MainConfig(M64& m64, std::shared_ptr<std::tuple<TStateTrackerParams...>> stateTrackerParams, TResourceConfig config, Ts&&... params)
 	{
 		TTopLevelScript script = TTopLevelScript(std::forward<Ts>(params)...);
 		script.stateTrackerFactory = std::make_shared<StateTrackerFactory<TStateTracker, TStateTrackerParams...>>(stateTrackerParams);
@@ -865,7 +865,7 @@ public:
 			&& std::constructible_from<TResource>
 			&& std::derived_from<TResource, Resource<TState>>
 			&& std::constructible_from<TStateTracker, TStateTrackerParams...>)
-	static ScriptStatus<TTopLevelScript> MainFromSave(M64& m64, std::shared_ptr<std::tuple<const TStateTrackerParams&...>> stateTrackerParams, ImportedSave<TState>& save, Ts&&... params)
+	static ScriptStatus<TTopLevelScript> MainFromSave(M64& m64, std::shared_ptr<std::tuple<TStateTrackerParams...>> stateTrackerParams, ImportedSave<TState>& save, Ts&&... params)
 	{
 		TTopLevelScript script = TTopLevelScript(std::forward<Ts>(params)...);
 		script.stateTrackerFactory = std::make_shared<StateTrackerFactory<TStateTracker, TStateTrackerParams...>>(stateTrackerParams);
@@ -886,7 +886,7 @@ public:
 			&& std::derived_from<TResource, Resource<TState>>
 			&& std::constructible_from<TStateTracker, TStateTrackerParams...>)
 	static ScriptStatus<TTopLevelScript> MainFromSaveConfig(
-		M64& m64, std::shared_ptr<std::tuple<const TStateTrackerParams&...>> stateTrackerParams, ImportedSave<TState>& save, TResourceConfig config, Ts&&... params)
+		M64& m64, std::shared_ptr<std::tuple<TStateTrackerParams...>> stateTrackerParams, ImportedSave<TState>& save, TResourceConfig config, Ts&&... params)
 	{
 		TTopLevelScript script = TTopLevelScript(std::forward<Ts>(params)...);
 		script.stateTrackerFactory = std::make_shared<StateTrackerFactory<TStateTracker, TStateTrackerParams...>>(stateTrackerParams);
@@ -963,7 +963,7 @@ class TopLevelScriptBuilder
 {
 public:
 	TopLevelScriptBuilder(M64& m64) : _m64(m64) { _stateTrackerParams = std::make_shared<std::tuple<>>(); }
-	TopLevelScriptBuilder(M64& m64, std::shared_ptr<std::tuple<const TStateTrackerParams&...>> stateTrackerParams)
+	TopLevelScriptBuilder(M64& m64, std::shared_ptr<std::tuple<TStateTrackerParams...>> stateTrackerParams)
 		: _m64(m64), _stateTrackerParams(stateTrackerParams) {}
 
 	static TopLevelScriptBuilder<TTopLevelScript> Build(M64& m64)
@@ -974,8 +974,8 @@ public:
 	template <typename... UStateTrackerParams>
 	TopLevelScriptBuilder<TTopLevelScript> ConfigureStateTracker(UStateTrackerParams&&... stateTrackerParams)
 	{
-		std::shared_ptr<std::tuple<const UStateTrackerParams&...>> tuplePtr =
-			std::make_shared<std::tuple<const UStateTrackerParams&...>>(std::forward<const UStateTrackerParams&>(stateTrackerParams)...);
+		std::shared_ptr<std::tuple<UStateTrackerParams...>> tuplePtr =
+			std::make_shared<std::tuple<UStateTrackerParams...>>(std::forward<UStateTrackerParams>(stateTrackerParams)...);
 		return TopLevelScriptBuilder<TTopLevelScript, UStateTrackerParams...>(_m64, tuplePtr);
 	}
 
@@ -1003,7 +1003,7 @@ public:
 
 protected:
 	M64& _m64;
-	std::shared_ptr<std::tuple<const TStateTrackerParams&...>> _stateTrackerParams;
+	std::shared_ptr<std::tuple<TStateTrackerParams...>> _stateTrackerParams;
 };
 
 template <derived_from_specialization_of<TopLevelScript> TTopLevelScript,
@@ -1017,15 +1017,15 @@ public:
 	using TopLevelScriptBuilder<TTopLevelScript, TStateTrackerParams...>::_stateTrackerParams;
 
 	TopLevelScriptBuilderConfigured(M64& m64, ImportedSave<TState> importedSave,
-		TResourceConfig resourceConfig, std::shared_ptr<std::tuple<const TStateTrackerParams&...>> stateTrackerParams)
+		TResourceConfig resourceConfig, std::shared_ptr<std::tuple<TStateTrackerParams...>> stateTrackerParams)
 		: TopLevelScriptBuilder<TTopLevelScript, TStateTrackerParams...>(m64, stateTrackerParams), _importedSave(importedSave), _resourceConfig(resourceConfig) {}
 
 	template <typename... UStateTrackerParams>
 	TopLevelScriptBuilderConfigured<TTopLevelScript, TState, TResourceConfig, UStateTrackerParams...> ConfigureStateTracker(
 		TStateTrackerParams&&... stateTrackerParams)
 	{
-		std::shared_ptr<std::tuple<const UStateTrackerParams&...>> tuplePtr =
-			std::make_shared<std::tuple<const UStateTrackerParams&...>>(std::forward<const UStateTrackerParams&>(stateTrackerParams)...);
+		std::shared_ptr<std::tuple<UStateTrackerParams...>> tuplePtr =
+			std::make_shared<std::tuple<UStateTrackerParams...>>(std::forward<UStateTrackerParams>(stateTrackerParams)...);
 		return TopLevelScriptBuilderConfigured<TTopLevelScript, TState, TResourceConfig, UStateTrackerParams...>(
 			_m64, std::move(_importedSave), std::move(_resourceConfig), tuplePtr);
 	}
@@ -1079,14 +1079,14 @@ public:
 	using TopLevelScriptBuilder<TTopLevelScript, TStateTrackerParams...>::_m64;
 	using TopLevelScriptBuilder<TTopLevelScript, TStateTrackerParams...>::_stateTrackerParams;
 
-	TopLevelScriptBuilderImported(M64& m64, TResource* resource, std::shared_ptr<std::tuple<const TStateTrackerParams&...>> stateTrackerParams)
+	TopLevelScriptBuilderImported(M64& m64, TResource* resource, std::shared_ptr<std::tuple<TStateTrackerParams...>> stateTrackerParams)
 		: TopLevelScriptBuilder<TTopLevelScript, TStateTrackerParams...>(m64, stateTrackerParams), _resource(resource) {}
 
 	template <typename... UStateTrackerParams>
 	TopLevelScriptBuilderImported<TTopLevelScript, TResource, UStateTrackerParams...> ConfigureStateTracker(UStateTrackerParams&&... stateTrackerParams)
 	{
-		std::shared_ptr<std::tuple<const UStateTrackerParams&...>> tuplePtr =
-			std::make_shared<std::tuple<const UStateTrackerParams&...>>(std::forward<const UStateTrackerParams&>(stateTrackerParams)...);
+		std::shared_ptr<std::tuple<UStateTrackerParams...>> tuplePtr =
+			std::make_shared<std::tuple<UStateTrackerParams...>>(std::forward<UStateTrackerParams>(stateTrackerParams)...);
 		return TopLevelScriptBuilderImported<TTopLevelScript, TResource, UStateTrackerParams...>(
 			_m64, _resource, tuplePtr);
 	}

@@ -161,8 +161,8 @@ BinaryStateBin<16> Scattershot_BitfsDr::GetStateBin()
     Object* pyramid = &objectPool[84];
 
     auto trackedState = GetTrackedState<StateTracker_BitfsDr>(GetCurrentFrame());
-    int nRegions = trackedState.xzSum >= _normRegimeThreshold ? 32 : 4;
-    if (trackedState.xzSum >= _normRegimeThreshold && trackedState.currentOscillation > 0)
+    int nRegions = trackedState.xzSum >= _normalSpecsDto.minXzSum ? 32 : 4;
+    if (trackedState.xzSum >= _normalSpecsDto.minXzSum && trackedState.currentOscillation > 0)
         nRegions *= trackedState.currentOscillation;
 
     int actionValue;
@@ -222,8 +222,34 @@ BinaryStateBin<16> Scattershot_BitfsDr::GetStateBin()
 
         if (trackedState.currentCrossing > 0)
         {
-            state.AddRegionBitsByRegionSize(bitCursor, 8, trackedState.crossingData.rbegin()->xzSum, 0.f, 0.8f, 0.005f);
-            state.AddRegionBitsByRegionSize(bitCursor, 8, trackedState.crossingData.rbegin()->nX, -0.7f, 0.7f, 0.01f);
+            if (!_normalSpecsDto.onlyMinMajor && trackedState.currentOscillation >= _targetOscillation)
+            {
+                state.AddValueBits(bitCursor, 1, 1);
+                unsigned int minimumBitsMajor = static_cast<unsigned int>(std::log2(_normalSpecsDto.regionsMajor)) + 1;
+                unsigned int minimumBitsMinor = static_cast<unsigned int>(std::log2(_normalSpecsDto.regionsMinor)) + 1;
+
+                float nMajor = 0;
+                float nMinor = 0;
+                if (std::fabs(trackedState.crossingData.rbegin()->nZ) >= std::fabs(trackedState.crossingData.rbegin()->nX))
+                {
+                    nMajor = std::clamp(std::fabs(trackedState.crossingData.rbegin()->nZ), _normalSpecsDto.minMajor, _normalSpecsDto.maxMajor);
+                    nMinor = std::clamp(std::fabs(trackedState.crossingData.rbegin()->nX), _normalSpecsDto.minMinor, _normalSpecsDto.maxMinor);
+                }
+                else
+                {
+                    nMajor = std::clamp(std::fabs(trackedState.crossingData.rbegin()->nX), _normalSpecsDto.minMajor, _normalSpecsDto.maxMajor);
+                    nMinor = std::clamp(std::fabs(trackedState.crossingData.rbegin()->nZ), _normalSpecsDto.minMinor, _normalSpecsDto.maxMinor);
+                }
+
+                state.AddRegionBitsByNRegions(bitCursor, minimumBitsMajor, nMajor, _normalSpecsDto.minMajor, _normalSpecsDto.maxMajor, _normalSpecsDto.regionsMajor);
+                state.AddRegionBitsByNRegions(bitCursor, minimumBitsMinor, nMinor, _normalSpecsDto.minMinor, _normalSpecsDto.maxMinor, _normalSpecsDto.regionsMinor);
+            }
+            else
+            {
+                state.AddValueBits(bitCursor, 1, 0);
+                state.AddRegionBitsByRegionSize(bitCursor, 8, trackedState.crossingData.rbegin()->nZ, 0.f, 0.8f, 0.005f);
+                state.AddRegionBitsByRegionSize(bitCursor, 8, trackedState.crossingData.rbegin()->nX, -0.7f, 0.7f, 0.005f);
+            }
 
             int framesSinceCrossing = std::clamp(int(GetCurrentFrame() - trackedState.crossingData.rbegin()->frame), 0, 63);
             if (trackedState.phase == StateTracker_BitfsDr::Phase::RUN_DOWNHILL_PRE_CROSSING)
@@ -262,7 +288,7 @@ bool Scattershot_BitfsDr::ValidateState()
 
     // Quadrant check
     if (pyramid->oTiltingPyramidNormalZ < -.15 || pyramid->oTiltingPyramidNormalX > 0.15)
-        return false; 
+        return false;
 
     // Action check
     if (marioState->action != ACT_BRAKING && marioState->action != ACT_DIVE && marioState->action != ACT_DIVE_SLIDE &&
@@ -271,7 +297,7 @@ bool Scattershot_BitfsDr::ValidateState()
         marioState->action != ACT_FINISH_TURNING_AROUND && marioState->action != ACT_WALKING)
     {
         return false;
-    } 
+    }
 
     if (marioState->action == ACT_FREEFALL && marioState->vel[1] > -20.0)
         return false; //freefall without having done nut spot chain
@@ -297,8 +323,32 @@ bool Scattershot_BitfsDr::ValidateState()
         return false;
 
     // Reject departures from norm regime
-    if (state.reachedNormRegime && fabs(xNorm) + fabs(zNorm) < _normRegimeThreshold - 0.02f)
+    if (state.reachedNormRegime && fabs(xNorm) + fabs(zNorm) < _normalSpecsDto.minXzSum - 0.02f)
         return false;
+
+    // Validate major and minor horizontal norms are in correct windows
+    if (state.currentOscillation >= _targetOscillation && !_normalSpecsDto.onlyMinMajor)
+    {
+        float xNormCrossing = std::fabs(state.crossingData.rbegin()->nX);
+        float zNormCrossing = std::fabs(state.crossingData.rbegin()->nZ);
+
+        if (std::fabs(zNormCrossing) >= std::fabs(xNormCrossing))
+        {
+            if (std::clamp(zNormCrossing, _normalSpecsDto.minMajor, _normalSpecsDto.maxMajor) != zNormCrossing)
+                return false;
+
+            if (std::clamp(xNormCrossing, _normalSpecsDto.minMinor, _normalSpecsDto.maxMinor) != xNormCrossing)
+                return false;
+        }
+        else
+        {
+            if (std::clamp(xNormCrossing, _normalSpecsDto.minMajor, _normalSpecsDto.maxMajor) != xNormCrossing)
+                return false;
+
+            if (std::clamp(zNormCrossing, _normalSpecsDto.minMinor, _normalSpecsDto.maxMinor) != zNormCrossing)
+                return false;
+        }
+    }
 
     // Reject untimely turnarounds
     if (marioState->action == ACT_TURNING_AROUND
@@ -315,7 +365,7 @@ bool Scattershot_BitfsDr::ValidateState()
         return false;
 
     // Ensure we gain speed each crossing. Check both directions separately to account for axis asymmetry
-    if (!StateTracker_BitfsDr::ValidateCrossingData(state, _componentThreshold))
+    if (!StateTracker_BitfsDr::ValidateCrossingData(state, _normalSpecsDto.minMajor))
         return false;
 
     return true;

@@ -26,6 +26,7 @@
 #include "Scattershot_BitfsDrApproach.hpp"
 #include "Scattershot_BitfsDrRecover.hpp"
 #include <range/v3/all.hpp>
+#include "TiltTarget.hpp"
 
 #pragma comment(lib, "Ws2_32.lib")
 
@@ -186,15 +187,33 @@ int main(int argc, const char* argv[])
 	std::vector<ScattershotSolution<Scattershot_BitfsDr_Solution>> solutions;
 	solutions.reserve(config.MaxSolutions);
 
+	NormalSpecsDto normalSpecsDto;
+	normalSpecsDto.onlyMinMajor = true;
+	normalSpecsDto.minXzSum = 0.69f;
+	normalSpecsDto.minMajor = 0.5f;
+	normalSpecsDto.maxMajor = 0.501f;
+	normalSpecsDto.regionsMajor = 10000;
+	normalSpecsDto.minMinor = 0.19f;
+	normalSpecsDto.maxMinor = 0.2f;
+	normalSpecsDto.regionsMinor = 10000;
+
 	int maxOscillations = 4;
 	config.MaxSolutions = 1000;
 	for (int targetOscillation = 1; targetOscillation < maxOscillations; targetOscillation++)
 	{
+		if (targetOscillation == maxOscillations - 1)
+		{
+			normalSpecsDto.onlyMinMajor = false;
+			//normalSpecsDto.minMajor = 0.47f;
+			config.MaxSolutions = 1000000;
+			config.MaxShots = 50000;
+		}
+
 		solutions = Scattershot_BitfsDr::ConfigureScattershot(config)
 			.ImportResourcePerThread([&](auto threadId) { return &resources[threadId]; })
 			.PipeFrom(solutions)
-			.ConfigureStateTracker(4, 0.69f, 0.5f, 15)
-			.Run<Scattershot_BitfsDr>(targetOscillation, 0.69f, 0.5f);
+			.ConfigureStateTracker(4, normalSpecsDto, 15)
+			.Run<Scattershot_BitfsDr>(targetOscillation, normalSpecsDto);
 
 		if (solutions.empty())
 			return false;
@@ -212,7 +231,7 @@ int main(int argc, const char* argv[])
 
 		if (targetOscillation < 3)
 			solutions |= SortByDescending([](const auto& x) { return x.data.fSpd; }) | ranges::actions::take(10);
-		else
+		else if (targetOscillation < maxOscillations - 1)
 		{
 			int parityCheck = maxOscillations % 2;
 

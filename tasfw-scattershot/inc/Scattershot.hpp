@@ -163,7 +163,7 @@ public:
         requires std::same_as<std::invoke_result_t<F, int>, TResourceConfig>
     static std::vector<ScattershotSolution<TOutputState>> RunConfig(
         const Configuration& configuration, const std::vector<ScattershotSolution<TOutputState>>& inputSolutions, F resourceConfigGenerator,
-        std::shared_ptr<std::tuple<const TStateTrackerParams&...>> stateTrackerParams, TParams&&... params)
+        std::shared_ptr<std::tuple<TStateTrackerParams...>> stateTrackerParams, TParams&&... params)
     {
         return RunBase<TScattershotThread>(configuration, inputSolutions,
             [&](Scattershot<TState, TResource, TStateTracker, TOutputState>& scattershot, M64& m64, int threadId)
@@ -184,7 +184,7 @@ public:
         requires std::same_as<std::invoke_result_t<F, int>, TResource*>
     static std::vector<ScattershotSolution<TOutputState>> RunImport(
         const Configuration& configuration, const std::vector<ScattershotSolution<TOutputState>>& inputSolutions, F resourceImportGenerator,
-        std::shared_ptr<std::tuple<const TStateTrackerParams&...>> stateTrackerParams, TParams&&... params)
+        std::shared_ptr<std::tuple<TStateTrackerParams...>> stateTrackerParams, TParams&&... params)
     {
         return RunBase<TScattershotThread>(configuration, inputSolutions,
             [&](Scattershot<TState, TResource, TStateTracker, TOutputState>& scattershot, M64& m64, int threadId)
@@ -506,7 +506,7 @@ public:
     ScattershotBuilder(const Configuration& config, const std::vector<ScattershotSolution<TOutputState>>& inputSolutions)
         : _config(config), _inputSolutions(inputSolutions) { _stateTrackerParams = std::make_shared<std::tuple<>>(); } // Ignore warning, we want to leave callback uninitialized so it fails to compile if it's not
 
-    ScattershotBuilder(const Configuration& config, const std::vector<ScattershotSolution<TOutputState>>& inputSolutions, std::shared_ptr<std::tuple<const TStateTrackerParams&...>> stateTrackerParams)
+    ScattershotBuilder(const Configuration& config, const std::vector<ScattershotSolution<TOutputState>>& inputSolutions, std::shared_ptr<std::tuple<TStateTrackerParams...>> stateTrackerParams)
         : _config(config), _inputSolutions(inputSolutions), _stateTrackerParams(stateTrackerParams) {} // Ignore warning, we want to leave callback uninitialized so it fails to compile if it's not
 
     template <class TResourceConfig, typename FResourceConfigGenerator>
@@ -538,7 +538,7 @@ public:
 protected:
     const Configuration& _config;
     const std::vector<ScattershotSolution<TOutputState>>& _inputSolutions;
-    std::shared_ptr<std::tuple<const TStateTrackerParams&...>> _stateTrackerParams = nullptr;
+    std::shared_ptr<std::tuple<TStateTrackerParams...>> _stateTrackerParams = nullptr;
 };
 
 template <class TState,
@@ -556,7 +556,7 @@ public:
     using ScattershotBuilder<TState, TResource, TStateTracker, TOutputState, TStateTrackerParams...>::_stateTrackerParams;
 
     ScattershotBuilderConfig(const Configuration& config, FResourceConfigGenerator callback,
-        const std::vector<ScattershotSolution<TOutputState>>& inputSolutions, std::shared_ptr<std::tuple<const TStateTrackerParams&...>> stateTrackerParams)
+        const std::vector<ScattershotSolution<TOutputState>>& inputSolutions, std::shared_ptr<std::tuple<TStateTrackerParams...>> stateTrackerParams)
         : ScattershotBuilder<TState, TResource, TStateTracker, TOutputState, TStateTrackerParams...>(config, inputSolutions, stateTrackerParams), _resourceConfigGenerator(callback) {}
 
     template <class UResourceConfig, typename GResourceConfigGenerator>
@@ -575,8 +575,8 @@ public:
     template <typename... UStateTrackerParams>
     ScattershotBuilderConfig<TState, TResource, TStateTracker, TOutputState, TResourceConfig, FResourceConfigGenerator, UStateTrackerParams...> ConfigureStateTracker(UStateTrackerParams&&... stateTrackerParams)
     {
-        std::shared_ptr<std::tuple<const UStateTrackerParams&...>> tuplePtr =
-            std::make_shared<std::tuple<const UStateTrackerParams&...>>(std::forward<const UStateTrackerParams&>(stateTrackerParams)...);
+        std::shared_ptr<std::tuple<UStateTrackerParams...>> tuplePtr =
+            std::make_shared<std::tuple<UStateTrackerParams...>>(std::forward<UStateTrackerParams>(stateTrackerParams)...);
         return ScattershotBuilderConfig<TState, TResource, TStateTracker, TOutputState, TResourceConfig, FResourceConfigGenerator, UStateTrackerParams...>(
             _config, _resourceConfigGenerator, _inputSolutions, tuplePtr);
     }
@@ -606,7 +606,7 @@ public:
     using ScattershotBuilder<TState, TResource, TStateTracker, TOutputState, TStateTrackerParams...>::_stateTrackerParams;
 
     ScattershotBuilderImport(const Configuration& config, FResourceImportGenerator callback,
-        const std::vector<ScattershotSolution<TOutputState>>& inputSolutions, std::shared_ptr<std::tuple<const TStateTrackerParams&...>> stateTrackerParams)
+        const std::vector<ScattershotSolution<TOutputState>>& inputSolutions, std::shared_ptr<std::tuple<TStateTrackerParams...>> stateTrackerParams)
         : ScattershotBuilder<TState, TResource, TStateTracker, TOutputState, TStateTrackerParams...>(config, inputSolutions, stateTrackerParams), _resourceImportGenerator(callback) {}
 
     ScattershotBuilderImport<TState, TResource, TStateTracker, TOutputState, FResourceImportGenerator, TStateTrackerParams...> PipeFrom(const std::vector<ScattershotSolution<TOutputState>>& inputSolutions)
@@ -617,8 +617,8 @@ public:
     template <typename... UStateTrackerParams>
     ScattershotBuilderImport<TState, TResource, TStateTracker, TOutputState, FResourceImportGenerator, UStateTrackerParams...> ConfigureStateTracker(UStateTrackerParams&&... stateTrackerParams)
     {
-        std::shared_ptr<std::tuple<const UStateTrackerParams&...>> tuplePtr =
-            std::make_shared<std::tuple<const UStateTrackerParams&...>>(std::forward<const UStateTrackerParams&>(stateTrackerParams)...);
+        std::shared_ptr<std::tuple<UStateTrackerParams...>> tuplePtr =
+            std::make_shared<std::tuple<UStateTrackerParams...>>(std::forward<UStateTrackerParams>(stateTrackerParams)...);
         return ScattershotBuilderImport<TState, TResource, TStateTracker, TOutputState, FResourceImportGenerator, UStateTrackerParams...>(
             _config, _resourceImportGenerator, _inputSolutions, tuplePtr);
     }

@@ -38,7 +38,7 @@ bool StateTracker_BitfsDr::execution()
         return true;
 
     CustomStatus.reachedNormRegime = lastFrameState.reachedNormRegime;
-    if (CustomStatus.xzSum > normRegimeThreshold)
+    if (CustomStatus.xzSum > normalSpecsDto.minXzSum)
         CustomStatus.reachedNormRegime |= true;
 
     CustomStatus.xzSumStartedIncreasing = lastFrameState.xzSumStartedIncreasing;
@@ -165,7 +165,7 @@ void StateTracker_BitfsDr::CalculatePhase(CustomScriptStatus lastFrameState, Mar
         if (lastFrameState.initialized && CustomStatus.reachedNormRegime)
         {
             CustomStatus.crossingData.emplace_back(
-                GetCurrentFrame(), 0, CustomStatus.xzSum, CustomStatus.pyraNormX, marioState->forwardVel, 0.f);
+                GetCurrentFrame(), 0, CustomStatus.xzSum, CustomStatus.pyraNormX, CustomStatus.pyraNormZ, marioState->forwardVel, 0.f);
             CustomStatus.currentCrossing++;
 
             // choose further target angle

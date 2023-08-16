@@ -20,6 +20,19 @@ public:
     int16_t roughTargetAngle = 0;
 };
 
+class NormalSpecsDto
+{
+public:
+    bool onlyMinMajor = true;
+    float minXzSum = 0;
+    float minMajor = 0;
+    float maxMajor = 0;
+    float regionsMajor = 0;
+    float minMinor = 0;
+    float maxMinor = 0;
+    float regionsMinor = 0;
+};
+
 class StateTracker_BitfsDr : public Script<LibSm64>
 {
 public:
@@ -73,14 +86,13 @@ public:
     static bool ValidateCrossingData(const StateTracker_BitfsDr::CustomScriptStatus& state, float componentThreshold);
 
     StateTracker_BitfsDr() = default;
-    StateTracker_BitfsDr(int quadrant, float normRegimeThreshold, float componentThreshold, int minOscillationFrames)
+    StateTracker_BitfsDr(int quadrant, NormalSpecsDto normalSpecsDto, int minOscillationFrames)
     {
         roughTargetAngleA = -8192 + 16384 * (quadrant - 1);
         roughTargetAngleB = 24576 + 16384 * (quadrant - 1);
 
         this->minOscillationFrames = minOscillationFrames;
-        this->normRegimeThreshold = normRegimeThreshold;
-        this->componentThreshold = componentThreshold;
+        this->normalSpecsDto = normalSpecsDto;
     }
 
     bool validation();
@@ -91,8 +103,7 @@ private:
     int16_t roughTargetAngleA = -24576;
     int16_t roughTargetAngleB = 8192;
     int minOscillationFrames = 15;
-    float normRegimeThreshold = 0.69f;
-    float componentThreshold = 0.5f;
+    NormalSpecsDto normalSpecsDto;
 
     void SetStateVariables(MarioState* marioState, Object* pyramid);
     void CalculateOscillations(CustomScriptStatus lastFrameState, MarioState* marioState, Object* pyramid);
@@ -105,9 +116,8 @@ using Alias_Scattershot_BitfsDr = Scattershot<BinaryStateBin<16>, LibSm64, State
 class Scattershot_BitfsDr : public Alias_ScattershotThread_BitfsDr
 {
 public:
-    Scattershot_BitfsDr(Alias_Scattershot_BitfsDr& scattershot, int targetOscillation, float normRegimeThreshold, float componentThreshold)
-        : Alias_ScattershotThread_BitfsDr(scattershot), _targetOscillation(targetOscillation),
-        _normRegimeThreshold(normRegimeThreshold), _componentThreshold(componentThreshold) {}
+    Scattershot_BitfsDr(Alias_Scattershot_BitfsDr& scattershot, int targetOscillation, NormalSpecsDto normalSpecsDto)
+        : Alias_ScattershotThread_BitfsDr(scattershot), _targetOscillation(targetOscillation), _normalSpecsDto(normalSpecsDto) {}
 
     void SelectMovementOptions();
     bool ApplyMovement();
@@ -123,8 +133,7 @@ public:
 
 private:
     int _targetOscillation = -1;
-    float _normRegimeThreshold = 0.69f;
-    float _componentThreshold = 0.5f;
+    NormalSpecsDto _normalSpecsDto;
 
     bool Pbd();
     bool TurnUphill();

@@ -687,7 +687,7 @@ float PyramidUpdate::FindFloor(Vec3f* marioPos, PyramidUpdateMem::Sm64Surface* s
 	int x1, z1, x2, z2, x3, z3;
 	float nx, ny, nz;
 	float oo;
-	float height;
+	float height = -11000.0f;
 
 	*floorId = -1;
 
