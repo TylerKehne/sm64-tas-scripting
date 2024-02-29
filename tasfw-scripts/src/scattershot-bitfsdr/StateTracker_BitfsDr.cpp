@@ -17,7 +17,7 @@ bool StateTracker_BitfsDr::ValidateCrossingData(const StateTracker_BitfsDr::Cust
     return true;
 }
 
-bool StateTracker_BitfsDr::validation() { return GetCurrentFrame() >= 3515; }
+bool StateTracker_BitfsDr::validation() { return GetCurrentFrame() >= initialFrame; }
 
 bool StateTracker_BitfsDr::execution()
 {
@@ -31,7 +31,7 @@ bool StateTracker_BitfsDr::execution()
     // Calculate recursive metrics
     int64_t currentFrame = GetCurrentFrame();
     CustomScriptStatus lastFrameState;
-    if (currentFrame > 3515)
+    if (currentFrame > initialFrame)
         lastFrameState = GetTrackedState<StateTracker_BitfsDr>(currentFrame - 1);
 
     if (!lastFrameState.initialized)

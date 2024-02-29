@@ -595,6 +595,19 @@ protected:
 		return root->GetTrackedStateInternal(this, GetInputsMetadataAndCache(frame));
 	}
 
+	template <std::derived_from<Script<TResource>> TStateTracker>
+		requires std::constructible_from<TStateTracker>
+	bool TrackedStateExists(int64_t frame)
+	{
+		TopLevelScript<TResource, TStateTracker>* root = dynamic_cast<TopLevelScript<TResource, TStateTracker>*>(_rootScript);
+		if (!root) {
+			std::cout << "Type mismatch! Expected TopLevelScript<" << typeid(TResource).name() << ", " << typeid(TStateTracker).name() << ">.\n";
+			throw std::runtime_error("Type mismatch in GetTrackedState<TStateTracker>()");
+		}
+
+		return root->TrackedStateExistsInternal(this, GetInputsMetadataAndCache(frame));
+	}
+
 	// TODO: move this method to some utility class
 	template <typename T>
 	int sign(T val)
@@ -605,6 +618,7 @@ protected:
 	uint64_t GetCurrentFrame();
 	bool IsDiffEmpty();
 	M64Diff GetDiff();
+	M64Diff GetTotalDiff();
 	M64Diff GetBaseDiff();
 	void Apply(const M64Diff& m64Diff);
 	void AdvanceFrameRead();
@@ -670,7 +684,6 @@ private:
 		uint64_t initialFrame = GetCurrentFrame();
 
 		TStateTracker script = stateTrackerFactory->Generate();
-		script.isStateTracker = true;
 		script.Initialize(this);
 
 		uint64_t loadStateTimeStart = resource->GetTotalLoadStateTime();
@@ -680,6 +693,10 @@ private:
 		uint64_t start = get_time();
 		// The information is stored per frame, so we need to make sure we are there before running the state tracking script.
 		script.Load(frame);
+
+		// Set this after the load so states can be tracked efficiently if the state is in the future.
+		script.isStateTracker = true;
+
 		script.Run();
 		uint64_t finish = get_time();
 
@@ -700,6 +717,7 @@ private:
 
 	// Needed for state tracking. These do nothing, but TopLevelScript overrides them. Can't access explicitly because of lack of template information.
 	virtual void TrackState(Script<TResource>* currentScript, const InputsMetadata<TResource>& inputsMetadata) { return; }
+	virtual bool TrackedStateExistsInternal(Script<TResource>* currentScript, const InputsMetadata<TResource>& inputsMetadata) { return false; }
 	virtual void PushTrackedStatesContainer(Script<TResource>* currentScript, int adhocLevel) { return; }
 	virtual void PopTrackedStatesContainer(Script<TResource>* currentScript, int adhocLevel) { return; }
 	virtual void MoveSyncedTrackedStates(Script<TResource>* sourceScript, int sourceAdhocLevel, Script<TResource>* destScript, int destAdhocLevel) { return; }
@@ -916,6 +934,7 @@ private:
 	std::unordered_map<Script<TResource>*, std::unordered_map<int64_t, std::map<int64_t, typename TStateTracker::CustomScriptStatus>>> trackedStates;
 
 	void TrackState(Script<TResource>* currentScript, const InputsMetadata<TResource>& inputsMetadata) override;
+	bool TrackedStateExistsInternal(Script<TResource>* currentScript, const InputsMetadata<TResource>& inputsMetadata) override;
 	void PushTrackedStatesContainer(Script<TResource>* currentScript, int adhocLevel) override;
 	void PopTrackedStatesContainer(Script<TResource>* currentScript, int adhocLevel) override;
 	void MoveSyncedTrackedStates(Script<TResource>* sourceScript, int sourceAdhocLevel, Script<TResource>* destScript, int destAdhocLevel) override;

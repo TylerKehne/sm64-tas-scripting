@@ -140,6 +140,16 @@ bool Scattershot_BitfsDr::ApplyMovement()
             return true;
     }
 
+    /*
+    if (marioState->action != ACT_FINISH_TURNING_AROUND && GetTempRng() % 2 == 0)
+    {
+        int64_t intendedYaw = marioState->faceAngle[1] + 0x8000;
+        auto stick = Inputs::GetClosestInputByYawHau(intendedYaw, 32, camera->yaw);
+        AdvanceFrameWrite(Inputs(0, stick.first, stick.second));
+        return true;
+    }
+    */
+
     // Random input
     AdvanceFrameWrite(RandomInputs(
         {
@@ -247,7 +257,7 @@ BinaryStateBin<16> Scattershot_BitfsDr::GetStateBin()
             else
             {
                 state.AddValueBits(bitCursor, 1, 0);
-                state.AddRegionBitsByRegionSize(bitCursor, 8, trackedState.crossingData.rbegin()->nZ, 0.f, 0.8f, 0.005f);
+                state.AddRegionBitsByRegionSize(bitCursor, 8, trackedState.crossingData.rbegin()->nZ, -0.7f, 0.7f, 0.005f);
                 state.AddRegionBitsByRegionSize(bitCursor, 8, trackedState.crossingData.rbegin()->nX, -0.7f, 0.7f, 0.005f);
             }
 
@@ -319,8 +329,8 @@ bool Scattershot_BitfsDr::ValidateState()
     auto lastFrameState = GetTrackedState<StateTracker_BitfsDr>(GetCurrentFrame() - 1);
 
     //Herd to correct quadrant initially
-    if (!state.reachedNormRegime && marioState->pos[0] >= -2000.0f)
-        return false;
+    //if (!state.reachedNormRegime && marioState->pos[0] >= -2000.0f)
+    //    return false;
 
     // Reject departures from norm regime
     if (state.reachedNormRegime && fabs(xNorm) + fabs(zNorm) < _normalSpecsDto.minXzSum - 0.02f)

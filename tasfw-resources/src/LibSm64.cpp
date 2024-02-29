@@ -29,7 +29,7 @@ static void handler(int sig, siginfo_t* si, void* unused)
 #endif
 LibSm64::LibSm64(const LibSm64Config& config) : config(config), dll(config.dllPath)
 {
-	slotManager._saveMemLimit = 100 * 1024 * 1024; //100 MB
+	slotManager._saveMemLimit = int64_t(8000) * 1024 * 1024; //8 GB
 
 	// constructor of SharedLib will throw if it can't load
 	void* processID = dll.get("sm64_init");

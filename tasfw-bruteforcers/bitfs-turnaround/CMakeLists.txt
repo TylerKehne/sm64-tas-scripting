@@ -1,7 +1,7 @@
 # BitFS turnaround script. Scripts can likely be moved to /lib, given that they will be chained together?
 
 add_executable(tasfw-bitfs-turnaround
-	"src/TiltTarget.hpp"
+	"src/TiltTargetShot.hpp"
 	"src/BitFsConfig.cpp"
 	"src/BitFsConfig.hpp"
 	"src/main.cpp"

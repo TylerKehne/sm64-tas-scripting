@@ -86,13 +86,14 @@ public:
     static bool ValidateCrossingData(const StateTracker_BitfsDr::CustomScriptStatus& state, float componentThreshold);
 
     StateTracker_BitfsDr() = default;
-    StateTracker_BitfsDr(int quadrant, NormalSpecsDto normalSpecsDto, int minOscillationFrames)
+    StateTracker_BitfsDr(int64_t initialFrame, int quadrant, NormalSpecsDto normalSpecsDto, int minOscillationFrames)
     {
         roughTargetAngleA = -8192 + 16384 * (quadrant - 1);
         roughTargetAngleB = 24576 + 16384 * (quadrant - 1);
 
         this->minOscillationFrames = minOscillationFrames;
         this->normalSpecsDto = normalSpecsDto;
+        this->initialFrame = initialFrame;
     }
 
     bool validation();
@@ -104,6 +105,7 @@ private:
     int16_t roughTargetAngleB = 8192;
     int minOscillationFrames = 15;
     NormalSpecsDto normalSpecsDto;
+    int64_t initialFrame = 0;
 
     void SetStateVariables(MarioState* marioState, Object* pyramid);
     void CalculateOscillations(CustomScriptStatus lastFrameState, MarioState* marioState, Object* pyramid);

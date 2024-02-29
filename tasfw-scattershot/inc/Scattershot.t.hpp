@@ -115,7 +115,9 @@ bool Scattershot<TState, TResource, TStateTracker, TOutputState>::UpsertBlock(
         if (Blocks[blockIndex].stateBin == stateBin && pipedDiff1Index == 0) // False indicates a hash collision or piped-in diff
         {
             // Override fitness check if this block is a new solution
-            if (fitness > Blocks[blockIndex].fitness || isSolution && !Solutions.contains(blockIndex))
+            if ((config.FitnessTieGoesToNewBlock && fitness == Blocks[blockIndex].fitness)
+                || fitness > Blocks[blockIndex].fitness
+                || isSolution && !Solutions.contains(blockIndex))
             {
                 // Reject improvements that are not considered solutions if the incumbent is a solution
                 if (Solutions.contains(blockIndex) && !isSolution)

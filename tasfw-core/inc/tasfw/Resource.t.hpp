@@ -137,7 +137,7 @@ void Resource<TState>::LoadState(int64_t slotId)
 		slotManager.LoadSlot(slotId);
 
 	_totalLoadStateTime += get_time() - start;
-
+	
 	nLoadStates++;
 }
 

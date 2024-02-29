@@ -11,10 +11,6 @@
 class StateTracker_BitfsDrApproach : public Script<LibSm64>
 {
 public:
-    // TODO: enable configuration so hardcoding isn't necessary
-    const int16_t roughTargetAngle = 16384;
-    const float normRegimeThreshold = 0.69f;
-
     enum class Phase
     {
         RUN_DOWNHILL,
@@ -43,8 +39,15 @@ public:
     CustomScriptStatus CustomStatus = CustomScriptStatus();
 
     StateTracker_BitfsDrApproach() = default;
+    StateTracker_BitfsDrApproach(int64_t initialFrame, int oscQuadrant, int targetQuadrant, float minXzSum)
+    {
+        SetRoughTargetAngle(oscQuadrant, targetQuadrant);
 
-    bool validation() { return GetCurrentFrame() >= 3515; }
+        this->normRegimeThreshold = minXzSum;
+        this->initialFrame = initialFrame;
+    }
+
+    bool validation() { return GetCurrentFrame() >= initialFrame; }
 
     bool execution() 
     {
@@ -58,7 +61,7 @@ public:
         // Calculate recursive metrics
         int64_t currentFrame = GetCurrentFrame();
         CustomScriptStatus lastFrameState;
-        if (currentFrame > 3515)
+        if (currentFrame > initialFrame)
             lastFrameState = GetTrackedState<StateTracker_BitfsDrApproach>(currentFrame - 1);
 
         if (!lastFrameState.initialized)
@@ -73,6 +76,87 @@ public:
     bool assertion() { return CustomStatus.initialized == true; }
 
 private:
+    int64_t initialFrame = 0;
+    int16_t roughTargetAngle = 16384;
+    float normRegimeThreshold = 0.69f;
+
+    void SetRoughTargetAngle(int oscQuadrant, int targetQuadrant)
+    {
+        switch (oscQuadrant)
+        {
+        case 1:
+        {
+            if (targetQuadrant == 2)
+            {
+                roughTargetAngle = -32768;
+                break;
+            }
+
+            if (targetQuadrant == 4)
+            {
+                roughTargetAngle = -16384;
+                break;
+            }
+
+            throw std::runtime_error("Invalid quadrants");
+        }
+
+        case 2:
+        {
+            if (targetQuadrant == 3)
+            {
+                roughTargetAngle = -16384;
+                break;
+            }
+
+            if (targetQuadrant == 1)
+            {
+                roughTargetAngle = 0;
+                break;
+            }
+
+            throw std::runtime_error("Invalid quadrants");
+        }
+
+        case 3:
+        {
+            if (targetQuadrant == 4)
+            {
+                roughTargetAngle = 0;
+                break;
+            }
+
+            if (targetQuadrant == 2)
+            {
+                roughTargetAngle = 16384;
+                break;
+            }
+
+            throw std::runtime_error("Invalid quadrants");
+        }
+
+        case 4:
+        {
+            if (targetQuadrant == 1)
+            {
+                roughTargetAngle = 16384;
+                break;
+            }
+
+            if (targetQuadrant == 3)
+            {
+                roughTargetAngle = -32768;
+                break;
+            }
+
+            throw std::runtime_error("Invalid quadrants");
+        }
+
+        default:
+            throw std::runtime_error("Invalid quadrants");
+        }
+    }
+
     void SetStateVariables(MarioState* marioState, Object* pyramid)
     {
         CustomStatus.marioX = marioState->pos[0];

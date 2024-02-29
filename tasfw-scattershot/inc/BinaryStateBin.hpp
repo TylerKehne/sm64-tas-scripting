@@ -20,7 +20,7 @@ public:
         if (bitCursor < 0 || bitCursor >= nBytes * 8)
             throw std::runtime_error("Bit cursor out of range.");
 
-        uint64_t maxValue = uint64_t(1 << uint64_t(bitsToAllocate));
+        uint64_t maxValue = uint64_t(1) << uint64_t(bitsToAllocate);
         if (value >= maxValue)
             throw std::runtime_error("Value too large for bits allocated.");
 
@@ -40,7 +40,7 @@ public:
         if (nRegions == 0)
             throw std::runtime_error("Invalid number of regions.");
 
-        uint64_t maxRegions = uint64_t(1 << uint64_t(bitsToAllocate));
+        uint64_t maxRegions = uint64_t(1) << uint64_t(bitsToAllocate);
         if (nRegions > maxRegions)
             nRegions = maxRegions;
 
@@ -70,7 +70,7 @@ public:
             throw std::runtime_error("Invalid number of regions.");
 
         uint64_t nRegions = std::ceil(double(max - min) / double(regionSize));
-        uint64_t maxRegions = uint64_t(1 << uint64_t(bitsToAllocate));
+        uint64_t maxRegions = uint64_t(1) << uint64_t(bitsToAllocate);
         if (nRegions > maxRegions)
             nRegions = maxRegions;
 
@@ -94,7 +94,7 @@ private:
             int byteIndex = trueBit >> 3;
             int byteBit = trueBit % 8;
 
-            uint64_t bitMask = uint64_t(1 << uint64_t(bit));
+            uint64_t bitMask = uint64_t(1) << uint64_t(bit);
             if (bitMask & value)
                 bytes[byteIndex] |= 1 << byteBit;
         }

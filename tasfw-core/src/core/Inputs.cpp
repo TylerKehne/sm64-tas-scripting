@@ -403,6 +403,32 @@ int M64::save(long initFrame)
 		// Write ROM signature + country code
 		if (newFile)
 		{
+			// FPS, number of controllers
+			f.seekp(0x14, std::ios_base::beg);
+			uint8_t fps = 60;
+			uint8_t nControllers = 1;
+			f.write(reinterpret_cast<char*>(&fps), sizeof(uint8_t));
+			f.write(reinterpret_cast<char*>(&nControllers), sizeof(uint8_t));
+
+			// number of inputs
+			f.seekp(0x18, std::ios_base::beg);
+			uint32_t samples = lastFrame + 1;
+			f.write(reinterpret_cast<char*>(&samples), sizeof(uint32_t));
+
+			// m64 type
+			uint16_t m64Type = byteswap((uint16_t)2);
+			f.write(reinterpret_cast<char*>(&m64Type), sizeof(uint16_t));
+
+			// Enable Controller 1
+			f.seekp(0x20, std::ios_base::beg);
+			uint8_t controller1Enabled = 1;
+			f.write(reinterpret_cast<char*>(&controller1Enabled), sizeof(uint8_t));
+
+			// ROM name
+			f.seekp(0xC4, std::ios_base::beg);
+			char romName[32] = "SUPER MARIO 64";
+			f.write(reinterpret_cast<char*>(romName), 14);
+
 			f.seekp(0xE4, std::ios_base::beg);
 			uint32_t rom = byteswap((uint32_t)Rom::SUPER_MARIO_64);
 			uint16_t countryCode = byteswap((uint16_t)CountryCode::SUPER_MARIO_64_J);
