@@ -28,5 +28,6 @@ enum class MovementOption
     TURN_UPHILL,
     RUN_FORWARD,
     TURN_AROUND,
-    QUICKTURN
+    QUICKTURN,
+    C_UP_TRICK
 };

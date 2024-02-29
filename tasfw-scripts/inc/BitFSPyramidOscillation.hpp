@@ -226,6 +226,7 @@ public:
 		int32_t angleFacingAnalogBack = 0;
 		int32_t angleNotFacingAnalogBack = 0;
 		int32_t floorAngle = 0;
+		float steepness = 0;
 		bool isSlope = false;
 	};
 	CustomScriptStatus CustomStatus = CustomScriptStatus();

@@ -27,9 +27,12 @@ bool BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle::execution()
 		return false;
 	}
 
+	
+
 	auto floor = &pyramid->surfaces[1][marioState->floorId];
 	short floorAngle = atan2s(floor->normal.z, floor->normal.x);
 	CustomStatus.isSlope = PyramidUpdateMem::FloorIsSlope(floor, marioState->action);
+	CustomStatus.steepness = std::sqrtf(floor->normal.x * floor->normal.x + floor->normal.z * floor->normal.z);
 
 	// m->floorAngle - m->faceAngle[1] >= -0x3FFF && m->floorAngle -
 	// m->faceAngle[1] <= 0x3FFF

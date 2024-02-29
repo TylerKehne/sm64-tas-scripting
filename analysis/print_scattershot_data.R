@@ -37,8 +37,8 @@ df$shot <- df$Shot
 df$frame <- df$Frame
 
 # Define state bin size
-x_bins <- seq(range(df$x)[1], range(df$x)[2], by = 10)
-y_bins <- seq(range(df$y)[1], range(df$y)[2], by = 10)
+x_bins <- seq(range(df$x)[1], range(df$x)[2], by = 5)
+y_bins <- seq(range(df$y)[1], range(df$y)[2], by = 5)
 angle_bins <- seq(-32768, 32767, by = 1024)
 speed_bins <- seq(range(df$speed)[1], range(df$speed)[2], by = 5)
 
@@ -52,12 +52,13 @@ df$bin_speed <- cut(df$speed, breaks = speed_bins, include.lowest = TRUE)
 # Without it, newer blocks will overwhelm the data
 df_top <- df %>%
     #filter(frame > quantile(frame, probs = 0.99) & frame < quantile(frame, probs = 1)) %>%
-    filter(abs(PlatNormX) + abs(PlatNormZ) > 0.69) %>%
-    #filter(Phase == 6) %>%
-    #filter(MarioAction != 0x00000443) %>% # turning around
+    #filter(abs(PlatNormX) + abs(PlatNormZ) > 0.69) %>%
+    #filter(Phase == 4) %>%
+    #filter(MarioYVel == 10.0) %>%
+    #filter(MarioAction == 0x010008A6) %>%
     #filter(speed > 20) %>%
     filter(Sampled == 1) %>%
-    filter(Oscillation == 2) %>%
+    #filter(Oscillation == 2) %>%
     #filter(Crossing == 6) %>%
     group_by(bin_x, bin_y, bin_angle, bin_speed) %>% 
     arrange(shot) %>% 

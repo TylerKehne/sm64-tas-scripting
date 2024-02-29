@@ -35,8 +35,11 @@ FetchContent_Declare(json
 	URL https://github.com/nlohmann/json/releases/download/v3.11.2/json.tar.xz
 	URL_HASH SHA256=8c4b26bf4b422252e13f332bc5e388ec0ab5c3443d24399acb675e68278d341f
 )
-FetchContent_MakeAvailable(json)
-
+FetchContent_Declare(ranges-v3
+    DOWNLOAD_EXTRACT_TIMESTAMP ON
+    URL https://github.com/ericniebler/range-v3/archive/refs/tags/0.12.0.tar.gz
+)
+FetchContent_MakeAvailable(json ranges-v3)
 
 # Library components
 add_subdirectory(tasfw-core)

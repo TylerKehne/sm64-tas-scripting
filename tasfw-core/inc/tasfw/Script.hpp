@@ -17,17 +17,23 @@ class Script;
 template <derived_from_specialization_of<Resource> TResource>
 class DefaultStateTracker;
 
-template <derived_from_specialization_of<Resource> TResource, std::derived_from<Script<TResource>> TStateTracker>
-	requires std::constructible_from<TStateTracker> 
+template <derived_from_specialization_of<Resource> TResource,
+	std::derived_from<Script<TResource>> TStateTracker>
 class TopLevelScript;
 
 template <derived_from_specialization_of<TopLevelScript> TTopLevelScript,
 	class TState,
-	class TResourceConfig>
+	class TResourceConfig,
+	typename... TStateTrackerParams>
 class TopLevelScriptBuilderConfigured;
 
-template <derived_from_specialization_of<TopLevelScript> TTopLevelScript, class TResource>
+template <derived_from_specialization_of<TopLevelScript> TTopLevelScript,
+	class TResource,
+	typename... TStateTrackerParams>
 class TopLevelScriptBuilderImported;
+
+template <derived_from_specialization_of<Script> TStateTracker>
+class StateTrackerFactoryBase;
 
 template <derived_from_specialization_of<Resource> TResource>
 class ScriptFriend;
@@ -589,6 +595,19 @@ protected:
 		return root->GetTrackedStateInternal(this, GetInputsMetadataAndCache(frame));
 	}
 
+	template <std::derived_from<Script<TResource>> TStateTracker>
+		requires std::constructible_from<TStateTracker>
+	bool TrackedStateExists(int64_t frame)
+	{
+		TopLevelScript<TResource, TStateTracker>* root = dynamic_cast<TopLevelScript<TResource, TStateTracker>*>(_rootScript);
+		if (!root) {
+			std::cout << "Type mismatch! Expected TopLevelScript<" << typeid(TResource).name() << ", " << typeid(TStateTracker).name() << ">.\n";
+			throw std::runtime_error("Type mismatch in GetTrackedState<TStateTracker>()");
+		}
+
+		return root->TrackedStateExistsInternal(this, GetInputsMetadataAndCache(frame));
+	}
+
 	// TODO: move this method to some utility class
 	template <typename T>
 	int sign(T val)
@@ -599,6 +618,7 @@ protected:
 	uint64_t GetCurrentFrame();
 	bool IsDiffEmpty();
 	M64Diff GetDiff();
+	M64Diff GetTotalDiff();
 	M64Diff GetBaseDiff();
 	void Apply(const M64Diff& m64Diff);
 	void AdvanceFrameRead();
@@ -658,16 +678,80 @@ private:
 	template <typename F>
 	BaseScriptStatus ExecuteAdhocBase(F adhocScript);
 
+	template <derived_from_specialization_of<Script> TStateTracker>
+	ScriptStatus<TStateTracker> ExecuteStateTracker(int64_t frame, std::shared_ptr<StateTrackerFactoryBase<TStateTracker>> stateTrackerFactory)
+	{
+		uint64_t initialFrame = GetCurrentFrame();
+
+		TStateTracker script = stateTrackerFactory->Generate();
+		script.Initialize(this);
+
+		uint64_t loadStateTimeStart = resource->GetTotalLoadStateTime();
+		uint64_t saveStateTimeStart = resource->GetTotalSaveStateTime();
+		uint64_t advanceFrameTimeStart = resource->GetTotalFrameAdvanceTime();
+
+		uint64_t start = get_time();
+		// The information is stored per frame, so we need to make sure we are there before running the state tracking script.
+		script.Load(frame);
+
+		// Set this after the load so states can be tracked efficiently if the state is in the future.
+		script.isStateTracker = true;
+
+		script.Run();
+		uint64_t finish = get_time();
+
+		BaseStatus[_adhocLevel].loadDuration = resource->GetTotalLoadStateTime() - loadStateTimeStart;
+		BaseStatus[_adhocLevel].saveDuration = resource->GetTotalSaveStateTime() - saveStateTimeStart;
+		BaseStatus[_adhocLevel].advanceFrameDuration = resource->GetTotalFrameAdvanceTime() - advanceFrameTimeStart;
+		BaseStatus[_adhocLevel].totalDuration = finish - start;
+
+		// Load if necessary
+		Revert(initialFrame, script.BaseStatus[0].m64Diff, script.saveBank[0], &script);
+
+		BaseStatus[_adhocLevel].nLoads += script.BaseStatus[0].nLoads;
+		BaseStatus[_adhocLevel].nSaves += script.BaseStatus[0].nSaves;
+		BaseStatus[_adhocLevel].nFrameAdvances += script.BaseStatus[0].nFrameAdvances;
+
+		return ScriptStatus<TStateTracker>(script.BaseStatus[0], script.CustomStatus);
+	}
+
 	// Needed for state tracking. These do nothing, but TopLevelScript overrides them. Can't access explicitly because of lack of template information.
 	virtual void TrackState(Script<TResource>* currentScript, const InputsMetadata<TResource>& inputsMetadata) { return; }
+	virtual bool TrackedStateExistsInternal(Script<TResource>* currentScript, const InputsMetadata<TResource>& inputsMetadata) { return false; }
 	virtual void PushTrackedStatesContainer(Script<TResource>* currentScript, int adhocLevel) { return; }
 	virtual void PopTrackedStatesContainer(Script<TResource>* currentScript, int adhocLevel) { return; }
 	virtual void MoveSyncedTrackedStates(Script<TResource>* sourceScript, int sourceAdhocLevel, Script<TResource>* destScript, int destAdhocLevel) { return; }
 	virtual void EraseTrackedStates(Script<TResource>* currentScript, int adhocLevel, int64_t firstFrame) { return; }
 };
 
+template <derived_from_specialization_of<Script> TStateTracker>
+class StateTrackerFactoryBase
+{
+public:
+	virtual ~StateTrackerFactoryBase() = default;
+	virtual TStateTracker Generate() = 0;
+};
+
+template <derived_from_specialization_of<Script> TStateTracker, typename... TStateTrackerParams>
+	requires (std::constructible_from<TStateTracker, TStateTrackerParams...>)
+class StateTrackerFactory : public StateTrackerFactoryBase<TStateTracker>
+{
+public:
+	StateTrackerFactory(std::shared_ptr<std::tuple<TStateTrackerParams...>> stateTrackerParams) : _stateTrackerParams(stateTrackerParams) {}
+
+	TStateTracker Generate()
+	{
+		return std::apply(
+			[]<typename... Ts>(Ts&&... params) -> TStateTracker { return TStateTracker(std::forward<Ts>(params)...); },
+			*_stateTrackerParams);
+	}
+
+private:
+	std::shared_ptr<std::tuple<TStateTrackerParams...>> _stateTrackerParams;
+};
+
 // DO NOT EVER USE THESE METHODS OUTSIDE OF THE TOPLEVELSCRIPT BASE CLASS
-// MSVC's casual relationship with the C++ standard specifications necessitates this class to access certain Script private members.
+// MSVC's casual relationship with the C++ standard necessitates this class to access certain Script private members.
 // Preferably we could just declare a friend class template for TopLevelScript like we're supposed to be able to do.
 template <derived_from_specialization_of<Resource> TResource>
 class ScriptFriend
@@ -714,20 +798,10 @@ public:
 	}
 
 	template <derived_from_specialization_of<Script> TStateTracker>
-		requires(std::constructible_from<TStateTracker>)
-	static ScriptStatus<TStateTracker> ExecuteStateTracker(Script<TResource>* script, int64_t frame)
+	static ScriptStatus<TStateTracker> ExecuteStateTracker(
+		int64_t frame, Script<TResource>* script, std::shared_ptr<StateTrackerFactoryBase<TStateTracker>> stateTrackerFactory)
 	{
-		bool wasStateTracker = script->isStateTracker;
-		script->isStateTracker = true;
-
-		// The information is stored per frame, so we need to make sure we are there before running the state tracking script.
-		script->Load(frame);
-
-		auto status = script->Execute<TStateTracker>();
-
-		script->isStateTracker = wasStateTracker;
-
-		return status;
+		return script->ExecuteStateTracker<TStateTracker>(frame, stateTrackerFactory);
 	}
 
 	static uint64_t GetCurrentFrame(Script<TResource>* script)
@@ -749,17 +823,18 @@ public:
 
 template <derived_from_specialization_of<Resource> TResource,
 	std::derived_from<Script<TResource>> TStateTracker = DefaultStateTracker<TResource>>
-	requires std::constructible_from<TStateTracker>
 class TopLevelScript : public Script<TResource>
 {
 public:
 	TopLevelScript() = default;
 
-	template <std::derived_from<TopLevelScript<TResource, TStateTracker>> TTopLevelScript, typename... Ts>
-		requires(std::constructible_from<TTopLevelScript, Ts...> && std::constructible_from<TResource>)
-	static ScriptStatus<TTopLevelScript> Main(M64& m64, Ts&&... params) 
+	template <derived_from_specialization_of<TopLevelScript> TTopLevelScript, typename... TStateTrackerParams, typename... Ts>
+		requires(std::constructible_from<TTopLevelScript, Ts...> && std::constructible_from<TResource> && std::constructible_from<TStateTracker, TStateTrackerParams...>)
+	static ScriptStatus<TTopLevelScript> Main(M64& m64, std::shared_ptr<std::tuple<TStateTrackerParams...>> stateTrackerParams, Ts&&... params)
 	{
 		TTopLevelScript script = TTopLevelScript(std::forward<Ts>(params)...);
+		script.stateTrackerFactory = std::make_shared<StateTrackerFactory<TStateTracker, TStateTrackerParams...>>(stateTrackerParams);
+
 		TResource resource = TResource();
 		resource.save(resource.startSave);
 
@@ -768,11 +843,12 @@ public:
 		return InitializeAndRun(m64, script, &resource);
 	}
 
-	template <std::derived_from<TopLevelScript<TResource, TStateTracker>> TTopLevelScript, typename... Ts>
-		requires(std::constructible_from<TTopLevelScript, Ts...>)
-	static ScriptStatus<TTopLevelScript> MainImport(M64& m64, TResource* resource, Ts&&... params)
+	template <derived_from_specialization_of<TopLevelScript> TTopLevelScript, typename... TStateTrackerParams, typename... Ts>
+		requires(std::constructible_from<TTopLevelScript, Ts...> && std::constructible_from<TStateTracker, TStateTrackerParams...>)
+	static ScriptStatus<TTopLevelScript> MainImport(M64& m64, std::shared_ptr<std::tuple<TStateTrackerParams...>> stateTrackerParams, TResource* resource, Ts&&... params)
 	{
 		TTopLevelScript script = TTopLevelScript(std::forward<Ts>(params)...);
+		script.stateTrackerFactory = std::make_shared<StateTrackerFactory<TStateTracker, TStateTrackerParams...>>(stateTrackerParams);
 
 		// Initialize start save if resource is new. If not, load start save to reset resource.
 		if (resource->initialFrame == -1)
@@ -786,11 +862,13 @@ public:
 		return InitializeAndRun(m64, script, resource);
 	}
 
-	template <std::derived_from<TopLevelScript<TResource, TStateTracker>> TTopLevelScript, typename TResourceConfig, typename... Ts>
-		requires(std::constructible_from<TTopLevelScript, Ts...> && std::constructible_from<TResource, TResourceConfig>)
-	static ScriptStatus<TTopLevelScript> MainConfig(M64& m64, TResourceConfig config, Ts&&... params)
+	template <derived_from_specialization_of<TopLevelScript> TTopLevelScript, typename TResourceConfig, typename... TStateTrackerParams, typename... Ts>
+		requires(std::constructible_from<TTopLevelScript, Ts...> && std::constructible_from<TResource, TResourceConfig> && std::constructible_from<TStateTracker, TStateTrackerParams...>)
+	static ScriptStatus<TTopLevelScript> MainConfig(M64& m64, std::shared_ptr<std::tuple<TStateTrackerParams...>> stateTrackerParams, TResourceConfig config, Ts&&... params)
 	{
 		TTopLevelScript script = TTopLevelScript(std::forward<Ts>(params)...);
+		script.stateTrackerFactory = std::make_shared<StateTrackerFactory<TStateTracker, TStateTrackerParams...>>(stateTrackerParams);
+
 		TResource resource = TResource(config);
 		resource.save(resource.startSave);
 
@@ -799,13 +877,17 @@ public:
 		return InitializeAndRun(m64, script, &resource);
 	}
 
-	template <std::derived_from<TopLevelScript<TResource, TStateTracker>> TTopLevelScript, class TState, typename... Ts>
+	template <derived_from_specialization_of<TopLevelScript> TTopLevelScript, class TState,
+		typename... TStateTrackerParams, typename... Ts>
 		requires(std::constructible_from<TTopLevelScript, Ts...>
 			&& std::constructible_from<TResource>
-			&& std::derived_from<TResource, Resource<TState>>)
-	static ScriptStatus<TTopLevelScript> MainFromSave(M64& m64, ImportedSave<TState>& save, Ts&&... params) 
+			&& std::derived_from<TResource, Resource<TState>>
+			&& std::constructible_from<TStateTracker, TStateTrackerParams...>)
+	static ScriptStatus<TTopLevelScript> MainFromSave(M64& m64, std::shared_ptr<std::tuple<TStateTrackerParams...>> stateTrackerParams, ImportedSave<TState>& save, Ts&&... params)
 	{
 		TTopLevelScript script = TTopLevelScript(std::forward<Ts>(params)...);
+		script.stateTrackerFactory = std::make_shared<StateTrackerFactory<TStateTracker, TStateTrackerParams...>>(stateTrackerParams);
+
 		TResource resource = TResource();
 		resource.load(save.state);
 		resource.save(resource.startSave);
@@ -815,13 +897,18 @@ public:
 		return InitializeAndRun(m64, script, &resource);
 	}
 
-	template <std::derived_from<TopLevelScript<TResource, TStateTracker>> TTopLevelScript, class TState, typename TResourceConfig, typename... Ts>
+	template <derived_from_specialization_of<TopLevelScript> TTopLevelScript, class TState,
+		typename TResourceConfig, typename... TStateTrackerParams, typename... Ts>
 		requires(std::constructible_from<TTopLevelScript, Ts...>
 			&& std::constructible_from<TResource, TResourceConfig>
-			&& std::derived_from<TResource, Resource<TState>>)
-	static ScriptStatus<TTopLevelScript> MainFromSaveConfig(M64& m64, ImportedSave<TState>& save, TResourceConfig config, Ts&&... params)
+			&& std::derived_from<TResource, Resource<TState>>
+			&& std::constructible_from<TStateTracker, TStateTrackerParams...>)
+	static ScriptStatus<TTopLevelScript> MainFromSaveConfig(
+		M64& m64, std::shared_ptr<std::tuple<TStateTrackerParams...>> stateTrackerParams, ImportedSave<TState>& save, TResourceConfig config, Ts&&... params)
 	{
 		TTopLevelScript script = TTopLevelScript(std::forward<Ts>(params)...);
+		script.stateTrackerFactory = std::make_shared<StateTrackerFactory<TStateTracker, TStateTrackerParams...>>(stateTrackerParams);
+
 		TResource resource = TResource(config);
 		resource.load(save.state);
 		resource.save(resource.startSave);
@@ -840,11 +927,14 @@ protected:
 
 private:
 	friend class Script<TResource>;
+	friend class TopLevelScript<TResource, TStateTracker>;
 
 	// Data: trackedStates[script][adhocLevel][frame] = state;
+	std::shared_ptr<StateTrackerFactoryBase<TStateTracker>> stateTrackerFactory = nullptr;
 	std::unordered_map<Script<TResource>*, std::unordered_map<int64_t, std::map<int64_t, typename TStateTracker::CustomScriptStatus>>> trackedStates;
 
 	void TrackState(Script<TResource>* currentScript, const InputsMetadata<TResource>& inputsMetadata) override;
+	bool TrackedStateExistsInternal(Script<TResource>* currentScript, const InputsMetadata<TResource>& inputsMetadata) override;
 	void PushTrackedStatesContainer(Script<TResource>* currentScript, int adhocLevel) override;
 	void PopTrackedStatesContainer(Script<TResource>* currentScript, int adhocLevel) override;
 	void MoveSyncedTrackedStates(Script<TResource>* sourceScript, int sourceAdhocLevel, Script<TResource>* destScript, int destAdhocLevel) override;
@@ -887,79 +977,111 @@ class DefaultState {};
 
 class DefaultResourceConfig {};
 
-template <derived_from_specialization_of<TopLevelScript> TTopLevelScript>
+template <derived_from_specialization_of<TopLevelScript> TTopLevelScript, typename... TStateTrackerParams>
 class TopLevelScriptBuilder
 {
 public:
-	TopLevelScriptBuilder(M64& m64) : _m64(m64) {}
+	TopLevelScriptBuilder(M64& m64) : _m64(m64) { _stateTrackerParams = std::make_shared<std::tuple<>>(); }
+	TopLevelScriptBuilder(M64& m64, std::shared_ptr<std::tuple<TStateTrackerParams...>> stateTrackerParams)
+		: _m64(m64), _stateTrackerParams(stateTrackerParams) {}
 
 	static TopLevelScriptBuilder<TTopLevelScript> Build(M64& m64)
 	{
 		return TopLevelScriptBuilder<TTopLevelScript>(m64);
 	}
 
+	template <typename... UStateTrackerParams>
+	TopLevelScriptBuilder<TTopLevelScript> ConfigureStateTracker(UStateTrackerParams&&... stateTrackerParams)
+	{
+		std::shared_ptr<std::tuple<UStateTrackerParams...>> tuplePtr =
+			std::make_shared<std::tuple<UStateTrackerParams...>>(std::forward<UStateTrackerParams>(stateTrackerParams)...);
+		return TopLevelScriptBuilder<TTopLevelScript, UStateTrackerParams...>(_m64, tuplePtr);
+	}
+
 	template <class TState, typename... TStateParams>
-	TopLevelScriptBuilderConfigured<TTopLevelScript, TState, DefaultResourceConfig> ImportSave(uint64_t frame, TStateParams&&... stateParams)
+	TopLevelScriptBuilderConfigured<TTopLevelScript, TState, DefaultResourceConfig, TStateTrackerParams...> ImportSave(
+		uint64_t frame, TStateParams&&... stateParams)
 	{
 		ImportedSave<TState> importedSave = ImportedSave(TState(std::forward<TStateParams>(stateParams)...), frame);
-		return TopLevelScriptBuilderConfigured<TTopLevelScript, TState, DefaultResourceConfig>(_m64, std::move(importedSave), DefaultResourceConfig());
+		return TopLevelScriptBuilderConfigured<TTopLevelScript, TState, DefaultResourceConfig, TStateTrackerParams...>(
+			_m64, std::move(importedSave), DefaultResourceConfig(), _stateTrackerParams);
 	}
 
 	template <typename TResourceConfig>
-	TopLevelScriptBuilderConfigured<TTopLevelScript, DefaultState, TResourceConfig> ConfigureResource(TResourceConfig resourceConfig)
+	TopLevelScriptBuilderConfigured<TTopLevelScript, DefaultState, TResourceConfig, TStateTrackerParams...> ConfigureResource(TResourceConfig resourceConfig)
 	{
-		return TopLevelScriptBuilderConfigured<TTopLevelScript, DefaultState, TResourceConfig>(
-			_m64, ImportedSave<DefaultState>(DefaultState(), -1), resourceConfig);
+		return TopLevelScriptBuilderConfigured<TTopLevelScript, DefaultState, TResourceConfig, TStateTrackerParams...>(
+			_m64, ImportedSave<DefaultState>(DefaultState(), -1), resourceConfig, _stateTrackerParams);
 	}
 
 	template <class TResource>
-	TopLevelScriptBuilderImported<TTopLevelScript, TResource> ImportResource(TResource* resource)
+	TopLevelScriptBuilderImported<TTopLevelScript, TResource, TStateTrackerParams...> ImportResource(TResource* resource)
 	{
-		return TopLevelScriptBuilderImported<TTopLevelScript, TResource>(_m64, resource);
+		return TopLevelScriptBuilderImported<TTopLevelScript, TResource, TStateTrackerParams...>(_m64, resource, _stateTrackerParams);
 	}
 
 protected:
 	M64& _m64;
+	std::shared_ptr<std::tuple<TStateTrackerParams...>> _stateTrackerParams;
 };
 
 template <derived_from_specialization_of<TopLevelScript> TTopLevelScript,
 	class TState = DefaultState,
-	class TResourceConfig = DefaultResourceConfig>
-class TopLevelScriptBuilderConfigured : public TopLevelScriptBuilder<TTopLevelScript>
+	class TResourceConfig = DefaultResourceConfig,
+	typename... TStateTrackerParams>
+class TopLevelScriptBuilderConfigured : public TopLevelScriptBuilder<TTopLevelScript, TStateTrackerParams...>
 {
 public:
-	using TopLevelScriptBuilder<TTopLevelScript>::_m64;
+	using TopLevelScriptBuilder<TTopLevelScript, TStateTrackerParams...>::_m64;
+	using TopLevelScriptBuilder<TTopLevelScript, TStateTrackerParams...>::_stateTrackerParams;
 
-	TopLevelScriptBuilderConfigured(M64& m64, ImportedSave<TState> importedSave, TResourceConfig resourceConfig)
-		: TopLevelScriptBuilder<TTopLevelScript>(m64), _importedSave(importedSave), _resourceConfig(resourceConfig) {}
+	TopLevelScriptBuilderConfigured(M64& m64, ImportedSave<TState> importedSave,
+		TResourceConfig resourceConfig, std::shared_ptr<std::tuple<TStateTrackerParams...>> stateTrackerParams)
+		: TopLevelScriptBuilder<TTopLevelScript, TStateTrackerParams...>(m64, stateTrackerParams), _importedSave(importedSave), _resourceConfig(resourceConfig) {}
+
+	template <typename... UStateTrackerParams>
+	TopLevelScriptBuilderConfigured<TTopLevelScript, TState, TResourceConfig, UStateTrackerParams...> ConfigureStateTracker(
+		TStateTrackerParams&&... stateTrackerParams)
+	{
+		std::shared_ptr<std::tuple<UStateTrackerParams...>> tuplePtr =
+			std::make_shared<std::tuple<UStateTrackerParams...>>(std::forward<UStateTrackerParams>(stateTrackerParams)...);
+		return TopLevelScriptBuilderConfigured<TTopLevelScript, TState, TResourceConfig, UStateTrackerParams...>(
+			_m64, std::move(_importedSave), std::move(_resourceConfig), tuplePtr);
+	}
 
 	template <class UState, typename... TStateParams>
-	TopLevelScriptBuilderConfigured<TTopLevelScript, UState, TResourceConfig> ImportSave(uint64_t frame, TStateParams&&... stateParams)
+	TopLevelScriptBuilderConfigured<TTopLevelScript, UState, TResourceConfig, TStateTrackerParams...> ImportSave(uint64_t frame, TStateParams&&... stateParams)
 	{
 		ImportedSave<UState> importedSave = ImportedSave(UState(std::forward<TStateParams>(stateParams)...), frame);
-		return TopLevelScriptBuilderConfigured<TTopLevelScript, UState, TResourceConfig>(_m64, std::move(importedSave), std::move(_resourceConfig));
+		return TopLevelScriptBuilderConfigured<TTopLevelScript, UState, TResourceConfig, TStateTrackerParams...>(
+			_m64, std::move(importedSave), std::move(_resourceConfig), _stateTrackerParams);
 	}
 
 	template <typename UResourceConfig>
-	TopLevelScriptBuilderConfigured<TTopLevelScript, TState, UResourceConfig> ConfigureResource(UResourceConfig resourceConfig)
+	TopLevelScriptBuilderConfigured<TTopLevelScript, TState, UResourceConfig, TStateTrackerParams...> ConfigureResource(UResourceConfig resourceConfig)
 	{
-		return TopLevelScriptBuilderConfigured<TTopLevelScript, TState, UResourceConfig>(_m64, std::move(_importedSave), resourceConfig);
+		return TopLevelScriptBuilderConfigured<TTopLevelScript, TState, UResourceConfig, TStateTrackerParams...>(
+			_m64, std::move(_importedSave), resourceConfig, _stateTrackerParams);
 	}
 
 	template <typename... TScriptParams>
-	ScriptStatus<TTopLevelScript> Main(TScriptParams&&... scriptParams)
+	ScriptStatus<TTopLevelScript> Run(TScriptParams&&... scriptParams)
 	{
 		if constexpr (std::is_same<TState, DefaultState>::value)
 		{
 			if constexpr (std::is_same<TResourceConfig, DefaultResourceConfig>::value)
-				return TTopLevelScript::template Main<TTopLevelScript>(_m64, std::forward<TScriptParams>(scriptParams)...);
+				return TTopLevelScript::template Main<TTopLevelScript>(
+					_m64, _stateTrackerParams, std::forward<TScriptParams>(scriptParams)...);
 			else
-				return TTopLevelScript::template MainConfig<TTopLevelScript>(_m64, _resourceConfig, std::forward<TScriptParams>(scriptParams)...);
+				return TTopLevelScript::template MainConfig<TTopLevelScript, TResourceConfig>(
+					_m64, _stateTrackerParams, std::move(_resourceConfig), std::forward<TScriptParams>(scriptParams)...);
 		}
 		else if constexpr (std::is_same<TResourceConfig, DefaultResourceConfig>::value)
-			return TTopLevelScript::template MainFromSave<TTopLevelScript>(_m64, _importedSave, std::forward<TScriptParams>(scriptParams)...);
+			return TTopLevelScript::template MainFromSave<TTopLevelScript, TState>(
+				_m64, _stateTrackerParams, _importedSave, std::forward<TScriptParams>(scriptParams)...);
 		else
-			return TTopLevelScript::template MainFromSaveConfig<TTopLevelScript>(_m64, _importedSave, _resourceConfig, std::forward<TScriptParams>(scriptParams)...);
+			return TTopLevelScript::template MainFromSaveConfig<TTopLevelScript, TState, TResourceConfig>(
+				_m64, _stateTrackerParams, _importedSave, std::move(_resourceConfig), std::forward<TScriptParams>(scriptParams)...);
 	}
 
 private:
@@ -967,18 +1089,32 @@ private:
 	TResourceConfig _resourceConfig;
 };
 
-template <derived_from_specialization_of<TopLevelScript> TTopLevelScript, class TResource>
-class TopLevelScriptBuilderImported : public TopLevelScriptBuilder<TTopLevelScript>
+template <derived_from_specialization_of<TopLevelScript> TTopLevelScript,
+	class TResource,
+	typename... TStateTrackerParams>
+class TopLevelScriptBuilderImported : public TopLevelScriptBuilder<TTopLevelScript, TStateTrackerParams...>
 {
 public:
-	using TopLevelScriptBuilder<TTopLevelScript>::_m64;
+	using TopLevelScriptBuilder<TTopLevelScript, TStateTrackerParams...>::_m64;
+	using TopLevelScriptBuilder<TTopLevelScript, TStateTrackerParams...>::_stateTrackerParams;
 
-	TopLevelScriptBuilderImported(M64& m64, TResource* resource) : TopLevelScriptBuilder<TTopLevelScript>(m64), _resource(resource) {}
+	TopLevelScriptBuilderImported(M64& m64, TResource* resource, std::shared_ptr<std::tuple<TStateTrackerParams...>> stateTrackerParams)
+		: TopLevelScriptBuilder<TTopLevelScript, TStateTrackerParams...>(m64, stateTrackerParams), _resource(resource) {}
+
+	template <typename... UStateTrackerParams>
+	TopLevelScriptBuilderImported<TTopLevelScript, TResource, UStateTrackerParams...> ConfigureStateTracker(UStateTrackerParams&&... stateTrackerParams)
+	{
+		std::shared_ptr<std::tuple<UStateTrackerParams...>> tuplePtr =
+			std::make_shared<std::tuple<UStateTrackerParams...>>(std::forward<UStateTrackerParams>(stateTrackerParams)...);
+		return TopLevelScriptBuilderImported<TTopLevelScript, TResource, UStateTrackerParams...>(
+			_m64, _resource, tuplePtr);
+	}
 
 	template <typename... TScriptParams>
-	ScriptStatus<TTopLevelScript> Main(TScriptParams&&... scriptParams)
+	ScriptStatus<TTopLevelScript> Run(TScriptParams&&... scriptParams)
 	{
-		return TTopLevelScript::template MainImport<TTopLevelScript>(_m64, _resource, std::forward<TScriptParams>(scriptParams)...);
+		return TTopLevelScript::template MainImport<TTopLevelScript>(
+			_m64, _stateTrackerParams, _resource, std::forward<TScriptParams>(scriptParams)...);
 	}
 
 private:

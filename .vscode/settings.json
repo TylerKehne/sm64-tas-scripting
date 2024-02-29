@@ -64,6 +64,26 @@
     "xstddef": "cpp",
     "xstring": "cpp",
     "xtr1common": "cpp",
-    "xutility": "cpp"
+    "xutility": "cpp",
+    "any": "cpp",
+    "atomic": "cpp",
+    "bit": "cpp",
+    "cctype": "cpp",
+    "charconv": "cpp",
+    "clocale": "cpp",
+    "compare": "cpp",
+    "concepts": "cpp",
+    "format": "cpp",
+    "forward_list": "cpp",
+    "mutex": "cpp",
+    "numeric": "cpp",
+    "ranges": "cpp",
+    "set": "cpp",
+    "span": "cpp",
+    "sstream": "cpp",
+    "stop_token": "cpp",
+    "thread": "cpp",
+    "unordered_set": "cpp",
+    "valarray": "cpp"
   }
 }

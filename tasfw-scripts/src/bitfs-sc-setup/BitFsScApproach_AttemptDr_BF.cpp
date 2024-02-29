@@ -36,7 +36,7 @@ bool BitFsScApproach_AttemptDr_BF::execution()
 	//  2. if speed is too low to dive, proceed to the next frame in the path
 	//	3. if already facing uphill and dive fails to land immediately, proceed to the next frame in the path
 	//  4. if dive fails to land immediately, try turning towards the uphill angle by 2048
-	//	5. if dive lands, try PBDR at five straining angles between straight forward and 90° towards uphill, recording height above platform
+	//	5. if dive lands, try PBDR at five straining angles between straight forward and 90ï¿½ towards uphill, recording height above platform
 	//	6. If DR lands or is less than 4 units above platform, return diff
 	//  7. if already facing uphill and lowest DR height fails to come in under 4 units above platform and lowest DR height is worse than before, proceed to next frame
 	//	8. if not already facing uphill or DR height improves, turn 2048 uphill and go back to step 1
@@ -77,8 +77,9 @@ bool BitFsScApproach_AttemptDr_BF::execution()
 				{
 					// Turn 2048 towrds uphill
 					auto m64 = M64();
-					auto save = ImportedSave(PyramidUpdateMem(*resource, pyramid), GetCurrentFrame());
-					auto uphillAngleStatus = BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle::MainFromSave<BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>(m64, save, 0);
+					auto uphillAngleStatus = TopLevelScriptBuilder<BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>::Build(m64)
+						.ImportSave<PyramidUpdateMem>(GetCurrentFrame(), *resource, pyramid)
+						.Run(0);
 					if (!uphillAngleStatus.validated)
 						return false;
 

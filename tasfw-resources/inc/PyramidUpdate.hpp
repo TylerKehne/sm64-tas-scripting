@@ -105,8 +105,8 @@ private:
 	void GetVertices(short** data, short* vertexData);
 	int CountSurfaces(short* data);
 	short SurfaceHasForce(short surfaceType);
-	void LoadObjectSurfaces(short** data, short* vertexData, Sm64Surface** surfaceArrays);
-	void ReadSurfaceData(short* vertexData, short** vertexIndices, Sm64Surface** surfaceArrays, int surfaceType);
+	void LoadObjectSurfaces(short** data, short* vertexData, std::vector<Sm64Surface>* surfaceArrays[3]);
+	void ReadSurfaceData(short* vertexData, short** vertexIndices, std::vector<Sm64Surface>* surfaceArrays[3], int surfaceType);
 	void AddStaticGeometry();
 };
 

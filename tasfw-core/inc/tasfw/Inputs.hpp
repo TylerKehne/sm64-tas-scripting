@@ -70,10 +70,15 @@ class Inputs
 {
 public:
 	uint16_t buttons = 0;
-	int8_t stick_x	 = 0;
-	int8_t stick_y	 = 0;
+	int8_t stick_x = 0;
+	int8_t stick_y = 0;
 
 	Inputs() = default;
+	Inputs(Inputs&&) noexcept = default;
+	Inputs(const Inputs&) = default;
+	Inputs& operator=(const Inputs&) = default;
+	Inputs& operator=(Inputs&& other) noexcept = default;
+	bool operator==(const Inputs& other) const = default;
 
 	Inputs(uint16_t buttons, int8_t stick_x, int8_t stick_y) :
 		buttons(buttons), stick_x(stick_x), stick_y(stick_y)
@@ -116,6 +121,10 @@ class M64Diff : public M64Base
 {
 public:
 	M64Diff() = default;
+	M64Diff(M64Diff&&) noexcept = default;
+	M64Diff(const M64Diff&) = default;
+	M64Diff& operator=(const M64Diff&) = default;
+	M64Diff& operator=(M64Diff&& other) noexcept = default;
 };
 
 #endif

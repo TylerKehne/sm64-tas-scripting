@@ -324,7 +324,6 @@ InputsMetadata<TResource> Script<TResource>::GetInputsMetadata(int64_t frame)
 }
 
 template <derived_from_specialization_of<Resource> TResource, std::derived_from<Script<TResource>> TStateTracker>
-	requires std::constructible_from<TStateTracker>
 InputsMetadata<TResource> TopLevelScript<TResource, TStateTracker>::GetInputsMetadata(int64_t frame)
 {
 	//State owner determines what frame counter needs to be incremented
@@ -414,8 +413,8 @@ uint64_t Script<TResource>::IncrementFrameCounter(InputsMetadata<TResource> cach
 	if (!cachedInputs.stateOwner->frameCounter[cachedInputs.stateOwnerAdhocLevel].contains(cachedInputs.frame))
 		cachedInputs.stateOwner->frameCounter[cachedInputs.stateOwnerAdhocLevel][cachedInputs.frame] = 0;
 
-	//Return value AFTER incrementing
-	return ++cachedInputs.stateOwner->frameCounter[cachedInputs.stateOwnerAdhocLevel][cachedInputs.frame];
+	//Return value BEFORE incrementing
+	return cachedInputs.stateOwner->frameCounter[cachedInputs.stateOwnerAdhocLevel][cachedInputs.frame]++;
 }
 
 template <derived_from_specialization_of<Resource> TResource>
@@ -429,42 +428,58 @@ SaveMetadata<TResource> Script<TResource>::GetLatestSave(int64_t frame)
 	SaveMetadata<TResource> bestSave;
 	for (int64_t adhocLevel = _adhocLevel; adhocLevel >= 0; adhocLevel--)
 	{
-		//Get most recent save in script
-		auto save = saveBank[adhocLevel].empty() || earlyFrame < saveBank[adhocLevel].begin()->first
-			? saveBank[adhocLevel].end()
-			: std::prev(saveBank[adhocLevel].upper_bound(earlyFrame));
-
-		//Verify save exists and select the more recent save
-		if (save != saveBank[adhocLevel].end())
+		while (true)
 		{
-			if (!save->second.isValid())
-				saveBank[adhocLevel].erase(save->first);
-			else if (save->first >= bestSave.frame)
-				bestSave = SaveMetadata<TResource>(this, save->first, adhocLevel);
+			//Get most recent save in script
+			auto save = saveBank[adhocLevel].empty() || earlyFrame < saveBank[adhocLevel].begin()->first
+				? saveBank[adhocLevel].end()
+				: std::prev(saveBank[adhocLevel].upper_bound(earlyFrame));
+
+			//Verify save exists and select the more recent save
+			if (save != saveBank[adhocLevel].end())
+			{
+				if (!save->second.isValid())
+				{
+					saveBank[adhocLevel].erase(save->first);
+					continue;
+				}
+				else if (save->first >= bestSave.frame)
+					bestSave = SaveMetadata<TResource>(this, save->first, adhocLevel);
+			}
+
+			break;
 		}
 
 		//Check for cached save
-		auto cachedSave = saveCache[adhocLevel].empty() || earlyFrame < saveCache[adhocLevel].begin()->first
-			? saveCache[adhocLevel].end()
-			: std::prev(saveCache[adhocLevel].upper_bound(earlyFrame));
-
-		if (cachedSave != saveCache[adhocLevel].end())
+		while (true)
 		{
-			//This is the purpose of caching saves: end recursion when a cached save is found. Boosts performance.
-			if (cachedSave->second.IsValid())
+			auto cachedSave = saveCache[adhocLevel].empty() || earlyFrame < saveCache[adhocLevel].begin()->first
+				? saveCache[adhocLevel].end()
+				: std::prev(saveCache[adhocLevel].upper_bound(earlyFrame));
+
+			if (cachedSave != saveCache[adhocLevel].end())
 			{
-				if (cachedSave->first >= bestSave.frame)
+				//This is the purpose of caching saves: end recursion when a cached save is found. Boosts performance.
+				if (cachedSave->second.IsValid())
 				{
-					//However, if there was a load between the target frame and the cached save, it may not be optimal and we should continue recursion
-					auto loadAfterCachedSave = loadTracker[adhocLevel].lower_bound(cachedSave->first);
-					if (loadAfterCachedSave != loadTracker[adhocLevel].end() && *loadAfterCachedSave < frame)
-						bestSave = cachedSave->second;
-					else
-						return cachedSave->second;
+					if (cachedSave->first >= bestSave.frame)
+					{
+						//However, if there was a load between the target frame and the cached save, it may not be optimal and we should continue recursion
+						auto loadAfterCachedSave = loadTracker[adhocLevel].lower_bound(cachedSave->first);
+						if (loadAfterCachedSave != loadTracker[adhocLevel].end() && *loadAfterCachedSave < frame)
+							bestSave = cachedSave->second;
+						else
+							return cachedSave->second;
+					}
+				}
+				else
+				{
+					saveCache[adhocLevel].erase(cachedSave->first); // Delete stale cached save
+					continue;
 				}
 			}
-			else
-				saveCache[adhocLevel].erase(cachedSave->first); // Delete stale cached save	
+
+			break;
 		}
 
 		// Don't search past start of m64 diff to avoid desync
@@ -783,6 +798,27 @@ M64Diff Script<TResource>::GetDiff()
 	return BaseStatus[_adhocLevel].m64Diff;
 }
 
+// Useful for exporting current output of script hieerarchy without terminating it
+template <derived_from_specialization_of<Resource> TResource>
+M64Diff Script<TResource>::GetTotalDiff()
+{
+	M64Diff totalDiff;
+	for (Script<TResource>* script = this; script != nullptr; script = script->_parentScript)
+	{
+		for (int adhocLevel = script->_adhocLevel; adhocLevel >= 0; adhocLevel--)
+		{
+			for (auto input : script->BaseStatus[adhocLevel].m64Diff.frames)
+			{
+				if (!totalDiff.frames.contains(input.first))
+					totalDiff.frames[input.first] = input.second;
+			}
+		}
+	}
+	
+	return totalDiff;
+}
+
+// TODO: Deprecate
 template <derived_from_specialization_of<Resource> TResource>
 M64Diff Script<TResource>::GetBaseDiff()
 {
@@ -944,7 +980,6 @@ bool SaveMetadata<TResource>::IsValid()
 }
 
 template <derived_from_specialization_of<Resource> TResource, std::derived_from<Script<TResource>> TStateTracker>
-	requires std::constructible_from<TStateTracker>
 void TopLevelScript<TResource, TStateTracker>::TrackState(Script<TResource>* currentScript, const InputsMetadata<TResource>& inputsMetadata)
 {
 	if constexpr (std::is_same<TStateTracker, DefaultStateTracker<TResource>>::value)
@@ -955,7 +990,12 @@ void TopLevelScript<TResource, TStateTracker>::TrackState(Script<TResource>* cur
 }
 
 template <derived_from_specialization_of<Resource> TResource, std::derived_from<Script<TResource>> TStateTracker>
-	requires std::constructible_from<TStateTracker>
+bool TopLevelScript<TResource, TStateTracker>::TrackedStateExistsInternal(Script<TResource>* currentScript, const InputsMetadata<TResource>& inputsMetadata)
+{
+	return trackedStates[inputsMetadata.stateOwner][inputsMetadata.stateOwnerAdhocLevel].contains(inputsMetadata.frame);
+}
+
+template <derived_from_specialization_of<Resource> TResource, std::derived_from<Script<TResource>> TStateTracker>
 typename TStateTracker::CustomScriptStatus TopLevelScript<TResource, TStateTracker>
 	::GetTrackedStateInternal(Script<TResource>* currentScript, const InputsMetadata<TResource>& inputsMetadata)
 {
@@ -967,18 +1007,17 @@ typename TStateTracker::CustomScriptStatus TopLevelScript<TResource, TStateTrack
 
 	uint64_t currentFrame = ScriptFriend<TResource>::GetCurrentFrame(currentScript);
 
-	auto status = ScriptFriend<TResource>::ExecuteStateTracker<TStateTracker>(currentScript, inputsMetadata.frame);
-	if (!status.asserted)
-		return typename TStateTracker::CustomScriptStatus();
+	auto status = ScriptFriend<TResource>::ExecuteStateTracker<TStateTracker>(inputsMetadata.frame, currentScript, stateTrackerFactory);
+	auto state = typename TStateTracker::CustomScriptStatus();
+	if (status.asserted)
+		state = (typename TStateTracker::CustomScriptStatus)status;
 
-	auto state = (typename TStateTracker::CustomScriptStatus)status;
 	trackedStates[inputsMetadata.stateOwner][inputsMetadata.stateOwnerAdhocLevel][inputsMetadata.frame] = state;
 
 	return state;
 }
 
 template <derived_from_specialization_of<Resource> TResource, std::derived_from<Script<TResource>> TStateTracker>
-	requires std::constructible_from<TStateTracker>
 void TopLevelScript<TResource, TStateTracker>::PushTrackedStatesContainer(Script<TResource>* currentScript, int adhocLevel)
 {
 	if constexpr (std::is_same<TStateTracker, DefaultStateTracker<TResource>>::value)
@@ -988,7 +1027,6 @@ void TopLevelScript<TResource, TStateTracker>::PushTrackedStatesContainer(Script
 }
 
 template <derived_from_specialization_of<Resource> TResource, std::derived_from<Script<TResource>> TStateTracker>
-	requires std::constructible_from<TStateTracker>
 void TopLevelScript<TResource, TStateTracker>::PopTrackedStatesContainer(Script<TResource>* currentScript, int adhocLevel)
 {
 	if constexpr (std::is_same<TStateTracker, DefaultStateTracker<TResource>>::value)
@@ -1001,7 +1039,6 @@ void TopLevelScript<TResource, TStateTracker>::PopTrackedStatesContainer(Script<
 }
 
 template <derived_from_specialization_of<Resource> TResource, std::derived_from<Script<TResource>> TStateTracker>
-	requires std::constructible_from<TStateTracker>
 void TopLevelScript<TResource, TStateTracker>::MoveSyncedTrackedStates(Script<TResource>* sourceScript, int sourceAdhocLevel, Script<TResource>* destScript, int destAdhocLevel)
 {
 	if constexpr (std::is_same<TStateTracker, DefaultStateTracker<TResource>>::value)
@@ -1016,7 +1053,6 @@ void TopLevelScript<TResource, TStateTracker>::MoveSyncedTrackedStates(Script<TR
 }
 
 template <derived_from_specialization_of<Resource> TResource, std::derived_from<Script<TResource>> TStateTracker>
-	requires std::constructible_from<TStateTracker>
 void TopLevelScript<TResource, TStateTracker>::EraseTrackedStates(Script<TResource>* currentScript, int adhocLevel, int64_t firstFrame)
 {
 	if constexpr (std::is_same<TStateTracker, DefaultStateTracker<TResource>>::value)

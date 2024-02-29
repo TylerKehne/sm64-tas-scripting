@@ -61,9 +61,10 @@ bool BitFsPyramidOscillation_RunDownhill::execution()
 		// target orientation
 
 		auto m64 = M64();
-		auto save = ImportedSave(PyramidUpdateMem(*resource, pyramid), GetCurrentFrame());
-		auto status = BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle::MainFromSave<BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>
-			(m64, save, _oscillationParams.roughTargetAngle, marioState->faceAngle[1]);
+		auto status = TopLevelScriptBuilder<BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>::Build(m64)
+			.ImportSave<PyramidUpdateMem>(GetCurrentFrame(), *resource, pyramid)
+			.Run(_oscillationParams.roughTargetAngle, marioState->faceAngle[1]);
+
 		//auto status = Test<GetMinimumDownhillWalkingAngle>(_oscillationParams.roughTargetAngle, marioState->faceAngle[1]);
 
 		// Terminate if unable to locate a downhill angle
