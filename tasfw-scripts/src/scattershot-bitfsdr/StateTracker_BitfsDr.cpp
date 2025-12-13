@@ -26,7 +26,10 @@ bool StateTracker_BitfsDr::execution()
     Object* objectPool = (Object*)(resource->addr("gObjectPool"));
     Object* pyramid = &objectPool[84];
 
+    CustomStatus.initialFrame = initialFrame;
     SetStateVariables(marioState, pyramid);
+
+    CalculateARE(pyramid);
 
     // Calculate recursive metrics
     int64_t currentFrame = GetCurrentFrame();
@@ -68,6 +71,7 @@ void StateTracker_BitfsDr::SetStateVariables(MarioState* marioState, Object* pyr
     CustomStatus.xzSum = fabs(pyramid->oTiltingPyramidNormalX) + fabs(pyramid->oTiltingPyramidNormalZ);
     CustomStatus.marioAction = marioState->action;
     CustomStatus.initialized = true;
+    CustomStatus.frame = GetCurrentFrame();
 }
 
 void StateTracker_BitfsDr::CalculateOscillations(CustomScriptStatus lastFrameState, MarioState* marioState, Object* pyramid)
@@ -162,7 +166,13 @@ void StateTracker_BitfsDr::CalculatePhase(CustomScriptStatus lastFrameState, Mar
     switch (lastFrameState.phase)
     {
     case Phase::INITIAL:
-        if (lastFrameState.initialized && CustomStatus.reachedNormRegime)
+        if (lastFrameState.initialized && CustomStatus.xzSum >= normalSpecsDto.minXzSum//CustomStatus.reachedNormRegime
+            && CustomStatus.pyraNormX < 0 && CustomStatus.pyraNormZ > 0
+            && std::abs(CustomStatus.incrementFrames[0]) % 2 == std::abs(CustomStatus.incrementFrames[2]) % 2
+            //&& std::abs(lastFrameState.incrementFrames[0] - lastFrameState.incrementFrames[2]) == 0
+            //&& CustomStatus.incrementFrames[0] >= 0
+            //&& std::abs(CustomStatus.incrementFrames[0] - CustomStatus.incrementFrames[2]) == 0
+            )
         {
             CustomStatus.crossingData.emplace_back(
                 GetCurrentFrame(), 0, CustomStatus.xzSum, CustomStatus.pyraNormX, CustomStatus.pyraNormZ, marioState->forwardVel, 0.f);
@@ -214,4 +224,39 @@ void StateTracker_BitfsDr::CalculatePhase(CustomScriptStatus lastFrameState, Mar
         CustomStatus.facingRoughTargetAngle = CustomStatus.roughTargetAngle == roughTargetAngleA;
     else
         CustomStatus.facingRoughTargetAngle = CustomStatus.roughTargetAngle == roughTargetAngleB;
+}
+
+void StateTracker_BitfsDr::CalculateARE(Object* pyramid)
+{
+    float errorIncX = std::fabs(std::nextafter(targetNormal[0], INFINITY) - targetNormal[0]);
+    float errorIncZ = std::fabs(std::nextafter(targetNormal[2], INFINITY) - targetNormal[2]);
+
+    float errorX = (targetNormal[0] - pyramid->oTiltingPyramidNormalX) / errorIncX;
+    float errorZ = (targetNormal[2] - pyramid->oTiltingPyramidNormalZ) / errorIncZ;
+
+    float normalX = pyramid->oTiltingPyramidNormalX;
+    for (int i = 0; i < 200; i++)
+    {
+        if (std::fabs(targetNormal[0] - normalX) <= 0.005f)
+        {
+            CustomStatus.adjustedRemainderError[0] = (targetNormal[0] - normalX) / errorIncX;
+            CustomStatus.incrementFrames[0] = i * sign(errorX);
+            break;
+        }
+
+        normalX += sign(errorX) * 0.01f;
+    }
+
+    float normalZ = pyramid->oTiltingPyramidNormalZ;
+    for (int i = 0; i < 200; i++)
+    {
+        if (std::fabs(targetNormal[2] - normalZ) <= 0.005f)
+        {
+            CustomStatus.adjustedRemainderError[2] = (targetNormal[2] - normalZ) / errorIncZ;
+            CustomStatus.incrementFrames[2] = i * sign(errorZ);
+            break;
+        }
+
+        normalZ += sign(errorZ) * 0.01f;
+    }
 }

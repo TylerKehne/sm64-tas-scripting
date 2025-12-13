@@ -16,9 +16,14 @@ public:
     float TargetNz = 0;
     bool TargetXDimension = true;
     bool FixNonTargetDimensionARE = false;
+    bool FixTargetDimensionARE = false;
     int Neighborhood = 0;
     int ErrorType = 1;
     int TargetARE = 0;
+    float minNx = 0;
+    float minNz = 0;
+    float maxNx = 0;
+    float maxNz = 0;
 };
 
 class TiltTargetShotSolution
@@ -45,6 +50,7 @@ public:
 
     bool _targetX = true;
     bool _fixOtherAxis = false;
+    bool _fixTargetAxis = false;
 
     int64_t _neighborhood = 0;
 
@@ -53,6 +59,7 @@ public:
     public:
         bool targetX = true;
         bool fixOtherAxis = false;
+        bool fixTargetAxis = false;
 
         bool initialized = false;
 
@@ -94,7 +101,7 @@ public:
     TiltTargetShotMetrics() = default;
     TiltTargetShotMetrics(const TiltTargetShotArgs& args)
         : _startFrame(args.InitialFrame), _targetNx(args.TargetNx), _targetNz(args.TargetNz), _targetX(args.TargetXDimension),
-        _fixOtherAxis(args.FixNonTargetDimensionARE), _neighborhood(args.Neighborhood)
+        _fixOtherAxis(args.FixNonTargetDimensionARE), _fixTargetAxis(args.FixTargetDimensionARE), _neighborhood(args.Neighborhood)
     {
         float targetHundrethX = std::floorf(_targetNx * 100.0f) / 100.0f;
         float targetHundrethZ = std::floorf(_targetNz * 100.0f) / 100.0f;
@@ -128,6 +135,7 @@ public:
         CustomStatus.faceAngle = marioState->faceAngle[1];
         CustomStatus.targetX = _targetX;
         CustomStatus.fixOtherAxis = _fixOtherAxis;
+        CustomStatus.fixTargetAxis = _fixTargetAxis;
         CustomStatus.target = { _targetNx , INFINITY, _targetNz };
 
         CustomStatus.normal = { pyramid->oTiltingPyramidNormalX, pyramid->oTiltingPyramidNormalY, pyramid->oTiltingPyramidNormalZ };
@@ -347,7 +355,8 @@ public:
 
     TiltTargetShot(Alias_Scattershot_TiltTargetShot& scattershot, const TiltTargetShotArgs& args)
         : Alias_ScattershotThread_TiltTargetShot(scattershot), _initialFrame(args.InitialFrame), _targetNX(args.TargetNx),
-        _targetNZ(args.TargetNz), _neighborhood(args.Neighborhood), _errorType((ErrorType)args.ErrorType), _targetARE(args.TargetARE) {}
+        _targetNZ(args.TargetNz), _neighborhood(args.Neighborhood), _errorType((ErrorType)args.ErrorType), _targetARE(args.TargetARE),
+        _minNx(args.minNx), _minNz(args.minNz), _maxNx(args.maxNx), _maxNz(args.maxNz) {}
 
     bool validation() override
     {
@@ -495,12 +504,12 @@ public:
             if (trackedState.targetX)
             {
                 state.AddValueBits(bitCursor, 1, 0);
-                state.AddValueBits(bitCursor, 8, solutionError[0] + _neighborhood);
+                state.AddValueBits(bitCursor, 16, solutionError[0] + _neighborhood);
             }
             else
             {
                 state.AddValueBits(bitCursor, 1, 1);
-                state.AddValueBits(bitCursor, 8, solutionError[2] + _neighborhood);
+                state.AddValueBits(bitCursor, 16, solutionError[2] + _neighborhood);
             }
 
             if (trackedState.fixOtherAxis)
@@ -509,12 +518,12 @@ public:
                 if (trackedState.targetX)
                 {
                     state.AddValueBits(bitCursor, 1, 0);
-                    state.AddValueBits(bitCursor, 8, solutionError[2] + _neighborhood);
+                    state.AddValueBits(bitCursor, 16, solutionError[2] + _neighborhood);
                 }
                 else
                 {
                     state.AddValueBits(bitCursor, 1, 1);
-                    state.AddValueBits(bitCursor, 8, solutionError[0] + _neighborhood);
+                    state.AddValueBits(bitCursor, 16, solutionError[0] + _neighborhood);
                 }
             }
             else
@@ -536,12 +545,12 @@ public:
             if (trackedState.targetX)
             {
                 state.AddValueBits(bitCursor, 1, 0);
-                state.AddValueBits(bitCursor, 8, nextState.adjustedRemainderError[2] + _neighborhood);
+                state.AddValueBits(bitCursor, 16, nextState.adjustedRemainderError[2] + _neighborhood);
             }
             else
             {
                 state.AddValueBits(bitCursor, 1, 1);
-                state.AddValueBits(bitCursor, 8, nextState.adjustedRemainderError[0] + _neighborhood);
+                state.AddValueBits(bitCursor, 16, nextState.adjustedRemainderError[0] + _neighborhood);
             }
         }
         else
@@ -549,7 +558,7 @@ public:
 
         // For whatever reason I get better results with this for 2D only
         state.AddValueBits(bitCursor, 1, trackedState.fixOtherAxis);
-        if (trackedState.fixOtherAxis)
+        if (true || trackedState.fixOtherAxis)
         {
             int frameDiff = std::clamp(int(currentFrame - _initialFrame), 0, 255);
             state.AddValueBits(bitCursor, 8, frameDiff);
@@ -558,7 +567,7 @@ public:
             state.AddRegionBitsByRegionSize(bitCursor, 32, zPosValue, zMin, zMax, 10.0f);
         }
         
-        state.AddValueBits(bitCursor, 13, std::abs(faceAngle) >> 4);
+        state.AddValueBits(bitCursor, 13, ((uint16_t)(faceAngle)) >> 4);
 
         return state;
     }
@@ -617,23 +626,34 @@ public:
                 return false;
         }
 
-        if (true && GetTrackedState<TiltTargetShotMetrics>(GetCurrentFrame()).fixOtherAxis)
-        {
-            TiltTargetShotMetrics::CustomScriptStatus state;
-            ExecuteAdhoc([&]() { state = GetEquilibriumTrackedState(); return true; });
-            if (!state.initialized)
-                return false;
+        TiltTargetShotMetrics::CustomScriptStatus state;
+        ExecuteAdhoc([&]() { state = GetEquilibriumTrackedState(); return true; });
+        if (!state.initialized)
+            return false;
 
-            auto nextState = GetTrackedState<TiltTargetShotMetrics>(GetCurrentFrame() + 1);
-            if (state.frame > nextState.frame && nextState.initialized)
-                state = nextState;
-            
+        auto nextState = GetTrackedState<TiltTargetShotMetrics>(GetCurrentFrame() + 1);
+        if (state.frame > nextState.frame && nextState.initialized)
+            state = nextState;
+
+        if (GetTrackedState<TiltTargetShotMetrics>(GetCurrentFrame()).fixOtherAxis)
+        {
             if (state.targetX)
             {
                 if (std::fabs(state.adjustedRemainderError[2]) > _neighborhood)
                     return false;
             }
             else if (std::fabs(state.adjustedRemainderError[0]) > _neighborhood)
+                return false;
+        }
+
+        if (GetTrackedState<TiltTargetShotMetrics>(GetCurrentFrame()).fixTargetAxis)
+        {
+            if (state.targetX)
+            {
+                if (std::fabs(state.adjustedRemainderError[0]) > _neighborhood)
+                    return false;
+            }
+            else if (std::fabs(state.adjustedRemainderError[2]) > _neighborhood)
                 return false;
         }
 
@@ -645,6 +665,9 @@ public:
         auto state = GetEquilibriumTrackedState();
         if (!state.initialized)
             return -INFINITY;
+
+        //if (!state.fixOtherAxis && (std::fabs(state.normal[0]) > 0.1f || std::fabs(state.normal[2]) > 0.1f))
+        //    return -INFINITY;
 
         if (state.fixOtherAxis)
         {
@@ -702,8 +725,27 @@ public:
         if (!state.initialized)
             return false;
 
+        if (state.fixTargetAxis)
+        {
+            if (state.targetX && (state.normal[0] < _minNx || state.normal[0] > _maxNx))
+                return false;
+            else if (!state.targetX && (state.normal[2] < _minNz || state.normal[2] > _maxNz))
+                return false;
+
+            if (state.fixOtherAxis)
+            {
+                if (!state.targetX && (state.normal[0] < _minNx || state.normal[0] > _maxNx))
+                    return false;
+                else if (state.targetX && (state.normal[2] < _minNz || state.normal[2] > _maxNz))
+                    return false;
+            }
+        }
+
         // ensure there is ample room to manuever after
         if (std::fabs(state.normal[0]) + std::fabs(state.normal[2]) > 0.6f)
+            return false;
+
+        if (std::fabs(state.normal[0]) > 0.4f || std::fabs(state.normal[2]) > 0.4f)
             return false;
 
         std::vector<float> solutionError;
@@ -764,6 +806,10 @@ private:
     float _initialNZ = 0;
     ErrorType _errorType;
     int _targetARE = 0;
+    float _minNx = 0;
+    float _minNz = 0;
+    float _maxNx = 0;
+    float _maxNz = 0;
 
     bool VerifyOnPyramid()
     {

@@ -1007,7 +1007,7 @@ typename TStateTracker::CustomScriptStatus TopLevelScript<TResource, TStateTrack
 
 	uint64_t currentFrame = ScriptFriend<TResource>::GetCurrentFrame(currentScript);
 
-	auto status = ScriptFriend<TResource>::ExecuteStateTracker<TStateTracker>(inputsMetadata.frame, currentScript, stateTrackerFactory);
+	auto status = ScriptFriend<TResource>::template ExecuteStateTracker<TStateTracker>(inputsMetadata.frame, currentScript, stateTrackerFactory);
 	auto state = typename TStateTracker::CustomScriptStatus();
 	if (status.asserted)
 		state = (typename TStateTracker::CustomScriptStatus)status;

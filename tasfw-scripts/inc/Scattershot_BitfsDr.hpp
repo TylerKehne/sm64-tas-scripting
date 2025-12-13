@@ -18,6 +18,7 @@ public:
     float xzSum = 0;
     int currentOscillation = 0;
     int16_t roughTargetAngle = 0;
+    std::vector<int> incrementFrames = { -1, -1, -1 };
 };
 
 class NormalSpecsDto
@@ -63,6 +64,7 @@ public:
     {
     public:
         bool initialized = false;
+        int64_t initialFrame = -1;
         float marioX = 0;
         float marioY = 0;
         float marioZ = 0;
@@ -80,13 +82,16 @@ public:
         int16_t roughTargetAngle = 8192; 
         Phase phase = Phase::INITIAL;
         bool facingRoughTargetAngle = false;
+        std::vector<float> adjustedRemainderError = { INFINITY, INFINITY, INFINITY };
+        std::vector<int> incrementFrames = { -1, -1, -1 };
+        int64_t frame = -1;
     };
     CustomScriptStatus CustomStatus = CustomScriptStatus();
 
     static bool ValidateCrossingData(const StateTracker_BitfsDr::CustomScriptStatus& state, float componentThreshold);
 
     StateTracker_BitfsDr() = default;
-    StateTracker_BitfsDr(int64_t initialFrame, int quadrant, NormalSpecsDto normalSpecsDto, int minOscillationFrames)
+    StateTracker_BitfsDr(int64_t initialFrame, int quadrant, NormalSpecsDto normalSpecsDto, int minOscillationFrames, float targetNx, float targetNz)
     {
         roughTargetAngleA = -8192 + 16384 * (quadrant - 1);
         roughTargetAngleB = 24576 + 16384 * (quadrant - 1);
@@ -94,6 +99,8 @@ public:
         this->minOscillationFrames = minOscillationFrames;
         this->normalSpecsDto = normalSpecsDto;
         this->initialFrame = initialFrame;
+
+        targetNormal = { targetNx, INFINITY, targetNz};
     }
 
     bool validation();
@@ -106,10 +113,12 @@ private:
     int minOscillationFrames = 15;
     NormalSpecsDto normalSpecsDto;
     int64_t initialFrame = 0;
+    std::vector<float> targetNormal = { INFINITY, INFINITY, INFINITY };
 
     void SetStateVariables(MarioState* marioState, Object* pyramid);
     void CalculateOscillations(CustomScriptStatus lastFrameState, MarioState* marioState, Object* pyramid);
     void CalculatePhase(CustomScriptStatus lastFrameState, MarioState* marioState, Object* pyramid);
+    void CalculateARE(Object* pyramid);
 };
 
 using Alias_ScattershotThread_BitfsDr = ScattershotThread<BinaryStateBin<16>, LibSm64, StateTracker_BitfsDr, Scattershot_BitfsDr_Solution>;

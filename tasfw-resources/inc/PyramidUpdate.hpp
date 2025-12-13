@@ -57,6 +57,7 @@ public:
 		bool platformIsPyramid = false;
 		Mat4 transform;
 		std::vector<Sm64Surface> surfaces[3];
+		std::vector<Sm64Surface> baseSurfaces[3];
 
 		Sm64Object* platform(PyramidUpdateMem& state);
 	};
@@ -98,6 +99,8 @@ public:
 
 	static bool FloorIsSlope(Sm64Surface* floor, u32 action);
 	static short GetFloorClass(Sm64Surface* floor, u32 action);
+	static float FindFloor(Vec3f* marioPos, PyramidUpdateMem::Sm64Surface* surfaces, int surfaceCount, int64_t* floorId);
+	static void TransformSurfaces(int surfaceIndex, Sm64Object* pyramid);
 
 private:
 	//TODO: All of this needs to be rewritten when memory access is standardized
@@ -125,10 +128,8 @@ public:
 private:
 	PyramidUpdateMem _state;
 	void UpdatePyramid();
-	void TransformSurfaces(int surfaceIndex);
 	float ApproachByIncrement(float goal, float src, float inc);
 	void CreateTransformFromNormals(Mat4& transform, float xNorm, float yNorm, float zNorm);
-	float FindFloor(Vec3f* marioPos, PyramidUpdateMem::Sm64Surface* surfaces, int surfaceCount, int64_t* floorId);
 
 	//Mario update methods
 	void UpdateMario();

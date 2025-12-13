@@ -5,6 +5,7 @@ add_executable(tasfw-bitfs-turnaround
 	"src/BitFsConfig.cpp"
 	"src/BitFsConfig.hpp"
 	"src/main.cpp"
+	"src/BitfsOscFinal.hpp"
 )
 
 target_compile_definitions(tasfw-bitfs-turnaround PRIVATE cxx_std_20)

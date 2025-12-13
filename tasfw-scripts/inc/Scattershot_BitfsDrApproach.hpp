@@ -35,16 +35,21 @@ public:
         float xzSum = 0;
         int16_t roughTargetAngle = 0;
         Phase phase = Phase::RUN_DOWNHILL;
+        std::vector<float> adjustedRemainderError = { INFINITY, INFINITY, INFINITY };
+        std::vector<int> incrementFrames = { -1, -1, -1 };
+        bool AREchanged = false;
+        int64_t initialFrame = -1;
     };
     CustomScriptStatus CustomStatus = CustomScriptStatus();
 
     StateTracker_BitfsDrApproach() = default;
-    StateTracker_BitfsDrApproach(int64_t initialFrame, int oscQuadrant, int targetQuadrant, float minXzSum)
+    StateTracker_BitfsDrApproach(int64_t initialFrame, int oscQuadrant, int targetQuadrant, float minXzSum, float targetNx, float targetNz)
     {
         SetRoughTargetAngle(oscQuadrant, targetQuadrant);
 
         this->normRegimeThreshold = minXzSum;
         this->initialFrame = initialFrame;
+        targetNormal = { targetNx, INFINITY, targetNz };
     }
 
     bool validation() { return GetCurrentFrame() >= initialFrame; }
@@ -57,6 +62,7 @@ public:
         Object* pyramid = &objectPool[84];
 
         SetStateVariables(marioState, pyramid);
+        CalculateARE(pyramid);
 
         // Calculate recursive metrics
         int64_t currentFrame = GetCurrentFrame();
@@ -79,6 +85,7 @@ private:
     int64_t initialFrame = 0;
     int16_t roughTargetAngle = 16384;
     float normRegimeThreshold = 0.69f;
+    std::vector<float> targetNormal = { INFINITY, INFINITY, INFINITY };
 
     void SetRoughTargetAngle(int oscQuadrant, int targetQuadrant)
     {
@@ -170,6 +177,7 @@ private:
         CustomStatus.marioAction = marioState->action;
         CustomStatus.roughTargetAngle = roughTargetAngle;
         CustomStatus.initialized = true;
+        CustomStatus.initialFrame = initialFrame;
     }
 
     void CalculatePhase(CustomScriptStatus lastFrameState, MarioState* marioState, Object* pyramid)
@@ -197,6 +205,41 @@ private:
                 if (marioState->action == ACT_IDLE)
                     CustomStatus.phase = Phase::C_UP_TRICK;
                 break;
+        }
+    }
+
+    void CalculateARE(Object* pyramid)
+    {
+        float errorIncX = std::fabs(std::nextafter(targetNormal[0], INFINITY) - targetNormal[0]);
+        float errorIncZ = std::fabs(std::nextafter(targetNormal[2], INFINITY) - targetNormal[2]);
+
+        float errorX = (targetNormal[0] - pyramid->oTiltingPyramidNormalX) / errorIncX;
+        float errorZ = (targetNormal[2] - pyramid->oTiltingPyramidNormalZ) / errorIncZ;
+
+        float normalX = pyramid->oTiltingPyramidNormalX;
+        for (int i = 0; i < 200; i++)
+        {
+            if (std::fabs(targetNormal[0] - normalX) <= 0.005f)
+            {
+                CustomStatus.adjustedRemainderError[0] = (targetNormal[0] - normalX) / errorIncX;
+                CustomStatus.incrementFrames[0] = i * sign(errorX);
+                break;
+            }
+
+            normalX += sign(errorX) * 0.01f;
+        }
+
+        float normalZ = pyramid->oTiltingPyramidNormalZ;
+        for (int i = 0; i < 200; i++)
+        {
+            if (std::fabs(targetNormal[2] - normalZ) <= 0.005f)
+            {
+                CustomStatus.adjustedRemainderError[2] = (targetNormal[2] - normalZ) / errorIncZ;
+                CustomStatus.incrementFrames[2] = i * sign(errorZ);
+                break;
+            }
+
+            normalZ += sign(errorZ) * 0.01f;
         }
     }
 };
@@ -481,19 +524,29 @@ public:
         auto state = GetTrackedState<StateTracker_BitfsDrApproach>(GetCurrentFrame());
         auto lastFrameState = GetTrackedState<StateTracker_BitfsDrApproach>(GetCurrentFrame() - 1);
 
-        if (state.initialized&& state.phase == StateTracker_BitfsDrApproach::Phase::C_UP_TRICK
+        if (state.initialized && state.phase == StateTracker_BitfsDrApproach::Phase::C_UP_TRICK
             && state.marioAction != ACT_FREEFALL && state.marioAction != ACT_FREEFALL_LAND);
 
         // Reject departures from norm regime
-        float normRegimeThreshold = 0.69f;
-        if (fabs(xNorm) + fabs(zNorm) < normRegimeThreshold - 0.02f)
-            return false;
+        //float normRegimeThreshold = 0.69f;
+        //if (fabs(xNorm) + fabs(zNorm) < normRegimeThreshold - 0.02f)
+        //    return false;
 
         // Reject untimely turnarounds
         if (marioState->action == ACT_TURNING_AROUND)
             return false;
 
         if (marioState->forwardVel < 29.0f && state.phase == StateTracker_BitfsDrApproach::Phase::TURN_UPHILL)
+            return false;
+
+        auto initialState = GetTrackedState<StateTracker_BitfsDrApproach>(state.initialFrame + 1);
+        if (state.adjustedRemainderError[0] != initialState.adjustedRemainderError[0])
+            return false;
+
+        if (state.adjustedRemainderError[2] != initialState.adjustedRemainderError[2])
+            return false;
+
+        if (std::abs(state.incrementFrames[0]) % 2 != std::abs(state.incrementFrames[2]) % 2)
             return false;
 
         return true;
@@ -583,6 +636,14 @@ public:
 
         if (fabs(marioState->pos[1] - marioState->floorHeight) >= 4.0f)
             return false;
+
+        auto state = GetTrackedState<StateTracker_BitfsDrApproach>(GetCurrentFrame());
+        if (std::abs(state.incrementFrames[0]) % 2 != std::abs(state.incrementFrames[2]) % 2)
+            return false;
+
+        //auto state = GetTrackedState<StateTracker_BitfsDrApproach>(GetCurrentFrame());
+        //if (std::abs(state.incrementFrames[0] - state.incrementFrames[2]) != 0)
+        //    return false;
 
         return true;
     }

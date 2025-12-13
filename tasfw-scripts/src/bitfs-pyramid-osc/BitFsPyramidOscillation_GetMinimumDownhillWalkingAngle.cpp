@@ -11,7 +11,14 @@ bool BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle::validation()
 {
 	// Check if Mario is on the pyramid platform
 	auto marioObj = (PyramidUpdateMem::Sm64Object*)(resource->addr("gMarioObject"));
-	return marioObj->platformIsPyramid;
+	auto marioState = (PyramidUpdateMem::Sm64MarioState*)(resource->addr("gMarioStates"));
+	if (!marioObj->platformIsPyramid || marioState->floorId == -1)
+		return false;
+
+	_pyramid = marioObj;
+	_floorId = marioState->floorId;
+
+	return true;
 }
 
 bool BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle::execution()
@@ -20,16 +27,17 @@ bool BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle::execution()
 
 	auto marioState = (PyramidUpdateMem::Sm64MarioState*)(resource->addr("gMarioStates"));
 	auto pyramid = (PyramidUpdateMem::Sm64Object*)(resource->addr("Pyramid"));
+
+	/*
 	if (marioState->floorId == -1 || marioState->isFloorStatic)
 	{
 		CustomStatus.floorAngle = 0;
 		CustomStatus.isSlope = false;
 		return false;
 	}
+	*/
 
-	
-
-	auto floor = &pyramid->surfaces[1][marioState->floorId];
+	auto floor = &pyramid->surfaces[1][_floorId];
 	short floorAngle = atan2s(floor->normal.z, floor->normal.x);
 	CustomStatus.isSlope = PyramidUpdateMem::FloorIsSlope(floor, marioState->action);
 	CustomStatus.steepness = std::sqrtf(floor->normal.x * floor->normal.x + floor->normal.z * floor->normal.z);
@@ -75,5 +83,6 @@ bool BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle::execution()
 
 bool BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle::assertion()
 {
-	return CustomStatus.isSlope;
+	return true;
+	//return CustomStatus.isSlope;
 }
