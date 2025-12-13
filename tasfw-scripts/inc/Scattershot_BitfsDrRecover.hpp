@@ -563,8 +563,8 @@ public:
         if (marioState->floorHeight > -3071 && marioState->pos[1] > marioState->floorHeight + 4)
             return false; //above pyra by over 4 units
 
-        //if (marioState->floorHeight == -3071 && marioState->action != ACT_FREEFALL)
-        //    return false; //diving/dring above lava
+        if (marioState->floorHeight == -3071 && marioState->action != ACT_FREEFALL)
+            return false; //diving/dring above lava
 
         // Double turnaround (ideally should prevent this in movement choices)
         if (marioState->action == ACT_WALKING && marioState->forwardVel < 0)
@@ -592,9 +592,9 @@ public:
             && state.marioAction == ACT_FIRST_PERSON);
 
         // Reject departures from norm regime
-        float normRegimeThreshold = 0.69f;
-        if (fabs(xNorm) + fabs(zNorm) < normRegimeThreshold - 0.02f)
-            return false;
+        //float normRegimeThreshold = 0.69f;
+        //if (fabs(xNorm) + fabs(zNorm) < normRegimeThreshold - 0.02f)
+        //    return false;
 
         // Reject untimely turnarounds
         if (marioState->action == ACT_TURNING_AROUND)
@@ -691,7 +691,15 @@ public:
                 if (marioState->action != ACT_FREEFALL_LAND && marioState->vel[1] == -4.0f)
                     return true;
 
-                if (marioState->action == ACT_FREEFALL && prevState.marioAction == ACT_DECELERATING && marioState->vel[1] == -4.0f)
+                //if (marioState->action == ACT_FREEFALL && prevState.marioAction == ACT_DECELERATING && marioState->vel[1] == -4.0f)
+                //    return true;
+
+                //if (marioState->action == ACT_FREEFALL_LAND && marioState->vel[1] == -4.0f)
+                //    return true;
+
+                if ((marioState->action == ACT_FREEFALL || marioState->action == ACT_FREEFALL_LAND || marioState->action == ACT_FIRST_PERSON)
+                    && prevState.marioAction == ACT_DECELERATING
+                    && marioState->vel[1] == -4.0f)
                     return true;
 
                 break;

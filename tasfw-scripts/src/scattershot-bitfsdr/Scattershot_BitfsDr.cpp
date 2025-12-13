@@ -88,6 +88,7 @@ bool Scattershot_BitfsDr::ApplyMovement()
 {
     MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
     Camera* camera = *(Camera**)(resource->addr("gCamera"));
+    auto state = GetTrackedState<StateTracker_BitfsDr>(GetCurrentFrame());
 
     // Scripts
     if (!CheckMovementOptions(MovementOption::NO_SCRIPT))
@@ -114,7 +115,7 @@ bool Scattershot_BitfsDr::ApplyMovement()
             return true;
         else if (CheckMovementOptions(MovementOption::TURN_UPHILL))
         {
-            auto state = GetTrackedState<StateTracker_BitfsDr>(GetCurrentFrame());
+            //auto state = GetTrackedState<StateTracker_BitfsDr>(GetCurrentFrame());
 
             if (state.phase == StateTracker_BitfsDr::Phase::TURN_UPHILL && (GetTempRng() % 4) == 0)
             {
@@ -188,7 +189,9 @@ BinaryStateBin<16> Scattershot_BitfsDr::GetStateBin()
         case ACT_TURNING_AROUND: actionValue = 7; break;
         case ACT_FINISH_TURNING_AROUND: actionValue = 8; break;
         case ACT_WALKING: actionValue = 9; break;
-        default: actionValue = 10;
+        case ACT_DECELERATING: actionValue = 10; break;
+        case ACT_IDLE: actionValue = 11; break;
+        default: actionValue = 12;
     }
 
     int phaseValue;
@@ -220,14 +223,15 @@ BinaryStateBin<16> Scattershot_BitfsDr::GetStateBin()
     uint8_t bitCursor = 0;
     BinaryStateBin<16> state;
 
-    if (trackedState.initialized && trackedState.reachedNormRegime)
+    if (trackedState.initialized && trackedState.reachedNormRegime && trackedState.phase > StateTracker_BitfsDr::Phase::INITIAL)
     {
-        state.AddValueBits(bitCursor, 1, 1);
+        state.AddValueBits(bitCursor, 2, 0);
         state.AddValueBits(bitCursor, 4, actionValue);
         state.AddValueBits(bitCursor, 3, phaseValue);
         state.AddValueBits(bitCursor, 4, std::clamp(trackedState.currentCrossing, 0, 15));
-        state.AddRegionBitsByRegionSize(bitCursor, 8, xPosValue, xMin, xMax, 20.0f);
-        state.AddRegionBitsByRegionSize(bitCursor, 8, zPosValue, zMin, zMax, 20.0f);
+        state.AddRegionBitsByRegionSize(bitCursor, 10, xPosValue, xMin, xMax, 5.0f);
+        state.AddRegionBitsByRegionSize(bitCursor, 10, zPosValue, zMin, zMax, 5.0f);
+        //state.AddValueBits(bitCursor, 13, std::abs(marioState->faceAngle[1]) >> 4);
         state.AddRegionBitsByNRegions(bitCursor, 7, int(marioState->faceAngle[1]), -32768, 32767, 32);
 
         if (trackedState.currentCrossing > 0)
@@ -268,11 +272,14 @@ BinaryStateBin<16> Scattershot_BitfsDr::GetStateBin()
     }
     else
     {
-        state.AddValueBits(bitCursor, 1, 0);
+        state.AddValueBits(bitCursor, 2, 1);
         state.AddValueBits(bitCursor, 4, actionValue);
         state.AddValueBits(bitCursor, 3, phaseValue);
-        state.AddRegionBitsByRegionSize(bitCursor, 8, xPosValue, xMin, xMax, 100.0f);
-        state.AddRegionBitsByRegionSize(bitCursor, 8, zPosValue, zMin, zMax, 100.0f);
+        //state.AddRegionBitsByRegionSize(bitCursor, 8, trackedState.pyraNormX, -0.7f, 0.7f, 0.005f);
+        //state.AddRegionBitsByRegionSize(bitCursor, 8, trackedState.pyraNormZ, -0.7f, 0.7f, 0.005f);
+        state.AddRegionBitsByRegionSize(bitCursor, 8, xPosValue, xMin, xMax, 5.0f);
+        state.AddRegionBitsByRegionSize(bitCursor, 8, zPosValue, zMin, zMax, 5.0f);
+        state.AddValueBits(bitCursor, 13, std::abs(marioState->faceAngle[1]) >> 13);
     }
 
     return state;
@@ -297,8 +304,8 @@ bool Scattershot_BitfsDr::ValidateState()
         return false;
 
     // Quadrant check
-    if (pyramid->oTiltingPyramidNormalZ < -.15 || pyramid->oTiltingPyramidNormalX > 0.15)
-        return false;
+    //if (pyramid->oTiltingPyramidNormalZ < -.15 || pyramid->oTiltingPyramidNormalX > 0.15)
+    //    return false;
 
     // Action check
     if (marioState->action != ACT_BRAKING && marioState->action != ACT_DIVE && marioState->action != ACT_DIVE_SLIDE &&
@@ -333,11 +340,17 @@ bool Scattershot_BitfsDr::ValidateState()
     //    return false;
 
     // Reject departures from norm regime
-    if (state.reachedNormRegime && fabs(xNorm) + fabs(zNorm) < _normalSpecsDto.minXzSum - 0.02f)
+    float minXzSum = _normalSpecsDto.minXzSum;
+    //if (_targetOscillation == 3)
+    //    minXzSum += 0.02f;
+
+    if (state.phase != StateTracker_BitfsDr::Phase::INITIAL
+        && state.reachedNormRegime
+        && fabs(xNorm) + fabs(zNorm) < minXzSum)// - 0.02f)
         return false;
 
     // Validate major and minor horizontal norms are in correct windows
-    if (state.currentOscillation >= _targetOscillation && !_normalSpecsDto.onlyMinMajor)
+    if (_targetOscillation > 0 && state.currentOscillation >= _targetOscillation && !_normalSpecsDto.onlyMinMajor)
     {
         float xNormCrossing = std::fabs(state.crossingData.rbegin()->nX);
         float zNormCrossing = std::fabs(state.crossingData.rbegin()->nZ);
@@ -368,7 +381,10 @@ bool Scattershot_BitfsDr::ValidateState()
         return false;
 
     //If outside of norm regime, force norm to increase
-    if (!state.reachedNormRegime && state.xzSumStartedIncreasing && state.xzSum < lastFrameState.xzSum)
+    if (state.phase != StateTracker_BitfsDr::Phase::INITIAL &&
+        !state.reachedNormRegime
+        && state.xzSumStartedIncreasing
+        && state.xzSum <= lastFrameState.xzSum - 0.f)
         return false;
 
     if (state.phase == StateTracker_BitfsDr::Phase::TURN_UPHILL && marioState->forwardVel <= 16.0f)
@@ -377,6 +393,32 @@ bool Scattershot_BitfsDr::ValidateState()
     // Ensure we gain speed each crossing. Check both directions separately to account for axis asymmetry
     if (!StateTracker_BitfsDr::ValidateCrossingData(state, _normalSpecsDto.minMajor))
         return false;
+
+    // Conserve ARE
+    if (GetCurrentFrame() - state.initialFrame >= 2)
+    {
+        auto initialState = GetTrackedState<StateTracker_BitfsDr>(state.initialFrame + 1);
+        if (state.adjustedRemainderError[0] != initialState.adjustedRemainderError[0])
+            return false;
+
+        if (state.adjustedRemainderError[2] != initialState.adjustedRemainderError[2])
+            return false;
+
+        //if (state.currentOscillation > 0
+        //    && state.incrementFrames[0] + state.incrementFrames[2] != 0)
+        //    return false;
+
+        // Approach the isoline
+        if (false && state.currentOscillation >= _targetOscillation
+            && _targetOscillation > 0
+            && std::abs(state.incrementFrames[0]) % 2 != std::abs(state.incrementFrames[2]) % 2)
+            return false;
+
+        //if (state.phase > StateTracker_BitfsDr::Phase::INITIAL
+        //    && std::abs(state.incrementFrames[0]) + std::abs(state.incrementFrames[2])
+        //        > std::abs(lastFrameState.incrementFrames[0]) + std::abs(lastFrameState.incrementFrames[2]))
+        //    return false;
+    }
 
     return true;
 }
@@ -393,7 +435,10 @@ float Scattershot_BitfsDr::GetStateFitness()
         switch (state.phase)
         {
         case StateTracker_BitfsDr::Phase::INITIAL:
-            return state.xzSum;
+            //return state.xzSum;
+            return -float(GetCurrentFrame());
+            //return -std::abs(state.incrementFrames[0] - state.incrementFrames[2]);
+            //return marioState->forwardVel;
 
         case StateTracker_BitfsDr::Phase::RUN_DOWNHILL:
             return marioState->forwardVel;
@@ -473,8 +518,13 @@ std::string Scattershot_BitfsDr::GetCsvRow()
 bool Scattershot_BitfsDr::IsSolution()
 {
     const auto& state = GetTrackedState<StateTracker_BitfsDr>(GetCurrentFrame());
+    if (!state.initialized)
+        return false;
 
-    return _targetOscillation > 0 && state.initialized && state.currentOscillation >= _targetOscillation;
+    if (_targetOscillation == 0)
+        return state.phase > StateTracker_BitfsDr::Phase::INITIAL;
+
+    return _targetOscillation > 0 && state.currentOscillation >= _targetOscillation;
 }
 
 Scattershot_BitfsDr_Solution Scattershot_BitfsDr::GetSolutionState()
@@ -489,6 +539,7 @@ Scattershot_BitfsDr_Solution Scattershot_BitfsDr::GetSolutionState()
     solution.xzSum = state.xzSum;
     solution.currentOscillation = state.currentOscillation;
     solution.roughTargetAngle = state.roughTargetAngle;
+    solution.incrementFrames = state.incrementFrames;
 
     return solution;
 }

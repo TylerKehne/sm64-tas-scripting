@@ -241,6 +241,8 @@ public:
 private:
 	int16_t _faceAngle;
 	int16_t _targetAngle;
+	PyramidUpdateMem::Sm64Object* _pyramid = nullptr;
+	int64_t _floorId;
 };
 
 #endif
