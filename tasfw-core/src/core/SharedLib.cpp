@@ -59,7 +59,7 @@ std::unordered_map<std::string, SectionInfo> SharedLib::readSections()
 	using std::ios_base;
 	std::unordered_map<std::string, SectionInfo> sectionMap;
 
-	std::ifstream file(libFileName);
+	std::ifstream file(libFileName, std::ios::binary);
 	uint16_t numSections;
 	std::unique_ptr<IMAGE_SECTION_HEADER[]> sections;
 	std::unique_ptr<char[]> strTable;
