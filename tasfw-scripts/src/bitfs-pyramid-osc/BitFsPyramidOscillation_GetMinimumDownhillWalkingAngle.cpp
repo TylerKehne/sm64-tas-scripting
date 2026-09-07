@@ -1,5 +1,6 @@
 #include <BitFSPyramidOscillation.hpp>
 
+#include <cmath>
 #include <tasfw/Script.hpp>
 #include <sm64/Sm64.hpp>
 #include <sm64/Types.hpp>

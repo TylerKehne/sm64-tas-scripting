@@ -115,6 +115,24 @@ Classes that mark some overriding functions `override` and not others warn on Cl
 scattershot script classes in `tasfw-scripts` and the bruteforcer do this. Fix is mechanical:
 mark every override.
 
+## What GCC found on first contact (2026-09-07)
+
+`-Wmissing-requires` on every concept in `ScriptCompareHelper.hpp` (`ScriptParamsGenerator`,
+`ScriptComparator`, `ScriptTerminator`, `AdhocScriptComparator`, `AdhocScriptTerminator`).
+They are written as
+
+```cpp
+concept ScriptTerminator = requires { std::same_as<std::invoke_result_t<F, ...>, bool>; };
+```
+
+which only checks that the expression *is well-formed*, never that it is *true*: a
+requirement-body expression is not evaluated. Every one of these concepts is satisfied by
+anything, so the `Compare` family is effectively unconstrained and a wrong comparator fails
+deep inside the instantiation instead of at the call. The fix is `requires
+std::same_as<...>` (a nested requirement) or dropping the `requires` block for a plain
+constraint expression. Not changed yet because callers may currently rely on the leniency;
+ROADMAP 3.10.
+
 ## What Clang found on first contact (2026-09-07)
 
 Warnings MSVC did not emit, worth acting on (ROADMAP 1.5):

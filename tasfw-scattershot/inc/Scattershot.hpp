@@ -178,7 +178,7 @@ public:
                     [&]<typename... Ts>(Ts&&... args) -> ScriptStatus<TScattershotThread>
                     {
                         return TopLevelScriptBuilder<TScattershotThread>::Build(m64)
-                            .ConfigureResource<TResourceConfig>(resourceConfigGenerator(threadId))
+                            .template ConfigureResource<TResourceConfig>(resourceConfigGenerator(threadId)) // `template`: dependent object (docs/compilers.md)
                             .ConfigureStateTracker(std::forward<Ts>(args)...)
                             .Run(scattershot, std::forward<TParams>(params)...);
                     }, *stateTrackerParams);
@@ -199,7 +199,7 @@ public:
                     [&]<typename... Ts>(Ts&&... args) -> ScriptStatus<TScattershotThread>
                     {
                         return TopLevelScriptBuilder<TScattershotThread>::Build(m64)
-                            .ImportResource<TResource>(resourceImportGenerator(threadId))
+                            .template ImportResource<TResource>(resourceImportGenerator(threadId)) // `template`: dependent object (docs/compilers.md)
                             .ConfigureStateTracker(std::forward<Ts>(args)...)
                             .Run(scattershot, std::forward<TParams>(params)...);
                     }, *stateTrackerParams);

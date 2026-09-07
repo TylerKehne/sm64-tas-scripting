@@ -142,6 +142,11 @@ Goal: the core's implicit invariants become explicit and enforced.
       zero-fills fresh `std::vector`s because slots are never reused. Recycle evicted slot
       buffers. *Done when:* save cost is within 2x of load cost in both modes, gated by Tier B.
 
+- [ ] **3.10 Make the compare concepts actually constrain.** The concepts in
+      `ScriptCompareHelper.hpp` test whether `std::same_as<...>` is a valid *expression*, not
+      whether it holds, so they accept anything (GCC's `-Wmissing-requires`, docs/compilers.md).
+      Rewrite as nested requirements, then fix whatever callers stop compiling. *Done when:*
+      a comparator with the wrong signature fails at the call site on all three compilers.
 ## Phase 4: the squish-cancel brute forcer
 
 Goal: finish the thing the framework was built for.
