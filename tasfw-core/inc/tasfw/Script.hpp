@@ -1,10 +1,17 @@
 #pragma once
+#include <cstdint>
+#include <map>
+#include <memory>
+#include <set>
+#include <stdexcept>
+#include <tuple>
+#include <typeinfo>
 #include <unordered_map>
+#include <utility>
 #include <tasfw/Resource.hpp>
 #include <tasfw/Inputs.hpp>
 #include <sm64/Types.hpp>
 #include <tasfw/ScriptStatus.hpp>
-#include <set>
 #include <tasfw/SharedLib.hpp>
 #include <tasfw/ScriptCompareHelper.hpp>
 

@@ -86,7 +86,8 @@ static void BM_Scattershot_UpsertBlock_Redundant(benchmark::State& state)
 	std::size_t i = 0;
 	for (auto _ : state)
 	{
-		benchmark::DoNotOptimize(PerfAccess::UpsertBlock(scattershot, bins[i++ & 63], false, Solution(), 1.0f, nullptr, uint8_t(1), uint64_t(i), uint16_t(0)));
+		std::size_t index = i++;
+		benchmark::DoNotOptimize(PerfAccess::UpsertBlock(scattershot, bins[index & 63], false, Solution(), 1.0f, nullptr, uint8_t(1), uint64_t(index), uint16_t(0)));
 	}
 }
 BENCHMARK(BM_Scattershot_UpsertBlock_Redundant);

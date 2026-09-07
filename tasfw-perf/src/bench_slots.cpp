@@ -4,7 +4,8 @@
 #include "FakeResource.hpp"
 
 // SlotManager bookkeeping (three std::maps per slot) at different live-slot counts.
-// The fake state is 256 bytes, so the copy itself is negligible.
+// The fake state is 256 bytes, so the copy itself is negligible. Fixed iteration counts keep
+// the heap state deterministic across runs (see bench_script.cpp).
 
 static void BM_SlotManager_CreateErase(benchmark::State& state)
 {
@@ -20,7 +21,7 @@ static void BM_SlotManager_CreateErase(benchmark::State& state)
 		slots.EraseSlot(id);
 	}
 }
-BENCHMARK(BM_SlotManager_CreateErase)->Arg(100)->Arg(1000)->Arg(10000);
+BENCHMARK(BM_SlotManager_CreateErase)->Arg(100)->Arg(1000)->Arg(10000)->Iterations(1000000);
 
 static void BM_SlotManager_LoadSlot(benchmark::State& state)
 {
@@ -39,7 +40,7 @@ static void BM_SlotManager_LoadSlot(benchmark::State& state)
 	}
 	benchmark::DoNotOptimize(resource.checksum());
 }
-BENCHMARK(BM_SlotManager_LoadSlot)->Arg(100)->Arg(1000)->Arg(10000);
+BENCHMARK(BM_SlotManager_LoadSlot)->Arg(100)->Arg(1000)->Arg(10000)->Iterations(1000000);
 
 // At the memory cap every CreateSlot evicts the least recently touched slot first.
 static void BM_SlotManager_CreateAtCap(benchmark::State& state)
@@ -56,7 +57,7 @@ static void BM_SlotManager_CreateAtCap(benchmark::State& state)
 		benchmark::DoNotOptimize(slots.CreateSlot());
 	}
 }
-BENCHMARK(BM_SlotManager_CreateAtCap)->Arg(100)->Arg(1000)->Arg(10000);
+BENCHMARK(BM_SlotManager_CreateAtCap)->Arg(100)->Arg(1000)->Arg(10000)->Iterations(1000000);
 
 // Resource-level wrappers add rdtsc timing and counters on top of the slot manager.
 static void BM_Resource_SaveLoadState(benchmark::State& state)
@@ -69,4 +70,4 @@ static void BM_Resource_SaveLoadState(benchmark::State& state)
 		resource.slotManager.EraseSlot(id);
 	}
 }
-BENCHMARK(BM_Resource_SaveLoadState);
+BENCHMARK(BM_Resource_SaveLoadState)->Iterations(1000000);

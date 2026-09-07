@@ -3,10 +3,14 @@
 Status as of 2026-09-07. Items are ordered; each phase makes the next one safe to do with
 an AI agent. Check boxes as work lands and keep "Done when" honest.
 
-**Cross-cutting rule:** performance is as important as correctness and the target is
-zero-cost abstractions (see [docs/performance.md](docs/performance.md)). Every item below
-must leave the gated performance counts unchanged or better, and any item that touches a hot
-path reports its delta table. Nothing in this roadmap is "done" if it made the search slower.
+**Cross-cutting rules:**
+
+- Performance is as important as correctness and the target is zero-cost abstractions (see
+  [docs/performance.md](docs/performance.md)). Every item below must leave the gated
+  performance counts unchanged or better, and any item that touches a hot path reports its
+  delta table. Nothing in this roadmap is "done" if it made the search slower.
+- Every item must build clean with MSVC and clang-cl (see [docs/compilers.md](docs/compilers.md)).
+  Compiler-specific workarounds are documented there, never hidden in `#if` forks.
 
 ## Phase 0: where things stand
 
@@ -58,14 +62,23 @@ correctness and in speed.
       every `C:\repos` literal, including the `error.m64` dump in `ScattershotThread.t.hpp`, with
       config-derived paths. *Done when:* `bitfs-turn.exe --config x.json` runs one stage and the
       source contains no absolute paths.
-- [ ] **1.5 Warnings.** Fix the baseline: C4715 in the `TurnAround` lambda (real bug), the
-      `printf("%d", uint64_t)` calls in `Scattershot.hpp`/`Scattershot.t.hpp`, C4244 narrowing in
-      `Segment` construction, `Rotation::Negate` missing default return. Then enable
-      warnings-as-errors for `tasfw-core` and `tasfw-scattershot`. *Done when:* the build is
-      warning-free on MSVC.
-- [ ] **1.6 Build hygiene.** Delete the stale `build/` artifacts, add a `ninja-debug`/`ninja-release`
-      preset matching `scripts/build.ps1`, and run the build in a GitHub Actions job (DLL-free
-      tests and Tier A benchmarks). *Done when:* CI is green on `master`.
+- [ ] **1.5 Warnings and the bugs behind them.** Fix the MSVC baseline: C4715 in the
+      `TurnAround` lambda (real bug), the `printf("%d", uint64_t)` calls in
+      `Scattershot.hpp`/`Scattershot.t.hpp`, C4244 narrowing in `Segment` construction,
+      `Rotation::Negate` missing default return. Fix what Clang found (docs/compilers.md):
+      the two empty-body `if (...);` statements in the Approach/Recover stages, the
+      always-false `&&` in `TurnUphill_1f`, dropped `.executed` results, missing `override`s,
+      `main` returning `false`. Then enable warnings-as-errors for `tasfw-core` and
+      `tasfw-scattershot` on both compilers. *Done when:* both builds are warning-free.
+- [ ] **1.6 Build hygiene and compiler matrix.** Delete the stale `build/` artifacts, add
+      presets for MSVC and clang-cl matching `scripts/build.ps1`, and run a GitHub Actions
+      matrix (windows-msvc, windows-clang-cl, ubuntu-gcc, ubuntu-clang) building everything
+      and running the DLL-free tests and Tier A benchmarks. *Done when:* the matrix is green
+      on `master`. Status: clang-cl builds locally after the workarounds in docs/compilers.md;
+      the workflow file exists (`.github/workflows/build.yml`) but has not run yet, and the
+      Linux jobs are expected to surface GCC/libstdc++ issues on first run. Also fixed here:
+      the CMake compiler-ID bug that left MSVC builds without any `/arch` flag, and FP
+      contraction is now off on every compiler (docs/compilers.md).
 
 ## Phase 2: loosen the grip of the pinned DLL
 
@@ -97,10 +110,13 @@ Goal: the core's implicit invariants become explicit and enforced.
 - [ ] **3.2 Encapsulation.** Make `Script` internals private and retire `ScriptFriend` if current
       MSVC accepts the friend template. Mark `resource` and `startSaveHandle` private.
 - [ ] **3.3 PyramidUpdate drift test.** Run `PyramidUpdate` and `LibSm64` side by side for a few
-      hundred frames of oscillation and assert identical normals. *Done when:* the test exists and
-      is part of the DLL smoke tier.
+      hundred frames of oscillation and assert identical normals, on every compiler in the
+      matrix. This is also the bit-exactness test for the FP flags in docs/compilers.md.
+      *Done when:* the test exists, is part of the DLL smoke tier, and passes on MSVC, clang-cl
+      and GCC.
 - [ ] **3.4 Linux parity.** Build with GCC/Clang, confirm the `mprotect`/`SIGSEGV` save path works,
-      and note any divergence from MSVC results. *Done when:* the DLL-free tests run on Linux CI.
+      and note any divergence from MSVC results. *Done when:* the DLL-free tests run on Linux CI
+      and the Linux `LibSm64` path passes the smoke test against a Linux libsm64 build.
 - [ ] **3.5 Savestate memory budget.** The 8 GB cap is per resource, so 16 threads can address
       128 GB. Make it a global budget in `Configuration`.
 - [ ] **3.6 Unify timing instrumentation.** `ExecuteAdhocBase` records milliseconds via

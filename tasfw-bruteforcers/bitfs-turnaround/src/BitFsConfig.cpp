@@ -26,6 +26,7 @@ const std::filesystem::path& getPathToSelf()
 #elif defined(__linux__)
 	#include <linux/limits.h>
 	#include <sys/types.h>
+	#include <unistd.h>
 const std::filesystem::path& getPathToSelf()
 {
 	static std::filesystem::path cached = [&] {

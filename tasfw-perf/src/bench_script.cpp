@@ -5,6 +5,11 @@
 
 // Framework overhead per operation, measured on a resource whose frame advance is ~free.
 // These numbers are what the script hierarchy costs on top of the game itself.
+//
+// Every benchmark here uses a fixed iteration count. These operations allocate, and the
+// heap state entering each benchmark then depends on exactly how many iterations the
+// earlier ones ran; with Google Benchmark's adaptive counts that produced bimodal results
+// between runs on MSVC. Fixed counts make the sequence deterministic.
 
 // Root script that exposes the protected Script API to a benchmark body.
 template <class Body, class TTracker = DefaultStateTracker<FakeResource>>
@@ -12,7 +17,6 @@ class BenchRoot : public TopLevelScript<FakeResource, TTracker>
 {
 public:
 	using Base = TopLevelScript<FakeResource, TTracker>;
-	using Base::AdvanceFrameRead;
 	using Base::AdvanceFrameWrite;
 	using Base::Execute;
 	using Base::ExecuteAdhoc;
@@ -22,7 +26,12 @@ public:
 	using Base::LongLoad;
 	using Base::Modify;
 	using Base::ModifyAdhoc;
-	using Base::Save;
+
+	// Save and AdvanceFrameRead also have private overloads in Script. A using-declaration
+	// names every overload and [namespace.udecl] requires all of them to be accessible;
+	// Clang enforces that, MSVC does not. Forward explicitly instead.
+	void Save() { Base::Save(); }
+	void AdvanceFrameRead() { Base::AdvanceFrameRead(); }
 
 	BenchRoot(benchmark::State& state, Body body) : _state(state), _body(body) {}
 
@@ -102,7 +111,7 @@ static void BM_Script_Write_RewindOne(benchmark::State& state)
 			}
 		});
 }
-BENCHMARK(BM_Script_Write_RewindOne);
+BENCHMARK(BM_Script_Write_RewindOne)->Iterations(1000000);
 
 // --- Ad-hoc scripts -----------------------------------------------------------------------
 
@@ -114,7 +123,7 @@ static void BM_Script_ExecuteAdhoc_Empty(benchmark::State& state)
 				s.ExecuteAdhoc([]() { return true; });
 		});
 }
-BENCHMARK(BM_Script_ExecuteAdhoc_Empty);
+BENCHMARK(BM_Script_ExecuteAdhoc_Empty)->Iterations(500000);
 
 // The scattershot pellet pattern: sandbox, write a frame, revert to the parent's save.
 static void BM_Script_ExecuteAdhoc_OneFrame(benchmark::State& state)
@@ -135,7 +144,7 @@ static void BM_Script_ExecuteAdhoc_OneFrame(benchmark::State& state)
 			}
 		});
 }
-BENCHMARK(BM_Script_ExecuteAdhoc_OneFrame);
+BENCHMARK(BM_Script_ExecuteAdhoc_OneFrame)->Iterations(300000);
 
 static void BM_Script_ModifyAdhoc_OneFrame(benchmark::State& state)
 {
@@ -189,7 +198,7 @@ static void BM_Script_Execute_ChildEmpty(benchmark::State& state)
 				benchmark::DoNotOptimize(s.template Execute<EmptyScript>());
 		});
 }
-BENCHMARK(BM_Script_Execute_ChildEmpty);
+BENCHMARK(BM_Script_Execute_ChildEmpty)->Iterations(200000);
 
 static void BM_Script_Execute_ChildOneFrame(benchmark::State& state)
 {
@@ -203,7 +212,7 @@ static void BM_Script_Execute_ChildOneFrame(benchmark::State& state)
 				benchmark::DoNotOptimize(s.template Execute<OneFrameScript>());
 		});
 }
-BENCHMARK(BM_Script_Execute_ChildOneFrame);
+BENCHMARK(BM_Script_Execute_ChildOneFrame)->Iterations(150000);
 
 static void BM_Script_Modify_ChildOneFrame(benchmark::State& state)
 {
@@ -300,7 +309,7 @@ static void BM_Script_LongLoad_RewindToRoot_Depth(benchmark::State& state)
 {
 	RunAtDepth(state, DepthScript::Mode::LongLoadRewindToRoot);
 }
-BENCHMARK(BM_Script_LongLoad_RewindToRoot_Depth)->Arg(1)->Arg(4)->Arg(16);
+BENCHMARK(BM_Script_LongLoad_RewindToRoot_Depth)->Arg(1)->Arg(4)->Arg(16)->Iterations(50000);
 
 // --- State trackers -----------------------------------------------------------------------
 

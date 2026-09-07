@@ -27,8 +27,22 @@
     Skip the build step.
 
 .PARAMETER Repetitions
-    Repetitions per benchmark (default 3). The compare uses the median, which is what keeps
-    a single noisy run from reading as a regression.
+    Repetitions per benchmark within one process (default 3). The compare uses the fastest
+    repetition across all processes, which is what keeps background noise from reading as
+    a regression.
+
+.PARAMETER Processes
+    Fresh processes per benchmark family (default 3). Some allocation-heavy benchmarks are
+    bimodal per process (heap layout differs from launch to launch); taking the minimum
+    across several launches removes that.
+
+.PARAMETER Affinity
+    Processor affinity mask for the benchmark process (default 0x10, one logical CPU). The
+    process also runs at High priority. Pass 0 to leave scheduling alone.
+
+.PARAMETER Compiler
+    msvc (default) or clang. Uses build\<Config>-clang and the baseline
+    perf\baselines\<computername>-clang.json, so the two compilers are tracked separately.
 
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File scripts\perf.ps1
@@ -43,17 +57,23 @@ param(
     [ValidateSet('Release', 'RelWithDebInfo')]
     [string]$Config = 'Release',
     [switch]$NoBuild,
-    [int]$Repetitions = 3
+    [int]$Repetitions = 3,
+    [int]$Processes = 3,
+    [ValidateSet('msvc', 'clang')]
+    [string]$Compiler = 'msvc',
+    [int]$Affinity = 0x10
 )
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 
 if (-not $NoBuild) {
-    & (Join-Path $PSScriptRoot 'build.ps1') -Config $Config -Target tasfw-perf
+    & (Join-Path $PSScriptRoot 'build.ps1') -Config $Config -Target tasfw-perf -Compiler $Compiler
 }
 
-$exe = Join-Path $root "build\$Config\out\tasfw-perf.exe"
+$buildDir = Join-Path $root "build\$Config"
+if ($Compiler -eq 'clang') { $buildDir = "$buildDir-clang" }
+$exe = Join-Path $buildDir 'out\tasfw-perf.exe'
 if (-not (Test-Path $exe)) {
     throw "tasfw-perf.exe not found at $exe. Build with scripts\build.ps1 -Config $Config first."
 }
@@ -86,26 +106,48 @@ $families = @(
 )
 if ($Filter) { $families = @($Filter) }
 
-Write-Host "Running $exe ($($families.Count) process(es), $Repetitions repetitions each)"
+Write-Host "Running $exe ($($families.Count) families x $Processes processes, $Repetitions repetitions each)"
 $prevEap = $ErrorActionPreference
 $ErrorActionPreference = 'Continue'   # Google Benchmark writes its banner to stderr
+
+# Throwaway launch. The first launch of a freshly written executable measures differently
+# from every later launch on Windows (Execute_ChildEmpty: 2.85 us first, 2.1 us after, and
+# the allocation-heavy benchmarks flip mode with it). One short run puts the file into its
+# steady state so the measured launches below are all "subsequent" launches.
+$warm = Start-Process -FilePath $exe -ArgumentList @('--benchmark_filter=^BM_BinaryStateBin_Pack$', '--benchmark_min_time=0.01s') -NoNewWindow -PassThru -RedirectStandardOutput ([System.IO.Path]::GetTempFileName())
+$warm.WaitForExit()
 $parts = @()
 $index = 0
+$runs = @()
 foreach ($family in $families) {
+    for ($p = 0; $p -lt $Processes; $p++) { $runs += $family }
+}
+foreach ($family in $runs) {
     $index++
     $part = Join-Path $resultsDir "$stamp-$sha-part$index.json"
     $benchArgs = @(
         "--benchmark_out=$part",
         '--benchmark_out_format=json',
         "--benchmark_repetitions=$Repetitions",
-        '--benchmark_report_aggregates_only=true',
-        '--benchmark_min_warmup_time=0.1',
+        '--benchmark_display_aggregates_only=true',
         "--benchmark_filter=$family"
     )
-    & $exe @benchArgs
-    if ($LASTEXITCODE -ne 0) {
+    # Launch through ProcessStartInfo so priority and affinity can be set; stdout/stderr inherit.
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $exe
+    $psi.Arguments = ($benchArgs | ForEach-Object { '"' + $_ + '"' }) -join ' '
+    $psi.UseShellExecute = $false
+    $proc = [System.Diagnostics.Process]::Start($psi)
+    try {
+        $proc.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::High
+        if ($Affinity -ne 0) { $proc.ProcessorAffinity = [IntPtr]$Affinity }
+    } catch {
+        Write-Host "note: could not set priority/affinity: $($_.Exception.Message)"
+    }
+    $proc.WaitForExit()
+    if ($proc.ExitCode -ne 0) {
         $ErrorActionPreference = $prevEap
-        throw "tasfw-perf exited with code $LASTEXITCODE on filter '$family'"
+        throw "tasfw-perf exited with code $($proc.ExitCode) on filter '$family'"
     }
     $parts += $part
 }
@@ -123,7 +165,9 @@ if ($python) {
 
 $baselineDir = Join-Path $root 'perf\baselines'
 if (-not $Baseline) {
-    $Baseline = Join-Path $baselineDir ("{0}.json" -f $env:COMPUTERNAME.ToLower())
+    $suffix = ''
+    if ($Compiler -eq 'clang') { $suffix = '-clang' }
+    $Baseline = Join-Path $baselineDir ("{0}{1}.json" -f $env:COMPUTERNAME.ToLower(), $suffix)
 }
 
 if ($SaveBaseline) {

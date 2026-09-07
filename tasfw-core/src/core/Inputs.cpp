@@ -81,7 +81,12 @@ PopulateInputMappings()
 	return {yawMagToInputs, inputsToYawMag};
 }
 
-const auto static[yawMagToInputs, inputsToYawMag] = PopulateInputMappings();
+// Not a structured binding on purpose: Clang 19.1 (clang-cl) crashes with an access violation
+// while parsing a function that references a namespace-scope `static` structured binding.
+// See docs/compilers.md. Two references to the members of a named static are equivalent.
+static const auto inputMappings = PopulateInputMappings();
+static const auto& yawMagToInputs = inputMappings.first;
+static const auto& inputsToYawMag = inputMappings.second;
 
 std::pair<int8_t, int8_t> Inputs::GetClosestInputByYawHau(
 	int16_t intendedYaw, float intendedMag, int16_t cameraYaw, Rotation bias)

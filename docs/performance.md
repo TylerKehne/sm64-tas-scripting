@@ -206,16 +206,165 @@ into the PR.
 
 Noise control, learned the hard way while setting this up:
 
-- Each benchmark runs three repetitions after a warm-up and the comparison uses the median.
-  Two back-to-back single runs of the same binary differed by up to 12% on the tracker
-  benchmarks.
-- Each benchmark family runs in its own process. One slot benchmark measured 168 ns in
-  isolation and 335 ns when run after the allocation-heavy scattershot and m64 families in
-  the same process; heap state carries over between benchmarks.
+- Each benchmark runs three repetitions in each of three fresh processes, and the comparison
+  uses the **fastest** of the nine. External noise only ever adds time,
+  so the minimum is the best estimate of intrinsic cost. Medians of three drifted 15 to 35%
+  between runs of the same binary on a busy desktop.
+- The benchmark process runs at High priority pinned to one logical CPU (`-Affinity`, default
+  `0x10`), so other processes and the scheduler contribute less.
+- Each benchmark family runs in its own process, several times. One slot benchmark measured
+  168 ns in isolation and 335 ns when run after the allocation-heavy scattershot and m64
+  families in the same process; heap state carries over between benchmarks.
+- The allocating benchmarks (`Script`, `SlotManager`) use fixed iteration counts, so the
+  heap state entering each benchmark does not depend on how many iterations the previous
+  ones happened to run.
+- The runner does one throwaway launch before measuring. On Windows, the **first launch of
+  a freshly written executable** measures differently from every later launch of the same
+  file: `Execute_ChildEmpty` took 2.85 us on the first launch and 2.1 us on every launch
+  after, reproduced on demand by copying the exe to a new name, and the allocation-heavy
+  benchmarks (`ExecuteAdhoc_Empty`, 430 vs 630 ns) flipped mode with it. Cause not
+  identified (image placement or prefetch are the suspects); the throwaway launch makes it
+  irrelevant. The allocation churn that makes these benchmarks layout-sensitive is itself a
+  ROADMAP 3.7 target.
 - Deltas under 1 ns in absolute terms never count, so sub-nanosecond benchmarks cannot trip
   the gate on jitter.
 
-If a result still looks like noise, rerun with `-Repetitions 7` before believing it.
+If a result still looks like noise, rerun with `-Repetitions 9` and close other programs
+before believing it. Never run two benchmark processes at once, and never benchmark while a
+build is running.
+
+Baselines are per machine **and per compiler**: `scripts\perf.ps1 -Compiler clang` builds
+with clang-cl and compares against `<computername>-clang.json`. Comparing the two baselines
+against each other is the cheapest way to see which compiler the hot paths prefer.
+
+The benchmarks in `tasfw-perf/src/bench_script.cpp` run on `FakeResource`, an in-memory
+resource whose frame advance is a few nanoseconds, so they isolate what the framework adds
+per operation. Everything else there is a direct measurement of the named component.
+
+## First measurements (Tier A, 2026-09-07)
+
+32-thread desktop at 3.0 GHz. MSVC 19.44 with `/arch:AVX2 /fp:precise /GL`; clang-cl 19.1 with
+`-march=native -ffp-contract=off -flto=thin`. Fastest of nine pinned repetitions. Rounded.
+These are the numbers to beat, and the ones that make "zero-cost" concrete.
+
+| Operation | MSVC | clang-cl |
+|---|---|---|
+| `AdvanceFrameWrite`, root script, no tracker | 216 ns | 297 ns |
+| `AdvanceFrameRead` (includes uncached input lookup) | 296 ns | 382 ns |
+| `AdvanceFrameWrite` + `Save` | 0.94 us | 1.32 us |
+| Write one frame, `Load` back to the previous save | 270 ns | 285 ns |
+| `ExecuteAdhoc` with an empty lambda | 619 ns | 433 ns |
+| `ExecuteAdhoc` writing one frame, then revert | 843 ns | 846 ns |
+| `Execute<EmptyScript>` | 2.29 us | 2.11 us |
+| `Execute<OneFrameScript>` | 2.69 us | 2.73 us |
+| `AdvanceFrameWrite` with a trivial state tracker | 2.83 us | 3.08 us |
+| `AdvanceFrameWrite` with a recursive state tracker | 3.08 us | 3.39 us |
+| `GetInputs`, uncached, hierarchy depth 1 / 4 / 16 | 139 / 202 / 482 ns | 226 / 289 / 545 ns |
+| `LongLoad` to root save and back, depth 1 / 4 / 16 | 0.36 / 0.88 / 7.5 us | 0.35 / 0.83 / 6.6 us |
+| `SlotManager` create + erase at 100 / 10,000 live slots | 196 / 375 ns | 258 / 607 ns |
+| `SlotManager` load at 1,000 / 10,000 live slots | 208 / 337 ns | 146 / 246 ns |
+| `Scattershot::GetHash` on a 16-byte bin | 21 ns | 13 ns |
+| `UpsertBlock` novel / redundant / improved | 104 / 67 / 95 ns | 100 / 64 / 93 ns |
+| `Inputs::GetClosestInputByYawHau` (full magnitude) | 58 ns | 57 ns |
+| `M64::save` / `M64::load`, 10,000 frames | 2.1 / 1.1 ms | 1.4 / 1.3 ms |
+
+What this says, pending the Tier B number for a real frame advance:
+
+- The bare per-frame framework cost (a few hundred nanoseconds) is small next to a game
+  frame. The hierarchy itself is close to zero-cost.
+- A **state tracker costs about 2.6 us per frame** on top of that, because every tracked
+  frame instantiates a script, runs all three lifecycle phases inside ad-hoc sandboxes and
+  reverts. That is the first target for ROADMAP 3.7.
+- **Instantiating a child script costs about 2.2 us** even when it does nothing. Scripts
+  that are run per frame (the downhill angle probes) pay this every time.
+- `LongLoad` at depth 16 is 20x depth 1; the ancestor walk is linear and not free.
+- Slot bookkeeping grows with live slots (three `std::map`s per slot).
+- **The two compilers disagree by up to 60% on individual paths, in both directions**, with
+  the same MSVC STL headers underneath. MSVC is ahead on the map-heavy slot and per-frame
+  bookkeeping; clang is ahead on hashing, m64 writing, and ad-hoc sandbox setup. Any
+  "optimization" measured on one compiler alone is suspect.
+
+## Profiling
+
+- Build with `scripts\build.ps1 -Config RelWithDebInfo`. LTO is enabled for every config by
+  `add_optimization_flags`, and the `/arch` flag is detected at configure time.
+- MSVC's OpenMP is the 2.0 runtime (`-openmp`). `-openmp:llvm` is available if newer
+  directives are needed; measure before switching.
+- Tools that work with this code: Visual Studio Performance Profiler (CPU sampling handles
+  OpenMP threads), Superluminal, Windows Performance Analyzer. In-process, the rdtsc counters
+  above are the first thing to read.
+- Never draw conclusions from a Debug build.
+
+## Known hotspots to measure first
+
+These are suspects, not verdicts. Measure before changing any of them.
+
+1. Block decoding replaying from the root on every shot (ROADMAP 4.3).
+2. `PyramidUpdateMem` construction copying and transforming all surfaces per call.
+3. `CalculateOscillations` advancing up to 50 frames inside a tracker evaluation.
+4. `UpsertBlock` hashing and probing while holding the `blocks` critical section.
+5. `std::map` bookkeeping in `Script`, including `operator[]` default inserts on
+   `unordered_map<int64_t, std::map<...>>` per ad-hoc level.
+6. Console output under the `print` critical section every shot.
+7. Barriers per script in `Deterministic` mode.
+8. Per-thread 8 GB slot budget and the resulting eviction pattern under memory pressure.
+
+## Rules of thumb for hot paths
+
+- No heap allocation per frame in `Script` or `Resource` code paths; reserve or reuse.
+- No `std::map` lookup per frame unless it replaces a frame advance.
+- No I/O while holding a critical section.
+- Anything that adds a frame advance needs a measured justification.
+- Prefer counts over timings when writing a test; counts are deterministic.
+
+## Running the suite
+
+Tier A is implemented in `tasfw-perf/` (Google Benchmark, fetched by CMake). Tiers B to D
+are not yet written; see ROADMAP 1.3.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\perf.ps1                 # build Release, run, compare
+powershell -ExecutionPolicy Bypass -File scripts\perf.ps1 -SaveBaseline   # store this run as the baseline
+powershell -ExecutionPolicy Bypass -File scripts\perf.ps1 -Filter Script -NoBuild
+```
+
+Results go to `perf\results\<timestamp>-<sha>.json` (gitignored). The baseline for a machine
+is `perf\baselines\<computername>.json` (committed). `scripts\perf_compare.py` prints the delta
+table and exits non-zero on any regression over the threshold (default 10%). Paste that table
+into the PR.
+
+Noise control, learned the hard way while setting this up:
+
+- Each benchmark runs three repetitions in each of three fresh processes, and the comparison
+  uses the **fastest** of the nine. External noise only ever adds time,
+  so the minimum is the best estimate of intrinsic cost. Medians of three drifted 15 to 35%
+  between runs of the same binary on a busy desktop.
+- The benchmark process runs at High priority pinned to one logical CPU (`-Affinity`, default
+  `0x10`), so other processes and the scheduler contribute less.
+- Each benchmark family runs in its own process, several times. One slot benchmark measured
+  168 ns in isolation and 335 ns when run after the allocation-heavy scattershot and m64
+  families in the same process; heap state carries over between benchmarks.
+- The allocating benchmarks (`Script`, `SlotManager`) use fixed iteration counts, so the
+  heap state entering each benchmark does not depend on how many iterations the previous
+  ones happened to run.
+- The runner does one throwaway launch before measuring. On Windows, the **first launch of
+  a freshly written executable** measures differently from every later launch of the same
+  file: `Execute_ChildEmpty` took 2.85 us on the first launch and 2.1 us on every launch
+  after, reproduced on demand by copying the exe to a new name, and the allocation-heavy
+  benchmarks (`ExecuteAdhoc_Empty`, 430 vs 630 ns) flipped mode with it. Cause not
+  identified (image placement or prefetch are the suspects); the throwaway launch makes it
+  irrelevant. The allocation churn that makes these benchmarks layout-sensitive is itself a
+  ROADMAP 3.7 target.
+- Deltas under 1 ns in absolute terms never count, so sub-nanosecond benchmarks cannot trip
+  the gate on jitter.
+
+If a result still looks like noise, rerun with `-Repetitions 9` and close other programs
+before believing it. Never run two benchmark processes at once, and never benchmark while a
+build is running.
+
+Baselines are per machine **and per compiler**: `scripts\perf.ps1 -Compiler clang` builds
+with clang-cl and compares against `<computername>-clang.json`. Comparing the two baselines
+against each other is the cheapest way to see which compiler the hot paths prefer.
 
 The benchmarks in `tasfw-perf/src/bench_script.cpp` run on `FakeResource`, an in-memory
 resource whose frame advance is a few nanoseconds, so they isolate what the framework adds

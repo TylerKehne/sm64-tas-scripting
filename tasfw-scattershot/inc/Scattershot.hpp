@@ -1,6 +1,9 @@
 #pragma once
 
 #include <concepts>
+#include <cstdint>
+#include <map>
+#include <memory>
 #include <stdexcept>
 #include <cmath>
 #include <BinaryStateBin.hpp>

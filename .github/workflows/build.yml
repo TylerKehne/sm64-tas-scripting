@@ -1,0 +1,73 @@
+# Compiler matrix (ROADMAP 1.6, docs/compilers.md). Builds every target with MSVC, clang-cl,
+# GCC and Clang, then runs one benchmark family briefly to prove the perf binary executes.
+# Nothing here needs the game DLL. Benchmark timings from CI runners are not gated; the
+# gate is the local perf.ps1 comparison against a committed baseline.
+
+name: build
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows-msvc
+            os: windows-latest
+            cc: cl
+            cxx: cl
+          - name: windows-clang-cl
+            os: windows-latest
+            cc: clang-cl
+            cxx: clang-cl
+          - name: ubuntu-gcc
+            os: ubuntu-latest
+            cc: gcc-13
+            cxx: g++-13
+          - name: ubuntu-clang
+            os: ubuntu-latest
+            cc: clang-17
+            cxx: clang++-17
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux toolchain
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build gcc-13 g++-13 clang-17 libomp-17-dev
+
+      - name: Set up MSVC environment
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Install Ninja (Windows)
+        if: runner.os == 'Windows'
+        run: choco install ninja --no-progress -y
+
+      - name: Configure
+        shell: bash
+        run: |
+          cmake -S . -B build/ci -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=${{ matrix.cc }} \
+            -DCMAKE_CXX_COMPILER=${{ matrix.cxx }}
+
+      - name: Build
+        shell: bash
+        run: cmake --build build/ci -- -k 0
+
+      - name: Perf binary smoke run
+        shell: bash
+        run: |
+          build/ci/out/tasfw-perf --benchmark_filter='^BM_BinaryStateBin' --benchmark_min_time=0.01s

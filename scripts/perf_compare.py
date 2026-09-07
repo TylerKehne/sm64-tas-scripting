@@ -6,8 +6,9 @@
 
 `compare` prints a delta table and exits 1 if any benchmark's real time regressed by more
 than the threshold (and by more than --min-abs-ns in absolute terms, so sub-nanosecond
-benchmarks cannot trip the gate on jitter). When a run used repetitions, the median
-aggregate is compared.
+benchmarks cannot trip the gate on jitter). With repetitions, the fastest repetition is
+compared by default (--stat min); external noise only adds time, so the minimum is the best
+estimate of intrinsic cost.
 
 `merge` concatenates the benchmark rows of several result files (scripts/perf.ps1 runs each
 benchmark family in its own process so heap state from one family cannot skew another) and
@@ -25,21 +26,34 @@ def read(path):
         return json.load(f)
 
 
-def rows_of(data):
-    """Return {benchmark name: row}, using the median aggregate when repetitions were used."""
+def rows_of(data, stat="min", metric="real_time"):
+    """Return {benchmark name: row} with one representative row per benchmark.
+
+    stat="min": the fastest repetition (external noise only ever adds time, so the minimum
+    is the best estimate of intrinsic cost for a microbenchmark).
+    stat="median": the median aggregate if present, else the median of the repetitions.
+    """
+    reps = {}
     medians = {}
-    singles = {}
     for b in data.get("benchmarks", []):
         if b.get("error_occurred"):
             continue
-        run_type = b.get("run_type", "iteration")
-        if run_type == "aggregate":
+        name = b.get("run_name") or b["name"]
+        if b.get("run_type", "iteration") == "aggregate":
             if b.get("aggregate_name") == "median":
-                name = b.get("run_name") or b["name"].rsplit("_median", 1)[0]
-                medians[name] = b
+                medians[name.rsplit("_median", 1)[0] if name.endswith("_median") else name] = b
         else:
-            singles.setdefault(b.get("run_name") or b["name"], b)
-    return medians if medians else singles
+            reps.setdefault(name, []).append(b)
+
+    if stat == "median" and medians:
+        return medians
+    rows = {}
+    for name, rs in reps.items():
+        rs = sorted(rs, key=lambda r: float(r[metric]))
+        rows[name] = rs[0] if stat == "min" else rs[len(rs) // 2]
+    if not rows:
+        return medians
+    return rows
 
 
 def fmt(value, unit):
@@ -77,15 +91,15 @@ def cmd_merge(args):
 def cmd_compare(args):
     base_data = read(args.baseline)
     cur_data = read(args.current)
-    base = rows_of(base_data)
-    cur = rows_of(cur_data)
+    base = rows_of(base_data, args.stat, args.metric)
+    cur = rows_of(cur_data, args.stat, args.metric)
     base_ctx = base_data.get("context", {})
     cur_ctx = cur_data.get("context", {})
 
     print("baseline: %s  (%s)" % (args.baseline, ctx_line(base_ctx)))
     print("current:  %s  (%s)" % (args.current, ctx_line(cur_ctx)))
-    print("metric: %s (median of repetitions when available); gate: >%.0f%% and >%.1f ns"
-          % (args.metric, args.threshold, args.min_abs_ns))
+    print("metric: %s, %s of repetitions; gate: >%.0f%% and >%.1f ns"
+          % (args.metric, args.stat, args.threshold, args.min_abs_ns))
     if cur_ctx.get("cpu_scaling_enabled"):
         print("warning: CPU frequency scaling is enabled on the current run; timings are noisier.")
     print()
@@ -146,6 +160,8 @@ def main(argv):
     cp.add_argument("--min-abs-ns", type=float, default=1.0,
                     help="ignore deltas smaller than this many nanoseconds in absolute terms")
     cp.add_argument("--metric", default="real_time", choices=["real_time", "cpu_time"])
+    cp.add_argument("--stat", default="min", choices=["min", "median"],
+                    help="which repetition to compare (default min)")
     cp.set_defaults(func=cmd_compare)
 
     mp = sub.add_parser("merge", help="merge several result files into one")

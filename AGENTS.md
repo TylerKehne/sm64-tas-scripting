@@ -23,6 +23,24 @@ benchmark. The measurement plan, the gated metrics and the regression policy are
 [docs/performance.md](docs/performance.md). Read it before touching `tasfw-core`,
 `tasfw-scattershot` or `tasfw-resources`.
 
+## Cross-platform compatibility is a requirement
+
+The code must build clean with **MSVC, Clang and GCC** through Ninja, on Windows and Linux.
+Compilers disagree about what the standard allows, and this project has hit
+documented-but-unsupported features before. Rules:
+
+- Build with every compiler you can reach before calling a change done. On Windows:
+  `scripts\build.ps1 -Config Release` and `scripts\build.ps1 -Config Release -Compiler clang`;
+  GCC via the Linux CI job or a container (docs/compilers.md). On Linux: GCC and Clang.
+- When a compiler rejects valid code, write the form every compiler accepts, leave a one-line
+  comment naming the compiler and version, and add the case to
+  [docs/compilers.md](docs/compilers.md). Never add a `#if _MSC_VER` fork for a language
+  feature; forks are for platform APIs only (`SharedLib`, `LibSm64`).
+- Prefer explicit template parameter lists to abbreviated function templates, in-class
+  definitions for constrained member templates, and forwarding functions over
+  using-declarations of overloaded names. Each of these has bitten this codebase.
+- Treat Clang-only warnings as signal; on first contact Clang pointed at two real bugs.
+
 Design principle: **as close to zero-cost abstractions as we can get.** The framework is
 templates and concepts on purpose, so that scripts, resources and state trackers resolve at
 compile time and `if constexpr` removes what is unused. In anything executed per frame,
@@ -49,9 +67,11 @@ its place with numbers, and "it is cleaner" is not a number.
 
 ## Build and run
 
-- Primary platform is Windows with MSVC. Linux code paths exist but have not been built recently.
-- Build: `powershell -ExecutionPolicy Bypass -File scripts\build.ps1` (add `-Config Release`, `-Clean`).
-  It finds Visual Studio via vswhere, so cmake and ninja do not need to be on PATH.
+- Primary platform is Windows; both MSVC and clang-cl must build clean. Linux code paths
+  exist but have not been built recently.
+- Build: `powershell -ExecutionPolicy Bypass -File scripts\build.ps1` (add `-Config Release`,
+  `-Clean`, `-Compiler clang`, `-KeepGoing`). It finds Visual Studio via vswhere, so cmake
+  and ninja do not need to be on PATH. clang-cl comes from the VS "C++ Clang tools" component.
 - Output: `build\<Config>\out\bitfs-turn.exe` with `config.json` copied next to it.
 - Dependencies (nlohmann/json, range-v3) are fetched by CMake. OpenMP is required.
 - Runtime inputs are not in git. You need `res\sm64_jp_0.dll` .. `res\sm64_jp_23.dll` and the
@@ -102,15 +122,16 @@ its place with numbers, and "it is cleaner" is not a number.
 - Ad-hoc lambdas use `ExecuteAdhoc` / `ModifyAdhoc` / `TestAdhoc` with the same semantics.
 - Naming: PascalCase types and methods, `_camelCase` private members, `CustomStatus` for the
   public result object.
-- MSVC-specific workarounds exist (`ScriptFriend`, `using` directives in `ScattershotThread`).
-  Leave a comment when you add one.
+- Compiler workarounds exist (`ScriptFriend`, `using` directives in `ScattershotThread`, the
+  named static in `Inputs.cpp`). Each is catalogued in docs/compilers.md; add yours there.
 
 ## Verifying a change
 
 Until the test tiers in ROADMAP 1.2 and 1.3 exist, verification means:
 
-1. `scripts\build.ps1` succeeds with **no new warnings** (there are 29 baseline warnings;
-   the list is in ROADMAP 1.5).
+1. `scripts\build.ps1` succeeds with **no new warnings** on MSVC (29 baseline warnings; the
+   list is in ROADMAP 1.5) **and** with `-Compiler clang` (see docs/compilers.md for the
+   clang baseline).
 2. Reason explicitly about determinism and savestate purity for anything touching
    `Script.t.hpp`, `ScattershotThread.t.hpp` or `LibSm64.cpp`.
 3. For anything on a hot path, measure. Run `scripts\perf.ps1` (Tier A, no DLL needed) and
