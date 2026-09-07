@@ -13,8 +13,8 @@ that gives real confidence in C++20 code like this.
 |---|---|---|
 | MSVC 19.44 (VS 2022), Ninja | primary; builds clean, 29 warnings | `scripts\build.ps1` |
 | clang-cl 19.1 (VS "C++ Clang tools for Windows"), Ninja | builds after the workarounds below; see status in ROADMAP 1.6 | `scripts\build.ps1 -Compiler clang` |
-| GCC 13+ on Linux, Ninja | required; status in ROADMAP 1.6; `LibSm64` has a separate `mprotect` save path | `cmake -G Ninja` or `scripts/build.sh` once it exists |
-| Clang 17+ on Linux, Ninja | required; same as GCC | same |
+| GCC 13 on Linux, Ninja | builds clean in CI (ubuntu-gcc job); `LibSm64`'s `mprotect` save path compiles but is untested at run time | `cmake -G Ninja` (see the workflow) |
+| Clang 17 on Linux, Ninja | builds clean in CI (ubuntu-clang job) | same |
 
 Build directories are `build\<Config>` for MSVC and `build\<Config>-clang` for clang-cl,
 so both can coexist. `-KeepGoing` passes `-k 0` to ninja so every error in the tree is
