@@ -98,12 +98,18 @@ void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::Initiali
 {
     LongLoad(config.StartFrame);
 
+    // Fail loudly if the resource's struct layouts do not match the game (ROADMAP 1.1).
+    // Once per thread; not a hot path.
+    this->resource->verifyLayout();
+
     // Load piped-in diffs as root blocks
     if (!scattershot.InputSolutions.empty())
     {
         bool finishedProcessingDiffs = false;
         uint16_t inputSolutionsIndex = 0;
-        std::shared_ptr<Segment> rootSegment = std::make_shared<Segment>(nullptr, 0, RngHash, 0);
+        // (parent, seed, nScripts, pipedDiff1Index). Root segments are never decoded, so the
+        // values are informational; the old call passed RngHash as nScripts (truncated to 8 bits).
+        std::shared_ptr<Segment> rootSegment = std::make_shared<Segment>(nullptr, RngHash, uint8_t(0), uint16_t(0));
         while (true)
         {
             #pragma omp critical (inputsolutions)

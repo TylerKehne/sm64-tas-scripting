@@ -59,6 +59,7 @@ its place with numbers, and "it is cleaner" is not a number.
 | `tasfw-scripts/` | Reusable BitFS scripts (pyramid oscillation, downhill angle search, dive-recover attempts) and scattershot stages. |
 | `tasfw-bruteforcers/bitfs-turnaround/` | The only executable (`bitfs-turn.exe`). `main.cpp` chains the BitFS pipeline stages. |
 | `tasfw-perf/` | Performance suite (Tier A microbenchmarks on an in-memory fake resource). Release only. |
+| `tasfw-tools/` | `dllcheck`: DLL layout self-check plus frame-advance and savestate cost measurement. |
 | `perf/` | Committed benchmark baselines per machine; `perf/results/` is gitignored. |
 | `analysis/` | R script that plots scattershot CSV output. CSVs are gitignored. |
 | `res/` | Gitignored runtime inputs: 24 copies of the libsm64 DLL, source .m64 files, and thousands of exported solution .m64 files. |
@@ -79,6 +80,9 @@ its place with numbers, and "it is cleaner" is not a number.
 - **Do not run `bitfs-turn.exe` as a smoke test.** It launches the full 16-thread pipeline,
   runs for hours, and writes thousands of .m64 files into `res/` and CSVs into `analysis/`.
   A real smoke test is ROADMAP item 1.2; the performance suite is 1.3.
+- The DLL-level check is `build\Release\out\dllcheck.exe <dll> <m64> <frame> [--lightweight]`
+  (docs/libsm64.md). It plays to a frame, verifies the struct layouts against the game, and
+  prints frame-advance and save/load cost. Takes under a second.
 - Performance numbers come from `Release` or `RelWithDebInfo` builds only. Debug uses `/Od`.
 - Perf suite: `powershell -ExecutionPolicy Bypass -File scripts\perf.ps1` builds Release,
   runs `tasfw-perf.exe`, and compares against `perf\baselines\<computername>.json`.

@@ -48,8 +48,23 @@ add_subdirectory(tasfw-scattershot)
 add_subdirectory(tasfw-bruteforcers)
 add_subdirectory(tasfw-resources)
 
+add_subdirectory(tasfw-tools)
+
 # Performance suite (docs/performance.md). Run with scripts/perf.ps1.
 option(TASFW_BUILD_PERF "Build the tasfw-perf benchmark suite" ON)
 if(TASFW_BUILD_PERF)
 	add_subdirectory(tasfw-perf)
+endif()
+
+# Warnings as errors for the framework libraries (ROADMAP 1.5). Off by default until the CI
+# matrix is green on every compiler; turn on locally with -DTASFW_WARNINGS_AS_ERRORS=ON.
+option(TASFW_WARNINGS_AS_ERRORS "Treat warnings as errors in tasfw-core and tasfw-scattershot" OFF)
+if(TASFW_WARNINGS_AS_ERRORS)
+	if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+		target_compile_options(tasfw-core PRIVATE /WX)
+		target_compile_options(tasfw-scattershot INTERFACE /WX)
+	else()
+		target_compile_options(tasfw-core PRIVATE -Werror)
+		target_compile_options(tasfw-scattershot INTERFACE -Werror)
+	endif()
 endif()

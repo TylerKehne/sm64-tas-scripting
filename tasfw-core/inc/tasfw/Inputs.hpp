@@ -42,6 +42,7 @@ public:
 			case Rotation::NONE:
 				return Rotation::NONE;
 		}
+		return Rotation::NONE; // unreachable; keeps every compiler's -Wreturn-type quiet
 	}
 
 private:

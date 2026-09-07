@@ -97,6 +97,12 @@ public:
 	virtual std::size_t getStateSize(const TState& state) const = 0;
 	//TODO: make this resource-agnostic
 	virtual uint32_t getCurrentFrame() const = 0;
+
+	// Throw std::runtime_error with a readable explanation if the resource's view of game
+	// memory does not match reality (for example the struct headers do not match the DLL
+	// build). Called once per scattershot thread after the start frame is loaded; not a hot
+	// path. Default: nothing to verify.
+	virtual void verifyLayout() {}
 };
 
 //Include template method implementations

@@ -194,7 +194,10 @@ Everything below assumes the pinned DLL in `res/` (see `docs/libsm64.md`):
   `gCurrCourseNum`, `gCurrAreaIndex`, `bhvLllTiltingInvertedPyramid`,
   `bhvBitfsTiltingInvertedPyramid`, `sm64_init`, `sm64_update`.
 - The pyramid is `gObjectPool[84]` in the BitFS area of the source m64.
-- Lightweight save slices in `LibSm64.cpp`.
+- Lightweight save slices (`LibSm64LightweightSlices` in `LibSm64.hpp`).
+- `LibSm64::layoutCheckReport()` verifies all of the above relationships at run time; the
+  scattershot thread calls `Resource::verifyLayout()` once after loading the start frame,
+  and `dllcheck` runs it standalone (docs/libsm64.md).
 - `PyramidUpdate` re-implements physics from the decomp.
 - The m64 header check expects the JP ROM CRC and country code in `Inputs.hpp`.
 
@@ -205,8 +208,9 @@ The decomp checkout at `C:\repos\sm64` is not part of the build; it is reference
 The full measurement plan is in [docs/performance.md](docs/performance.md); this is the
 mental model behind it.
 
-Cost hierarchy, most to least: frame advance (`sm64_update`, tens of microseconds each),
-savestate save/load (`memcpy` of 1.5 MB lightweight or 7.3 MB full, memory-bandwidth bound),
+Cost hierarchy, most to least: frame advance (`sm64_update`, measured at about 10 us),
+savestate save/load (`memcpy` of 1.5 MB lightweight or 7.3 MB full: about 285/42 us
+lightweight, 1400/190 us full, memory-bandwidth and allocation bound),
 block decoding (replay from the root every shot), state trackers (run at every frame advance
 and load, and may advance frames themselves), `Script` bookkeeping (map operations per frame
 per hierarchy level), synchronization (named critical sections, barriers in deterministic

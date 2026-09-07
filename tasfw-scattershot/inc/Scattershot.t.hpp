@@ -149,7 +149,7 @@ template <class TState, derived_from_specialization_of<Resource> TResource,
     class TOutputState>
 void Scattershot<TState, TResource, TStateTracker, TOutputState>::PrintStatus()
 {
-    printf("\nCombined Loops: %d Blocks: %d Solutions: %d\n", TotalShots, Blocks.size(), Solutions.size());
+    printf("\nCombined Loops: %llu Blocks: %llu Solutions: %llu\n", (unsigned long long)TotalShots, (unsigned long long)Blocks.size(), (unsigned long long)Solutions.size());
 
     // Print cumulative script results
     if (ScriptCount != 0)

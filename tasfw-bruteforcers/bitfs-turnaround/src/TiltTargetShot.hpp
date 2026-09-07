@@ -388,14 +388,14 @@ public:
         return true;
     }
 
-    void SelectMovementOptions()
+    void SelectMovementOptions() override
     {
         MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
         Camera* camera = *(Camera**)(resource->addr("gCamera"));
         AddMovementOption(MovementOption::NO_SCRIPT);
     }
 
-    bool ApplyMovement()
+    bool ApplyMovement() override
     {
         MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
         Camera* camera = *(Camera**)(resource->addr("gCamera"));
@@ -448,7 +448,7 @@ public:
         return true;
     }
 
-    BinaryStateBin<16> GetStateBin()
+    BinaryStateBin<16> GetStateBin() override
     {
         MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
         Camera* camera = *(Camera**)(resource->addr("gCamera"));
@@ -572,7 +572,7 @@ public:
         return state;
     }
 
-    bool ValidateState()
+    bool ValidateState() override
     {
         MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
         Camera* camera = *(Camera**)(resource->addr("gCamera"));
@@ -660,7 +660,7 @@ public:
         return true;
     }
 
-    float GetStateFitness()
+    float GetStateFitness() override
     {
         auto state = GetEquilibriumTrackedState();
         if (!state.initialized)

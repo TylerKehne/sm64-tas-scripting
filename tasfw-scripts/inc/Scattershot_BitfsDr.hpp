@@ -130,11 +130,11 @@ public:
     Scattershot_BitfsDr(Alias_Scattershot_BitfsDr& scattershot, int targetOscillation, NormalSpecsDto normalSpecsDto)
         : Alias_ScattershotThread_BitfsDr(scattershot), _targetOscillation(targetOscillation), _normalSpecsDto(normalSpecsDto) {}
 
-    void SelectMovementOptions();
-    bool ApplyMovement();
-    BinaryStateBin<16> GetStateBin();
-    bool ValidateState();
-    float GetStateFitness();
+    void SelectMovementOptions() override;
+    bool ApplyMovement() override;
+    BinaryStateBin<16> GetStateBin() override;
+    bool ValidateState() override;
+    float GetStateFitness() override;
 
     std::string GetCsvLabels() override;
     bool ForceAddToCsv() override;

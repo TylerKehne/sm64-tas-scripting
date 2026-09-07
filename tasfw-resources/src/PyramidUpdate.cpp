@@ -543,7 +543,7 @@ void PyramidUpdate::UpdatePyramid()
 			dz = 0.0f;
 		}
 
-		if (_state.pyramid.tiltingPyramidMarioOnPlatform == true)
+		if (_state.pyramid.tiltingPyramidMarioOnPlatform != 0)
 			marioOnPlatform++;
 
 		_state.pyramid.tiltingPyramidMarioOnPlatform = true;

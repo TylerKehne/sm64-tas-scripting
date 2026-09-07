@@ -285,7 +285,7 @@ private:
                 }
             });
 
-        printf("Found %d solutions in %d shots.\n", scattershot.Solutions.size(), scattershot.TotalShots);
+        printf("Found %llu solutions in %llu shots.\n", (unsigned long long)scattershot.Solutions.size(), (unsigned long long)scattershot.TotalShots);
 
         std::vector<ScattershotSolution<TOutputState>> solutions;
         solutions.reserve(scattershot.Solutions.size());

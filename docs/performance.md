@@ -268,13 +268,32 @@ These are the numbers to beat, and the ones that make "zero-cost" concrete.
 | `Inputs::GetClosestInputByYawHau` (full magnitude) | 58 ns | 57 ns |
 | `M64::save` / `M64::load`, 10,000 frames | 2.1 / 1.1 ms | 1.4 / 1.3 ms |
 
-What this says, pending the Tier B number for a real frame advance:
+### First Tier B numbers (from `dllcheck`, 2026-09-07)
 
-- The bare per-frame framework cost (a few hundred nanoseconds) is small next to a game
-  frame. The hierarchy itself is close to zero-cost.
-- A **state tracker costs about 2.6 us per frame** on top of that, because every tracked
-  frame instantiates a script, runs all three lifecycle phases inside ad-hoc sandboxes and
-  reverts. That is the first target for ROADMAP 3.7.
+`dllcheck.exe res\sm64_jp_0.dll res\comissonPyra2-Fanart_x-Z.m64 3330 [--lightweight]`,
+MSVC build, single thread, idle machine:
+
+| Primitive | Cost |
+|---|---|
+| Frame advance (`sm64_update` plus `SetInputs`) | 9.5 to 10 us |
+| Save, lightweight (1.5 MB) | 285 us |
+| Load, lightweight | 42 us |
+| Save, full (7.3 MB) | 1.4 ms |
+| Load, full | 190 us |
+
+A save costs 5 to 7 times its load in both modes: every `SaveState` allocates and zero-fills
+fresh vectors because slots are never reused (ROADMAP 3.9). A lightweight save is worth about
+30 frame advances, a lightweight load about 4, which is what the `shouldSave`/`shouldLoad`
+cost model is trading against.
+
+What the Tier A and B numbers say together:
+
+- The bare per-frame framework cost (216 ns on MSVC) is about 2% of a 10 us game frame. The
+  hierarchy itself is close to zero-cost.
+- A **state tracker costs about 2.6 us per frame**, which is a quarter of a game frame, on
+  every frame of every thread. Every tracked frame instantiates a script, runs all three
+  lifecycle phases inside ad-hoc sandboxes and reverts. That is the first target for
+  ROADMAP 3.7.
 - **Instantiating a child script costs about 2.2 us** even when it does nothing. Scripts
   that are run per frame (the downhill angle probes) pay this every time.
 - `LongLoad` at depth 16 is 20x depth 1; the ancestor walk is linear and not free.

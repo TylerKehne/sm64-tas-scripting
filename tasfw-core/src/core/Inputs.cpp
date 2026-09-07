@@ -67,12 +67,14 @@ PopulateInputMappings()
 			if (intendedMag > 0.0f)
 			{
 				baseIntendedYaw = atan2s(-adjustedStickY, adjustedStickX);
+				// stickX/stickY are int16_t loop counters that stay within int8_t range.
+				std::pair<int8_t, int8_t> stick {int8_t(stickX), int8_t(stickY)};
 				if (!yawMagToInputs.contains(baseIntendedYaw))
 					yawMagToInputs[baseIntendedYaw] =
 						std::map<float, std::pair<int8_t, int8_t>> {
-							{intendedMag, {stickX, stickY}}};
+							{intendedMag, stick}};
 				else if (!yawMagToInputs[baseIntendedYaw].contains(intendedMag))
-					yawMagToInputs[baseIntendedYaw][intendedMag] = {stickX, stickY};
+					yawMagToInputs[baseIntendedYaw][intendedMag] = stick;
 			}
 
 			inputsToYawMag[stickX][stickY] = {baseIntendedYaw, intendedMag};

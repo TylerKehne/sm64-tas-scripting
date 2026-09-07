@@ -318,6 +318,8 @@ private:
                 if (marioState->action == ACT_IDLE)
                     CustomStatus.phase = Phase::C_UP_TRICK;
                 break;
+            default:
+                break;
         }
     }
 };
@@ -341,7 +343,7 @@ public:
     Scattershot_BitfsDrRecover(Alias_Scattershot_BitfsDrRecover& scattershot, StateTracker_BitfsDrRecover::Phase lastPhase)
         : Alias_ScattershotThread_BitfsDrRecover(scattershot), _lastPhase(lastPhase) { }
 
-    void SelectMovementOptions()
+    void SelectMovementOptions() override
     {
         MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
 
@@ -380,7 +382,7 @@ public:
         }
     }
 
-    bool ApplyMovement()
+    bool ApplyMovement() override
     {
         MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
         Camera* camera = *(Camera**)(resource->addr("gCamera"));
@@ -439,7 +441,7 @@ public:
         return true;
     }
 
-    BinaryStateBin<16> GetStateBin()
+    BinaryStateBin<16> GetStateBin() override
     {
         MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
         Camera* camera = *(Camera**)(resource->addr("gCamera"));
@@ -525,7 +527,7 @@ public:
         return state;
     }
 
-    bool ValidateState()
+    bool ValidateState() override
     {
         MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
         Camera* camera = *(Camera**)(resource->addr("gCamera"));
@@ -588,8 +590,11 @@ public:
         auto state = GetTrackedState<StateTracker_BitfsDrRecover>(GetCurrentFrame());
         auto lastFrameState = GetTrackedState<StateTracker_BitfsDrRecover>(GetCurrentFrame() - 1);
 
+        // Was an empty statement (`if (...);`) until 2026-09; Clang's -Wempty-body found it.
+        // Reject sitting in first person during the C-up trick phase.
         if (state.initialized && state.phase == StateTracker_BitfsDrRecover::Phase::C_UP_TRICK
-            && state.marioAction == ACT_FIRST_PERSON);
+            && state.marioAction == ACT_FIRST_PERSON)
+            return false;
 
         // Reject departures from norm regime
         //float normRegimeThreshold = 0.69f;
@@ -603,7 +608,7 @@ public:
         return true;
     }
 
-    float GetStateFitness()
+    float GetStateFitness() override
     {
         MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
         Object* objectPool = (Object*)(resource->addr("gObjectPool"));
@@ -704,6 +709,8 @@ public:
 
                 break;
             }
+            default:
+                break;
         }
 
         return false;
@@ -787,7 +794,7 @@ private:
                 AdvanceFrameWrite(Inputs(0, stick.first, stick.second));
 
                 return true;
-            }).executed;
+            });
 
         return marioState->action == ACT_FINISH_TURNING_AROUND || marioState->action == ACT_WALKING;
     }
@@ -832,7 +839,7 @@ private:
                 AdvanceFrameWrite(Inputs(0, inputs.first, inputs.second));
 
                 return true;
-            }).executed;
+            });
 
         return marioState->action == ACT_FINISH_TURNING_AROUND || marioState->action == ACT_WALKING;
     }

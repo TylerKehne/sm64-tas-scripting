@@ -79,6 +79,15 @@ void f() { a.contains(x); }              // clang-cl 19.1.5: access violation wh
 Workaround in `tasfw-core/src/core/Inputs.cpp`: a named `static const auto` plus two
 `static const auto&` references. Same code, no runtime cost.
 
+### clang-cl silently ignores GNU-style flags
+
+`clang-cl` accepts a subset of GNU-style options (`-march=`, `-flto`, `-std:`), but anything
+it does not recognise is **ignored with only a `-Wunknown-argument` warning**, not rejected.
+`-ffp-contract=off` was ignored this way for a day, which left FP contraction on in every
+clang-cl build while the CMake file said otherwise. Pass such flags as `/clang:<flag>`
+(handled in `AddOptimizationFlags.cmake` via `CMAKE_CXX_COMPILER_FRONTEND_VARIANT`). Treat
+`-Wunknown-argument` as an error in spirit: it means a flag you rely on is not applied.
+
 ### Clang: `-Winconsistent-missing-override`
 
 Classes that mark some overriding functions `override` and not others warn on Clang. The

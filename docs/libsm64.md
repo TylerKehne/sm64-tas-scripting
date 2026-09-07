@@ -36,7 +36,31 @@ wafel repo produces it. `C:\repos\wafel` has an unlocked `libsm64/sm64_jp.dll` a
 | `bitfs_nut_*.m64` (thousands) | Exported solutions from past runs. Safe to delete. |
 
 `C:\repos\wafel\libsm64\sm64_jp.dll` is a **different** build (2023-09-07, 31,872,634 bytes)
-with different section sizes. Do not mix them without redoing the checks below.
+with slightly different section sizes. `dllcheck` (below) reports that it passes every layout
+check, including lightweight-slice coverage: the hot symbols sit 32 to 64 bytes lower in
+`.bss` and still inside the saved ranges. So it is a drop-in replacement as far as memory
+layout goes; whether it plays the movies frame-identically is a separate question for the
+smoke test (ROADMAP 1.2).
+
+## Checking a DLL: `dllcheck`
+
+```
+build\Release\out\dllcheck.exe <libsm64.dll> <movie.m64> <frame> [--lightweight]
+```
+
+Plays the movie to `<frame>` (pick one inside a level), runs `LibSm64::layoutCheckReport()`,
+prints one `ok:`/`FAIL:` line per check, and prints the measured cost of a frame advance and
+of a savestate save/load. Exit code 0 means every check passed. The same checks run
+automatically once per scattershot thread through `Resource::verifyLayout()`, so a wrong DLL
+fails at start-up with a readable message instead of producing garbage searches.
+
+What is checked: `gMarioState` points at `gMarioStates[0]`; Mario's object lies in
+`gObjectPool` at a multiple of `sizeof(Object)`; its `behavior` is `bhvMario`;
+`MarioState::marioObj` points back at it; `oPosX/Y/Z` and `header.gfx.pos` equal
+`MarioState::pos` (the game mirrors them every frame); the floor normal is unit length and
+the floor's object pointer is inside game data; `gCamera` is inside game data; and in
+lightweight mode, that `gMarioStates`, the whole object pool, the timer, controller pads,
+camera, current floor, `gCurrentArea`, `sSurfacePool` and `gAreas` are inside the slices.
 
 ## Why 24 copies
 
@@ -64,10 +88,10 @@ making these derived instead of hardcoded.
 
 ## Verifying a DLL by hand
 
-A quick sanity check without the framework: parse the PE export table and confirm
-`sm64_init`, `sm64_update`, `gMarioState`, `gObjectPool` and `gControllerPads` are present
-and that the image is PE32+ (x64). Any PE tool works; a 40-line Python script using `struct`
-is enough. ROADMAP 1.1 turns this into an automatic startup check.
+Without the framework: parse the PE export table and confirm `sm64_init`, `sm64_update`,
+`gMarioState`, `gObjectPool` and `gControllerPads` are present and that the image is PE32+
+(x64). Any PE tool works; a 40-line Python script using `struct` is enough. With the
+framework, use `dllcheck` above.
 
 ## Reproducing the DLL from source (not yet done)
 

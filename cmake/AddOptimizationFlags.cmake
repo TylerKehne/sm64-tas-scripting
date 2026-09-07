@@ -46,6 +46,11 @@ endif()
 # default /fp:precise. Force the same behavior everywhere.
 if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
 	set(_fp_flags "/fp:precise")
+elseif(CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
+	# clang-cl: GNU-style flags must go through /clang:, otherwise clang-cl *ignores* them with
+	# only a -Wunknown-argument warning and contraction stays on (its /fp:precise means
+	# -ffp-contract=on). Found 2026-09-07; see docs/compilers.md.
+	set(_fp_flags "/clang:-ffp-contract=off")
 else()
 	set(_fp_flags "-ffp-contract=off")
 endif()

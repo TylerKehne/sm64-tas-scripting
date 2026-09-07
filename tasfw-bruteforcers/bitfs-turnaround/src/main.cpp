@@ -420,7 +420,7 @@ int main(int argc, const char* argv[])
 		}
 
 		if (solutions.empty())
-			return false;
+			return 1;
 
 		if (targetOscillation == 1)
 		{

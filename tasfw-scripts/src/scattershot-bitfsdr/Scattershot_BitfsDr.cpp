@@ -692,6 +692,8 @@ bool Scattershot_BitfsDr::TurnAround()
                 if (marioState->action != ACT_TURNING_AROUND)
                     return true;
             }
+
+            return true; // turnaround finished (break) or frame budget exhausted
         }).executed;
 }
 
@@ -734,7 +736,7 @@ bool Scattershot_BitfsDr::RunDownhill_1f(bool min)
             AdvanceFrameWrite(Inputs(0, stick.first, stick.second));
 
             return true;
-        }).executed;
+        });
 
     return marioState->action == ACT_FINISH_TURNING_AROUND || marioState->action == ACT_WALKING;
 }
@@ -770,9 +772,9 @@ bool Scattershot_BitfsDr::TurnUphill_1f()
             AdvanceFrameWrite(Inputs(0, inputs.first, inputs.second));
 
             return true;
-        }).executed;
+        });
 
-    return marioState->action == ACT_FINISH_TURNING_AROUND && marioState->action == ACT_WALKING;
+    return marioState->action == ACT_FINISH_TURNING_AROUND || marioState->action == ACT_WALKING;
 }
 
 bool Scattershot_BitfsDr::Quickturn()

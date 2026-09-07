@@ -1,4 +1,10 @@
 #include "LibSm64.hpp"
+#include <cstdio>
+#include <stdexcept>
+#include <string>
+#include <sm64/Camera.hpp>
+#include <sm64/ObjectFields.hpp>
+#include <sm64/Types.hpp>
 
 #if !defined(_WIN32)
 #include <sys/mman.h>
@@ -83,17 +89,15 @@ void LibSm64::save(LibSm64Mem& state) const
 #if defined(_WIN32)
 	if (config.lightweight)
 	{
-		state.buf1.resize(200000);
-		state.buf2.resize(1300000);
+		state.buf1.resize(LibSm64LightweightBuf1Size);
+		state.buf2.resize(LibSm64LightweightBuf2Size);
 
-		uint8_t* dataPtr = reinterpret_cast<uint8_t*>(segment[0].address);
-		memcpy(state.buf1.data(), dataPtr, 100000);
-		memcpy(state.buf1.data() + 100000, dataPtr + 20 * 100000, 100000);
-
-		uint8_t* bssPtr = reinterpret_cast<uint8_t*>(segment[1].address);
-		memcpy(state.buf2.data(), bssPtr, 6 * 100000);
-		memcpy(state.buf2.data() + 6 * 100000, bssPtr + 17 * 100000, 6 * 100000);
-		memcpy(state.buf2.data() + 12 * 100000, bssPtr + 47 * 100000, 100000);
+		for (const LibSm64LightweightSlice& slice : LibSm64LightweightSlices)
+		{
+			const uint8_t* src = reinterpret_cast<const uint8_t*>(segment[slice.segment].address) + slice.offset;
+			uint8_t* dst = (slice.segment == 0 ? state.buf1.data() : state.buf2.data()) + slice.bufOffset;
+			memcpy(dst, src, slice.length);
+		}
 
 		return;
 	}
@@ -121,17 +125,15 @@ void LibSm64::load(const LibSm64Mem& state)
 #if defined(_WIN32)
 	if (config.lightweight)
 	{
-		uint8_t* dataPtr = reinterpret_cast<uint8_t*>(segment[0].address);
-		memcpy(dataPtr, state.buf1.data(), 100000);
-		memcpy(dataPtr + 20 * 100000, state.buf1.data() + 100000, 100000);
-
-		uint8_t* bssPtr = reinterpret_cast<uint8_t*>(segment[1].address);
-		memcpy(bssPtr, state.buf2.data(), 6 * 100000);
-		memcpy(bssPtr + 17 * 100000, state.buf2.data() + 6 * 100000, 6 * 100000);
-		memcpy(bssPtr + 47 * 100000, state.buf2.data() + 12 * 100000, 100000);
+		for (const LibSm64LightweightSlice& slice : LibSm64LightweightSlices)
+		{
+			uint8_t* dst = reinterpret_cast<uint8_t*>(segment[slice.segment].address) + slice.offset;
+			const uint8_t* src = (slice.segment == 0 ? state.buf1.data() : state.buf2.data()) + slice.bufOffset;
+			memcpy(dst, src, slice.length);
+		}
 
 		return;
-}
+	}
 
 	memcpy(segment[0].address, state.buf1.data(), segment[0].length);
 	memcpy(segment[1].address, state.buf2.data(), segment[1].length);
@@ -175,4 +177,197 @@ std::size_t LibSm64::getStateSize(const LibSm64Mem& state) const
 uint32_t LibSm64::getCurrentFrame() const
 {
 	return *(uint32_t*)(addr("gGlobalTimer")) - 1;
+}
+
+bool LibSm64::pointsIntoGameData(const void* p) const
+{
+	for (const SegVal& seg : segment)
+	{
+		const char* begin = static_cast<const char*>(seg.address);
+		const char* ptr = static_cast<const char*>(p);
+		if (ptr >= begin && ptr < begin + seg.length)
+			return true;
+	}
+	return false;
+}
+
+std::vector<std::string> LibSm64::layoutCheckReport() const
+{
+	// OBJECT_POOL_CAPACITY in the decomp. The pool is a static array in .bss.
+	constexpr std::ptrdiff_t objectPoolCapacity = 240;
+
+	std::vector<std::string> lines;
+	auto ok = [&](const std::string& what) { lines.push_back("ok: " + what); };
+	auto fail = [&](const std::string& what) { lines.push_back("FAIL: " + what); };
+	auto hex = [](const void* p)
+	{
+		char buf[32];
+		snprintf(buf, sizeof(buf), "%p", p);
+		return std::string(buf);
+	};
+
+	// --- Checks valid at any frame ------------------------------------------------------
+	MarioState* marioState = *(MarioState**)(addr("gMarioState"));
+	MarioState* marioStates = (MarioState*)(addr("gMarioStates"));
+	if (marioState == marioStates)
+		ok("gMarioState points at gMarioStates[0]");
+	else
+		fail("gMarioState (" + hex(marioState) + ") != &gMarioStates[0] (" + hex(marioStates) + "); pointer width or symbol resolution is wrong");
+
+	Object* objectPool = (Object*)(addr("gObjectPool"));
+	if (pointsIntoGameData(objectPool))
+		ok("gObjectPool lies in the DLL's data sections");
+	else
+		fail("gObjectPool (" + hex(objectPool) + ") is not inside .data/.bss");
+
+	uint32_t timer = *(uint32_t*)(addr("gGlobalTimer"));
+	ok("gGlobalTimer readable (" + std::to_string(timer) + ")");
+
+	// --- Checks that need Mario to exist (inside a level) --------------------------------
+	Object* marioObj = *(Object**)(addr("gMarioObject"));
+	if (marioObj == nullptr)
+	{
+		lines.push_back("note: gMarioObject is null (not in a level); in-level layout checks skipped");
+		return lines;
+	}
+
+	if (!pointsIntoGameData(marioObj))
+	{
+		fail("gMarioObject (" + hex(marioObj) + ") is not inside .data/.bss; refusing to dereference");
+		return lines;
+	}
+
+	std::ptrdiff_t byteOffset = reinterpret_cast<const char*>(marioObj) - reinterpret_cast<const char*>(objectPool);
+	if (byteOffset >= 0 && byteOffset % std::ptrdiff_t(sizeof(Object)) == 0 && byteOffset / std::ptrdiff_t(sizeof(Object)) < objectPoolCapacity)
+		ok("gMarioObject is gObjectPool[" + std::to_string(byteOffset / std::ptrdiff_t(sizeof(Object))) + "] (sizeof(Object) = " + std::to_string(sizeof(Object)) + " matches the pool stride)");
+	else
+		fail("gMarioObject is " + std::to_string(byteOffset) + " bytes into gObjectPool, not a multiple of sizeof(Object) = " + std::to_string(sizeof(Object)) + " within " + std::to_string(objectPoolCapacity) + " entries; struct Object layout is wrong");
+
+	const void* bhvMario = addr("bhvMario");
+	if (marioObj->behavior == bhvMario)
+		ok("gMarioObject->behavior == bhvMario (Object::behavior offset)");
+	else
+		fail("gMarioObject->behavior (" + hex(marioObj->behavior) + ") != bhvMario (" + hex(bhvMario) + "); Object::behavior offset is wrong");
+
+	if (marioState->marioObj == marioObj)
+		ok("gMarioState->marioObj == gMarioObject (MarioState::marioObj offset)");
+	else
+		fail("gMarioState->marioObj (" + hex(marioState->marioObj) + ") != gMarioObject (" + hex(marioObj) + "); MarioState layout is wrong");
+
+	// mario.c (update_mario_inputs / copy_mario_state_to_object) mirrors MarioState::pos into
+	// both oPosX/Y/Z and header.gfx.pos every frame Mario is updated.
+	bool posMatches = marioObj->oPosX == marioState->pos[0] && marioObj->oPosY == marioState->pos[1] && marioObj->oPosZ == marioState->pos[2];
+	if (posMatches)
+		ok("gMarioObject->oPos[XYZ] == gMarioState->pos (Object::rawData indexing and MarioState::pos offset)");
+	else
+		fail("gMarioObject->oPos (" + std::to_string(marioObj->oPosX) + ", " + std::to_string(marioObj->oPosY) + ", " + std::to_string(marioObj->oPosZ)
+			+ ") != gMarioState->pos (" + std::to_string(marioState->pos[0]) + ", " + std::to_string(marioState->pos[1]) + ", " + std::to_string(marioState->pos[2])
+			+ "); Object field indexing or MarioState::pos offset is wrong");
+
+	const f32* gfxPos = marioObj->header.gfx.pos;
+	if (gfxPos[0] == marioState->pos[0] && gfxPos[1] == marioState->pos[1] && gfxPos[2] == marioState->pos[2])
+		ok("gMarioObject->header.gfx.pos == gMarioState->pos (GraphNodeObject layout)");
+	else
+		fail("gMarioObject->header.gfx.pos (" + std::to_string(gfxPos[0]) + ", " + std::to_string(gfxPos[1]) + ", " + std::to_string(gfxPos[2])
+			+ ") != gMarioState->pos; GraphNode/GraphNodeObject layout is wrong");
+
+	Surface* floor = marioState->floor;
+	if (floor == nullptr)
+		lines.push_back("note: gMarioState->floor is null (Mario airborne or out of bounds); Surface checks skipped");
+	else if (!pointsIntoGameData(floor))
+		fail("gMarioState->floor (" + hex(floor) + ") is not inside .data/.bss; MarioState::floor offset is wrong");
+	else
+	{
+		float n = floor->normal.x * floor->normal.x + floor->normal.y * floor->normal.y + floor->normal.z * floor->normal.z;
+		if (n > 0.999f && n < 1.001f)
+			ok("gMarioState->floor->normal is unit length (Surface::normal offset)");
+		else
+			fail("gMarioState->floor->normal has squared length " + std::to_string(n) + "; Surface layout is wrong");
+
+		if (floor->object == nullptr || pointsIntoGameData(floor->object))
+			ok("gMarioState->floor->object is null or inside game data (Surface::object offset)");
+		else
+			fail("gMarioState->floor->object (" + hex(floor->object) + ") is not inside .data/.bss; Surface::object offset is wrong");
+	}
+
+	Camera* camera = *(Camera**)(addr("gCamera"));
+	if (camera != nullptr && pointsIntoGameData(camera))
+		ok("gCamera points into game data");
+	else
+		fail("gCamera (" + hex(camera) + ") is null or outside .data/.bss");
+
+	// --- Lightweight save coverage --------------------------------------------------------
+	// Lightweight mode only saves fixed slices of .data/.bss. Every piece of state the search
+	// depends on must lie inside a slice, or savestates silently stop restoring it. This is
+	// the check that a different DLL build is expected to fail.
+	if (config.lightweight)
+	{
+		auto covered = [&](const void* p, size_t size) -> bool
+		{
+			const char* ptr = static_cast<const char*>(p);
+			for (const LibSm64LightweightSlice& slice : LibSm64LightweightSlices)
+			{
+				const char* begin = static_cast<const char*>(segment[slice.segment].address) + slice.offset;
+				if (ptr >= begin && ptr + size <= begin + slice.length)
+					return true;
+			}
+			return false;
+		};
+		auto sectionOffset = [&](const void* p) -> std::string
+		{
+			for (const SegVal& seg : segment)
+			{
+				const char* begin = static_cast<const char*>(seg.address);
+				const char* ptr = static_cast<const char*>(p);
+				if (ptr >= begin && ptr < begin + seg.length)
+					return seg.name + "+" + std::to_string(ptr - begin);
+			}
+			return "outside sections";
+		};
+		auto checkCoverage = [&](const char* symbol, const void* p, size_t size)
+		{
+			if (covered(p, size))
+				ok(std::string("lightweight slices cover ") + symbol + " (" + sectionOffset(p) + ", " + std::to_string(size) + " bytes)");
+			else
+				fail(std::string("lightweight slices do NOT cover ") + symbol + " (" + sectionOffset(p) + ", " + std::to_string(size)
+					+ " bytes); lightweight savestates would not restore it. Use full saves or re-derive LibSm64LightweightSlices for this DLL");
+		};
+
+		checkCoverage("gMarioStates", marioStates, 2 * sizeof(MarioState));
+		checkCoverage("gObjectPool", objectPool, objectPoolCapacity * sizeof(Object));
+		checkCoverage("gGlobalTimer", addr("gGlobalTimer"), sizeof(uint32_t));
+		checkCoverage("gControllerPads", addr("gControllerPads"), 4 * 6);
+		checkCoverage("gMarioObject", addr("gMarioObject"), sizeof(void*));
+		checkCoverage("gCamera", addr("gCamera"), sizeof(void*));
+		checkCoverage("*gCamera", camera, sizeof(Camera));
+		if (floor != nullptr)
+			checkCoverage("gMarioState->floor (surface pool)", floor, sizeof(Surface));
+
+		// Symbols that may not exist in every build: check when present.
+		for (const char* symbol : {"gRandomSeed16", "gCurrentArea", "sSurfacePool", "gAreas"})
+		{
+			void* p = nullptr;
+			try { p = addr(symbol); }
+			catch (const std::exception&) { continue; }
+			checkCoverage(symbol, p, sizeof(void*));
+		}
+	}
+
+	return lines;
+}
+
+void LibSm64::verifyLayout()
+{
+	std::vector<std::string> report = layoutCheckReport();
+	std::string failures;
+	for (const std::string& line : report)
+	{
+		if (line.rfind("FAIL: ", 0) == 0)
+			failures += "\n  " + line;
+	}
+	if (!failures.empty())
+	{
+		throw std::runtime_error("LibSm64 layout check failed for " + config.dllPath.string()
+			+ ". The struct headers in tasfw-core/inc/sm64 do not match this DLL build (see docs/libsm64.md):" + failures);
+	}
 }

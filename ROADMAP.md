@@ -30,11 +30,15 @@ correctness and in speed.
 
 - [x] **1.0 Onboarding docs.** AGENTS.md, ARCHITECTURE.md, ROADMAP.md, docs/libsm64.md,
       docs/performance.md, `scripts/build.ps1`.
-- [ ] **1.1 DLL layout self-check.** At `LibSm64` construction, read a few known fields through the
-      copied structs (e.g. `gMarioStates[0].pos` vs the `gMarioState` pointer, `gGlobalTimer`,
-      the pyramid behavior pointer at `gObjectPool[84]`) and compare against symbol-based reads.
-      Fail loudly on mismatch. *Done when:* swapping in the 2023 wafel DLL produces a clear error
-      instead of garbage.
+- [x] **1.1 DLL layout self-check.** `LibSm64::layoutCheckReport()` cross-checks the copied
+      structs against relationships the game guarantees (Mario's object sits in `gObjectPool` at a
+      multiple of `sizeof(Object)`, its behavior is `bhvMario`, `oPos` and `gfx.pos` mirror
+      `MarioState::pos`, the floor normal is unit length) and, in lightweight mode, that every hot
+      symbol lies inside the saved slices. `Resource::verifyLayout()` throws on failure and runs
+      once per scattershot thread after the start frame loads. `dllcheck.exe <dll> <m64> <frame>
+      [--lightweight]` runs it standalone and prints frame-advance and save/load cost. Result
+      (2026-09-07): the pinned 2022 DLL and wafel's 2023 DLL both pass every check, so the newer
+      DLL is a drop-in replacement as far as layout goes.
 - [ ] **1.2 Correctness test tier.** Add a `tasfw-tests` target (Catch2 or doctest via FetchContent) with:
       - DLL-free unit tests: `Inputs` yaw/magnitude mapping round-trip, `M64` load/save
         round-trip, `BinaryStateBin` bit packing, `SlotManager` eviction order.
@@ -62,21 +66,24 @@ correctness and in speed.
       every `C:\repos` literal, including the `error.m64` dump in `ScattershotThread.t.hpp`, with
       config-derived paths. *Done when:* `bitfs-turn.exe --config x.json` runs one stage and the
       source contains no absolute paths.
-- [ ] **1.5 Warnings and the bugs behind them.** Fix the MSVC baseline: C4715 in the
-      `TurnAround` lambda (real bug), the `printf("%d", uint64_t)` calls in
-      `Scattershot.hpp`/`Scattershot.t.hpp`, C4244 narrowing in `Segment` construction,
-      `Rotation::Negate` missing default return. Fix what Clang found (docs/compilers.md):
-      the two empty-body `if (...);` statements in the Approach/Recover stages, the
-      always-false `&&` in `TurnUphill_1f`, dropped `.executed` results, missing `override`s,
-      `main` returning `false`. Then enable warnings-as-errors for `tasfw-core` and
-      `tasfw-scattershot` on both compilers. *Done when:* both builds are warning-free.
+- [ ] **1.5 Warnings and the bugs behind them.** Done 2026-09-07: C4715/-Wreturn-type in the
+      `TurnAround` lambda, the `printf("%d", uint64_t)` calls, the root `Segment` argument order
+      (RngHash was being truncated into `nScripts`), `Rotation::Negate`, the two empty-body
+      `if (...);` statements in the Approach/Recover stages (now `return false`), the
+      always-false `&&` in `TurnUphill_1f`, eight dropped `.executed` results, missing
+      `override`s, unhandled `switch` cases, `main` returning `false`, a bool/s32 compare in
+      `PyramidUpdate`, int16-to-int8 narrowing in `Inputs.cpp`. Remaining: three MSVC C4244
+      `_Ty`-to-`float` warnings from `std::vector<float>` initializer lists in
+      `TiltTargetShot.hpp`, range-v3's deprecated `compressed_tuple`, and Google Benchmark's
+      `/MP` under clang-cl. `TASFW_WARNINGS_AS_ERRORS` exists (off by default). *Done when:*
+      both builds are warning-free and the option is on in CI.
 - [ ] **1.6 Build hygiene and compiler matrix.** Delete the stale `build/` artifacts, add
       presets for MSVC and clang-cl matching `scripts/build.ps1`, and run a GitHub Actions
       matrix (windows-msvc, windows-clang-cl, ubuntu-gcc, ubuntu-clang) building everything
       and running the DLL-free tests and Tier A benchmarks. *Done when:* the matrix is green
       on `master`. Status: clang-cl builds locally after the workarounds in docs/compilers.md;
-      the workflow file exists (`.github/workflows/build.yml`) but has not run yet, and the
-      Linux jobs are expected to surface GCC/libstdc++ issues on first run. Also fixed here:
+      the workflow runs on every push and PR, and the Linux jobs are expected to surface
+      GCC/libstdc++ issues on first run. Also fixed here:
       the CMake compiler-ID bug that left MSVC builds without any `/arch` flag, and FP
       contraction is now off on every compiler (docs/compilers.md).
 
@@ -129,6 +136,10 @@ Goal: the core's implicit invariants become explicit and enforced.
       matters; stop default-inserting into the per-level bookkeeping maps on hot lookups.
 - [ ] **3.8 Hotspot investigations.** Work through the "known hotspots" list in
       docs/performance.md, measurement first, one PR each, with the Tier C/D delta table.
+- [ ] **3.9 Pool savestate buffers.** `dllcheck` measures a full save at 1.4 ms against a
+      0.19 ms load, and lightweight at 0.28 ms against 0.04 ms: each `SaveState` allocates and
+      zero-fills fresh `std::vector`s because slots are never reused. Recycle evicted slot
+      buffers. *Done when:* save cost is within 2x of load cost in both modes, gated by Tier B.
 
 ## Phase 4: the squish-cancel brute forcer
 
