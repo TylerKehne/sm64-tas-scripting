@@ -164,9 +164,11 @@ game DLL's. Those floats must be bit-identical, on every compiler. The rules:
   `/fp:precise` to MSVC on every target. Do not add `-ffast-math`, `/fp:fast`, or
   `/fp:contract` anywhere.
 - **The game DLL is the reference.** It was compiled by wafel's toolchain with its own FP
-  settings; matching it is an empirical question. ROADMAP 3.3 adds a drift test that runs
-  `PyramidUpdate` against `LibSm64` for a few hundred frames and requires identical normals,
-  which is the test that catches any of this going wrong.
+  settings; matching it is an empirical question. The drift test in `tasfw-tests`
+  (`libsm64: PyramidUpdate reproduces the DLL's pyramid normal bit-for-bit`) runs
+  `PyramidUpdate` against `LibSm64` for 240 frames and requires identical normals. It passes
+  with max |diff| = 0 on both MSVC and clang-cl with the flags above; it is the test that
+  catches any of this going wrong.
 - x87 is not a concern on x86-64 (SSE2 is the baseline), but 32-bit builds are unsupported
   for this reason as well as the DLL's.
 

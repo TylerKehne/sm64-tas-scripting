@@ -52,7 +52,15 @@ object, Mario's position, static lava floors, and the pyramid's collision triang
 out of the DLL. `advance` re-implements `bhv_tilting_inverted_pyramid_loop` and floor
 finding. It exists so `BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle` can probe
 dozens of candidate angles per frame without paying for a full game frame. It is a copy of
-decomp logic and can drift from the DLL.
+decomp logic; the drift test in `tasfw-tests` (`libsm64: PyramidUpdate reproduces ...`)
+verifies it matches the DLL's normal bit-for-bit over 240 frames.
+
+Frame ordering that the port depends on: within a game frame the terrain objects (the
+pyramid) update **before** the player object, so the pyramid loop reads Mario's object
+position and platform pointer as his previous update left them, steps the normal 0.01
+toward its goal, and displaces `gMarioState->pos` before Mario's own update runs. Importing
+`PyramidUpdateMem` from the DLL at the current frame and advancing it therefore predicts
+the next frame's normal exactly; feeding it Mario's post-frame position does not.
 
 ## Scripts
 

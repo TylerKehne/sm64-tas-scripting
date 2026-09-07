@@ -39,7 +39,7 @@ correctness and in speed.
       [--lightweight]` runs it standalone and prints frame-advance and save/load cost. Result
       (2026-09-07): the pinned 2022 DLL and wafel's 2023 DLL both pass every check, so the newer
       DLL is a drop-in replacement as far as layout goes.
-- [x] **1.2 Correctness test tier.** `tasfw-tests` (doctest), run by `scripts	est.ps1` or
+- [x] **1.2 Correctness test tier.** `tasfw-tests` (doctest), run by `scripts\test.ps1` or
       `ctest`, 30 cases / 536 assertions on 2026-09-07:
       - DLL-free: joystick mapping checked against a brute force over all 65,536 stick
         positions, `M64` round trip and gap filling, `BinaryStateBin` packing and clamping,
@@ -51,8 +51,8 @@ correctness and in speed.
         passes the layout check at frame 3330, plays the movie twice with identical Mario and
         pyramid state, and pins that state to exact golden values. Any one-frame change to the
         movie or the engine before frame 3330 fails it.
-      Runs in CI (DLL-free part) on all four compilers. Not yet covered: `PyramidUpdate`
-      against the DLL (3.3), the scattershot loop end to end (Tier D territory).
+      Runs in CI (DLL-free part) on all four compilers. `PyramidUpdate` against the DLL is
+      covered by 3.3; not yet covered: the scattershot loop end to end (Tier D territory).
 - [ ] **1.3 Performance test suite.** Implement [docs/performance.md](docs/performance.md) as a
       `tasfw-perf` target tree, Release/RelWithDebInfo only:
       - [x] Tier A microbenchmarks (Google Benchmark, DLL-free): hashing, state bins, input
@@ -126,11 +126,13 @@ Goal: the core's implicit invariants become explicit and enforced.
       `ScattershotThread.t.hpp`). Decide the rule, document it, and remove the workarounds.
 - [ ] **3.2 Encapsulation.** Make `Script` internals private and retire `ScriptFriend` if current
       MSVC accepts the friend template. Mark `resource` and `startSaveHandle` private.
-- [ ] **3.3 PyramidUpdate drift test.** Run `PyramidUpdate` and `LibSm64` side by side for a few
-      hundred frames of oscillation and assert identical normals, on every compiler in the
-      matrix. This is also the bit-exactness test for the FP flags in docs/compilers.md.
-      *Done when:* the test exists, is part of the DLL smoke tier, and passes on MSVC, clang-cl
-      and GCC.
+- [x] **3.3 PyramidUpdate drift test.** `test_libsm64.cpp` imports `PyramidUpdateMem` from
+      the DLL before each of 240 frames (Mario walks to the pyramid's centre, then it settles;
+      91 frames move the normal), advances both, and requires the normal to match
+      bit-for-bit. Passes with max |diff| = 0 on MSVC and clang-cl (2026-09-07), which is also
+      the bit-exactness test for the FP flags in docs/compilers.md. GCC needs a Linux DLL
+      (3.4). Learned on the way: terrain objects update before the player, so the pyramid
+      reads Mario's previous-frame position (ARCHITECTURE.md).
 - [ ] **3.4 Linux parity.** Build with GCC/Clang, confirm the `mprotect`/`SIGSEGV` save path works,
       and note any divergence from MSVC results. *Done when:* the DLL-free tests run on Linux CI
       and the Linux `LibSm64` path passes the smoke test against a Linux libsm64 build.
