@@ -2,6 +2,9 @@
 # GCC and Clang, then runs one benchmark family briefly to prove the perf binary executes.
 # Nothing here needs the game DLL. Benchmark timings from CI runners are not gated; the
 # gate is the local perf.ps1 comparison against a committed baseline.
+#
+# Failures are re-emitted as ::error:: annotations so they are readable through the public
+# API without downloading logs.
 
 name: build
 
@@ -20,30 +23,41 @@ jobs:
         include:
           - name: windows-msvc
             os: windows-latest
-            cc: cl
-            cxx: cl
+            compiler: msvc
           - name: windows-clang-cl
             os: windows-latest
-            cc: clang-cl
-            cxx: clang-cl
+            compiler: clang-cl
           - name: ubuntu-gcc
             os: ubuntu-latest
-            cc: gcc-13
+            compiler: gcc
             cxx: g++-13
           - name: ubuntu-clang
             os: ubuntu-latest
-            cc: clang-17
+            compiler: clang
             cxx: clang++-17
 
     steps:
       - uses: actions/checkout@v4
 
+      # ---------------------------------------------------------------- Linux
       - name: Install Linux toolchain
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build gcc-13 g++-13 clang-17 libomp-17-dev
+          echo "::add-matcher::.github/matchers/gcc.json"
 
+      - name: Configure (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          cmake --version
+          cmake -S . -B build/ci -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=${{ matrix.cxx }} 2>&1 | tee configure.log
+
+      - name: Build (Linux)
+        if: runner.os == 'Linux'
+        run: cmake --build build/ci -- -k 0 2>&1 | tee build.log
+
+      # -------------------------------------------------------------- Windows
       - name: Set up MSVC environment
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
@@ -54,19 +68,52 @@ jobs:
         if: runner.os == 'Windows'
         run: choco install ninja --no-progress -y
 
-      - name: Configure
-        shell: bash
+      - name: Configure (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
         run: |
-          cmake -S . -B build/ci -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_C_COMPILER=${{ matrix.cc }} \
-            -DCMAKE_CXX_COMPILER=${{ matrix.cxx }}
+          cmake --version
+          if ('${{ matrix.compiler }}' -eq 'clang-cl') {
+            # Use the clang-cl that ships with Visual Studio (has libomp); the standalone LLVM
+            # on the runner image is first on PATH and has no OpenMP runtime.
+            $cxx = Join-Path $env:VCINSTALLDIR 'Tools\Llvm\x64\bin\clang-cl.exe'
+          } else {
+            $cxx = 'cl'
+          }
+          Write-Host "CXX = $cxx"
+          cmake -S . -B build/ci -G Ninja -DCMAKE_BUILD_TYPE=Release "-DCMAKE_CXX_COMPILER=$cxx" 2>&1 | Tee-Object -FilePath configure.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Build
-        shell: bash
-        run: cmake --build build/ci -- -k 0
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cmake --build build/ci -- -k 0 2>&1 | Tee-Object -FilePath build.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      # ---------------------------------------------------------------- Common
       - name: Perf binary smoke run
         shell: bash
         run: |
           build/ci/out/tasfw-perf --benchmark_filter='^BM_BinaryStateBin' --benchmark_min_time=0.01s
+
+      - name: Report failure details as annotations
+        if: failure()
+        shell: bash
+        run: |
+          for f in configure.log build.log; do
+            if [ -f "$f" ]; then
+              echo "::group::$f (errors)"
+              grep -inE 'error|fatal|could not|not found|no such' "$f" | head -40 | while IFS= read -r line; do
+                echo "::error title=$f::${line}"
+              done
+              echo "::endgroup::"
+            fi
+          done
+          if [ -f build/ci/CMakeFiles/CMakeConfigureLog.yaml ]; then
+            echo "::group::CMakeConfigureLog.yaml (tail)"
+            tail -60 build/ci/CMakeFiles/CMakeConfigureLog.yaml | while IFS= read -r line; do
+              echo "::error title=CMakeConfigureLog::${line}"
+            done
+            echo "::endgroup::"
+          fi
