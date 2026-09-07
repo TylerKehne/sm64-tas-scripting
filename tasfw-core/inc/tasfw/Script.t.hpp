@@ -775,14 +775,9 @@ void Script<TResource>::DeleteSave(int64_t frame, int64_t adhocLevel)
 template <derived_from_specialization_of<Resource> TResource>
 void Script<TResource>::SetInputs(Inputs inputs)
 {
-	uint16_t* buttonDllAddr = (uint16_t*)resource->addr("gControllerPads");
-	buttonDllAddr[0] = inputs.buttons;
-
-	int8_t* xStickDllAddr = (int8_t*)resource->addr("gControllerPads") + 2;
-	xStickDllAddr[0] = inputs.stick_x;
-
-	int8_t* yStickDllAddr = (int8_t*)resource->addr("gControllerPads") + 3;
-	yStickDllAddr[0] = inputs.stick_y;
+	// Was three addr("gControllerPads") lookups per frame (three GetProcAddress calls on
+	// LibSm64); the resource now writes its own pad from a pointer cached at construction.
+	resource->setInputs(inputs);
 }
 
 // Only checks base diff, i.e. ad-hoc level 0

@@ -71,6 +71,7 @@ public:
 	void save(LibSm64Mem& state) const override;
 	void load(const LibSm64Mem& state) override;
 	void advance() override;
+	void setInputs(const Inputs& inputs) override;
 	void* addr(const char* symbol) const override;
 	std::size_t getStateSize(const LibSm64Mem& state) const override;
 	uint32_t getCurrentFrame() const override;
@@ -88,6 +89,15 @@ public:
 	// True if the pointer lies inside the DLL's .data or .bss section, i.e. it is plausibly
 	// a pointer into game memory rather than garbage read through a wrong layout.
 	bool pointsIntoGameData(const void* p) const;
+
+private:
+	// Resolved once at construction. DLL symbol addresses never move. (GetProcAddress
+	// measures ~60 ns on this DLL, so the four per-frame lookups this replaces were about
+	// 2% of a frame; caching is hygiene rather than a headline win. See dllcheck.)
+	using UpdateFn = void(TAS_FW_STDCALL*)();
+	UpdateFn _sm64Update = nullptr;
+	uint8_t* _controllerPads = nullptr; // gControllerPads: u16 button, s8 stick_x, s8 stick_y
+	const uint32_t* _globalTimer = nullptr;
 };
 
 #endif

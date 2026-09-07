@@ -139,11 +139,15 @@ Goal: the core's implicit invariants become explicit and enforced.
 - [ ] **3.6 Unify timing instrumentation.** `ExecuteAdhocBase` records milliseconds via
       `std::chrono` while everything else is rdtsc cycles. Pick one unit, expose the counters
       as a struct the perf suite can read, and print them consistently.
-- [ ] **3.7 Remove known non-zero-cost spots**, each gated by the suite: cache `gControllerPads`
-      and `sm64_update` pointers instead of `GetProcAddress` per frame; let scripts resolve
-      symbols once; drop the `dynamic_cast` in `GetTrackedState`; mark concrete resources
-      `final` or move to CRTP if measurement shows virtual dispatch on the per-frame path
-      matters; stop default-inserting into the per-level bookkeeping maps on hot lookups.
+- [ ] **3.7 Remove known non-zero-cost spots**, each gated by the suite. Done 2026-09-07:
+      `Resource::setInputs()` with cached `gControllerPads`/`sm64_update`/`gGlobalTimer`
+      pointers in `LibSm64` (measured within noise: `GetProcAddress` is 62 ns here); the six
+      per-level `unordered_map`s in `Script` replaced by `LevelStack` (ad-hoc overhead -56%,
+      child scripts -24 to -32%, tracked frames -22%, deep rewinds -46%; docs/performance.md).
+      Remaining: scripts resolving symbols per execution; the `dynamic_cast` in
+      `GetTrackedState`; tracker script construction cost (six `std::map` head allocations
+      per instantiation on MSVC, `CustomStatus` vectors copied per frame); virtual dispatch
+      on `Resource` per frame if measurement says it matters.
 - [ ] **3.8 Hotspot investigations.** Work through the "known hotspots" list in
       docs/performance.md, measurement first, one PR each, with the Tier C/D delta table.
 - [ ] **3.9 Pool savestate buffers.** `dllcheck` measures a full save at 1.4 ms against a

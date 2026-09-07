@@ -26,20 +26,22 @@ Concretely, in code that runs per frame or per script:
   construction, not at use.
 - Generic code is fine; generic code that pays for genericity at runtime is not.
 
-Places where the code currently pays for an abstraction it should not (all are cheap to fix
-and should be gated by the suite once it exists):
+Places where the code pays (or paid) for an abstraction it should not, gated by the suite:
 
-- `Script::SetInputs` calls `resource->addr("gControllerPads")` three times per frame, and
-  `LibSm64::advance` calls `dll.get("sm64_update")` per frame. Each is a `GetProcAddress`
-  string lookup through the OS loader. Cache the pointers in `LibSm64` at construction.
+- ~~`Script::SetInputs` resolved `gControllerPads` three times per frame, `advance()`
+  resolved `sm64_update`, `getCurrentFrame()` resolved `gGlobalTimer`, all via
+  `GetProcAddress`.~~ Fixed: `Resource::setInputs()` and cached pointers (change log below).
+- ~~`Script` bookkeeping was `unordered_map<int64_t, std::map<...>>` per ad-hoc level with
+  `operator[]` default-inserts on the hot path.~~ Fixed: `LevelStack` (change log below).
 - Scripts re-resolve `gMarioState`, `gCamera`, behaviors and the object pool by string at
-  the top of every `validation()` / `execution()`.
+  the top of every `validation()` / `execution()` (62 ns each on this DLL).
 - `Script::GetTrackedState` performs a `dynamic_cast` on the root script per call, and
   tracking goes through virtual hooks on `_rootScript` on every frame advance.
-- `Resource::save` / `load` / `advance` / `addr` are virtual and called per frame.
+- `Resource::save` / `load` / `advance` / `setInputs` are virtual and called per frame.
 - Block segments are `std::shared_ptr<Segment>` chains, touched on every decode.
-- `Script` bookkeeping is `unordered_map<int64_t, std::map<...>>` per ad-hoc level with
-  `operator[]` default-inserts on the hot path.
+- Tracker scripts are constructed per tracked frame: six `std::map` head allocations on
+  MSVC's STL, three lifecycle sandboxes, and a `CustomStatus` copy (with `std::vector`s in
+  the real trackers).
 
 ## What costs what
 
@@ -57,7 +59,8 @@ Ordered by how much they dominate a typical scattershot run:
    frames (for example `StateTracker_BitfsDr::CalculateOscillations` runs up to 50 frames per
    crossing) multiplies the cost of every frame it is evaluated on.
 5. **Script bookkeeping.** `GetInputsMetadata`, `GetLatestSave`, the per-level caches and
-   tracked-state maps are `std::map` / `unordered_map` operations per frame, per hierarchy level.
+   tracked-state maps are `std::map` operations per frame, per hierarchy level (the per-level
+   containers themselves are a `LevelStack` and cost nothing to enter).
 6. **Synchronization.** Named `omp critical` sections in scattershot; `Deterministic` mode adds
    a barrier per script through `QueueThreadById`.
 7. **`PyramidUpdate` construction.** `ImportSave<PyramidUpdateMem>` reads and transforms every
@@ -303,125 +306,40 @@ What the Tier A and B numbers say together:
   bookkeeping; clang is ahead on hashing, m64 writing, and ad-hoc sandbox setup. Any
   "optimization" measured on one compiler alone is suspect.
 
-## Profiling
+## Change log (measured)
 
-- Build with `scripts\build.ps1 -Config RelWithDebInfo`. LTO is enabled for every config by
-  `add_optimization_flags`, and the `/arch` flag is detected at configure time.
-- MSVC's OpenMP is the 2.0 runtime (`-openmp`). `-openmp:llvm` is available if newer
-  directives are needed; measure before switching.
-- Tools that work with this code: Visual Studio Performance Profiler (CPU sampling handles
-  OpenMP threads), Superluminal, Windows Performance Analyzer. In-process, the rdtsc counters
-  above are the first thing to read.
-- Never draw conclusions from a Debug build.
+Every hot-path change records its delta table here, newest first.
 
-## Known hotspots to measure first
+### 2026-09-07: per-level bookkeeping as a `LevelStack` (ROADMAP 3.7)
 
-These are suspects, not verdicts. Measure before changing any of them.
+`Script` kept six `std::unordered_map<int64_t, ...>` keyed by ad-hoc level, hashed on every
+access and allocated on every level push. Levels are a stack, so they are now a
+`LevelStack<T>` (`tasfw/LevelStack.hpp`): level 0 inline, higher levels heap-allocated once
+and reused after pop. Tier A, MSVC, fastest of nine:
 
-1. Block decoding replaying from the root on every shot (ROADMAP 4.3).
-2. `PyramidUpdateMem` construction copying and transforming all surfaces per call.
-3. `CalculateOscillations` advancing up to 50 frames inside a tracker evaluation.
-4. `UpsertBlock` hashing and probing while holding the `blocks` critical section.
-5. `std::map` bookkeeping in `Script`, including `operator[]` default inserts on
-   `unordered_map<int64_t, std::map<...>>` per ad-hoc level.
-6. Console output under the `print` critical section every shot.
-7. Barriers per script in `Deterministic` mode.
-8. Per-thread 8 GB slot budget and the resulting eviction pattern under memory pressure.
+| Benchmark | before | after | delta |
+|---|---|---|---|
+| `ExecuteAdhoc`, empty lambda | 619 ns | 271 ns | -56% |
+| `ExecuteAdhoc`, one frame + revert | 843 ns | 575 ns | -32% |
+| `Execute<EmptyScript>` | 2.29 us | 1.56 us | -32% |
+| `Execute<OneFrameScript>` | 2.69 us | 2.05 us | -24% |
+| Frame advance with a trivial state tracker | 2.83 us | 2.22 us | -22% |
+| `AdvanceFrameWrite` / `AdvanceFrameRead` | 216 / 297 ns | 192 / 265 ns | -11% |
+| Write one frame + `Load` back | 270 ns | 201 ns | -25% |
+| `LongLoad` to root and back, depth 16 | 7.53 us | 4.06 us | -46% |
+| `GetInputs` uncached, depth 16 | 482 ns | 328 ns | -32% |
 
-## Rules of thumb for hot paths
+15 improvements, 0 regressions; all 536 test assertions unchanged. What remains in a
+tracked frame (about 2.2 us) is constructing the tracker script object (six `std::map`s,
+each of which allocates a head node on MSVC's STL), its three lifecycle sandboxes, and
+copying its `CustomStatus` (which for the real trackers holds `std::vector`s). Those are the
+next targets.
 
-- No heap allocation per frame in `Script` or `Resource` code paths; reserve or reuse.
-- No `std::map` lookup per frame unless it replaces a frame advance.
-- No I/O while holding a critical section.
-- Anything that adds a frame advance needs a measured justification.
-- Prefer counts over timings when writing a test; counts are deterministic.
+### 2026-09-07: cached symbol pointers in `LibSm64` (ROADMAP 3.7)
 
-## Running the suite
-
-Tier A is implemented in `tasfw-perf/` (Google Benchmark, fetched by CMake). Tiers B to D
-are not yet written; see ROADMAP 1.3.
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\perf.ps1                 # build Release, run, compare
-powershell -ExecutionPolicy Bypass -File scripts\perf.ps1 -SaveBaseline   # store this run as the baseline
-powershell -ExecutionPolicy Bypass -File scripts\perf.ps1 -Filter Script -NoBuild
-```
-
-Results go to `perf\results\<timestamp>-<sha>.json` (gitignored). The baseline for a machine
-is `perf\baselines\<computername>.json` (committed). `scripts\perf_compare.py` prints the delta
-table and exits non-zero on any regression over the threshold (default 10%). Paste that table
-into the PR.
-
-Noise control, learned the hard way while setting this up:
-
-- Each benchmark runs three repetitions in each of three fresh processes, and the comparison
-  uses the **fastest** of the nine. External noise only ever adds time,
-  so the minimum is the best estimate of intrinsic cost. Medians of three drifted 15 to 35%
-  between runs of the same binary on a busy desktop.
-- The benchmark process runs at High priority pinned to one logical CPU (`-Affinity`, default
-  `0x10`), so other processes and the scheduler contribute less.
-- Each benchmark family runs in its own process, several times. One slot benchmark measured
-  168 ns in isolation and 335 ns when run after the allocation-heavy scattershot and m64
-  families in the same process; heap state carries over between benchmarks.
-- The allocating benchmarks (`Script`, `SlotManager`) use fixed iteration counts, so the
-  heap state entering each benchmark does not depend on how many iterations the previous
-  ones happened to run.
-- The runner does one throwaway launch before measuring. On Windows, the **first launch of
-  a freshly written executable** measures differently from every later launch of the same
-  file: `Execute_ChildEmpty` took 2.85 us on the first launch and 2.1 us on every launch
-  after, reproduced on demand by copying the exe to a new name, and the allocation-heavy
-  benchmarks (`ExecuteAdhoc_Empty`, 430 vs 630 ns) flipped mode with it. Cause not
-  identified (image placement or prefetch are the suspects); the throwaway launch makes it
-  irrelevant. The allocation churn that makes these benchmarks layout-sensitive is itself a
-  ROADMAP 3.7 target.
-- Deltas under 1 ns in absolute terms never count, so sub-nanosecond benchmarks cannot trip
-  the gate on jitter.
-
-If a result still looks like noise, rerun with `-Repetitions 9` and close other programs
-before believing it. Never run two benchmark processes at once, and never benchmark while a
-build is running.
-
-Baselines are per machine **and per compiler**: `scripts\perf.ps1 -Compiler clang` builds
-with clang-cl and compares against `<computername>-clang.json`. Comparing the two baselines
-against each other is the cheapest way to see which compiler the hot paths prefer.
-
-The benchmarks in `tasfw-perf/src/bench_script.cpp` run on `FakeResource`, an in-memory
-resource whose frame advance is a few nanoseconds, so they isolate what the framework adds
-per operation. Everything else there is a direct measurement of the named component.
-
-## First measurements (Tier A, 2026-09-07)
-
-32-thread desktop at 3.0 GHz, MSVC 14.44, Release with LTO. Rounded. These are the numbers
-to beat, and the ones that make "zero-cost" concrete.
-
-| Operation | Cost |
-|---|---|
-| `AdvanceFrameWrite`, root script, no tracker | 240 ns |
-| `AdvanceFrameRead` (includes uncached input lookup) | 310 ns |
-| `AdvanceFrameWrite` + `Save` | 1.0 us |
-| Write one frame, `Load` back to the previous save | 290 ns |
-| `ExecuteAdhoc` with an empty lambda | 500 ns |
-| `ExecuteAdhoc` writing one frame, then revert | 880 ns |
-| `Execute<EmptyScript>` | 2.2 us |
-| `Execute<OneFrameScript>` | 2.9 us |
-| `AdvanceFrameWrite` with a trivial state tracker | 3.0 us |
-| `AdvanceFrameWrite` with a recursive state tracker | 3.2 us |
-| `GetInputs`, uncached, hierarchy depth 1 / 4 / 16 | 160 / 220 / 500 ns |
-| `LongLoad` to root save and back, depth 1 / 4 / 16 | 0.4 / 0.9 / 8.1 us |
-| `SlotManager` create + erase at 100 / 10,000 live slots | 200 / 410 ns |
-| `Scattershot::GetHash` on a 16-byte bin | 24 ns |
-| `UpsertBlock` novel / redundant / improved | 130 / 70 / 100 ns |
-| `Inputs::GetClosestInputByYawHau` (full magnitude) | 58 ns |
-| `M64::load`, 10,000 frames | 1.2 ms |
-
-What this says, pending the Tier B number for a real frame advance:
-
-- The bare per-frame framework cost (a few hundred nanoseconds) is small next to a game
-  frame. The hierarchy itself is close to zero-cost.
-- A **state tracker costs about 2.8 us per frame** on top of that, because every tracked
-  frame instantiates a script, runs all three lifecycle phases inside ad-hoc sandboxes and
-  reverts. That is the first target for ROADMAP 3.7.
-- **Instantiating a child script costs about 2.2 us** even when it does nothing. Scripts
-  that are run per frame (the downhill angle probes) pay this every time.
-- `LongLoad` at depth 16 is 20x depth 1; the ancestor walk is linear and not free.
-- Slot bookkeeping grows with live slots (three `std::map`s per slot).
+`Script::SetInputs` resolved `gControllerPads` three times per frame, `advance()` resolved
+`sm64_update` and `getCurrentFrame()` resolved `gGlobalTimer` on every call, all through
+`GetProcAddress`. `Resource` gained `setInputs()`; `LibSm64` caches the three pointers at
+construction. Measured `GetProcAddress` cost on this DLL is 62 ns (`dllcheck` prints it), so
+the frame-advance change is within noise (9.9 vs 9.7 us); hygiene, not a headline. Scripts
+that call `addr()` per frame pay that 62 ns per call.

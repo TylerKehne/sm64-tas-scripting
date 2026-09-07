@@ -35,6 +35,7 @@ namespace
 		double playMicros = 0;
 		double saveMicros = 0;
 		double loadMicros = 0;
+		double addrNanos = 0;
 		std::vector<std::string> report;
 	};
 
@@ -74,6 +75,16 @@ namespace
 				resource->slotManager.EraseSlot(id);
 			}
 			_results.saveMicros = MicrosecondsSince(start) / reps;
+
+			// Cost of a symbol lookup (GetProcAddress through the loader). Scripts that call
+			// addr() per frame pay this each time; see docs/performance.md.
+			constexpr int addrReps = 2000;
+			start = std::chrono::steady_clock::now();
+			const void* sink = nullptr;
+			for (int i = 0; i < addrReps; i++)
+				sink = resource->addr((i & 1) ? "gMarioState" : "gCamera");
+			_results.addrNanos = MicrosecondsSince(start) * 1000.0 / addrReps;
+			(void)sink;
 			return true;
 		}
 		bool assertion() override { return true; }
@@ -139,6 +150,7 @@ int main(int argc, char** argv)
 			(unsigned long long)results.framesAdvanced, results.playMicros / 1000.0);
 		std::printf("  save state:    %.1f us (%s)\n", results.saveMicros, lightweight ? "lightweight" : "full .data+.bss");
 		std::printf("  load state:    %.1f us\n", results.loadMicros);
+		std::printf("  addr() lookup: %.0f ns (GetProcAddress; never call per frame)\n", results.addrNanos);
 
 		if (failures > 0)
 		{

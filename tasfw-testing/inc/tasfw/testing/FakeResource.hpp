@@ -40,7 +40,15 @@ public:
 			+ (uint64_t(_state.buttons) << 16) + uint64_t(uint8_t(_state.stickX)) * 256 + uint8_t(_state.stickY) + 1442695040888963407ull;
 	}
 
-	// The framework only asks for gControllerPads (Script::SetInputs); layout matches the DLL's pad.
+	void setInputs(const Inputs& inputs) override
+	{
+		_pad.buttons = inputs.buttons;
+		_pad.stickX = inputs.stick_x;
+		_pad.stickY = inputs.stick_y;
+	}
+
+	// Nothing in the framework core asks for symbols any more; keep the pad reachable for
+	// tests that want to poke it the way a script would.
 	void* addr(const char*) const override { return const_cast<Pad*>(&_pad); }
 
 	std::size_t getStateSize(const FakeState&) const override { return sizeof(FakeState); }

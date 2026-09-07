@@ -48,6 +48,10 @@ LibSm64::LibSm64(const LibSm64Config& config) : config(config), dll(config.dllPa
 
 	sm64_init();
 
+	_sm64Update = UpdateFn(dll.get("sm64_update"));
+	_controllerPads = static_cast<uint8_t*>(dll.get("gControllerPads"));
+	_globalTimer = static_cast<const uint32_t*>(dll.get("gGlobalTimer"));
+
 	auto sections = dll.readSections();
 	segment = std::vector<SegVal>
 	{
@@ -150,14 +154,15 @@ void LibSm64::load(const LibSm64Mem& state)
 
 void LibSm64::advance()
 {
-	void* processID = dll.get("sm64_update");
+	_sm64Update();
+}
 
-	using pICFUNC = void(TAS_FW_STDCALL*)();
-
-	pICFUNC sm64_update;
-	sm64_update = pICFUNC(processID);
-
-	sm64_update();
+void LibSm64::setInputs(const Inputs& inputs)
+{
+	// OSContPad layout: u16 button, s8 stick_x, s8 stick_y (then errno, unused here).
+	memcpy(_controllerPads, &inputs.buttons, sizeof(uint16_t));
+	_controllerPads[2] = static_cast<uint8_t>(inputs.stick_x);
+	_controllerPads[3] = static_cast<uint8_t>(inputs.stick_y);
 }
 
 void* LibSm64::addr(const char* symbol) const
@@ -176,7 +181,7 @@ std::size_t LibSm64::getStateSize(const LibSm64Mem& state) const
 
 uint32_t LibSm64::getCurrentFrame() const
 {
-	return *(uint32_t*)(addr("gGlobalTimer")) - 1;
+	return *_globalTimer - 1;
 }
 
 bool LibSm64::pointsIntoGameData(const void* p) const

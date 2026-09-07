@@ -93,6 +93,11 @@ public:
 	virtual void save(TState& state) const = 0;
 	virtual void load(const TState& state) = 0;
 	virtual void advance() = 0;
+	// Write the controller inputs that the next advance() will see. Called once per frame;
+	// implementations must not do any lookup here (cache pointers at construction).
+	virtual void setInputs(const Inputs& inputs) = 0;
+	// Symbol lookup for scripts. Not for per-frame use: LibSm64 resolves through the OS
+	// loader. Cache the result where a script needs it every frame.
 	virtual void* addr(const char* symbol) const = 0;
 	virtual std::size_t getStateSize(const TState& state) const = 0;
 	//TODO: make this resource-agnostic

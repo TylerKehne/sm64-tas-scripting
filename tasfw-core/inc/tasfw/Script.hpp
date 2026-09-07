@@ -8,6 +8,7 @@
 #include <typeinfo>
 #include <unordered_map>
 #include <utility>
+#include <tasfw/LevelStack.hpp>
 #include <tasfw/Resource.hpp>
 #include <tasfw/Inputs.hpp>
 #include <sm64/Types.hpp>
@@ -654,12 +655,13 @@ private:
 
 	int64_t _adhocLevel = 0;
 	int32_t _initialFrame = 0;
-	std::unordered_map<int64_t, BaseScriptStatus> BaseStatus;
-	std::unordered_map<int64_t, std::map<int64_t, SlotHandle<TResource>>> saveBank;// contains handles to savestates
-	std::unordered_map<int64_t, std::map<int64_t, uint64_t>> frameCounter;// tracks opportunity cost of having to frame advance from an earlier save
-	std::unordered_map<int64_t, std::map<int64_t, SaveMetadata<TResource>>> saveCache;// stores metadata of ancestor saves to save recursion time
-	std::unordered_map<int64_t, std::map<int64_t, InputsMetadata<TResource>>> inputsCache;// caches ancestor inputs to save recursion time
-	std::unordered_map<int64_t, std::set<int64_t>> loadTracker;// track past loads to know whether a cached save is optimal
+	// One entry per ad-hoc level (see LevelStack.hpp); level 0 is the script itself.
+	LevelStack<BaseScriptStatus> BaseStatus;
+	LevelStack<std::map<int64_t, SlotHandle<TResource>>> saveBank;// contains handles to savestates
+	LevelStack<std::map<int64_t, uint64_t>> frameCounter;// tracks opportunity cost of having to frame advance from an earlier save
+	LevelStack<std::map<int64_t, SaveMetadata<TResource>>> saveCache;// stores metadata of ancestor saves to save recursion time
+	LevelStack<std::map<int64_t, InputsMetadata<TResource>>> inputsCache;// caches ancestor inputs to save recursion time
+	LevelStack<std::set<int64_t>> loadTracker;// track past loads to know whether a cached save is optimal
 	Script* _parentScript;
 	Script* _rootScript;
 	bool isStateTracker = false;
@@ -769,12 +771,12 @@ public:
 		return script->_adhocLevel;
 	}
 
-	static std::unordered_map<int64_t, BaseScriptStatus>& GetBaseStatus(Script<TResource>* script)
+	static LevelStack<BaseScriptStatus>& GetBaseStatus(Script<TResource>* script)
 	{
 		return script->BaseStatus;
 	}
 
-	static std::unordered_map<int64_t, std::map<int64_t, InputsMetadata<TResource>>>& GetInputsCache(Script<TResource>* script)
+	static LevelStack<std::map<int64_t, InputsMetadata<TResource>>>& GetInputsCache(Script<TResource>* script)
 	{
 		return script->inputsCache;
 	}
@@ -940,7 +942,7 @@ private:
 
 	// Data: trackedStates[script][adhocLevel][frame] = state;
 	std::shared_ptr<StateTrackerFactoryBase<TStateTracker>> stateTrackerFactory = nullptr;
-	std::unordered_map<Script<TResource>*, std::unordered_map<int64_t, std::map<int64_t, typename TStateTracker::CustomScriptStatus>>> trackedStates;
+	std::unordered_map<Script<TResource>*, LevelStack<std::map<int64_t, typename TStateTracker::CustomScriptStatus>>> trackedStates;
 
 	void TrackState(Script<TResource>* currentScript, const InputsMetadata<TResource>& inputsMetadata) override;
 	bool TrackedStateExistsInternal(Script<TResource>* currentScript, const InputsMetadata<TResource>& inputsMetadata) override;

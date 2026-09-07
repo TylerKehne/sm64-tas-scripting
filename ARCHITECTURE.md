@@ -81,7 +81,9 @@ Running children:
 Per script and per ad-hoc level the framework keeps: the input diff (`BaseStatus[level].m64Diff`),
 a `saveBank` of savestate handles keyed by frame, a `saveCache` and `inputsCache` that
 memoize lookups into ancestors, a `frameCounter` that accumulates replay cost per frame,
-and a `loadTracker`.
+and a `loadTracker`. Each is a `LevelStack<T>` (`tasfw/LevelStack.hpp`): levels are pushed
+and popped in stack order, level 0 is stored inline, and higher levels' storage is reused,
+so entering an ad-hoc level does not hash or allocate.
 
 Input resolution (`GetInputsMetadata`): to find the inputs for frame *f*, walk the current
 script's ad-hoc levels from innermost outward, then the parent chain, then the source `M64`,
