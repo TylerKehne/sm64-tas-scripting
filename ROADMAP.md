@@ -82,8 +82,9 @@ correctness and in speed.
       matrix (windows-msvc, windows-clang-cl, ubuntu-gcc, ubuntu-clang) building everything
       and running the DLL-free tests and Tier A benchmarks. *Done when:* the matrix is green
       on `master`. Status: clang-cl builds locally after the workarounds in docs/compilers.md;
-      the workflow runs on every push and PR, and the Linux jobs are expected to surface
-      GCC/libstdc++ issues on first run. Also fixed here:
+      the workflow runs on every push and PR and re-emits failures as annotations. The first
+      runs found CMake 4 rejecting nlohmann/json's minimum version, a missing `template`
+      keyword MSVC had accepted, and `std::sqrtf` (all fixed, see docs/compilers.md). Also fixed here:
       the CMake compiler-ID bug that left MSVC builds without any `/arch` flag, and FP
       contraction is now off on every compiler (docs/compilers.md).
 

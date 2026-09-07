@@ -103,8 +103,8 @@ public:
         : _startFrame(args.InitialFrame), _targetNx(args.TargetNx), _targetNz(args.TargetNz), _targetX(args.TargetXDimension),
         _fixOtherAxis(args.FixNonTargetDimensionARE), _fixTargetAxis(args.FixTargetDimensionARE), _neighborhood(args.Neighborhood)
     {
-        float targetHundrethX = std::floorf(_targetNx * 100.0f) / 100.0f;
-        float targetHundrethZ = std::floorf(_targetNz * 100.0f) / 100.0f;
+        float targetHundrethX = std::floor(_targetNx * 100.0f) / 100.0f;
+        float targetHundrethZ = std::floor(_targetNz * 100.0f) / 100.0f;
 
         _targetRemainderX = _targetNx - targetHundrethX;
         _targetRemainderZ = _targetNz - targetHundrethZ;
@@ -151,15 +151,15 @@ public:
             (_targetNz - pyramid->oTiltingPyramidNormalZ) / errorIncZ
         };
 
-        float closestHundrethX = std::floorf(pyramid->oTiltingPyramidNormalX * 100.0f) / 100.0f;
-        float closestHundrethZ = std::floorf(pyramid->oTiltingPyramidNormalZ * 100.0f) / 100.0f;
+        float closestHundrethX = std::floor(pyramid->oTiltingPyramidNormalX * 100.0f) / 100.0f;
+        float closestHundrethZ = std::floor(pyramid->oTiltingPyramidNormalZ * 100.0f) / 100.0f;
         float remainderX = closestHundrethX - pyramid->oTiltingPyramidNormalX;
         float remainderZ = closestHundrethZ - pyramid->oTiltingPyramidNormalZ;
         CustomStatus.remainderErrorRaw =
         {
-            std::remainderf(remainderX - _targetRemainderX + 0.5f, 1.0f) - 0.5f,
+            std::remainder(remainderX - _targetRemainderX + 0.5f, 1.0f) - 0.5f,
             INFINITY,
-            std::remainderf(remainderX - _targetRemainderX + 0.5f, 1.0f) - 0.5f
+            std::remainder(remainderX - _targetRemainderX + 0.5f, 1.0f) - 0.5f
         };
 
         CustomStatus.remainderError =
@@ -681,9 +681,9 @@ public:
         }
 
         if (_errorType == ErrorType::ADJUSTED)
-            return state.targetX ? -std::fabs(std::roundf(state.adjustedRemainderError[0])) : -std::fabs(std::roundf(state.adjustedRemainderError[2]));
+            return state.targetX ? -std::fabs(std::round(state.adjustedRemainderError[0])) : -std::fabs(std::round(state.adjustedRemainderError[2]));
         else
-            return state.targetX ? -std::fabs(std::roundf(state.error[0])) : -std::fabs(std::roundf(state.error[2]));
+            return state.targetX ? -std::fabs(std::round(state.error[0])) : -std::fabs(std::round(state.error[2]));
     }
 
     std::string GetCsvLabels() override

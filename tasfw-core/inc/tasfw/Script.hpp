@@ -808,7 +808,9 @@ public:
 	static ScriptStatus<TStateTracker> ExecuteStateTracker(
 		int64_t frame, Script<TResource>* script, std::shared_ptr<StateTrackerFactoryBase<TStateTracker>> stateTrackerFactory)
 	{
-		return script->ExecuteStateTracker<TStateTracker>(frame, stateTrackerFactory);
+		// `template` is required: `script` has a dependent type, so without it GCC and Clang
+		// parse `<` as less-than. MSVC accepts the omission (docs/compilers.md).
+		return script->template ExecuteStateTracker<TStateTracker>(frame, stateTrackerFactory);
 	}
 
 	static uint64_t GetCurrentFrame(Script<TResource>* script)
@@ -934,7 +936,7 @@ protected:
 
 private:
 	friend class Script<TResource>;
-	friend class TopLevelScript<TResource, TStateTracker>;
+	// (No self-friend declaration: a class is always its own friend, and GCC warns about it.)
 
 	// Data: trackedStates[script][adhocLevel][frame] = state;
 	std::shared_ptr<StateTrackerFactoryBase<TStateTracker>> stateTrackerFactory = nullptr;

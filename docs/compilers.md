@@ -62,6 +62,27 @@ Members of a dependent base (`Script<TResource>` inside `ScattershotThread<...>`
 brought in with `using Script<TResource>::LongLoad;` etc. or MSVC fails to find them. GCC and
 Clang need `this->` or the same using-declarations; the using-declarations satisfy all three.
 
+### MSVC accepts a missing `template` keyword on dependent member templates
+
+`script->ExecuteStateTracker<T>(...)` where `script` has a dependent type must be written
+`script->template ExecuteStateTracker<T>(...)`; otherwise GCC and Clang parse the `<` as
+less-than and fail. MSVC compiles the omission. Found by the first Linux CI run in
+`ScriptFriend::ExecuteStateTracker` (`Script.hpp`). Same rule for `foo.template bar<T>()`
+and `typename` on dependent nested types.
+
+### libstdc++ 13 does not declare the f-suffixed math functions in `std`
+
+`std::sqrtf`, `std::floorf`, `std::fabsf` and friends compile with MSVC's STL but not with
+libstdc++ 13 ("`sqrtf` is not a member of `std`"). Use the unsuffixed `std::sqrt(float)`
+overloads, which select the same single-precision instruction, or the global `sqrtf`.
+
+### CMake 4 rejects dependencies with `cmake_minimum_required` below 3.5
+
+The GitHub runners ship CMake 4.4, which errors (not warns) on nlohmann/json 3.11.2's
+`cmake_minimum_required(VERSION 3.1)`. The root `CMakeLists.txt` sets
+`CMAKE_POLICY_VERSION_MINIMUM 3.5` before `FetchContent_MakeAvailable`; CMake 3.31 and
+newer honor it, older versions ignore it. Bumping the dependency removes the need.
+
 ### MSVC accepts using-declarations that name inaccessible overloads
 
 `using Base::Save;` where `Save` has a public and a private overload is ill-formed

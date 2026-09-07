@@ -30,6 +30,11 @@ include(AddOptimizationFlags)
 # Download dependencies
 include(FetchContent)
 
+# CMake 4.x refuses projects whose cmake_minimum_required is below 3.5, and nlohmann/json
+# 3.11.2 declares 3.1. This tells CMake >= 3.31 to treat such dependencies as 3.5; older
+# CMake ignores the variable. Remove once the dependencies are bumped.
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+
 FetchContent_Declare(json 
 	DOWNLOAD_EXTRACT_TIMESTAMP ON
 	URL https://github.com/nlohmann/json/releases/download/v3.11.2/json.tar.xz

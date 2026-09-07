@@ -610,7 +610,7 @@ public:
             pyramid->oTiltingPyramidNormalX,
             pyramid->oTiltingPyramidNormalY,
             pyramid->oTiltingPyramidNormalZ,
-            state.phase,
+            int(state.phase),
             marioState->vel[1],
             state.normalDistance);
 

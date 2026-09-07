@@ -49,12 +49,14 @@ jobs:
 
       - name: Configure (Linux)
         if: runner.os == 'Linux'
+        shell: bash   # GitHub's explicit bash shell enables pipefail, so `| tee` cannot hide a failure
         run: |
           cmake --version
           cmake -S . -B build/ci -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=${{ matrix.cxx }} 2>&1 | tee configure.log
 
       - name: Build (Linux)
         if: runner.os == 'Linux'
+        shell: bash
         run: cmake --build build/ci -- -k 0 2>&1 | tee build.log
 
       # -------------------------------------------------------------- Windows
