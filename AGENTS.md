@@ -60,6 +60,8 @@ its place with numbers, and "it is cleaner" is not a number.
 | `tasfw-bruteforcers/bitfs-turnaround/` | The only executable (`bitfs-turn.exe`). `main.cpp` chains the BitFS pipeline stages. |
 | `tasfw-perf/` | Performance suite (Tier A microbenchmarks on an in-memory fake resource). Release only. |
 | `tasfw-tools/` | `dllcheck`: DLL layout self-check plus frame-advance and savestate cost measurement. |
+| `tasfw-tests/` | Correctness tests (doctest). DLL-free tests always run; the libsm64 smoke test runs when `res\` has the DLL and movie. |
+| `tasfw-testing/` | Header-only test support shared by tests and benchmarks (`FakeResource`). |
 | `perf/` | Committed benchmark baselines per machine; `perf/results/` is gitignored. |
 | `analysis/` | R script that plots scattershot CSV output. CSVs are gitignored. |
 | `res/` | Gitignored runtime inputs: 24 copies of the libsm64 DLL, source .m64 files, and thousands of exported solution .m64 files. |
@@ -80,6 +82,8 @@ its place with numbers, and "it is cleaner" is not a number.
 - **Do not run `bitfs-turn.exe` as a smoke test.** It launches the full 16-thread pipeline,
   runs for hours, and writes thousands of .m64 files into `res/` and CSVs into `analysis/`.
   A real smoke test is ROADMAP item 1.2; the performance suite is 1.3.
+- Tests: `powershell -ExecutionPolicy Bypass -File scripts\test.ps1` (add `-Config Release`,
+  `-Compiler clang`, `-Filter '*Script*'`). Under a second without the DLL, a few seconds with it.
 - The DLL-level check is `build\Release\out\dllcheck.exe <dll> <m64> <frame> [--lightweight]`
   (docs/libsm64.md). It plays to a frame, verifies the struct layouts against the game, and
   prints frame-advance and save/load cost. Takes under a second.
@@ -131,19 +135,22 @@ its place with numbers, and "it is cleaner" is not a number.
 
 ## Verifying a change
 
-Until the test tiers in ROADMAP 1.2 and 1.3 exist, verification means:
+Verification means:
 
-1. `scripts\build.ps1` succeeds with **no new warnings** on MSVC (29 baseline warnings; the
-   list is in ROADMAP 1.5) **and** with `-Compiler clang` (see docs/compilers.md for the
-   clang baseline).
-2. Reason explicitly about determinism and savestate purity for anything touching
-   `Script.t.hpp`, `ScattershotThread.t.hpp` or `LibSm64.cpp`.
-3. For anything on a hot path, measure. Run `scripts\perf.ps1` (Tier A, no DLL needed) and
+1. `scripts\build.ps1` succeeds with **no new warnings** on MSVC **and** with
+   `-Compiler clang` (the remaining baseline warnings are listed in ROADMAP 1.5).
+2. `scripts\test.ps1` passes, on both compilers. With the DLL and movie in `res\` it also
+   runs the libsm64 smoke test, which pins Mario's exact state at frame 3330. Anything
+   touching `tasfw-core` needs a test in `tasfw-tests` for the behavior it changes.
+3. Reason explicitly about determinism and savestate purity for anything touching
+   `Script.t.hpp`, `ScattershotThread.t.hpp` or `LibSm64.cpp`; `test_script.cpp` encodes
+   those invariants on the fake resource, so extend it rather than arguing in prose.
+4. For anything on a hot path, measure. Run `scripts\perf.ps1` (Tier A, no DLL needed) and
    paste its delta table; it exits non-zero on a regression over 10%. For DLL-dependent
    paths also run a fixed workload before and after in Release and report wall time plus
    `nFrameAdvances`, `nSaves` and `nLoads`. Counts must not go up; time must not regress.
    See docs/performance.md for what counts as a hot path.
-4. Say in your summary exactly what you could not run.
+5. Say in your summary exactly what you could not run.
 
 Work on a branch and open a PR against `master`; that is how the repo has always been merged.
 

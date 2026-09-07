@@ -28,6 +28,9 @@ uses the cmake/ninja bundled with Visual Studio if none are on PATH. Output goes
 `build\<Config>\out\bitfs-turn.exe`. Opening the folder in Visual Studio also works through
 its CMake integration and the presets in `CMakePresets.json`.
 
+Tests: `powershell -ExecutionPolicy Bypass -File scripts\test.ps1`. Benchmarks:
+`scripts\perf.ps1`. Both accept `-Compiler clang` for the clang-cl build.
+
 **Linux / macOS (untested recently)**
 
 ```bash
