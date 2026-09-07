@@ -12,6 +12,9 @@ Still very much a work in progress. Start with:
 - [docs/libsm64.md](docs/libsm64.md): where the game DLL comes from and what depends on it.
 - [docs/performance.md](docs/performance.md): performance is a correctness requirement; how it is measured and gated.
 
+These files are kept current by design: a Claude Code hook in [.claude/](.claude/) reviews
+them after every change (see AGENTS.md, "Documentation must match the repository").
+
 # Building instructions
 CMake 3.22+ and a C++20 compiler with OpenMP. Dependencies (nlohmann/json, range-v3) are
 downloaded by CMake's FetchContent; no vcpkg needed.

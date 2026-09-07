@@ -11,6 +11,12 @@ an AI agent. Check boxes as work lands and keep "Done when" honest.
   delta table. Nothing in this roadmap is "done" if it made the search slower.
 - Every item must build clean with MSVC and clang-cl (see [docs/compilers.md](docs/compilers.md)).
   Compiler-specific workarounds are documented there, never hidden in `#if` forks.
+- The documentation describes the current state of the repository. Every change is
+  reconciled with AGENTS.md, ARCHITECTURE.md, this file, README.md and docs/ before the
+  turn ends: extensions of what is documented are updated in place, deviations from a
+  documented rule, goal or claim are reported and wait for approval. The Stop hook in
+  `.claude/settings.json` enforces this (see AGENTS.md, "Documentation must match the
+  repository").
 
 ## Phase 0: where things stand
 

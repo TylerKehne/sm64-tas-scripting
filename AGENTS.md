@@ -154,6 +154,31 @@ Verification means:
 
 Work on a branch and open a PR against `master`; that is how the repo has always been merged.
 
+## Documentation must match the repository
+
+The documentation (this file, ARCHITECTURE.md, ROADMAP.md, README.md, docs/) describes the
+repository as it is now, so that the next agent can pick up where the last one stopped
+without re-discovering anything. After every change, reconcile it:
+
+- **Extension**: the change does what the docs already ask for or plan, or adds something
+  under an existing policy (a roadmap item progressed, a new test, benchmark, tool, script
+  or flag of an established kind, a re-measured number, a new compiler pitfall). Update the
+  docs yourself, in place, in the existing style.
+- **Deviation**: the change contradicts, weakens or bypasses a documented rule, invariant,
+  roadmap goal or claim, or introduces a rule, constraint or design decision the docs never
+  anticipated. Do not edit the docs for it. Report it, propose the options (revert, or amend
+  the docs with exact wording), and wait for the maintainer's approval.
+
+Claude Code enforces this with a Stop hook in `.claude/settings.json`. At every prompt
+`.claude/hooks/doc-review.py` fingerprints every tracked or untracked non-`.md` file outside
+`docs/`; when the turn ends with that fingerprint changed, the hook blocks the stop once and
+hands the agent the procedure in `.claude/hooks/doc-review-prompt.md`. Flagged changes whose
+review was interrupted stay pending until a review completes. State lives in the OS temp
+directory under `tasfw-doc-review/`, never in the repo. The hook needs `git` and `python`
+(or `python3`) on PATH and runs under bash (Git Bash on Windows); `TASFW_DOC_REVIEW=0`
+disables it and `python .claude/hooks/doc-review.py check` prints what a review would see.
+Agents without hooks follow the same procedure by hand at the end of every change.
+
 ## Known problems you will run into
 
 - `main.cpp` is an experiment log, not a program. Stages are enabled by commenting code in
