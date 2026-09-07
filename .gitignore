@@ -54,3 +54,6 @@ analysis/*.png
 build/
 out/
 local/
+
+# perf suite runs (baselines under perf/baselines/ are committed)
+perf/results/

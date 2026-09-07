@@ -40,8 +40,10 @@ correctness and in speed.
       *Done when:* `ctest` passes locally and the smoke test catches a deliberate one-frame change.
 - [ ] **1.3 Performance test suite.** Implement [docs/performance.md](docs/performance.md) as a
       `tasfw-perf` target tree, Release/RelWithDebInfo only:
-      - Tier A microbenchmarks (Google Benchmark, DLL-free, run in CI on every PR): hashing,
-        state bins, input mapping, m64 I/O, `SlotManager`, `Script` bookkeeping at depth.
+      - [x] Tier A microbenchmarks (Google Benchmark, DLL-free): hashing, state bins, input
+        mapping, m64 I/O, `SlotManager`, `Script` per-operation overhead, hierarchy depth,
+        state trackers. `scripts\perf.ps1` runs and compares; first baseline committed
+        (2026-09-07). Still to do: run it in CI.
       - Tier B resource benchmarks: frame advance latency, save/load full vs lightweight,
         thread scaling 1 to 16, memory per slot.
       - Tier C framework workloads with exact-count gates: fixed scripts, `PyramidUpdate`

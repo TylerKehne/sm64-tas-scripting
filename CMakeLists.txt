@@ -47,3 +47,9 @@ add_subdirectory(tasfw-scripts)
 add_subdirectory(tasfw-scattershot)
 add_subdirectory(tasfw-bruteforcers)
 add_subdirectory(tasfw-resources)
+
+# Performance suite (docs/performance.md). Run with scripts/perf.ps1.
+option(TASFW_BUILD_PERF "Build the tasfw-perf benchmark suite" ON)
+if(TASFW_BUILD_PERF)
+	add_subdirectory(tasfw-perf)
+endif()

@@ -188,9 +188,72 @@ These are suspects, not verdicts. Measure before changing any of them.
 - Anything that adds a frame advance needs a measured justification.
 - Prefer counts over timings when writing a test; counts are deterministic.
 
-## Until the suite exists
+## Running the suite
 
-For any change under `tasfw-core`, `tasfw-scattershot` or `tasfw-resources`, run a fixed
-workload before and after in `Release`, and report at minimum: wall time, `nFrameAdvances`,
-`nSaves`, `nLoads`, and the scattershot summary percentages if applicable. State the workload
-precisely so the numbers can be reproduced.
+Tier A is implemented in `tasfw-perf/` (Google Benchmark, fetched by CMake). Tiers B to D
+are not yet written; see ROADMAP 1.3.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\perf.ps1                 # build Release, run, compare
+powershell -ExecutionPolicy Bypass -File scripts\perf.ps1 -SaveBaseline   # store this run as the baseline
+powershell -ExecutionPolicy Bypass -File scripts\perf.ps1 -Filter Script -NoBuild
+```
+
+Results go to `perf\results\<timestamp>-<sha>.json` (gitignored). The baseline for a machine
+is `perf\baselines\<computername>.json` (committed). `scripts\perf_compare.py` prints the delta
+table and exits non-zero on any regression over the threshold (default 10%). Paste that table
+into the PR.
+
+Noise control, learned the hard way while setting this up:
+
+- Each benchmark runs three repetitions after a warm-up and the comparison uses the median.
+  Two back-to-back single runs of the same binary differed by up to 12% on the tracker
+  benchmarks.
+- Each benchmark family runs in its own process. One slot benchmark measured 168 ns in
+  isolation and 335 ns when run after the allocation-heavy scattershot and m64 families in
+  the same process; heap state carries over between benchmarks.
+- Deltas under 1 ns in absolute terms never count, so sub-nanosecond benchmarks cannot trip
+  the gate on jitter.
+
+If a result still looks like noise, rerun with `-Repetitions 7` before believing it.
+
+The benchmarks in `tasfw-perf/src/bench_script.cpp` run on `FakeResource`, an in-memory
+resource whose frame advance is a few nanoseconds, so they isolate what the framework adds
+per operation. Everything else there is a direct measurement of the named component.
+
+## First measurements (Tier A, 2026-09-07)
+
+32-thread desktop at 3.0 GHz, MSVC 14.44, Release with LTO. Rounded. These are the numbers
+to beat, and the ones that make "zero-cost" concrete.
+
+| Operation | Cost |
+|---|---|
+| `AdvanceFrameWrite`, root script, no tracker | 240 ns |
+| `AdvanceFrameRead` (includes uncached input lookup) | 310 ns |
+| `AdvanceFrameWrite` + `Save` | 1.0 us |
+| Write one frame, `Load` back to the previous save | 290 ns |
+| `ExecuteAdhoc` with an empty lambda | 500 ns |
+| `ExecuteAdhoc` writing one frame, then revert | 880 ns |
+| `Execute<EmptyScript>` | 2.2 us |
+| `Execute<OneFrameScript>` | 2.9 us |
+| `AdvanceFrameWrite` with a trivial state tracker | 3.0 us |
+| `AdvanceFrameWrite` with a recursive state tracker | 3.2 us |
+| `GetInputs`, uncached, hierarchy depth 1 / 4 / 16 | 160 / 220 / 500 ns |
+| `LongLoad` to root save and back, depth 1 / 4 / 16 | 0.4 / 0.9 / 8.1 us |
+| `SlotManager` create + erase at 100 / 10,000 live slots | 200 / 410 ns |
+| `Scattershot::GetHash` on a 16-byte bin | 24 ns |
+| `UpsertBlock` novel / redundant / improved | 130 / 70 / 100 ns |
+| `Inputs::GetClosestInputByYawHau` (full magnitude) | 58 ns |
+| `M64::load`, 10,000 frames | 1.2 ms |
+
+What this says, pending the Tier B number for a real frame advance:
+
+- The bare per-frame framework cost (a few hundred nanoseconds) is small next to a game
+  frame. The hierarchy itself is close to zero-cost.
+- A **state tracker costs about 2.8 us per frame** on top of that, because every tracked
+  frame instantiates a script, runs all three lifecycle phases inside ad-hoc sandboxes and
+  reverts. That is the first target for ROADMAP 3.7.
+- **Instantiating a child script costs about 2.2 us** even when it does nothing. Scripts
+  that are run per frame (the downhill angle probes) pay this every time.
+- `LongLoad` at depth 16 is 20x depth 1; the ancestor walk is linear and not free.
+- Slot bookkeeping grows with live slots (three `std::map`s per slot).

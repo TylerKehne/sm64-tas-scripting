@@ -157,6 +157,7 @@ class Scattershot
 public:
     const Configuration& config;
     friend class ScattershotThread<TState, TResource, TStateTracker, TOutputState>;
+    friend class PerfAccess; // tasfw-perf benchmarks; see docs/performance.md
 
     Scattershot(const Configuration& configuration, const std::vector<ScattershotSolution<TOutputState>>& inputSolutions);
 

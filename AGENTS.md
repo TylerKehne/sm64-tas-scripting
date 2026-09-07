@@ -40,6 +40,8 @@ its place with numbers, and "it is cleaner" is not a number.
 | `tasfw-scattershot/` | Header-only OpenMP brute-force search (blocks, segments, solutions, CSV export). |
 | `tasfw-scripts/` | Reusable BitFS scripts (pyramid oscillation, downhill angle search, dive-recover attempts) and scattershot stages. |
 | `tasfw-bruteforcers/bitfs-turnaround/` | The only executable (`bitfs-turn.exe`). `main.cpp` chains the BitFS pipeline stages. |
+| `tasfw-perf/` | Performance suite (Tier A microbenchmarks on an in-memory fake resource). Release only. |
+| `perf/` | Committed benchmark baselines per machine; `perf/results/` is gitignored. |
 | `analysis/` | R script that plots scattershot CSV output. CSVs are gitignored. |
 | `res/` | Gitignored runtime inputs: 24 copies of the libsm64 DLL, source .m64 files, and thousands of exported solution .m64 files. |
 | `scripts/` | `build.ps1`, the supported build entry point on Windows. |
@@ -58,6 +60,8 @@ its place with numbers, and "it is cleaner" is not a number.
   runs for hours, and writes thousands of .m64 files into `res/` and CSVs into `analysis/`.
   A real smoke test is ROADMAP item 1.2; the performance suite is 1.3.
 - Performance numbers come from `Release` or `RelWithDebInfo` builds only. Debug uses `/Od`.
+- Perf suite: `powershell -ExecutionPolicy Bypass -File scripts\perf.ps1` builds Release,
+  runs `tasfw-perf.exe`, and compares against `perf\baselines\<computername>.json`.
 
 ## Hard rules
 
@@ -109,9 +113,11 @@ Until the test tiers in ROADMAP 1.2 and 1.3 exist, verification means:
    the list is in ROADMAP 1.5).
 2. Reason explicitly about determinism and savestate purity for anything touching
    `Script.t.hpp`, `ScattershotThread.t.hpp` or `LibSm64.cpp`.
-3. For anything on a hot path, measure. Build `-Config Release`, run a fixed workload before
-   and after, and report wall time plus `nFrameAdvances`, `nSaves` and `nLoads`. Counts must
-   not go up; time must not regress. See docs/performance.md for what counts as a hot path.
+3. For anything on a hot path, measure. Run `scripts\perf.ps1` (Tier A, no DLL needed) and
+   paste its delta table; it exits non-zero on a regression over 10%. For DLL-dependent
+   paths also run a fixed workload before and after in Release and report wall time plus
+   `nFrameAdvances`, `nSaves` and `nLoads`. Counts must not go up; time must not regress.
+   See docs/performance.md for what counts as a hot path.
 4. Say in your summary exactly what you could not run.
 
 Work on a branch and open a PR against `master`; that is how the repo has always been merged.
