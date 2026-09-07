@@ -12,7 +12,7 @@ that gives real confidence in C++20 code like this.
 | Toolchain | Status (2026-09-07) | How to build |
 |---|---|---|
 | MSVC 19.44 (VS 2022), Ninja | primary; builds clean, 29 warnings | `scripts\build.ps1` |
-| clang-cl 19.1 (VS "C++ Clang tools for Windows"), Ninja | builds after the workarounds below; see status in ROADMAP 1.6 | `scripts\build.ps1 -Compiler clang` |
+| clang-cl 19.1 (VS "C++ Clang tools for Windows"), Ninja | builds clean locally and in CI (windows-clang-cl job) | `scripts\build.ps1 -Compiler clang` |
 | GCC 13 on Linux, Ninja | builds clean in CI (ubuntu-gcc job); `LibSm64`'s `mprotect` save path compiles but is untested at run time | `cmake -G Ninja` (see the workflow) |
 | Clang 17 on Linux, Ninja | builds clean in CI (ubuntu-clang job) | same |
 
