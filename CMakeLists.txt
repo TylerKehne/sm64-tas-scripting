@@ -54,6 +54,14 @@ add_subdirectory(tasfw-bruteforcers)
 add_subdirectory(tasfw-resources)
 
 add_subdirectory(tasfw-tools)
+add_subdirectory(tasfw-testing)
+
+# Correctness tests (ROADMAP 1.2). Run with scripts/test.ps1 or ctest.
+option(TASFW_BUILD_TESTS "Build the tasfw-tests correctness suite" ON)
+if(TASFW_BUILD_TESTS)
+	enable_testing()
+	add_subdirectory(tasfw-tests)
+endif()
 
 # Performance suite (docs/performance.md). Run with scripts/perf.ps1.
 option(TASFW_BUILD_PERF "Build the tasfw-perf benchmark suite" ON)

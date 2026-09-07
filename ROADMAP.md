@@ -39,13 +39,20 @@ correctness and in speed.
       [--lightweight]` runs it standalone and prints frame-advance and save/load cost. Result
       (2026-09-07): the pinned 2022 DLL and wafel's 2023 DLL both pass every check, so the newer
       DLL is a drop-in replacement as far as layout goes.
-- [ ] **1.2 Correctness test tier.** Add a `tasfw-tests` target (Catch2 or doctest via FetchContent) with:
-      - DLL-free unit tests: `Inputs` yaw/magnitude mapping round-trip, `M64` load/save
-        round-trip, `BinaryStateBin` bit packing, `SlotManager` eviction order.
-      - One deterministic smoke test that needs the DLL: load the source .m64, `LongLoad` to a
-        fixed frame, run `BitFsPyramidOscillation` (or a shorter script), and assert a hash of the
-        resulting `M64Diff`. Skips with a clear message when `res/` is missing.
-      *Done when:* `ctest` passes locally and the smoke test catches a deliberate one-frame change.
+- [x] **1.2 Correctness test tier.** `tasfw-tests` (doctest), run by `scripts	est.ps1` or
+      `ctest`, 30 cases / 536 assertions on 2026-09-07:
+      - DLL-free: joystick mapping checked against a brute force over all 65,536 stick
+        positions, `M64` round trip and gap filling, `BinaryStateBin` packing and clamping,
+        `SlotManager` LRU eviction, and the script engine's invariants on `FakeResource`
+        (diff recording, movie fallback, Execute/Modify/Test/ad-hoc semantics, exact restore on
+        `Load`, bit-identical replays, hierarchy input resolution, `Rollback`, cache
+        invalidation after rewriting a frame, recursive state trackers).
+      - libsm64 smoke test (skips unless `TASFW_LIBSM64`/`TASFW_M64` are set): loads the DLL,
+        passes the layout check at frame 3330, plays the movie twice with identical Mario and
+        pyramid state, and pins that state to exact golden values. Any one-frame change to the
+        movie or the engine before frame 3330 fails it.
+      Runs in CI (DLL-free part) on all four compilers. Not yet covered: `PyramidUpdate`
+      against the DLL (3.3), the scattershot loop end to end (Tier D territory).
 - [ ] **1.3 Performance test suite.** Implement [docs/performance.md](docs/performance.md) as a
       `tasfw-perf` target tree, Release/RelWithDebInfo only:
       - [x] Tier A microbenchmarks (Google Benchmark, DLL-free): hashing, state bins, input

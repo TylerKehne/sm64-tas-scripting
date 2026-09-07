@@ -4,9 +4,11 @@
 #include <cstring>
 #include <tasfw/Resource.hpp>
 
-// A Resource with a tiny, cheap state. Benchmarks built on it measure the framework's own
-// bookkeeping (script hierarchy, savestate slots, caches, tracking) rather than memcpy or
-// the game DLL. The state is 256 bytes so save/load are real copies but negligible.
+// A Resource with a tiny, cheap, fully deterministic state. Shared by the perf suite and the
+// unit tests: benchmarks built on it measure the framework's own bookkeeping (script
+// hierarchy, savestate slots, caches, tracking) rather than memcpy or the game DLL, and tests
+// use its rolling checksum to prove "state is a pure function of (start save, inputs)".
+// The state is 256 bytes so save/load are real copies but negligible.
 struct FakeState
 {
 	uint32_t frame = 0;
@@ -45,6 +47,7 @@ public:
 	uint32_t getCurrentFrame() const override { return _state.frame; }
 
 	uint64_t checksum() const { return _state.checksum; }
+	const FakeState& state() const { return _state; }
 
 private:
 	struct Pad

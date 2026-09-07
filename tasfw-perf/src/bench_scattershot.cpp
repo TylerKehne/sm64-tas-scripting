@@ -3,7 +3,7 @@
 #include <random>
 #include <vector>
 
-#include "FakeResource.hpp"
+#include <tasfw/testing/FakeResource.hpp>
 #include "PerfAccess.hpp"
 
 // Scattershot's block table and hashing, exercised without threads, resources or scripts.

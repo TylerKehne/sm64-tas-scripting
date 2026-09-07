@@ -25,7 +25,7 @@ add_executable(tasfw-perf
 	"src/bench_script.cpp"
 )
 target_include_directories(tasfw-perf PRIVATE src)
-target_link_libraries(tasfw-perf PRIVATE tasfw::core tasfw::scattershot benchmark::benchmark)
+target_link_libraries(tasfw-perf PRIVATE tasfw::core tasfw::scattershot tasfw::testing benchmark::benchmark)
 target_compile_features(tasfw-perf PRIVATE cxx_std_20)
 set_target_properties(tasfw-perf PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/out")
 

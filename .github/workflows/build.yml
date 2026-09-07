@@ -94,6 +94,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       # ---------------------------------------------------------------- Common
+      - name: Correctness tests (DLL-free)
+        shell: bash
+        run: build/ci/out/tasfw-tests
+
       - name: Perf binary smoke run
         shell: bash
         run: |

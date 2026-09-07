@@ -1,7 +1,7 @@
 #include <benchmark/benchmark.h>
 #include <tasfw/Script.hpp>
 
-#include "FakeResource.hpp"
+#include <tasfw/testing/FakeResource.hpp>
 
 // Framework overhead per operation, measured on a resource whose frame advance is ~free.
 // These numbers are what the script hierarchy costs on top of the game itself.

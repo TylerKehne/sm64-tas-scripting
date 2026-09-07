@@ -1,7 +1,7 @@
 #include <benchmark/benchmark.h>
 #include <vector>
 
-#include "FakeResource.hpp"
+#include <tasfw/testing/FakeResource.hpp>
 
 // SlotManager bookkeeping (three std::maps per slot) at different live-slot counts.
 // The fake state is 256 bytes, so the copy itself is negligible. Fixed iteration counts keep
