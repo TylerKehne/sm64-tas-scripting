@@ -1,0 +1,242 @@
+# Architecture
+
+How the pieces fit, what the invariants are, and where the sharp edges live. Written from
+the code as of 2026-09-07; where behavior is inferred rather than documented it says so.
+
+## Layers
+
+```
+bitfs-turnaround/main.cpp        pipeline of scattershot stages + m64 export
+        |
+tasfw-scripts                    BitFS scripts, state trackers, scattershot stages
+        |
+tasfw-scattershot (header-only)  Scattershot, ScattershotThread, builders
+        |
+tasfw-core                       Script / TopLevelScript / Resource / SlotManager / Inputs / M64
+        |
+tasfw-resources                  LibSm64 (game DLL)   PyramidUpdate (pure C++ stand-in)
+        |
+res/sm64_jp_N.dll                wafel libsm64: SM64 decomp compiled as a native x64 DLL
+```
+
+`tasfw-core` depends on nothing but the standard library and OpenMP. `tasfw-resources` sits
+below `tasfw-scripts` in CMake even though it is drawn below core here; the header
+`tasfw-core/inc/sm64/` is the shared vocabulary.
+
+## Resource and savestates
+
+`Resource<TState>` (`tasfw-core/inc/tasfw/Resource.hpp`) is the abstract game: `save`, `load`,
+`advance`, `addr(symbol)`, `getCurrentFrame`. It also owns a `SlotManager` and timing counters.
+
+- `SlotManager` stores savestates by integer slot id, evicts least-recently-touched slots when
+  `_saveMemLimit` (8 GB, set in `LibSm64`'s constructor) would be exceeded, and throws if a
+  single save cannot fit.
+- `shouldSave(n)` / `shouldLoad(n)` compare the measured average cost of a save or load
+  (rdtsc cycles) against `n` frame advances. Scripts call these to decide whether a
+  savestate is worth creating. Every "cost-based" decision in the framework routes here.
+
+`LibSm64` (`tasfw-resources/src/LibSm64.cpp`) loads the DLL with `LoadLibrary`, calls
+`sm64_init`, and treats the `.data` and `.bss` sections as the whole game state:
+
+- Full save copies both sections (about 2.4 MB + 4.9 MB).
+- **Lightweight mode** copies five hardcoded 100 KB-granular slices (about 1.5 MB). The
+  offsets were found empirically for the pinned DLL build and are not derived from symbols.
+  `config.lightweight = true` is what `main.cpp` uses.
+- `advance` calls `sm64_update`. Inputs are written straight into `gControllerPads` by
+  `Script::SetInputs` before each advance.
+- The Linux branch instead marks the sections read-only and records dirty pages in a
+  `SIGSEGV` handler. It has not been built recently.
+
+`PyramidUpdate` is a second `Resource` whose state is a small C++ struct: the pyramid
+object, Mario's position, static lava floors, and the pyramid's collision triangles pulled
+out of the DLL. `advance` re-implements `bhv_tilting_inverted_pyramid_loop` and floor
+finding. It exists so `BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle` can probe
+dozens of candidate angles per frame without paying for a full game frame. It is a copy of
+decomp logic and can drift from the DLL.
+
+## Scripts
+
+`Script<TResource>` (`Script.hpp` / `Script.t.hpp`) is the unit of work. A script is a class
+with `validation()`, `execution()`, `assertion()` and a nested `CustomScriptStatus`.
+
+Lifecycle (`Script::Run`):
+
+1. `validation()` runs inside `ExecuteAdhoc`, so any frames it advances are reverted.
+2. `execution()` runs inside `ModifyAdhoc`; its input diff is kept if it returns true.
+3. `assertion()` runs inside `ExecuteAdhoc` and is reverted.
+
+The parent gets a `ScriptStatus<T>`: the child's `CustomStatus` plus `BaseScriptStatus`
+(validated/executed/asserted flags, the `M64Diff`, timing and save/load counts).
+
+Running children:
+
+| Call | Effect on parent state |
+|---|---|
+| `Execute<T>(args...)` | Child runs, then parent reverts to the frame it was on. Diff returned in status. |
+| `Modify<T>(args...)` | If asserted, child's diff is merged into the parent's diff and the cursor moves to the frame after the diff's last frame. Otherwise reverted. |
+| `Test<T>(args...)` | `Execute` with the diff removed from the returned status. |
+| `ExecuteAdhoc` / `ModifyAdhoc` / `TestAdhoc` | Same three semantics for a lambda returning bool, run on the *same* script object at `_adhocLevel + 1`. |
+| `Compare<T>` family | Run `T` for each parameter tuple, keep the best by a comparator, optionally stop early. Lives in `ScriptCompareHelper.hpp`. |
+
+Per script and per ad-hoc level the framework keeps: the input diff (`BaseStatus[level].m64Diff`),
+a `saveBank` of savestate handles keyed by frame, a `saveCache` and `inputsCache` that
+memoize lookups into ancestors, a `frameCounter` that accumulates replay cost per frame,
+and a `loadTracker`.
+
+Input resolution (`GetInputsMetadata`): to find the inputs for frame *f*, walk the current
+script's ad-hoc levels from innermost outward, then the parent chain, then the source `M64`,
+then default to neutral. Along the way the first level whose diff starts before *f* becomes
+the frame's "state owner"; its frame counter is the one charged for replays through *f*.
+
+Loading (`LoadBase`): find the latest usable save at or before the target across levels and
+ancestors, never searching past the start of a level's own diff (that would desync). Load it
+if the target is in the past or if loading beats advancing per `shouldLoad`. Then
+`AdvanceFrameRead` to the target, creating savestates along the way when `shouldSave` says
+the accumulated frame counter justifies it.
+
+`Revert` (after `Execute`) moves the child's still-synced saves into the parent and loads the
+original frame, forcing a load if the child changed any frame before the cursor.
+`ApplyChildDiff` (after `Modify`) merges the diff and moves saves, then `Load(lastFrame + 1)`.
+That last step is why callers in `ScattershotThread` re-`Load` the frame the child actually
+stopped on (ROADMAP 3.1).
+
+Other cursor operations: `Load(f)`, `LongLoad(f)` (no caching, always saves at the end),
+`Rollback(f)` (erase diff from *f* on, then load), `RollForward(f)` (drop diff before *f*),
+`Restore(f)`, `Save()`, `OptionalSave()`.
+
+**Invariant:** every reachable game state must equal "load the start save, then apply the
+resolved inputs frame by frame." Anything that writes DLL memory directly breaks replay and
+therefore breaks savestate reuse and scattershot decoding.
+
+## Top-level scripts, builders and state trackers
+
+`TopLevelScript<TResource, TStateTracker>` is the root of a hierarchy. It owns the `M64`
+pointer and the resource. It is started through `TopLevelScriptBuilder<T>::Build(m64)` with
+one of:
+
+- `.Run(args...)` on a default-constructed resource,
+- `.ConfigureResource(cfg).Run(...)`,
+- `.ImportResource(&res).Run(...)` (resource shared across runs; start save reset on entry),
+- `.ImportSave<TState>(frame, stateArgs...).Run(...)` (resource initialised from a state
+  object, used to seed `PyramidUpdate` from `LibSm64`).
+
+A **state tracker** is a `Script` whose `CustomScriptStatus` describes the game at one frame
+(e.g. `StateTracker_BitfsDr`: phase, oscillation count, crossing history, ARE). The top-level
+script caches `trackedStates[script][adhocLevel][frame]` and fills it lazily: after every
+frame advance or load, `TrackState` runs the tracker at that frame inside a reverted sandbox.
+Trackers may call `GetTrackedState<T>(frame - 1)` to compute recursive metrics; the cache
+makes this linear. Entries after a modified frame are erased on `AdvanceFrameWrite`,
+`Apply`, `Rollback`; on `Modify` they move from child to parent with the saves.
+
+`ConfigureStateTracker(args...)` on any builder supplies constructor arguments for the
+tracker; the framework instantiates it through `StateTrackerFactory`.
+
+## Scattershot
+
+`Scattershot<TState, TResource, TStateTracker, TOutputState>` is the shared search state;
+`ScattershotThread<...>` is a `TopLevelScript` that each OpenMP thread runs. A concrete
+search subclasses `ScattershotThread` and implements:
+
+- `SelectMovementOptions()`: choose weighted `MovementOption`s using `AddRandomMovementOption`.
+- `ApplyMovement()`: turn those options into frames (random inputs or a scripted move).
+- `GetStateBin()`: quantise the game state into a `TState` (a `BinaryStateBin<16>` in practice).
+- `ValidateState()`, `GetStateFitness()`, `IsSolution()`, `GetSolutionState()`.
+- Optional CSV hooks `GetCsvLabels()`, `GetCsvRow()`, `ForceAddToCsv()`.
+
+Vocabulary:
+
+- **Block**: one state bin plus the best fitness seen for it and the segment chain that reaches it.
+- **Segment**: (parent, RNG seed, number of scripts, optional piped-diff index). A block is
+  reproduced by walking its segment chain from the root and re-running `ChooseScriptAndApply`
+  with `SetTempRng(seed)` for each script. Nothing but seeds is stored.
+- **Shot**: pick a base block, decode it, verify the state bin matches (`ValidateBaseBlock`,
+  which dumps `error.m64` on mismatch), then fire pellets.
+- **Pellet**: up to `PelletMaxScripts` scripts within `PelletMaxFrameDistance` frames; each
+  script result is validated, binned, scored and offered to `UpsertBlock`.
+- **UpsertBlock**: open-addressed hash table over `BlockIndices` (3x `MaxBlocks`). A new bin
+  becomes a block; an existing bin is replaced when fitness improves (or ties, if
+  `FitnessTieGoesToNewBlock`). Solutions are recorded with the thread's `GetTotalDiff()` and
+  capped at `MaxSolutions`; solved blocks are never chosen as base blocks.
+- **Piping**: `PipeFrom(solutions)` seeds the next stage's root blocks with each solution's
+  diff. Their segments carry `pipedDiff1Index` so decoding applies the diff instead of scripts.
+- **Determinism**: `Configuration::Deterministic` serialises all upserts by thread id with
+  barriers (`QueueThreadById`), so a run is reproducible for a given `Seed` and thread count.
+- **CSV**: every `CsvSamplePeriod`-th novel block per thread is written as a row; the R script
+  in `analysis/` plots them. `CsvRows` is printed so plotting can run mid-search.
+
+Threads: `MultiThread` opens an OpenMP parallel region of `TotalThreads`. Each thread must
+have its own `LibSm64` (own DLL file) supplied by `ImportResourcePerThread`. Shared state is
+guarded by named `omp critical` sections listed in `CriticalRegions`. The end-of-run
+statistics print load/save/advance/overhead percentages; "overhead" is mostly block decoding.
+
+## The BitFS pipeline (`main.cpp`, as currently enabled)
+
+1. Construct 24 lightweight `LibSm64` resources from `res/sm64_jp_0..23.dll`.
+2. **BitfsOscFinal** from frame 3604 of `test3.m64`, exported to `res/bitfs_nut_*.m64`.
+3. **TiltTargetShot**, three passes: hit the target normal in X, then in Z with the X ARE
+   fixed, then constrain to a normal box. Sorted by ARE and exported.
+4. **Scattershot_BitfsDr** once per target oscillation, piping solutions forward, filtering
+   by rough target angle and increment-frame parity, keeping the fastest few between stages.
+5. **BitfsOscFinal** again from the equilibrium frame, piped from step 4, exported.
+
+`Scattershot_BitfsDrApproach` and `Scattershot_BitfsDrRecover` (dive recover, C-up trick)
+are present but commented out. `ExportSolutions` replays each solution diff on the first
+resource and writes an m64 named after the pyramid normal and Mario's speed.
+
+## Coupling to the game binary
+
+Everything below assumes the pinned DLL in `res/` (see `docs/libsm64.md`):
+
+- Struct layouts in `tasfw-core/inc/sm64/Types.hpp`, `ObjectFields.hpp`, `Camera.hpp`,
+  `Surface.hpp`; constants in `Sm64.hpp`, `SurfaceTerrains.hpp`; trig tables in `Trig.hpp`.
+- Symbols resolved by name through `GetProcAddress`: `gMarioState`, `gMarioStates`,
+  `gMarioObject`, `gObjectPool`, `gCamera`, `gControllerPads`, `gGlobalTimer`,
+  `gCurrCourseNum`, `gCurrAreaIndex`, `bhvLllTiltingInvertedPyramid`,
+  `bhvBitfsTiltingInvertedPyramid`, `sm64_init`, `sm64_update`.
+- The pyramid is `gObjectPool[84]` in the BitFS area of the source m64.
+- Lightweight save slices in `LibSm64.cpp`.
+- `PyramidUpdate` re-implements physics from the decomp.
+- The m64 header check expects the JP ROM CRC and country code in `Inputs.hpp`.
+
+The decomp checkout at `C:\repos\sm64` is not part of the build; it is reference material.
+
+## Performance model
+
+The full measurement plan is in [docs/performance.md](docs/performance.md); this is the
+mental model behind it.
+
+Cost hierarchy, most to least: frame advance (`sm64_update`, tens of microseconds each),
+savestate save/load (`memcpy` of 1.5 MB lightweight or 7.3 MB full, memory-bandwidth bound),
+block decoding (replay from the root every shot), state trackers (run at every frame advance
+and load, and may advance frames themselves), `Script` bookkeeping (map operations per frame
+per hierarchy level), synchronization (named critical sections, barriers in deterministic
+mode), and `PyramidUpdate` construction (surface copy and transform per `ImportSave`).
+
+The framework's job is to minimize **frames advanced per frame of useful output**. Every
+mechanism above exists for that: savestates avoid replays, the cost model in
+`Resource::shouldSave` / `shouldLoad` decides when a save is cheaper than replaying, caches
+short-circuit ancestor lookups, and `PyramidUpdate` replaces full game frames with a few
+hundred floating-point operations where only the platform matters.
+
+Design intent is zero-cost abstraction: resource, tracker and state-bin types are template
+parameters constrained by concepts; `if constexpr` compiles state tracking out when the
+tracker is `DefaultStateTracker`; LTO is on for every configuration. Where the code falls
+short today (string-keyed symbol lookups per frame in `SetInputs` and `advance`, a
+`dynamic_cast` per `GetTrackedState`, virtual per-frame calls on `Resource`, `shared_ptr`
+segment chains, default-inserting map bookkeeping) is listed in the performance doc and on
+the roadmap.
+
+Instrumentation already in the code: rdtsc totals and counts on `Resource`, per-script
+durations and counts in `BaseScriptStatus`, and the scattershot end-of-run percentages.
+Counts are the metrics to trust; they are deterministic and machine-independent.
+
+## Sharp edges worth knowing
+
+- `Modify` moves the cursor to the end of the child's diff (see above).
+- `GetTrackedState` throws if the root is not a `TopLevelScript` with that tracker type.
+- `SlotManager` limits are per resource, so aggregate memory scales with thread count.
+- `BinaryStateBin` throws on out-of-range values; a state bin that can throw will abort a
+  pellet inside an `ExecuteAdhoc`, which is treated as "invalid state", not as a crash.
+- `Configuration::MaxBlocks` is a hard cap; hitting it throws "Block cap reached".
+- `ValidateBaseBlock` failures usually mean a non-deterministic `ApplyMovement` or a direct
+  memory write somewhere upstream.

@@ -1,29 +1,48 @@
 # sm64-tas-scripting
-This project provides a framework for automating the SM64 TAS workflow. Very much a WIP at this time.
+A C++20 framework for scripting and brute-forcing Super Mario 64 TAS inputs. The game runs
+inside a native x64 DLL (wafel's libsm64); scripts drive it with savestates and frame
+advances, and a multithreaded "scattershot" search explores input space on top of that.
+The current driver is a squish-cancel setup brute forcer for the BitFS tilting pyramid.
+
+Still very much a work in progress. Start with:
+
+- [AGENTS.md](AGENTS.md): rules and conventions for anyone (human or AI) changing the code.
+- [ARCHITECTURE.md](ARCHITECTURE.md): how scripts, savestates and scattershot fit together.
+- [ROADMAP.md](ROADMAP.md): what is planned and in what order.
+- [docs/libsm64.md](docs/libsm64.md): where the game DLL comes from and what depends on it.
+- [docs/performance.md](docs/performance.md): performance is a correctness requirement; how it is measured and gated.
 
 # Building instructions
-This project is built using CMake. 
+CMake 3.22+ and a C++20 compiler with OpenMP. Dependencies (nlohmann/json, range-v3) are
+downloaded by CMake's FetchContent; no vcpkg needed.
 
-**Windows**
-- Install vcpkg
-- `vcpkg install nlohmann-json`
+**Windows (supported path)**
 
 ```powershell
-mkdir build
-cd build
-cmake -DCMAKE_TOOLCHAIN_FILE="<path to vcpkg>\scripts\buildsystems\vcpkg.cmake" ..
-cmake --build .
+powershell -ExecutionPolicy Bypass -File scripts\build.ps1            # Debug
+powershell -ExecutionPolicy Bypass -File scripts\build.ps1 -Config Release
 ```
 
-**MacOS and Linux**
-- Install `nlohmann-json` using your favourite package manager.
+The script finds Visual Studio 2022 with vswhere, imports the x64 developer environment and
+uses the cmake/ninja bundled with Visual Studio if none are on PATH. Output goes to
+`build\<Config>\out\bitfs-turn.exe`. Opening the folder in Visual Studio also works through
+its CMake integration and the presets in `CMakePresets.json`.
+
+**Linux / macOS (untested recently)**
+
 ```bash
-mkdir build
-cd build
-cmake ..
-cmake --build .
+cmake -S . -B build/Release -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build/Release
 ```
-If you're using Visual Studio, open the root directory as a local folder. This enables VS's CMake integration. More detailed instructions can be found [here](https://docs.microsoft.com/en-us/cpp/build/cmake-projects-in-visual-studio?view=msvc-170#building-cmake-projects)
+
+# Runtime inputs
+The executable needs files that are not in git (see [docs/libsm64.md](docs/libsm64.md)):
+
+- `res/sm64_jp_0.dll` through `res/sm64_jp_23.dll`, one copy of the libsm64 DLL per thread.
+- The source `.m64` movies referenced by `config.json` and `main.cpp`.
+
+Running `bitfs-turn.exe` starts the full BitFS pipeline: many threads, hours of runtime,
+thousands of exported `.m64` files. It is not a smoke test.
 
 # Configuration system
 _Written by [@jgcodes2020](https://github.com/jgcodes2020)_
