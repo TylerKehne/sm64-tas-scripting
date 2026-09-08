@@ -48,7 +48,7 @@ correctness and in speed.
       (2026-09-07): the pinned 2022 DLL and wafel's 2023 DLL both pass every check, so the newer
       DLL is a drop-in replacement as far as layout goes.
 - [x] **1.2 Correctness test tier.** `tasfw-tests` (doctest), run by `scripts\test.ps1` or
-      `ctest`, 42 cases / 624 assertions on 2026-09-07:
+      `ctest`, 49 cases / 700 assertions on 2026-09-07:
       - DLL-free: joystick mapping checked against a brute force over all 65,536 stick
         positions, `M64` round trip and gap filling, `BinaryStateBin` packing and clamping,
         `SlotManager` LRU eviction, `LevelStack` (on-demand levels, in-place reset and
@@ -58,7 +58,9 @@ correctness and in speed.
         `Rollback`, cache invalidation after rewriting a frame, a child's saves surviving
         `Modify`, and state trackers: recursive metrics, queries ahead of the cursor computed
         in a sandbox, states following the diff on Execute/Modify, unasserted states stored
-        as defaults, the tracker type guard).
+        as defaults, the tracker type guard); and the bitfs-turn pipeline library (config
+        schema and path resolution, scattershot override layering, rejected keys and
+        references, solution-file round trip, selection, `input:<metric>` arguments).
       - libsm64 smoke test (skips unless `TASFW_LIBSM64`/`TASFW_M64` are set): loads the DLL,
         passes the layout check at frame 3330, plays the movie twice with identical Mario and
         pyramid state, and pins that state to exact golden values. Any one-frame change to the
