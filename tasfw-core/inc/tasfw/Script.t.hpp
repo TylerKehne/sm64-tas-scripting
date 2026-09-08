@@ -615,20 +615,19 @@ void Script<TResource>::Revert(uint64_t frame, const M64Diff& m64, std::map<int6
 	// Check if script altered state
 	bool desync = (!m64.frames.empty()) && (m64.frames.begin()->first < GetCurrentFrame());
 
-	//Move child saves to parent that are not desynced
-	//If child is ad-hoc script, pop the save bank
+	// Keep the child's saves that are still in sync: those at or before the first frame the
+	// child changed (the state at a frame does not depend on that frame's inputs). Every later
+	// save was made with inputs that are being reverted and is dropped with the bank.
+	// Until 2026-09-08 a child whose saves were all desynced had every one of them moved into
+	// the parent's bank, where a later backwards load could pick one up (ROADMAP 4.5).
 	if (childSaveBank && !childSaveBank->empty())
 	{
-		auto lastSyncedSave = childSaveBank->end();
-		if (!m64.frames.empty())
-		{
-			auto firstDesyncedSave = childSaveBank->upper_bound(m64.frames.begin()->first);
-			if (firstDesyncedSave != childSaveBank->begin())
-				lastSyncedSave = std::prev(firstDesyncedSave);
-		}
-
-		std::move(childSaveBank->begin(), lastSyncedSave, std::insert_iterator(saveBank[_adhocLevel], saveBank[_adhocLevel].end()));
+		auto firstDesyncedSave = m64.frames.empty()
+			? childSaveBank->end()
+			: childSaveBank->upper_bound(static_cast<int64_t>(m64.frames.begin()->first));
+		std::move(childSaveBank->begin(), firstDesyncedSave, std::insert_iterator(saveBank[_adhocLevel], saveBank[_adhocLevel].end()));
 	}
+	//If child is ad-hoc script, pop the save bank
 	if (saveBank.contains(_adhocLevel + 1))
 		saveBank.erase(_adhocLevel + 1);
 

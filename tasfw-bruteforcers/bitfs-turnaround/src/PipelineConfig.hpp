@@ -34,6 +34,7 @@ struct PipelineConfig
 	std::string dllPattern = "sm64_jp_{}.dll";
 	int threads = 1;
 	bool lightweight = true;
+	bool costModel = true; // Resource::useCostModel; false makes runs timing-independent (diagnosis)
 	std::filesystem::path m64;
 	std::filesystem::path outputDirectory;
 	nlohmann::json scattershotDefaults;

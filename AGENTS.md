@@ -86,9 +86,11 @@ its place with numbers, and "it is cleaner" is not a number.
   (README.md, "Running the pipeline").
 - Tests: `powershell -ExecutionPolicy Bypass -File scripts\test.ps1` (add `-Config Release`,
   `-Compiler clang`, `-Filter '*Script*'`). Under a second without the DLL, a few seconds with it.
-- The DLL-level check is `build\Release\out\dllcheck.exe <dll> <m64> <frame> [--lightweight]`
-  (docs/libsm64.md). It plays to a frame, verifies the struct layouts against the game, and
-  prints frame-advance and save/load cost. Takes under a second.
+- The DLL-level check is `build\Release\out\dllcheck.exe <dll> <m64> <frame> [--lightweight]
+  [--leak-scan [frames]]` (docs/libsm64.md). It plays to a frame, verifies the struct layouts
+  against the game, and prints frame-advance and save/load cost. Takes under a second.
+  `--leak-scan` lists every byte range of `.data`/`.bss` that a load does not restore;
+  `python scripts\dll_symbols.py <dll> -` names them from the DLL's exports.
 - Performance numbers come from `Release` or `RelWithDebInfo` builds only. Debug uses `/Od`.
 - Perf suite: `powershell -ExecutionPolicy Bypass -File scripts\perf.ps1` builds Release,
   runs `tasfw-perf.exe`, and compares against `perf\baselines\<computername>.json`. Tier A
@@ -100,7 +102,9 @@ its place with numbers, and "it is cleaner" is not a number.
 1. **Game state must be a pure function of (start save, inputs).** Only change the game by
    advancing frames with inputs (`AdvanceFrameWrite`, `Apply`). Direct pokes into DLL memory
    (marked `//! UNSAFE` where they exist) cannot be replayed from a savestate and silently
-   corrupt the search. Reads are fine.
+   corrupt the search. Reads are fine. Any desync (a replay of the same inputs from the same
+   save reaching a different state, a decoded block not matching its recording) is a
+   critical error: establish the root cause; never tolerate it as a rate.
 2. **Do not edit struct layouts under `tasfw-core/inc/sm64/`** unless you are deliberately
    moving to a different DLL build. The DLL is ground truth; the headers mirror it.
 3. **Keep scattershot deterministic.** All randomness goes through `GetTempRng`/`GetRng`.
@@ -116,10 +120,11 @@ its place with numbers, and "it is cleaner" is not a number.
 7. Do not "simplify" the lightweight save offsets in `LibSm64.cpp` without measuring; they are
    tuned to the pinned DLL build and are the main reason the search is fast.
 8. **Performance regressions are bugs.** Changes under `tasfw-core`, `tasfw-scattershot` or
-   `tasfw-resources` must include the perf suite delta table (docs/performance.md), or until
-   it exists, before/after wall time and frame-advance/save/load counts on a stated fixed
-   workload in a Release build. No per-frame heap allocation, no I/O under a critical section,
-   and nothing that adds a frame advance without a measured reason.
+   `tasfw-resources` must include the perf suite delta table (docs/performance.md) and, for
+   anything the DLL workload exercises, before/after wall time and the frame-advance/save/load
+   counts `bitfs-turn` prints per stage, on a stated fixed workload in a Release build. No
+   per-frame heap allocation, no I/O under a critical section, and nothing that adds a frame
+   advance without a measured reason.
 
 ## Conventions
 

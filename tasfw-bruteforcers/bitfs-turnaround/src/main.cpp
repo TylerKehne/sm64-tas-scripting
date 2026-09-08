@@ -104,6 +104,30 @@ namespace
 		}
 	}
 
+	struct ResourceCounters
+	{
+		unsigned long long frameAdvances = 0;
+		unsigned long long saves = 0;
+		unsigned long long loads = 0;
+
+		ResourceCounters operator-(const ResourceCounters& other) const
+		{
+			return { frameAdvances - other.frameAdvances, saves - other.saves, loads - other.loads };
+		}
+	};
+
+	ResourceCounters CountResourceWork(const std::vector<LibSm64>& resources)
+	{
+		ResourceCounters total;
+		for (const LibSm64& resource : resources)
+		{
+			total.frameAdvances += resource.nFrameAdvances;
+			total.saves += resource.nSaveStates;
+			total.loads += resource.nLoadStates;
+		}
+		return total;
+	}
+
 	std::vector<LibSm64> BuildResources(const PipelineConfig& pipeline, int count)
 	{
 		std::vector<fs::path> paths = pipeline.DllPaths();
@@ -116,6 +140,7 @@ namespace
 			config.lightweight = pipeline.lightweight;
 			config.countryCode = CountryCode::SUPER_MARIO_64_J;
 			resources.emplace_back(config);
+			resources.back().useCostModel = pipeline.costModel;
 		}
 		return resources;
 	}
@@ -162,6 +187,11 @@ namespace
 			return 0;
 		}
 
+		// Scattershot writes CSVs and the error.m64 dump straight into the output directory from
+		// inside its OpenMP region, where a failed write cannot be reported; make sure it exists.
+		fs::create_directories(pipeline.outputDirectory);
+		fs::create_directories(pipeline.outputDirectory / "solutions");
+
 		std::vector<LibSm64> resources = BuildResources(pipeline, pipeline.threads);
 		std::map<std::string, SolutionSet> produced;
 
@@ -187,6 +217,7 @@ namespace
 
 			std::printf("\n=== stage %s (%s, frame %lld) ===\n", stage.name.c_str(), stage.type.c_str(), (long long)stage.startFrame);
 			auto start = std::chrono::steady_clock::now();
+			ResourceCounters before = CountResourceWork(resources);
 
 			StageContext context { pipeline, stage, resources, input };
 			SolutionSet output = RunStage(context);
@@ -196,8 +227,11 @@ namespace
 				ExportSolutionSet(context, output);
 
 			double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+			ResourceCounters work = CountResourceWork(resources) - before;
 			std::printf("=== stage %s: %llu solution(s) in %.1f s, written to %s ===\n", stage.name.c_str(),
 				(unsigned long long)output.solutions.size(), seconds, pipeline.SolutionsFile(stage.name).string().c_str());
+			// The fixed-workload numbers hard rule 8 asks for (AGENTS.md), summed over threads.
+			std::printf("    frame advances %llu, saves %llu, loads %llu\n", work.frameAdvances, work.saves, work.loads);
 
 			size_t count = output.solutions.size();
 			produced[stage.name] = std::move(output);

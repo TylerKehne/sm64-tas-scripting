@@ -439,6 +439,49 @@ TEST_CASE("Rollback erases the diff from the target frame and lands there")
 		});
 }
 
+TEST_CASE("A reverted child's saves made after its first written frame never serve the parent")
+{
+	// ROADMAP 4.5: scattershot's base-block validation failed on about 2% of shots because
+	// Revert moved every save of a child whose saves were all desynced into the parent's
+	// bank. The fake resource's cost model is off so that no auto-save can mask the stale
+	// one by landing on the same frame first.
+	FakeResource resource;
+	resource.useCostModel = false;
+	M64 m64;
+	for (int i = 0; i < 20; i++)
+		m64.frames[i] = In(500 + i);
+
+	RunRoot(resource, m64, [](auto& s)
+		{
+			for (int i = 0; i < 3; i++)
+				s.AdvanceFrameWrite(In(i));
+			s.Load(6); // frames 3..5 from the movie
+			uint64_t at6 = s.resource->checksum();
+			s.Load(3);
+
+			// The child overwrites frames 3 and 4, so its save at 6 depends on inputs that
+			// are reverted with it.
+			auto status = s.ExecuteAdhoc([&]()
+				{
+					s.AdvanceFrameWrite(In(40));
+					s.AdvanceFrameWrite(In(41));
+					s.AdvanceFrameRead();
+					s.Save();
+					return s.GetCurrentFrame() == 6;
+				});
+			REQUIRE(status.executed);
+			CHECK(s.GetCurrentFrame() == 3);
+			CHECK(s.GetInputs(3) == In(503));
+
+			// Go past 6 and come back: a load backwards takes the latest save at or before
+			// the target, which must not be the child's.
+			s.Load(8);
+			s.Load(6);
+			CHECK(s.GetCurrentFrame() == 6);
+			CHECK(s.resource->checksum() == at6);
+		});
+}
+
 TEST_CASE("Ad-hoc writes invalidate later saves and caches")
 {
 	FakeResource resource;

@@ -192,7 +192,7 @@ uint64_t Resource<TState>::GetTotalFrameAdvanceTime()
 template <class TState>
 bool Resource<TState>::shouldSave(int64_t estFrameAdvances) const
 {
-	if (estFrameAdvances == 0)
+	if (!useCostModel || estFrameAdvances == 0)
 		return false;
 
 	if (nSaveStates == 0 || nFrameAdvances == 0 || estFrameAdvances < 0)
@@ -208,7 +208,7 @@ bool Resource<TState>::shouldSave(int64_t estFrameAdvances) const
 template <class TState>
 bool Resource<TState>::shouldLoad(int64_t framesAhead) const
 {
-	if (framesAhead == 0)
+	if (!useCostModel || framesAhead == 0)
 		return false;
 
 	if (nLoadStates == 0 || nFrameAdvances == 0 || framesAhead < 0)

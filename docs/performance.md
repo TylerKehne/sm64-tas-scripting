@@ -338,6 +338,42 @@ What the Tier A and B numbers say together:
 
 Every hot-path change records its delta table here, newest first.
 
+### 2026-09-08: `Revert` drops a reverted child's desynced saves (ROADMAP 4.5)
+
+Correctness fix on a per-script path. `Revert` used to move every save of a reverted child
+into the parent's bank when none of them was synced; it now moves only saves at or before the
+child's first written frame (in practice none, so the bank is simply dropped and its slots
+recycled). Less work, fewer live slots, and the parent's bank no longer accumulates a save
+per reverted pellet.
+
+Tier A and Tier B, fastest of nine, against the committed baselines:
+
+| Compiler | Rows | Regressions > 10% | Allocation regressions | Notes |
+|---|---|---|---|---|
+| MSVC | 52 | 0 | 0 | every row within -9.5% .. +3.3% |
+| clang-cl | 52 | 0 | 0 | `GetInputs_Uncached_Depth/1` -11% and `LibSm64Light_SaveErase` -13%, the two rows already known to flip with code layout and process placement |
+
+The end-to-end workload (400-shot deterministic `tilt-target` at frame 3330, seed 3, 100
+pellets per shot; old `Revert` -> new, back-to-back on the same machine, counts summed over
+threads as `bitfs-turn` prints them):
+
+| Run | Validation failures | Wall | Frame advances | Saves | Loads |
+|---|---|---|---|---|---|
+| 4 threads, lightweight | 10 -> 0 | 147 -> 157 s | 10.88 M -> 11.97 M (+10%) | 26.3 k -> 28.9 k (+10%) | 676 k -> 710 k (+5%) |
+| 4 threads, full saves | 0 -> 0 | 214 -> 215 s | 11.70 M -> 12.04 M (+3%) | 2.7 k -> 2.9 k (+9%) | 716 k -> 710 k (-1%) |
+| 1 thread, lightweight | 5 to 8 -> 0 | 283 to 291 s -> 329 s | (binary without counters) | | |
+
+Read the counts, not the wall column: the same binary ran the full-save workload in 249 s
+and 215 s an hour apart, so wall time swings by up to 15% here. The extra frame advances are
+replays that used to stop at a save made with reverted inputs, and the old runs also skipped
+the pellets of every failed shot (10 of 400 in the lightweight run). Saves rise because a
+pellet's automatic saves are now dropped with the pellet and the next one earns its own.
+
+What the fix buys besides correctness: the lightweight and full-save runs now perform the
+identical search (26 solutions and 709,843 loads in both), so the outcome of a deterministic
+run no longer depends on which savestates the cost model happened to create. Before, the two
+modes found 27 and 38 solutions from the same seed.
+
 ### 2026-09-08: recycled savestate buffers (ROADMAP 3.9) and the first Tier B benchmarks
 
 `SlotManager` used to construct a fresh `TState` for every save (`save()` then grew empty

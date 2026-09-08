@@ -78,6 +78,12 @@ public:
 	int64_t initialFrame = -1;
 	SlotManager<TState> slotManager = SlotManager<TState>(this);
 
+	// When false, shouldSave/shouldLoad answer false: no automatic saves during replays and
+	// no loading ahead, only explicit saves and replays. The cost model's decisions depend on
+	// measured timings, so this is the switch that makes a run timing-independent; it costs
+	// performance and exists for diagnosis (ROADMAP 4.5) and tests.
+	bool useCostModel = true;
+
 	Resource() = default;
 
 	Resource(const Resource<TState>&) = delete;

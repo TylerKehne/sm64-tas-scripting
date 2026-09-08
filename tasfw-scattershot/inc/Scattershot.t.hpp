@@ -160,7 +160,10 @@ void Scattershot<TState, TResource, TStateTracker, TOutputState>::PrintStatus()
             int redundancy = double(RedundantScripts) / double(ScriptCount) * 100;
             int discovery = double(NovelScripts) / double(ScriptCount) * 100;
 
-            printf("Futility: %d%% Redundancy: %d%% Discovery: %d%%\n", futility, redundancy, discovery);
+            printf("Futility: %d%% Redundancy: %d%% Discovery: %d%%", futility, redundancy, discovery);
+            if (ValidationFailures != 0)
+                printf(" Validation failures: %llu", (unsigned long long)ValidationFailures);
+            printf("\n");
         }
     }
 

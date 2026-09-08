@@ -385,8 +385,12 @@ int M64::save(long initFrame)
 	else
 		f = std::ofstream(fileName, std::ios_base::trunc | std::ios_base::binary);
 
-	f.exceptions(std::ios_base::failbit | std::ios_base::badbit);
+	// An open failure (missing directory, locked file) must be a false return, not an exception:
+	// callers export from inside OpenMP regions, where an escaping exception aborts the process.
+	if (!f.is_open())
+		return 0;
 
+	f.exceptions(std::ios_base::failbit | std::ios_base::badbit);
 
 	uint64_t lastFrame = frames.rbegin()->first;
 

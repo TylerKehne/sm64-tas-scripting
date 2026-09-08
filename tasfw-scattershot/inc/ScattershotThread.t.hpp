@@ -58,6 +58,54 @@ bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::executio
                 return true;
             });
 
+        // Diagnosis of a validation failure (ROADMAP 4.5): decode the same block again from the
+        // same reverted state. If the second decode matches the first, decoding is deterministic
+        // and the disagreement is between encoding and decoding; if it does not, state survives
+        // a load. The first frame where the two decoded input sequences differ is printed.
+        if (LastValidationFailed)
+        {
+            LastValidationFailed = false;
+            ExecuteAdhoc([&]()
+                {
+                    DecodeBaseBlockDiffAndApply();
+                    TState again = GetStateBinSafe();
+                    M64Diff diff = this->GetTotalDiff();
+
+                    #pragma omp critical (print)
+                    {
+                        std::cout << "  re-decode: " << (again == LastDecodedBin
+                            ? "same bin as the first decode, so decoding is deterministic and the recording disagrees with it"
+                            : "different bin from the first decode, so state survives a load") << "\n";
+
+                        std::set<uint64_t> frames;
+                        for (const auto& pair : LastDecodedDiff.frames) frames.insert(pair.first);
+                        for (const auto& pair : diff.frames) frames.insert(pair.first);
+                        bool reported = false;
+                        for (uint64_t frame : frames)
+                        {
+                            auto a = LastDecodedDiff.frames.find(frame);
+                            auto b = diff.frames.find(frame);
+                            bool same = a != LastDecodedDiff.frames.end() && b != diff.frames.end() && a->second == b->second;
+                            if (same)
+                                continue;
+                            auto show = [](auto it, auto end)
+                            {
+                                if (it == end)
+                                    return std::string("(none)");
+                                return std::to_string(it->second.buttons) + "/" + std::to_string(it->second.stick_x) + "/" + std::to_string(it->second.stick_y);
+                            };
+                            std::cout << "  first differing decoded input at frame " << frame << ": first " << show(a, LastDecodedDiff.frames.end())
+                                << ", second " << show(b, diff.frames.end()) << " (diffs span " << *frames.begin() << ".." << *frames.rbegin() << ")\n";
+                            reported = true;
+                            break;
+                        }
+                        if (!reported)
+                            std::cout << "  the two decoded input sequences are identical (" << frames.size() << " frames)\n";
+                    }
+                    return false;
+                });
+        }
+
         size_t nSolutions = 0;
         bool maxShotsReached = false;
         #pragma omp critical (print)
@@ -248,14 +296,44 @@ template <class TState, derived_from_specialization_of<Resource> TResource,
 bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::ValidateBaseBlock(int shot)
 {
     TState currentStateBin = GetStateBinSafe();
-    if (BaseBlockStateBin != currentStateBin) {
+    LastValidationFailed = BaseBlockStateBin != currentStateBin;
+    if (LastValidationFailed) {
+        LastDecodedBin = currentStateBin;
+        LastDecodedDiff = this->GetTotalDiff();
+
+        #pragma omp critical (scriptcounters)
+        {
+            scattershot.ValidationFailures++;
+        }
+
         // Dumped next to the CSVs for post-mortem; the path comes from the configuration (AGENTS.md hard rule 5).
         this->ExportM64(std::filesystem::path(scattershot.config.CsvOutputDirectory) / "error.m64", this->GetTotalDiff().frames.rbegin()->first + 1);
-        std::cout << Id << " " << shot << "\n";
-        //BaseBlockStateBin.print();
-        //currentStateBin.print();
-        std::cout << scattershot.GetHash(BaseBlockStateBin, false) << "\n";
-        std::cout << scattershot.GetHash(currentStateBin, false) << "\n";
+
+        #pragma omp critical (print)
+        {
+            std::cout << "base-block validation failed: thread " << Id << " shot " << shot << " frame " << this->GetCurrentFrame()
+                << " chain depth " << int(BaseBlockTailSegment->depth) << "\n";
+            if constexpr (requires { BaseBlockStateBin.bytes; })
+            {
+                auto hex = [](const TState& bin)
+                {
+                    std::string text;
+                    char buffer[4];
+                    for (auto byte : bin.bytes)
+                    {
+                        std::snprintf(buffer, sizeof buffer, "%02x", unsigned(byte));
+                        text += buffer;
+                    }
+                    return text;
+                };
+                std::cout << "  expected " << hex(BaseBlockStateBin) << "\n  decoded  " << hex(currentStateBin) << "\n";
+            }
+            else
+            {
+                std::cout << "  expected hash " << scattershot.GetHash(BaseBlockStateBin, false)
+                    << "\n  decoded hash  " << scattershot.GetHash(currentStateBin, false) << "\n";
+            }
+        }
         return false;
     }
 

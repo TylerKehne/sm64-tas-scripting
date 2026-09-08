@@ -68,3 +68,13 @@ TEST_CASE("M64 save fills gaps with neutral inputs")
 
 	std::filesystem::remove(path);
 }
+
+TEST_CASE("M64::save into a missing directory reports failure instead of throwing")
+{
+	std::filesystem::path missing = std::filesystem::temp_directory_path() / "tasfw-no-such-dir-4c1e" / "movie.m64";
+	std::filesystem::remove_all(missing.parent_path());
+	M64 m64(missing);
+	m64.frames[0] = Inputs(1, 2, 3);
+	CHECK_NOTHROW(CHECK(m64.save() == 0)); // used to throw ios_base::failure, which aborts inside OpenMP
+	CHECK_FALSE(std::filesystem::exists(missing));
+}

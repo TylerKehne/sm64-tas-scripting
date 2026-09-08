@@ -45,6 +45,9 @@ type is planned (ROADMAP 3.11).
 - `shouldSave(n)` / `shouldLoad(n)` compare the measured average cost of a save or load
   (rdtsc cycles) against `n` frame advances. Scripts call these to decide whether a
   savestate is worth creating. Every "cost-based" decision in the framework routes here.
+  `useCostModel = false` makes both return false, so a run creates no automatic savestates
+  and is independent of timing; the pipeline exposes it as `resources.costModel`. It exists
+  for diagnosis (it is how ROADMAP 4.5 was bisected) and costs replay time.
 
 `LibSm64` (`tasfw-resources/src/LibSm64.cpp`) loads the DLL with `LoadLibrary`, calls
 `sm64_init`, and treats the `.data` and `.bss` sections as the whole game state:
@@ -123,12 +126,23 @@ the frame's "state owner"; its frame counter is the one charged for replays thro
 
 Loading (`LoadBase`): find the latest usable save at or before the target across levels and
 ancestors, never searching past the start of a level's own diff (that would desync). Load it
-if the target is in the past or if loading beats advancing per `shouldLoad`. Then
-`AdvanceFrameRead` to the target, creating savestates along the way when `shouldSave` says
-the accumulated frame counter justifies it.
+if the target is in the past. (The branch that would load a save *after* a future target when
+`shouldLoad` says so cannot fire, because the lookup only returns saves at or before the
+target; `shouldLoad` is effectively unused.) Then `AdvanceFrameRead` to the target, creating
+savestates along the way when `shouldSave` says the accumulated frame counter justifies it.
+Those automatic saves go into the frame's state owner's bank, and they are the only
+timing-dependent decision in the engine: two runs of the same deterministic search differ
+only in which savestates exist, never in which states are reached.
 
-`Revert` (after `Execute`) moves the child's still-synced saves into the parent and loads the
-original frame, forcing a load if the child changed any frame before the cursor.
+Savestate ownership follows input ownership: a save at frame *f* is valid for a level exactly
+when none of that level's inputs before *f* have changed since, so writes at a level erase
+that level's saves after the written frame, and a level's bank only ever holds saves after the
+start of its own diff. `Revert` (after `Execute`) therefore keeps only the child's saves at or
+before the first frame the child wrote (in practice none) and drops the rest with the bank,
+then loads the original frame, forcing a load if the child changed any frame before the
+cursor. Until 2026-09-08 it moved *every* child save into the parent when none was synced;
+a later backwards load from a level whose diff started after such a save then restored a
+state made with reverted inputs. That was ROADMAP 4.5, and `test_script.cpp` pins it.
 `ApplyChildDiff` (after `Modify`) merges the diff and moves saves, then `Load(lastFrame + 1)`.
 That last step is why callers in `ScattershotThread` re-`Load` the frame the child actually
 stopped on (ROADMAP 3.1).
@@ -208,8 +222,9 @@ Vocabulary:
 - **Segment**: (parent, RNG seed, number of scripts, optional piped-diff index). A block is
   reproduced by walking its segment chain from the root and re-running `ChooseScriptAndApply`
   with `SetTempRng(seed)` for each script. Nothing but seeds is stored.
-- **Shot**: pick a base block, decode it, verify the state bin matches (`ValidateBaseBlock`,
-  which dumps `error.m64` on mismatch), then fire pellets.
+- **Shot**: pick a base block, decode it, verify the state bin matches (`ValidateBaseBlock`;
+  a mismatch is counted in `ValidationFailures`, shown in the status line and the end-of-run
+  summary, printed with both bins in hex, and dumped as `error.m64`), then fire pellets.
 - **Pellet**: up to `PelletMaxScripts` scripts within `PelletMaxFrameDistance` frames; each
   script result is validated, binned, scored and offered to `UpsertBlock`.
 - **UpsertBlock**: open-addressed hash table over `BlockIndices` (3x `MaxBlocks`). A new bin
@@ -329,5 +344,8 @@ Counts are the metrics to trust; they are deterministic and machine-independent.
 - `BinaryStateBin` throws on out-of-range values; a state bin that can throw will abort a
   pellet inside an `ExecuteAdhoc`, which is treated as "invalid state", not as a crash.
 - `Configuration::MaxBlocks` is a hard cap; hitting it throws "Block cap reached".
-- `ValidateBaseBlock` failures usually mean a non-deterministic `ApplyMovement` or a direct
-  memory write somewhere upstream.
+- `ValidateBaseBlock` failures mean the encode and the decode of a block saw different
+  states: a stale savestate (the ROADMAP 4.5 bug in `Revert`, fixed), a non-deterministic
+  `ApplyMovement`, or a direct memory write somewhere upstream. The failure handler
+  re-decodes the block and reports whether decoding itself is deterministic; a run with
+  `resources.costModel` false removes automatic savestates from the suspect list.

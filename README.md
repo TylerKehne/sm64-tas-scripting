@@ -65,7 +65,9 @@ Each stage writes its solutions to `<outputDirectory>/solutions/<stage>.json` (i
 plus named metrics). A stage run alone reads its input from the file its input stage wrote
 last time, so a long pipeline can be advanced one stage at a time. Stages with
 `"export": true` also write one movie per solution under `<outputDirectory>/m64/<stage>/`.
-Scattershot CSVs and the `error.m64` dump go to `<outputDirectory>` as well.
+Scattershot CSVs and the `error.m64` dump go to `<outputDirectory>` as well. The stage
+summary prints wall time and the frame advances, saves and loads summed over threads, which
+are the fixed-workload numbers a performance change has to report (AGENTS.md, hard rule 8).
 
 # Configuration
 
@@ -97,7 +99,9 @@ One JSON file. Relative paths resolve against the file's own directory, unless t
 ```
 
 - `resources`: the DLL directory and file pattern (`{}` becomes the thread index; one copy
-  per thread), the thread count, and whether saves are lightweight.
+  per thread), the thread count, whether saves are lightweight, and `costModel` (default
+  true; false disables the replay-versus-load cost model so a run is timing-independent,
+  for diagnosis).
 - `scattershot`: defaults for every stage, in the field names of `Configuration`
   (`pelletMaxScripts`, `pelletMaxFrameDistance`, `maxBlocks`, `maxShots`, `pelletsPerShot`,
   `shotsPerUpdate`, `startFromRootEveryNShots`, `maxConsecutiveFailedPellets`,

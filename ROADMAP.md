@@ -80,7 +80,8 @@ correctness and in speed.
         scaling 1 to 16 and memory per slot.
       - Tier C framework workloads with exact-count gates: fixed scripts, `PyramidUpdate`
         probes, a tracker sweep; report replay ratio and overhead %.
-      - Tier D scattershot end to end: a deterministic exact-count run and a throughput run.
+      - Tier D scattershot end to end: a deterministic exact-count run (which also asserts
+        zero base-block validation failures, see 4.5) and a throughput run.
       - JSON output, checked-in baselines under `perf/baselines/`, a compare script that prints
         the delta table for PRs, and the regression policy from the spec.
       *Done when:* a deliberate extra frame advance in `LoadBase` fails Tier C, a deliberate
@@ -103,8 +104,9 @@ correctness and in speed.
       `override`s, unhandled `switch` cases, `main` returning `false`, a bool/s32 compare in
       `PyramidUpdate`, int16-to-int8 narrowing in `Inputs.cpp`. Remaining: three MSVC C4244
       `_Ty`-to-`float` warnings from `std::vector<float>` initializer lists in
-      `TiltTargetShot.hpp` and Google Benchmark's `/MP` under clang-cl (range-v3's deprecated
-      `compressed_tuple` went with range-v3 in 1.4). `TASFW_WARNINGS_AS_ERRORS` exists (off by default). *Done when:*
+      `TiltTargetShot.hpp`, clang-cl's `getenv` deprecation in `test_libsm64.cpp`, and Google
+      Benchmark's `/MP` under clang-cl (range-v3's deprecated `compressed_tuple` went with
+      range-v3 in 1.4). `TASFW_WARNINGS_AS_ERRORS` exists (off by default). *Done when:*
       both builds are warning-free and the option is on in CI.
 - [ ] **1.6 Build hygiene and compiler matrix.** Delete the stale `build/` artifacts, add
       presets for MSVC and clang-cl matching `scripts/build.ps1`, and run a GitHub Actions
@@ -198,8 +200,14 @@ Goal: the core's implicit invariants become explicit and enforced.
       wants something different from a custom state machine where a load costs about a frame.
       Abstract the policy behind the resource (a policy type chosen per resource, resolved at
       compile time like everything else) so alternatives can be measured against each other
-      on Tier B and C. *Done when:* the current policy is one implementation of the
-      abstraction with identical counts, and a second policy exists and is compared.
+      on Tier B and C. Two known weaknesses of the current one, both measured while fixing
+      4.5: the `shouldLoad` branch in `LoadBase` never fires (the lookup only returns saves at
+      or before the target), and every scattershot pellet starts with empty frame counters at
+      its level, so the same rewind-and-replay stretch is paid several times per pellet before
+      an automatic save appears (about +10% frame advances and saves against the old, wrong
+      reuse; docs/performance.md, 2026-09-08). *Done when:* the current policy is one
+      implementation of the abstraction with identical counts, and a second policy exists and
+      is compared.
 
 ## Phase 4: the squish-cancel brute forcer
 
@@ -221,14 +229,25 @@ Goal: finish the thing the framework was built for.
 - [ ] **4.4 Analysis.** Keep the R plotting script working from the new CSV paths, or port it to
       Python so it can run in CI. Record which columns each stage emits.
 
-- [ ] **4.5 Base-block validation failures.** `ScattershotThread::ValidateBaseBlock` found a
-      state-bin mismatch and dumped `error.m64` during a 4-thread, 55-shot, deterministic
-      `tilt-target` smoke run (2026-09-07). The dump used to land silently in `analysis/`, so
-      nobody knows how often this happens or what it costs. Count it in the end-of-run
-      summary, reproduce with a single thread, and find out whether it is a determinism bug
-      (hard rule 3) or an expected consequence of blocks being decoded from segment chains.
-      *Done when:* the cause is documented and a Tier D run reports zero unexplained
-      validation failures.
+- [x] **4.5 Base-block validation failures.** Done 2026-09-08. `ValidateBaseBlock` found
+      state-bin mismatches on about 2% of shots (5 to 9 per 400-shot deterministic
+      `tilt-target` run, single- and multi-threaded, lightweight and full saves, at different
+      shots from run to run). Root cause, found by bisecting with the new
+      `resources.costModel` switch (0 failures without automatic savestates, 8 with, same
+      seed): `Script::Revert` moved every save of a reverted child into the parent's bank when
+      none of them was synced, and a later backwards load from a level whose diff started
+      after such a save restored a state made with reverted inputs (ARCHITECTURE.md,
+      "Savestate ownership"). Dated 2022-06-18. Automatic savestates made it visible because
+      they fill child banks; explicit saves alone rarely hit the pattern. Fixed in `Revert`
+      and pinned by a fake-resource test. Verified on the three 400-shot deterministic runs
+      (1 and 4 threads, lightweight and full saves): zero failures, at a wall-time cost
+      recorded in docs/performance.md, since the old speed came partly from loading wrong
+      saves instead of replaying. The Tier D deterministic run (1.3) does not exist yet;
+      when it does, it asserts zero validation failures. Kept from the investigation: the
+      failure counter and hex bins, the re-decode diagnostic that tells "decoding is not
+      deterministic" from "the recording is wrong", `dllcheck --leak-scan`,
+      `scripts/dll_symbols.py`, and the camera and controller coverage checks in
+      `layoutCheckReport`.
 
 ### After the makeover: the three squish-cancel goals
 

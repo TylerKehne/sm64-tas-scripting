@@ -45,7 +45,7 @@ smoke test (ROADMAP 1.2).
 ## Checking a DLL: `dllcheck`
 
 ```
-build\Release\out\dllcheck.exe <libsm64.dll> <movie.m64> <frame> [--lightweight]
+build\Release\out\dllcheck.exe <libsm64.dll> <movie.m64> <frame> [--lightweight] [--leak-scan [frames]]
 ```
 
 Plays the movie to `<frame>` (pick one inside a level), runs `LibSm64::layoutCheckReport()`,
@@ -61,6 +61,19 @@ What is checked: `gMarioState` points at `gMarioStates[0]`; Mario's object lies 
 the floor's object pointer is inside game data; `gCamera` is inside game data; and in
 lightweight mode, that `gMarioStates`, the whole object pool, the timer, controller pads,
 camera, current floor, `gCurrentArea`, `sSurfacePool` and `gAreas` are inside the slices.
+The camera globals (`gLakituState`, `gPlayerCameraState`, `sModeTransition`, ...) and the
+controller structs (`gControllers`, `gControllerBits`) are reported as `WARN:` rather than
+`FAIL:` when outside the slices; on the pinned DLL all of them are inside.
+
+`--leak-scan` answers the other question about a save mode: not "are the symbols we know
+about inside the slices" but "does a load restore everything that changed". It saves a state
+at `<frame>`, snapshots `.data` and `.bss`, plays 120 frames (or the count given) of a fixed
+input pattern, loads the state back and snapshots again; every byte range that differs is
+state the load did not restore. A second pass with a different pattern shows which ranges
+depend on what was played. `python scripts\dll_symbols.py <dll> -` reads that output and
+names each range from the DLL's export table. On the pinned DLL a full load restores both
+sections exactly, and a lightweight load misses only six bytes: the texture-scroll offsets
+of the BitFS lava animation (`bitfs_movtex_tris_lava_*`), which nothing in the physics reads.
 
 ## Why 24 copies
 

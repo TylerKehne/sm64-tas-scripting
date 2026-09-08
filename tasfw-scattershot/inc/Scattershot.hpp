@@ -2,6 +2,7 @@
 
 #include <concepts>
 #include <cstdint>
+#include <cstdio>
 #include <map>
 #include <memory>
 #include <stdexcept>
@@ -12,6 +13,7 @@
 #include <omp.h>
 #include <vector>
 #include <filesystem>
+#include <set>
 #include <unordered_set>
 #include <chrono>
 #include <iostream>
@@ -229,6 +231,9 @@ private:
     uint64_t FailedScripts = 0;
     uint64_t RedundantScripts = 0;
     uint64_t NovelScripts = 0;
+    // Shots whose decoded base block did not reproduce the block's state bin (ROADMAP 4.5).
+    // A non-zero count means replaying a segment chain is not a pure function of its seeds.
+    uint64_t ValidationFailures = 0;
 
     void PrintStatus();
     bool UpsertBlock(TState stateBin, bool isSolution, ScattershotSolution<TOutputState> solution, float fitness,
@@ -285,7 +290,8 @@ private:
                 }
             });
 
-        printf("Found %llu solutions in %llu shots.\n", (unsigned long long)scattershot.Solutions.size(), (unsigned long long)scattershot.TotalShots);
+        printf("Found %llu solutions in %llu shots (%llu base-block validation failures).\n", (unsigned long long)scattershot.Solutions.size(),
+            (unsigned long long)scattershot.TotalShots, (unsigned long long)scattershot.ValidationFailures);
 
         std::vector<ScattershotSolution<TOutputState>> solutions;
         solutions.reserve(scattershot.Solutions.size());
@@ -435,6 +441,11 @@ private:
     uint64_t RngHashTemp = 0;
     TState BaseBlockStateBin;
     std::shared_ptr<Segment> BaseBlockTailSegment = nullptr;
+    // Set by ValidateBaseBlock on a mismatch so execution() can decode the same block a second
+    // time and report whether the two decodes agree with each other (ROADMAP 4.5 diagnosis).
+    bool LastValidationFailed = false;
+    TState LastDecodedBin;
+    M64Diff LastDecodedDiff;
     std::unordered_set<MovementOption> movementOptions;
 
     short startCourse;

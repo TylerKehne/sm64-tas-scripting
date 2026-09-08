@@ -356,6 +356,44 @@ std::vector<std::string> LibSm64::layoutCheckReport() const
 			catch (const std::exception&) { continue; }
 			checkCoverage(symbol, p, sizeof(void*));
 		}
+
+		// Camera state. The game turns a raw stick into Mario's intended yaw through the camera,
+		// so any of this that a load does not restore makes a replay diverge from the run that
+		// recorded it. These were not part of the original slice selection; they are reported
+		// as warnings rather than failures until ROADMAP 4.5 settles what the search needs.
+		// Sizes are the decomp's, generous where the x64 layout is unknown.
+		auto warnCoverage = [&](const char* symbol, size_t size)
+		{
+			void* p = nullptr;
+			try { p = addr(symbol); }
+			catch (const std::exception&) { return; }
+			if (covered(p, size))
+				ok(std::string("lightweight slices cover ") + symbol + " (" + sectionOffset(p) + ")");
+			else
+				lines.push_back(std::string("WARN: lightweight slices do NOT cover ") + symbol + " (" + sectionOffset(p) + ", "
+					+ std::to_string(size) + " bytes); a lightweight load does not restore it");
+		};
+		warnCoverage("gLakituState", 136);
+		warnCoverage("gPlayerCameraState", 2 * 72);
+		warnCoverage("gCameraMovementFlags", 2);
+		warnCoverage("sModeTransition", 64);
+		warnCoverage("sMarioCamState", sizeof(void*));
+		warnCoverage("sModeOffsetYaw", 2);
+		warnCoverage("sYawSpeed", 2);
+		warnCoverage("sCUpCameraPitch", 2);
+		warnCoverage("sFOVState", 16);
+		warnCoverage("sCameraStoreCUp", 32);
+		warnCoverage("sPanDistance", 4);
+		warnCoverage("sZeroZoomDist", 4);
+		warnCoverage("sSelectionFlags", 2);
+		warnCoverage("sCButtonsPressed", 2);
+
+		// Controller state: buttonPressed is an edge against the previous frame's buttonDown,
+		// so a load that leaves the old buttonDown behind changes whether the next frame's
+		// A is a press or a hold.
+		warnCoverage("gControllers", 3 * 40);
+		warnCoverage("gControllerBits", 2);
+		warnCoverage("gPlayer1Controller", sizeof(void*));
 	}
 
 	return lines;
