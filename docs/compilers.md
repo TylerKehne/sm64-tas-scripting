@@ -95,10 +95,11 @@ overloads, which select the same single-precision instruction, or the global `sq
 
 ### CMake 4 rejects dependencies with `cmake_minimum_required` below 3.5
 
-The GitHub runners ship CMake 4.4, which errors (not warns) on nlohmann/json 3.11.2's
-`cmake_minimum_required(VERSION 3.1)`. The root `CMakeLists.txt` sets
-`CMAKE_POLICY_VERSION_MINIMUM 3.5` before `FetchContent_MakeAvailable`; CMake 3.31 and
-newer honor it, older versions ignore it. Bumping the dependency removes the need.
+The GitHub runners ship CMake 4.x, which errors (not warns) on doctest 2.4.11's
+`cmake_minimum_required(VERSION 3.0)` (nlohmann/json did the same until 3.12, which declares
+`3.5...4.0`). The root `CMakeLists.txt` sets `CMAKE_POLICY_VERSION_MINIMUM 3.5` before the
+first `FetchContent_MakeAvailable`; CMake 3.31 and newer honor it, older versions ignore it.
+Bumping doctest past 3.5 removes the need.
 
 ### MSVC accepts using-declarations that name inaccessible overloads
 

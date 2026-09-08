@@ -38,7 +38,8 @@
 
 .PARAMETER Affinity
     Processor affinity mask for the benchmark process (default 0x10, one logical CPU). The
-    process also runs at High priority. Pass 0 to leave scheduling alone.
+    process also runs at High priority. Pass 0 to leave scheduling alone. The thread-scaling
+    family (^BM_LibSm64Scaling) is never pinned; it measures parallelism.
 
 .PARAMETER Compiler
     msvc (default) or clang. Uses build\<Config>-clang and the baseline
@@ -47,7 +48,8 @@
 .PARAMETER Dll, M64, Frame
     Inputs for the Tier B and C (libsm64) families. Default to res\sm64_jp_0.dll,
     res\comissonPyra2-Fanart_x-Z.m64 and frame 3330 when those files exist; those
-    benchmarks are skipped otherwise.
+    benchmarks are skipped otherwise. The thread-scaling family also needs the copies
+    sm64_jp_1.dll .. sm64_jp_16.dll next to the DLL and is skipped without them.
 
 .PARAMETER NoTierD
     Skip Tier D (scattershot end to end). Tier D runs bitfs-turn on perf\tierd-*.json,
@@ -181,6 +183,7 @@ $families = @(
     '^BM_Script',
     '^BM_LibSm64Full',
     '^BM_LibSm64Light',
+    '^BM_LibSm64Scaling',
     '^BM_Framework'
 )
 if ($Filter) { $families = @($Filter) }
@@ -222,7 +225,8 @@ foreach ($family in $runs) {
     $proc = [System.Diagnostics.Process]::Start($psi)
     try {
         $proc.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::High
-        if ($Affinity -ne 0) { $proc.ProcessorAffinity = [IntPtr]$Affinity }
+        # The thread-scaling family measures parallelism; pinned to one CPU it would measure nothing.
+        if ($Affinity -ne 0 -and $family -notmatch 'Scaling') { $proc.ProcessorAffinity = [IntPtr]$Affinity }
     } catch {
         Write-Host "note: could not set priority/affinity: $($_.Exception.Message)"
     }

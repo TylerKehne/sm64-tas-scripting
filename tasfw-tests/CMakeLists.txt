@@ -8,7 +8,10 @@ set(DOCTEST_WITH_TESTS OFF CACHE BOOL "" FORCE)
 set(DOCTEST_NO_INSTALL ON CACHE BOOL "" FORCE)
 FetchContent_Declare(doctest
 	DOWNLOAD_EXTRACT_TIMESTAMP ON
+	DOWNLOAD_DIR "${TASFW_DOWNLOAD_DIR}"
+	DOWNLOAD_NAME doctest-2.4.11.tar.gz
 	URL https://github.com/doctest/doctest/archive/refs/tags/v2.4.11.tar.gz
+	URL_HASH SHA256=632ed2c05a7f53fa961381497bf8069093f0d6628c5f26286161fbd32a560186
 )
 FetchContent_MakeAvailable(doctest)
 tasfw_system_includes(doctest)

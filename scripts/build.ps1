@@ -8,8 +8,8 @@
     and builds through the CMakePresets.json preset for the compiler and config
     (msvc-release, clang-cl-debug, ...), so this script, Visual Studio, VS Code and CI share
     one definition of every build directory and its flags. Builds into build\<Config>
-    (build\<Config>-clang for clang-cl). Reuses FetchContent sources from any other build
-    directory under build\ so the build works offline.
+    (build\<Config>-clang for clang-cl). CMake caches the hash-pinned dependency tarballs
+    in build\downloads (TASFW_DOWNLOAD_DIR), so once they are there the build is offline.
 
 .PARAMETER Config
     Debug (default), Release or RelWithDebInfo.
@@ -110,19 +110,7 @@ if ($Clean -and (Test-Path $binDir)) {
     Remove-Item -Recurse -Force $binDir
 }
 
-$configureArgs = @('--preset', $preset)
-
-# Reuse already-downloaded dependency sources (offline builds). Harmless if absent.
-# Any build dir under build\ that has already fetched a dependency is a valid source.
-foreach ($dep in @(@('json', 'JSON'), @('benchmark', 'BENCHMARK'), @('doctest', 'DOCTEST'))) {
-    $srcName = $dep[0] + '-src'
-    $candidates = @(Get-ChildItem -Path (Join-Path $root 'build') -Directory -Filter $srcName -Recurse -Depth 2 -ErrorAction SilentlyContinue)
-    if ($candidates.Count -gt 0) {
-        $configureArgs += ('-DFETCHCONTENT_SOURCE_DIR_' + $dep[1] + '=' + $candidates[0].FullName)
-    }
-}
-
-$configureArgs += $CMakeArgs
+$configureArgs = @('--preset', $preset) + $CMakeArgs
 
 # cmake reads CMakePresets.json from the working directory.
 Push-Location $root

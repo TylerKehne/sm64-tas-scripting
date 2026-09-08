@@ -12,7 +12,10 @@ set(BENCHMARK_ENABLE_WERROR OFF CACHE BOOL "" FORCE)
 
 FetchContent_Declare(benchmark
 	DOWNLOAD_EXTRACT_TIMESTAMP ON
+	DOWNLOAD_DIR "${TASFW_DOWNLOAD_DIR}"
+	DOWNLOAD_NAME benchmark-1.9.1.tar.gz
 	URL https://github.com/google/benchmark/archive/refs/tags/v1.9.1.tar.gz
+	URL_HASH SHA256=32131c08ee31eeff2c8968d7e874f3cb648034377dfc32a4c377fa8796d84981
 )
 FetchContent_MakeAvailable(benchmark)
 tasfw_system_includes(benchmark benchmark_main)

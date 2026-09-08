@@ -121,12 +121,12 @@ Gate: time within 10% of baseline; heap allocations per iteration within 0.1 of 
 
 ### Tier B: resource benchmarks (DLL required)
 
-Implemented in `tasfw-perf/src/bench_libsm64.cpp` as two families, `^BM_LibSm64Full` and
-`^BM_LibSm64Light`, one per save mode (a DLL path loads once per process, so `perf.ps1`
-runs each family in its own process). They run when `TASFW_LIBSM64`/`TASFW_M64` name a DLL
-and a movie (`perf.ps1` finds them in `res\` like `test.ps1` does) and are skipped
-otherwise, so the suite still runs in CI. Each family plays the movie to `TASFW_FRAME`
-(default 3330) once, then measures:
+Implemented in `tasfw-perf/src/bench_libsm64.cpp` as three families that `perf.ps1` runs
+in their own processes (a DLL path loads once per process): `^BM_LibSm64Full` and
+`^BM_LibSm64Light`, one per save mode, and `^BM_LibSm64Scaling`. They run when
+`TASFW_LIBSM64`/`TASFW_M64` name a DLL and a movie (`perf.ps1` finds them in `res\` like
+`test.ps1` does) and are skipped otherwise, so the suite still runs in CI. The save-mode
+families play the movie to `TASFW_FRAME` (default 3330) once, then measure:
 
 - `FrameAdvance`: one game frame with neutral inputs (fixed 3,000 iterations, then the
   anchor frame is reloaded).
@@ -134,13 +134,28 @@ otherwise, so the suite still runs in CI. Each family plays the movie to `TASFW_
 - `SaveFresh`: save into fresh storage, what a save costs before anything was released
   (fixed few iterations; each keeps its buffers until the end).
 - `Load`: load the anchor slot.
+- `ResidentPerSlot/N`: N fresh saves with the process working set sampled before and
+  after (100 slots, and 1,000 in lightweight mode; 1,000 full saves would pass 4 GB and
+  skip). `stateBytes` is one state as the resource accounts it, exact and gated:
+  1,500,000 bytes lightweight, 7,279,456 full on the pinned DLL. `rssPerSlot` is what the
+  process grew by per slot, slot-map nodes included: within 0.2% of `stateBytes` at both
+  counts, so a live slot costs its state and nothing else.
 
-Still to write: thread scaling (aggregate frames/s and saves/s at 1 to 16 threads, each with
-its own DLL copy, as efficiency relative to one thread) and resident set per resource at 100
-and 1,000 live slots.
+`^BM_LibSm64Scaling` runs `FrameAdvance` and `SaveErase` on 1, 2, 4, 8 and 16 threads,
+each thread on its own DLL copy with lightweight saves, as the search runs (thread i loads
+the copy whose trailing index is i + 1, `res\sm64_jp_1.dll` onward; the family skips
+without those copies). `perf.ps1` does not pin this family to one CPU. Google Benchmark
+reports these rows per thread, so the aggregate rate is n times the row's;
+`perf_compare.py` computes efficiency, the per-thread rate at n threads over the rate at
+one thread, from each run's own rows. First numbers (2026-09-08, 16 cores, 32 logical
+CPUs; MSVC and clang-cl within 3 points): frame advance 100 / 99 / 96 / 80% at 2 / 4 / 8 /
+16 threads, lightweight save and erase 98 / 99 / 93 / 65%. Frames scale until the 16
+threads start sharing physical cores; the 1.5 MB save is bandwidth-bound and drops sooner.
 
-Gate: counts exact; times within 10%; when scaling exists, efficiency at 8 threads must not
-fall below the baseline by more than 5 points.
+Gate: counts exact (`stateBytes` included); times within 10%; efficiency at 2, 4 and 8
+threads must not fall below the baseline by more than 5 points (`--efficiency-tolerance`).
+The 16-thread rows are reported, not gated: they share physical cores with each other and
+with whatever else runs, and moved 2 to 3 points between runs of the same binary.
 
 ### Tier C: framework benchmarks (DLL required, deterministic)
 
@@ -287,6 +302,16 @@ Noise control, learned the hard way while setting this up:
   processes, while the same rows on MSVC and every benchmark that touched the changed code
   stayed put. A shift on one compiler only, on a benchmark whose code did not change, is
   layout: confirm with a re-run, say so in the change log, and re-save the baseline.
+- The perf binary's own code moves its tight loops, and by more than 15%. Adding the Tier B
+  scaling and memory benchmarks moved `Resource_SaveLoadState` from 149 to 340 ns on MSVC
+  and `Scattershot_UpsertBlock_Improve` from 91 to 128 ns on clang-cl with the framework
+  unchanged; rebuilt without the new code, both read their baselines. To attribute a large
+  shift on a row whose code did not change, rebuild the perf binary without the addition
+  and measure the row; then re-save with the numbers in the change log.
+- The lightweight `SaveErase` and `Load` rows (a 1.5 MB copy that fits the 2 MB L2) have two
+  states, about 37 and about 42 us, on both compilers, hours apart, on unchanged code, while
+  the full-save rows and the frame advance stay put. A run in the other state on unchanged
+  code is re-saved with a note in the change log, not investigated again.
 
 If a result still looks like noise, rerun with `-Repetitions 9` and close other programs
 before believing it. Never run two benchmark processes at once, and never benchmark while a
@@ -366,6 +391,45 @@ What the Tier A and B numbers say together:
 ## Change log (measured)
 
 Every hot-path change records its delta table here, newest first.
+
+### 2026-09-08: Tier B thread scaling and memory per slot (ROADMAP 1.3); json 3.12
+
+No framework code changed. The new Tier B rows on both compilers (per-thread times;
+efficiency relative to one thread, from each run's own rows):
+
+| Row | 1 thread | 2 | 4 | 8 | 16 |
+|---|---|---|---|---|---|
+| `Scaling_FrameAdvance`, MSVC | 14.2 us | 99.7% | 98.6% | 96.1% | 80.3% |
+| `Scaling_FrameAdvance`, clang-cl | 14.4 us | 99.9% | 99.9% | 98.6% | 82.8% |
+| `Scaling_SaveErase` (lightweight), MSVC | 40.4 us | 97.9% | 98.6% | 92.9% | 65.0% |
+| `Scaling_SaveErase` (lightweight), clang-cl | 40.8 us | 102% | 102% | 94.5% | 66.7% |
+
+Efficiency moved up to 4 points between the family run and the full run that followed it
+on the same binary (8-thread saves 92.9 to 89.0 on MSVC), which is why the gate is 5 points
+and stops at 8 threads.
+
+| Row | Time | `stateBytes` | `rssPerSlot` |
+|---|---|---|---|
+| `Full_ResidentPerSlot/100` | 121 ms | 7,279,456 | 7,282,688 |
+| `Light_ResidentPerSlot/100` | 27.3 ms | 1,500,000 | 1,498,317 |
+| `Light_ResidentPerSlot/1000` | 279 ms | 1,500,000 | 1,502,552 |
+
+The full runs against the committed baselines: Tier C within 5% and Tier D within 2% on
+both compilers with identical counts (55 solutions, 109,958 blocks, 520,052 scripts, 0
+validation failures); no allocation, count or efficiency regression. Six Tier A and B time
+rows were over the gate on unchanged code and were re-saved, each after a re-run and, where
+the number was large, a perf binary built without the new benchmark code to attribute it:
+
+| Row | Baseline | Now | Cause |
+|---|---|---|---|
+| `LibSm64Light_SaveErase`, `_Load` (both compilers) | 37 us | 41 to 42 us | the 1.5 MB copy's second state, every run today but one (noise control) |
+| `Resource_SaveLoadState`, MSVC | 149 ns | 340 ns | the perf binary's own layout: 150 ns when built without the new benchmarks |
+| `Scattershot_UpsertBlock_Improve`, clang-cl | 91.5 ns | 128 ns | same: 93.7 ns without them |
+| `Script_GetInputs_Uncached_Depth/1`, `/4`, MSVC | 125 / 158 ns | 140 / 176 ns | layout from earlier today (138 / 172 ns without the new benchmarks too); the rows noise control already names |
+| `SlotManager_LoadSlot/100`, clang-cl | 110 ns | 89 ns | layout the other way (90.5 ns without them) |
+
+`M64_Load_10k` on MSVC, re-saved at 1.2 ms earlier in the day, read 1.1 ms again (-5.7%):
+the same layout sensitivity, inside the gate this time.
 
 ### 2026-09-08: `tasfw-scripts-scattershot-bitfs-dr` gets the shared optimization flags (ROADMAP 1.5)
 

@@ -78,10 +78,13 @@ correctness and in speed.
         gated at 0.1 (2026-09-07). Runs in CI since 2026-09-08: every Tier A family once
         per job with a short minimum time, to prove the binary executes; nothing is gated
         there.
-      - [ ] Tier B resource benchmarks. Done 2026-09-07: frame advance, save (recycled and
+      - [x] Tier B resource benchmarks. 2026-09-07: frame advance, save (recycled and
         fresh) and load, full and lightweight, in `bench_libsm64.cpp`; `perf.ps1` finds the
-        DLL like `test.ps1` and the family is skipped without it. Still to do: thread
-        scaling 1 to 16 and memory per slot.
+        DLL like `test.ps1` and the families are skipped without it. 2026-09-08: thread
+        scaling 1 to 16 (`^BM_LibSm64Scaling`, one DLL copy per thread, unpinned;
+        efficiency computed and gated by `perf_compare.py`) and resident set per live slot
+        at 100 and 1,000 slots (`ResidentPerSlot`, `stateBytes` exact). Numbers in
+        docs/performance.md.
       - [x] Tier C framework workloads with exact-count gates. Done 2026-09-08:
         `bench_framework.cpp` (`^BM_Framework`): the pyramid oscillation, 1,000 downhill-angle
         calls through `PyramidUpdate`, and a 500-frame `StateTracker_BitfsDr` sweep, with the
@@ -153,11 +156,13 @@ correctness and in speed.
       Fix them tree by tree, each PR with the perf delta table, since most are in hot code
       and a narrowing fix can change a type. *Done when:* `/W3` and `-Wall -Wextra` are on
       for every first-party target and the 1.5 option still passes on all four compilers.
-- [ ] **1.8 Bump nlohmann/json to 3.12.** 3.11.2's spaced `operator "" _json` is deprecated
-      by newer clang (masked today because dependency headers are system includes,
-      docs/compilers.md), and 3.12 declares a CMake minimum that lets the
-      `CMAKE_POLICY_VERSION_MINIMUM` workaround in the root `CMakeLists.txt` go. *Done when:*
-      the pipeline config tests pass on the new version and the workaround is removed.
+- [x] **1.8 Bump nlohmann/json to 3.12.** Done 2026-09-08: 3.12.0 writes `operator ""_json`,
+      which newer clang wanted. The `CMAKE_POLICY_VERSION_MINIMUM` workaround stays, for
+      doctest 2.4.11's `cmake_minimum_required(VERSION 3.0)`, not for json. On the way the
+      dependency handling became version-safe: every tarball is hash-pinned and cached by
+      CMake in `build/downloads` (`TASFW_DOWNLOAD_DIR`), replacing `build.ps1`'s reuse of any
+      `<name>-src` directory under `build/`, which would have kept 3.11.2 on this machine
+      after the bump.
 
 ## Phase 2: loosen the grip of the pinned DLL
 
