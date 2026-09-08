@@ -249,7 +249,8 @@ bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::Validate
 {
     TState currentStateBin = GetStateBinSafe();
     if (BaseBlockStateBin != currentStateBin) {
-        this->ExportM64("C:\\repos\\sm64-tas-scripting\\analysis\\error.m64", this->GetTotalDiff().frames.rbegin()->first + 1);
+        // Dumped next to the CSVs for post-mortem; the path comes from the configuration (AGENTS.md hard rule 5).
+        this->ExportM64(std::filesystem::path(scattershot.config.CsvOutputDirectory) / "error.m64", this->GetTotalDiff().frames.rbegin()->first + 1);
         std::cout << Id << " " << shot << "\n";
         //BaseBlockStateBin.print();
         //currentStateBin.print();
@@ -487,9 +488,6 @@ AdhocBaseScriptStatus ScattershotThread<TState, TResource, TStateTracker, TOutpu
                 // Create and add block to list if it is new.
                 bool novelScript = false;
                 auto newStateBin = validated ? GetStateBinSafe() : TState();
-                //auto hash = scattershot.GetHash(newStateBin, false);
-                //if (hash == 12263244266731199609)
-                    //this->ExportM64("C:\\repos\\sm64-tas-scripting\\res\\error.m64", this->GetTotalDiff().frames.rbegin()->first + 1);
                 float fitness = validated ? GetStateFitnessSafe() : 0.f;
                 bool isSolution = validated ? ExecuteAdhoc([&]() { return IsSolution(); }).executed : false;
                 ScattershotSolution<TOutputState> solution = isSolution ? ScattershotSolution<TOutputState>(GetSolutionState(), this->GetTotalDiff())

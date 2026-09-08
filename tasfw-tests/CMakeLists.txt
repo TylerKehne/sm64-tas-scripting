@@ -21,8 +21,9 @@ add_executable(tasfw-tests
 	"src/test_levelstack.cpp"
 	"src/test_script.cpp"
 	"src/test_libsm64.cpp"
+	"src/test_pipeline.cpp"
 )
-target_link_libraries(tasfw-tests PRIVATE tasfw::core tasfw::resources tasfw::scattershot tasfw::testing doctest::doctest)
+target_link_libraries(tasfw-tests PRIVATE tasfw::core tasfw::resources tasfw::scattershot tasfw::testing tasfw::bitfs_pipeline doctest::doctest)
 target_compile_features(tasfw-tests PRIVATE cxx_std_20)
 set_target_properties(tasfw-tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/out")
 add_optimization_flags(tasfw-tests)

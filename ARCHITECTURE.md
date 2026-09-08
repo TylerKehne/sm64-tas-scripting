@@ -6,7 +6,7 @@ the code as of 2026-09-07; where behavior is inferred rather than documented it 
 ## Layers
 
 ```
-bitfs-turnaround/main.cpp        pipeline of scattershot stages + m64 export
+bitfs-turnaround/                config-selected pipeline stages (Stages.cpp) + m64 export
         |
 tasfw-scripts                    BitFS scripts, state trackers, scattershot stages
         |
@@ -41,7 +41,7 @@ below `tasfw-scripts` in CMake even though it is drawn below core here; the head
 - Full save copies both sections (about 2.4 MB + 4.9 MB).
 - **Lightweight mode** copies five hardcoded 100 KB-granular slices (about 1.5 MB). The
   offsets were found empirically for the pinned DLL build and are not derived from symbols.
-  `config.lightweight = true` is what `main.cpp` uses.
+  The pipeline config's `resources.lightweight` (default true) selects it.
 - `advance` calls `sm64_update`. Inputs are written straight into `gControllerPads` by
   `Script::SetInputs` before each advance.
 - The Linux branch instead marks the sections read-only and records dirty pages in a
@@ -193,19 +193,35 @@ have its own `LibSm64` (own DLL file) supplied by `ImportResourcePerThread`. Sha
 guarded by named `omp critical` sections listed in `CriticalRegions`. The end-of-run
 statistics print load/save/advance/overhead percentages; "overhead" is mostly block decoding.
 
-## The BitFS pipeline (`main.cpp`, as currently enabled)
+## The BitFS pipeline (`config.json`)
 
-1. Construct 24 lightweight `LibSm64` resources from `res/sm64_jp_0..23.dll`.
-2. **BitfsOscFinal** from frame 3604 of `test3.m64`, exported to `res/bitfs_nut_*.m64`.
-3. **TiltTargetShot**, three passes: hit the target normal in X, then in Z with the X ARE
-   fixed, then constrain to a normal box. Sorted by ARE and exported.
-4. **Scattershot_BitfsDr** once per target oscillation, piping solutions forward, filtering
-   by rough target angle and increment-frame parity, keeping the fastest few between stages.
-5. **BitfsOscFinal** again from the equilibrium frame, piped from step 4, exported.
+`bitfs-turn` reads a pipeline config (README.md, "Configuration"), constructs one lightweight
+`LibSm64` per thread, and runs the configured stages in order, or one of them. A stage is a
+named instance of a stage type from `Stages.cpp`, with its own scattershot overrides and
+typed arguments; its result is a `SolutionSet` (input diffs plus named metrics per
+solution) that is written to `<outputDirectory>/solutions/<stage>.json`, handed to the next
+stage in memory, or read back from that file when a stage runs alone. An argument written as
+`"input:<metric>"` takes the value from the first input solution, which is how the equilibrium
+frame found by the tilt search reaches the oscillation stages. Solutions cross a stage
+boundary as diffs only; the new stage's solution data starts out default.
 
-`Scattershot_BitfsDrApproach` and `Scattershot_BitfsDrRecover` (dive recover, C-up trick)
-are present but commented out. `ExportSolutions` replays each solution diff on the first
-resource and writes an m64 named after the pyramid normal and Mario's speed.
+Stage types, in the order the committed config uses them:
+
+1. **osc-final** (`BitfsOscFinal`) from frame 3604 of `test3.m64`: an experiment in progress.
+2. **tilt-target** (`TiltTargetShot`), three stages: hit the target normal in X, then in Z with
+   the X ARE fixed to what the first found, then constrain to a normal box. The last keeps the
+   best by ARE and exports.
+3. **dr-oscillations** (`Scattershot_BitfsDr`) once per target oscillation from the
+   equilibrium frame, piping solutions forward, committing to the direction the first
+   oscillation took, keeping the fastest few between oscillations, and requiring
+   increment-frame parity at the end.
+4. **osc-final** again from the equilibrium frame, piped from the oscillation solutions.
+
+`export` is a stage type that passes its input through, and `"export": true` on any stage
+replays each solution on the first resource (`ExportSolutions`) and writes one movie per
+solution under `<outputDirectory>/m64/<stage>/`, named by index, pyramid normal and Mario's
+speed. `Scattershot_BitfsDrApproach` and `Scattershot_BitfsDrRecover` (dive recover, C-up
+trick) are not stage types yet (ROADMAP 4.1).
 
 ## Coupling to the game binary
 

@@ -18,7 +18,9 @@ an AI agent. Check boxes as work lands and keep "Done when" honest.
   `.claude/settings.json` enforces this (see AGENTS.md, "Documentation must match the
   repository").
 
-## Phase 0: where things stand
+## Phase 0: where things stood when this roadmap was written
+
+The starting point, kept as written so the items below read against it.
 
 - Builds clean from a fresh configure with VS 2022 (0 errors, 29 warnings).
 - No tests of any kind, correctness or performance. The only executable runs the whole BitFS
@@ -79,11 +81,16 @@ correctness and in speed.
         the delta table for PRs, and the regression policy from the spec.
       *Done when:* a deliberate extra frame advance in `LoadBase` fails Tier C, a deliberate
       10% slowdown in `GetHash` fails Tier A, and a PR template asks for the delta table.
-- [ ] **1.4 Split `main.cpp`.** Turn each experiment into a named stage selected from a JSON
-      pipeline config (start frame, m64, thread count, DLL directory, stage parameters). Replace
-      every `C:\repos` literal, including the `error.m64` dump in `ScattershotThread.t.hpp`, with
-      config-derived paths. *Done when:* `bitfs-turn.exe --config x.json` runs one stage and the
-      source contains no absolute paths.
+- [x] **1.4 Split `main.cpp`.** Done 2026-09-07: `bitfs-turn` runs named stages from a JSON
+      pipeline config (`PipelineConfig`: DLL directory and pattern, threads, movie, output
+      directory, scattershot defaults, per-stage overrides, typed `args`, `select`, `export`),
+      all of them or `--stage <name>`; stage results persist as `solutions/<stage>.json` and
+      feed the next stage in memory or from that file; `--list` and `--dry-run` need no
+      search. The `error.m64` dump goes through `Configuration::CsvOutputDirectory`. No
+      absolute path remains in source; range-v3 is gone. `tasfw-tests` covers the config
+      schema, solution files and argument helpers (`tasfw::bitfs_pipeline`). The
+      single-threaded pyramid-oscillation experiment in the old `main.cpp` was not ported: it
+      cannot link (4.1).
 - [ ] **1.5 Warnings and the bugs behind them.** Done 2026-09-07: C4715/-Wreturn-type in the
       `TurnAround` lambda, the `printf("%d", uint64_t)` calls, the root `Segment` argument order
       (RngHash was being truncated into `nScripts`), `Rotation::Negate`, the two empty-body
@@ -92,8 +99,8 @@ correctness and in speed.
       `override`s, unhandled `switch` cases, `main` returning `false`, a bool/s32 compare in
       `PyramidUpdate`, int16-to-int8 narrowing in `Inputs.cpp`. Remaining: three MSVC C4244
       `_Ty`-to-`float` warnings from `std::vector<float>` initializer lists in
-      `TiltTargetShot.hpp`, range-v3's deprecated `compressed_tuple`, and Google Benchmark's
-      `/MP` under clang-cl. `TASFW_WARNINGS_AS_ERRORS` exists (off by default). *Done when:*
+      `TiltTargetShot.hpp` and Google Benchmark's `/MP` under clang-cl (range-v3's deprecated
+      `compressed_tuple` went with range-v3 in 1.4). `TASFW_WARNINGS_AS_ERRORS` exists (off by default). *Done when:*
       both builds are warning-free and the option is on in CI.
 - [ ] **1.6 Build hygiene and compiler matrix.** Delete the stale `build/` artifacts, add
       presets for MSVC and clang-cl matching `scripts/build.ps1`, and run a GitHub Actions
@@ -185,15 +192,32 @@ Goal: the core's implicit invariants become explicit and enforced.
 Goal: finish the thing the framework was built for.
 
 - [ ] **4.1 Re-enable the disabled stages.** `Scattershot_BitfsDrApproach` and
-      `Scattershot_BitfsDrRecover` (`ATTEMPT_DR`, `C_UP_TRICK` phases) are commented out in
-      `main.cpp`. Bring them back as pipeline stages with their own configs.
-- [ ] **4.2 Persist search state.** Serialize blocks/segments/solutions so a multi-hour run can be
-      resumed and so stages can be re-run from saved solutions without recomputation.
+      `Scattershot_BitfsDrRecover` (`ATTEMPT_DR`, `C_UP_TRICK` phases) were commented out in
+      the old `main.cpp`; add them as stage types in `Stages.cpp` with their own `args`. First
+      restore what they link against: the downhill-angle scripts call
+      `simulate_platform_tilt` (`sm64/Pyramid.hpp`), whose definition left with the
+      `tasfw-decomp` sources in the big refactor. `Math.cpp` survived in `tasfw-core/src/decomp`;
+      `Pyramid.cpp` and `Surface.cpp` (`get_surfaces`, `transform_surfaces`, `find_floor`,
+      `floor_is_slope`) are in git at `69792ad:src/lib/tasfw-decomp/src/`. Restore them there
+      (or reimplement on `PyramidUpdate`, which has the same logic on its own surface type),
+      then also bring back the single-threaded `BitFsPyramidOscillation` + `BitFsScApproach`
+      experiment as a stage. *Done when:* all three link and run from `config.json`.
+- [ ] **4.2 Persist search state.** Serialize blocks/segments so a multi-hour run can be
+      resumed. Solutions already persist per stage (1.4); blocks and segments do not.
 - [ ] **4.3 Faster block decoding.** Each shot replays the whole segment chain from the root.
       Cache savestates per block (bounded by the memory budget) and measure the gain with the
       Tier D throughput run; the deterministic run must produce identical counts.
 - [ ] **4.4 Analysis.** Keep the R plotting script working from the new CSV paths, or port it to
       Python so it can run in CI. Record which columns each stage emits.
+
+- [ ] **4.5 Base-block validation failures.** `ScattershotThread::ValidateBaseBlock` found a
+      state-bin mismatch and dumped `error.m64` during a 4-thread, 55-shot, deterministic
+      `tilt-target` smoke run (2026-09-07). The dump used to land silently in `analysis/`, so
+      nobody knows how often this happens or what it costs. Count it in the end-of-run
+      summary, reproduce with a single thread, and find out whether it is a determinism bug
+      (hard rule 3) or an expected consequence of blocks being decoded from segment chains.
+      *Done when:* the cause is documented and a Tier D run reports zero unexplained
+      validation failures.
 
 ## Phase 5: toward a game-agnostic framework
 

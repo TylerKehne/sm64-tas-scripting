@@ -57,13 +57,13 @@ its place with numbers, and "it is cleaner" is not a number.
 | `tasfw-resources/` | `LibSm64` (drives the game DLL) and `PyramidUpdate` (standalone reimplementation of pyramid tilt physics used as a fast stand-in). |
 | `tasfw-scattershot/` | Header-only OpenMP brute-force search (blocks, segments, solutions, CSV export). |
 | `tasfw-scripts/` | Reusable BitFS scripts (pyramid oscillation, downhill angle search, dive-recover attempts) and scattershot stages. |
-| `tasfw-bruteforcers/bitfs-turnaround/` | The only executable (`bitfs-turn.exe`). `main.cpp` chains the BitFS pipeline stages. |
+| `tasfw-bruteforcers/bitfs-turnaround/` | The only executable (`bitfs-turn.exe`): the BitFS pipeline as config-selected stages (`config.json`, `Stages.cpp`, `PipelineConfig`). `--list`, `--dry-run`, `--stage`. |
 | `tasfw-perf/` | Performance suite (Tier A microbenchmarks on an in-memory fake resource). Release only. |
 | `tasfw-tools/` | `dllcheck`: DLL layout self-check plus frame-advance and savestate cost measurement. |
 | `tasfw-tests/` | Correctness tests (doctest). DLL-free tests always run; the libsm64 smoke test runs when `res\` has the DLL and movie. |
 | `tasfw-testing/` | Header-only test support shared by tests and benchmarks (`FakeResource`). |
 | `perf/` | Committed benchmark baselines per machine; `perf/results/` is gitignored. |
-| `analysis/` | R script that plots scattershot CSV output. CSVs are gitignored. |
+| `analysis/` | R script that plots scattershot CSV output; also the pipeline's default output directory (CSVs, `solutions/*.json`, `m64/`), all gitignored. |
 | `res/` | Gitignored runtime inputs: 24 copies of the libsm64 DLL, source .m64 files, and thousands of exported solution .m64 files. |
 | `scripts/` | `build.ps1`, the supported build entry point on Windows. |
 | `docs/` | Provenance of the DLL and other reference notes. |
@@ -75,13 +75,15 @@ its place with numbers, and "it is cleaner" is not a number.
 - Build: `powershell -ExecutionPolicy Bypass -File scripts\build.ps1` (add `-Config Release`,
   `-Clean`, `-Compiler clang`, `-KeepGoing`). It finds Visual Studio via vswhere, so cmake
   and ninja do not need to be on PATH. clang-cl comes from the VS "C++ Clang tools" component.
-- Output: `build\<Config>\out\bitfs-turn.exe` with `config.json` copied next to it.
-- Dependencies (nlohmann/json, range-v3) are fetched by CMake. OpenMP is required.
+- Output: `build\<Config>\out\bitfs-turn.exe` with `config.json` written next to it (the
+  committed one plus a `baseDirectory`, so its relative paths resolve into the source tree).
+- The one dependency (nlohmann/json) is fetched by CMake. OpenMP is required.
 - Runtime inputs are not in git. You need `res\sm64_jp_0.dll` .. `res\sm64_jp_23.dll` and the
-  .m64 files named in `main.cpp` and `config.json`. See [docs/libsm64.md](docs/libsm64.md).
-- **Do not run `bitfs-turn.exe` as a smoke test.** It launches the full 16-thread pipeline,
-  runs for hours, and writes thousands of .m64 files into `res/` and CSVs into `analysis/`.
-  A real smoke test is ROADMAP item 1.2; the performance suite is 1.3.
+  .m64 files named in `config.json`. See [docs/libsm64.md](docs/libsm64.md).
+- `bitfs-turn.exe --list` and `--dry-run` are safe: no search runs. **Running it without
+  arguments runs every configured stage**: 16 threads, hours, thousands of .m64 files under
+  `analysis/m64/`. `--stage <name>` runs one stage from the previous stage's saved solutions
+  (README.md, "Running the pipeline").
 - Tests: `powershell -ExecutionPolicy Bypass -File scripts\test.ps1` (add `-Config Release`,
   `-Compiler clang`, `-Filter '*Script*'`). Under a second without the DLL, a few seconds with it.
 - The DLL-level check is `build\Release\out\dllcheck.exe <dll> <m64> <frame> [--lightweight]`
@@ -106,8 +108,8 @@ its place with numbers, and "it is cleaner" is not a number.
 4. **Respect the script lifecycle.** `validation()` and `assertion()` run in a reverted
    sandbox and must not rely on side effects; `execution()` is the only phase whose input
    diff can persist. Results leave a script through `CustomStatus`, not member side effects.
-5. **No new absolute paths in source.** Route paths through `config.json` or `Configuration`.
-   The existing ones in `main.cpp` and `ScattershotThread.t.hpp` are on the roadmap to remove.
+5. **No absolute paths in source.** Route paths through `config.json` (`PipelineConfig`) or
+   `Configuration`. There are none left; keep it that way.
 6. **Do not commit** anything under `res/`, `build/`, `out/`, or `analysis/*.csv`.
 7. Do not "simplify" the lightweight save offsets in `LibSm64.cpp` without measuring; they are
    tuned to the pinned DLL build and are the main reason the search is fast.
@@ -186,8 +188,11 @@ Agents without hooks follow the same procedure by hand at the end of every chang
 
 ## Known problems you will run into
 
-- `main.cpp` is an experiment log, not a program. Stages are enabled by commenting code in
-  and out. Do not try to "fix" it piecemeal; see ROADMAP 1.4.
+- The downhill-angle scripts (`GetMinimumDownhillWalkingAngle` and everything that calls it:
+  `BitFsPyramidOscillation`, `BitFsScApproach`, the Approach/Recover scattershot stages) call
+  `simulate_platform_tilt`, whose definition left with the `tasfw-decomp` sources. They
+  compile, and link only while nothing references them (LTO drops the chain); referencing
+  one fails at link time. ROADMAP 4.1 says where to restore it from.
 - Warning C4715 in the `TurnAround` lambda of `Scattershot_BitfsDr.cpp` is a real bug (not
   all paths return a value).
 - `build/` may contain a stale mix of Visual Studio and Ninja Multi-Config artifacts from

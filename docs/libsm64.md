@@ -32,8 +32,8 @@ wafel repo produces it. `C:\repos\wafel` has an unlocked `libsm64/sm64_jp.dll` a
 | File | Notes |
 |---|---|
 | `sm64_jp_0.dll` .. `sm64_jp_23.dll` | 24 byte-identical copies of one build dated 2022-03-12, 32,958,049 bytes. |
-| `comissonPyra2-Fanart_x-Z.m64`, `comissonPyra2-Fanart_XZ.m64`, `test3.m64` | Source movies referenced by `config.json` and `main.cpp`. JP ROM. |
-| `bitfs_nut_*.m64` (thousands) | Exported solutions from past runs. Safe to delete. |
+| `comissonPyra2-Fanart_x-Z.m64`, `comissonPyra2-Fanart_XZ.m64`, `test3.m64` | Source movies referenced by `config.json`. JP ROM. |
+| `bitfs_nut_*.m64` (thousands) | Exported solutions from past runs (new runs export under `analysis/m64/<stage>/`). Safe to delete. |
 
 `C:\repos\wafel\libsm64\sm64_jp.dll` is a **different** build (2023-09-07, 31,872,634 bytes)
 with slightly different section sizes. `dllcheck` (below) reports that it passes every layout

@@ -1,4 +1,102 @@
 {
-	"libsm64": "/path/to/libsm64.so",
-	"m64_file": "/path/to/m64_file.m64"
+	"_comment": "The BitFS squish-cancel pipeline as it was last run from main.cpp. Paths are relative to this file; the build writes a copy next to bitfs-turn.exe with baseDirectory pointing here. README.md documents the schema, `bitfs-turn --list` the stage types.",
+	"resources": {
+		"dllDirectory": "../../res",
+		"dllPattern": "sm64_jp_{}.dll",
+		"threads": 16,
+		"lightweight": true
+	},
+	"m64": "../../res/comissonPyra2-Fanart_x-Z.m64",
+	"outputDirectory": "../../analysis",
+	"scattershot": {
+		"pelletMaxScripts": 20,
+		"pelletMaxFrameDistance": 50,
+		"maxBlocks": 1000000,
+		"pelletsPerShot": 200,
+		"shotsPerUpdate": 10,
+		"startFromRootEveryNShots": 100,
+		"maxConsecutiveFailedPellets": 10,
+		"csvSamplePeriod": 0,
+		"fitnessTieGoesToNewBlock": false,
+		"deterministic": false,
+		"seed": 6
+	},
+	"stages": [
+		{
+			"_comment": "Experiment in progress: the final oscillation straight from frame 3604 of test3.m64.",
+			"name": "osc-final-test3",
+			"type": "osc-final",
+			"startFrame": 3604,
+			"m64": "../../res/test3.m64",
+			"scattershot": { "csvSamplePeriod": 10, "shotsPerUpdate": 300, "maxShots": 1000000, "maxSolutions": 1000 },
+			"args": { "initialFrame": 3604, "oscQuadrant": 4, "targetQuadrant": 1, "targetNx": -0.17944, "targetNz": 0.3936 },
+			"export": true
+		},
+		{
+			"_comment": "Hit the target normal in X.",
+			"name": "tilt-x",
+			"type": "tilt-target",
+			"startFrame": 3330,
+			"scattershot": { "maxShots": 30000, "maxSolutions": 1, "deterministic": true, "seed": 111 },
+			"args": { "targetNx": -0.17944, "targetNz": 0.3936, "neighborhood": 100, "errorType": "adjusted", "targetDimension": "x" }
+		},
+		{
+			"_comment": "Then in Z, with the X adjusted remainder error fixed to what tilt-x found.",
+			"name": "tilt-z",
+			"type": "tilt-target",
+			"startFrame": 3330,
+			"input": "tilt-x",
+			"scattershot": { "maxShots": 1000000, "maxSolutions": 1, "shotsPerUpdate": 300, "seed": 10 },
+			"args": {
+				"targetNx": -0.17944, "targetNz": 0.3936, "neighborhood": 100, "targetDimension": "z",
+				"fixNonTargetDimensionARE": true, "targetARE": "input:adjustedRemainderError0"
+			}
+		},
+		{
+			"_comment": "Then constrain the normal to a box, keeping both AREs fixed. Best by ARE, one solution forward.",
+			"name": "tilt-range",
+			"type": "tilt-target",
+			"startFrame": 3330,
+			"input": "tilt-z",
+			"scattershot": { "maxShots": 1000000, "maxSolutions": 1, "shotsPerUpdate": 300, "seed": 10 },
+			"args": {
+				"targetNx": -0.17944, "targetNz": 0.3936, "neighborhood": 100, "targetDimension": "z",
+				"fixNonTargetDimensionARE": true, "fixTargetDimensionARE": true, "targetARE": "input:adjustedRemainderError0",
+				"minNx": -0.2, "maxNx": -0.1, "minNz": -0.2, "maxNz": 0.1
+			},
+			"select": { "sortBy": ["adjustedRemainderError0", "adjustedRemainderError2"], "take": 1 },
+			"export": true
+		},
+		{
+			"_comment": "Build up oscillations one at a time from the equilibrium frame tilt-range found.",
+			"name": "dr",
+			"type": "dr-oscillations",
+			"startFrame": 3330,
+			"input": "tilt-range",
+			"scattershot": { "maxSolutions": 1000, "csvSamplePeriod": 0, "fitnessTieGoesToNewBlock": false, "deterministic": false },
+			"args": {
+				"equilibriumFrame": "input:equilibriumFrame",
+				"quadrant": 4, "minOscillationFrames": 15,
+				"targetNx": -0.17944, "targetNz": 0.3936,
+				"maxOscillations": 5, "firstShots": 50000, "shots": 30000, "lastShots": 30000, "lastMaxSolutions": 1000000,
+				"keepTop": 10, "requireIncrementParity": true,
+				"normalSpecs": {
+					"onlyMinMajor": true, "minXzSum": 0.69,
+					"minMajor": 0.3, "maxMajor": 0.601, "regionsMajor": 10000,
+					"minMinor": 0.19, "maxMinor": 0.2, "regionsMinor": 10000
+				}
+			},
+			"export": true
+		},
+		{
+			"_comment": "The final oscillation into the target quadrant, from the oscillation solutions.",
+			"name": "osc-final",
+			"type": "osc-final",
+			"startFrame": 3330,
+			"input": "dr",
+			"scattershot": { "csvSamplePeriod": 10, "maxShots": 50000, "maxSolutions": 1000 },
+			"args": { "initialFrame": "input:equilibriumFrame", "oscQuadrant": 4, "targetQuadrant": 1, "targetNx": -0.17944, "targetNz": 0.3936 },
+			"export": true
+		}
+	]
 }

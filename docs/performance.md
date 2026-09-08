@@ -148,7 +148,7 @@ above baseline.
 - Throughput run: `Deterministic = false`, fixed `MaxShots`, 16 threads. Shots/s, scripts/s,
   novel blocks/s, decode overhead %, and peak resident set. Wall within 10%.
 
-Both runs use a dedicated small configuration, never the pipeline in `main.cpp`.
+Both runs use a dedicated small pipeline config, never the full one in `config.json`.
 
 ### Reporting and gating
 
