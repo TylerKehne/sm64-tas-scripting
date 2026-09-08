@@ -39,7 +39,8 @@ Tests: `powershell -ExecutionPolicy Bypass -File scripts\test.ps1`. Benchmarks:
 `scripts\perf.ps1`. Both accept `-Compiler clang` for the clang-cl build.
 
 **Linux** (builds and passes the DLL-free tests in CI with GCC 13 and Clang 17; the game
-DLL path has not been run there; there is no macOS preset)
+path passes the smoke test against a Linux libsm64 `.so` on Ubuntu 26.04, which the `.so`
+needs for its glibc, see [docs/libsm64.md](docs/libsm64.md); there is no macOS preset)
 
 ```bash
 cmake --preset gcc-release          # or clang-release; build/Release-gcc, build/Release-clang
@@ -50,7 +51,9 @@ ctest --preset gcc-release
 # Runtime inputs
 The executable needs files that are not in git (see [docs/libsm64.md](docs/libsm64.md)):
 
-- `res/sm64_jp_0.dll` through `res/sm64_jp_23.dll`, one copy of the libsm64 DLL per thread.
+- `res/sm64_jp_0.dll` through `res/sm64_jp_23.dll`, one copy of the libsm64 DLL per thread
+  (on Linux `.so` copies and `"dllPattern": "sm64_jp_{}.so"`). Unlock them from a ROM as
+  docs/libsm64.md describes; never commit a ROM or an unlocked binary.
 - The source `.m64` movies referenced by `config.json`.
 
 # Running the pipeline

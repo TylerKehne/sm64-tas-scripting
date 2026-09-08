@@ -267,7 +267,8 @@ int main(int argc, char** argv)
 		std::printf("  frame advance: %.1f us (%llu frames in %.0f ms, includes input write)\n",
 			results.framesAdvanced ? results.playMicros / double(results.framesAdvanced) : 0.0,
 			(unsigned long long)results.framesAdvanced, results.playMicros / 1000.0);
-		std::printf("  save state:    %.1f us (%s)\n", results.saveMicros, lightweight ? "lightweight" : "full .data+.bss");
+		std::printf("  save state:    %.1f us (%s)\n", results.saveMicros,
+			!LibSm64LightweightSupported ? "dirty pages; lightweight is Windows-only" : lightweight ? "lightweight" : "full .data+.bss");
 		std::printf("  load state:    %.1f us\n", results.loadMicros);
 		std::printf("  addr() lookup: %.0f ns (GetProcAddress; never call per frame)\n", results.addrNanos);
 

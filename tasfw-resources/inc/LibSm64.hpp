@@ -16,10 +16,36 @@ class LibSm64Config
 public:
 	std::filesystem::path dllPath;
 	CountryCode countryCode;
-	bool lightweight; // true = faster, but accuracy not guaranteed in all situations
+	bool lightweight; // true = faster, but accuracy not guaranteed in all situations.
+	                  // Windows only; see LibSm64LightweightSupported.
 };
 
 constexpr int pagesize = 4096;
+
+// Lightweight saves exist only on Windows. The Linux LibSm64 write-protects .data/.bss and
+// saves the pages the game dirtied instead (LibSm64.cpp), so LibSm64Config::lightweight is
+// ignored there and the slice coverage checks in layoutCheckReport do not apply.
+#if defined(_WIN32)
+inline constexpr bool LibSm64LightweightSupported = true;
+#else
+inline constexpr bool LibSm64LightweightSupported = false;
+#endif
+
+// Exported names the decomp has changed since the pinned 2022 build (docs/libsm64.md).
+// LibSm64::addr tries the name it was given first, so the pinned DLL never pays for this
+// table; only when that lookup fails does it try the other spelling. A newer build therefore
+// costs one extra failed lookup per addr() call, which callers must not make per frame
+// anyway (Resource::addr).
+struct LibSm64SymbolAlias
+{
+	const char* pinned;  // exported by the pinned 2022 build
+	const char* current; // exported by builds from the current decomp (wafel 2023, bitfs-sbb 2026)
+};
+
+inline constexpr LibSm64SymbolAlias LibSm64SymbolAliases[] = {
+	{"bhvBitfsTiltingInvertedPyramid", "bhvBitFSTiltingInvertedPyramid"},
+	{"bhvLllTiltingInvertedPyramid", "bhvLLLTiltingInvertedPyramid"},
+};
 
 // Lightweight save mode copies only these byte ranges of the DLL's .data (segment 0) and
 // .bss (segment 1) instead of the whole sections. They were chosen empirically for the

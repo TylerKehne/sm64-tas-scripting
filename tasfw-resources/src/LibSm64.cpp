@@ -1,5 +1,6 @@
 #include "LibSm64.hpp"
 #include <cstdio>
+#include <cstring>
 #include <stdexcept>
 #include <string>
 #include <sm64/Camera.hpp>
@@ -167,7 +168,24 @@ void LibSm64::setInputs(const Inputs& inputs)
 
 void* LibSm64::addr(const char* symbol) const
 {
-	return dll.get(symbol);
+	if (void* p = dll.tryGet(symbol))
+		return p;
+
+	// Not exported under that name. If it is one the decomp has renamed, try the other
+	// spelling so scripts written against the pinned DLL run on newer builds and vice versa.
+	for (const LibSm64SymbolAlias& alias : LibSm64SymbolAliases)
+	{
+		const char* other = std::strcmp(symbol, alias.pinned) == 0 ? alias.current
+			: std::strcmp(symbol, alias.current) == 0 ? alias.pinned
+			: nullptr;
+		if (other == nullptr)
+			continue;
+		if (void* p = dll.tryGet(other))
+			return p;
+		throw std::runtime_error(std::string("libsm64 exports neither ") + symbol + " nor " + other);
+	}
+
+	return dll.get(symbol); // throws with the loader's message
 }
 
 std::size_t LibSm64::getStateSize(const LibSm64Mem& state) const
@@ -304,8 +322,11 @@ std::vector<std::string> LibSm64::layoutCheckReport() const
 	// --- Lightweight save coverage --------------------------------------------------------
 	// Lightweight mode only saves fixed slices of .data/.bss. Every piece of state the search
 	// depends on must lie inside a slice, or savestates silently stop restoring it. This is
-	// the check that a different DLL build is expected to fail.
-	if (config.lightweight)
+	// the check that a different DLL build is expected to fail. On platforms without
+	// lightweight saves the slices are never used, so their coverage is not checked.
+	if (config.lightweight && !LibSm64LightweightSupported)
+		lines.push_back("note: lightweight saves are Windows-only; this platform saves dirty pages, slice coverage not checked");
+	if (config.lightweight && LibSm64LightweightSupported)
 	{
 		auto covered = [&](const void* p, size_t size) -> bool
 		{

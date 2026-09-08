@@ -287,10 +287,13 @@ Everything below assumes the pinned DLL in `res/` (see `docs/libsm64.md`):
 
 - Struct layouts in `tasfw-core/inc/sm64/Types.hpp`, `ObjectFields.hpp`, `Camera.hpp`,
   `Surface.hpp`; constants in `Sm64.hpp`, `SurfaceTerrains.hpp`; trig tables in `Trig.hpp`.
-- Symbols resolved by name through `GetProcAddress`: `gMarioState`, `gMarioStates`,
-  `gMarioObject`, `gObjectPool`, `gCamera`, `gControllerPads`, `gGlobalTimer`,
-  `gCurrCourseNum`, `gCurrAreaIndex`, `bhvLllTiltingInvertedPyramid`,
-  `bhvBitfsTiltingInvertedPyramid`, `sm64_init`, `sm64_update`.
+- Symbols resolved by name through `GetProcAddress` (`dlsym` on Linux): `gMarioState`,
+  `gMarioStates`, `gMarioObject`, `gObjectPool`, `gCamera`, `gControllerPads`,
+  `gGlobalTimer`, `gCurrCourseNum`, `gCurrAreaIndex`, `bhvLllTiltingInvertedPyramid`,
+  `bhvBitfsTiltingInvertedPyramid`, `sm64_init`, `sm64_update`. The two behavior names are
+  the pinned build's; later builds export `bhvBitFSTiltingInvertedPyramid` and
+  `bhvLLLTiltingInvertedPyramid`, and `LibSm64::addr` falls back from one spelling to the
+  other through `LibSm64SymbolAliases` (docs/libsm64.md, "Renamed symbols").
 - The pyramid is `gObjectPool[84]` in the BitFS area of the source m64.
 - `tasfw-core/src/decomp/` reimplements `mtxf_align_terrain_normal`, object surface loading,
   `find_floor`, `floor_is_slope` and `simulate_platform_tilt` on the copied structs.

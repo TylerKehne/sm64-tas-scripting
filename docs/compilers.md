@@ -13,8 +13,10 @@ that gives real confidence in C++20 code like this.
 |---|---|---|
 | MSVC 19.44 (VS 2022), Ninja | primary; warning-free at `/W3` | `scripts\build.ps1` (preset `msvc-<config>`) |
 | clang-cl 19.1 (VS "C++ Clang tools for Windows"), Ninja | warning-free at `/W4` locally and in CI (windows-clang-cl job) | `scripts\build.ps1 -Compiler clang` (preset `clang-cl-<config>`) |
-| GCC 13 on Linux, Ninja | warning-free at `-Wall -Wextra` in CI (ubuntu-gcc job) and in the container below; `LibSm64`'s `mprotect` save path compiles but is untested at run time | `cmake --preset gcc-release`, then `cmake --build --preset gcc-release` |
-| Clang 17 on Linux, Ninja | warning-free at `-Wall -Wextra` in CI (ubuntu-clang job) and in the container below | presets `clang-<config>` |
+| GCC 13 on Linux (Ubuntu 24.04), Ninja | warning-free at `-Wall -Wextra` in CI (ubuntu-gcc job) and in the 24.04 container below; cannot run the game there, the Linux libsm64 `.so` needs glibc 2.43 (docs/libsm64.md) | `cmake --preset gcc-release`, then `cmake --build --preset gcc-release` |
+| Clang 17 on Linux (Ubuntu 24.04), Ninja | warning-free at `-Wall -Wextra` in CI (ubuntu-clang job) and in the 24.04 container below | presets `clang-<config>` |
+| GCC 15.2 on Linux (Ubuntu 26.04), Ninja | warning-free at `-Wall -Wextra` in the 26.04 container below; `LibSm64`'s `mprotect`/`SIGSEGV` save path passes the libsm64 test group against bitfs-sbb's JP `.so`, drift test max diff 0 (2026-09-08) | same presets, or the container commands below |
+| Clang 21.1 on Linux (Ubuntu 26.04), Ninja | as GCC 15.2, once the tests target got `-Wno-#warnings` (pitfall below) | same |
 
 Every build goes through a `CMakePresets.json` preset named `<compiler>-<config>`
 (`msvc-release`, `clang-cl-debug`, `gcc-relwithdebinfo`, ...), with build and test presets
@@ -56,6 +58,27 @@ The same with `clang++-17` and `/tmp/build-clang`. The dependency tarballs come 
 shared `build/downloads` cache, so nothing is downloaded twice. From Git Bash, prefix
 `docker` commands with `MSYS_NO_PATHCONV=1`, or the container paths in the arguments are
 rewritten into Windows paths. The container is throwaway: `docker rm -f tasfw-linux`.
+Docker Desktop is usually not running; start it and wait for `docker ps` to answer. A
+restart of Docker Desktop stops the container (`Exited (255)`); `docker start tasfw-linux`
+brings it back with its packages installed, but build trees under `/tmp` did not survive
+that on 2026-09-08, so reconfigure.
+
+That image matches CI (GCC 13, Clang 17, CMake 3.28, glibc 2.39). To run the game on Linux
+the `.so` needs glibc 2.43 (docs/libsm64.md), which means a second container from Ubuntu
+26.04 (GCC 15.2, Clang 21.1, CMake 4.2):
+
+```bash
+docker run -d --name tasfw-linux-26 -v "C:/repos/sm64-tas-scripting:/src" -w /src ubuntu:26.04 sleep infinity
+docker exec tasfw-linux-26 bash -c "apt-get update -qq && apt-get install -y -qq ninja-build g++ clang libomp-dev cmake python3 binutils"
+docker exec tasfw-linux-26 cmake -S /src -B /tmp/build-gcc -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=g++ -DTASFW_WARNINGS_AS_ERRORS=ON
+docker exec tasfw-linux-26 cmake --build /tmp/build-gcc -- -k 0
+docker exec -w /tmp/build-gcc tasfw-linux-26 ./out/dllcheck /src/res/sm64_jp_0.so /src/res/comissonPyra2-Fanart_x-Z.m64 3330
+docker exec -w /tmp/build-gcc -e TASFW_LIBSM64=/src/res/sm64_jp_0.so -e TASFW_M64=/src/res/comissonPyra2-Fanart_x-Z.m64 -e TASFW_FRAME=3330 tasfw-linux-26 ./out/tasfw-tests -tc='libsm64*'
+```
+
+The same with `-DCMAKE_CXX_COMPILER=clang++` and `/tmp/build-clang`. Build with both
+containers before calling a change done: the 24.04 one is what CI runs, the 26.04 one is
+where the Linux game path is tested and where the newest compilers see the code first.
 
 ## Policy
 
@@ -141,6 +164,26 @@ void f() { a.contains(x); }              // clang-cl 19.1.5: access violation wh
 
 Workaround in `tasfw-core/src/core/Inputs.cpp`: a named `static const auto` plus two
 `static const auto&` references. Same code, no runtime cost.
+
+### Clang 21 with libstdc++ 15: doctest's `<ciso646>` include is a `#warning`
+
+doctest (2.4.11, and still 2.4.12) does `#include <ciso646>` under Clang to probe for
+libc++. libstdc++ 15 answers with `#warning "<ciso646> is not a standard header since
+C++20"`, and Clang reports `#warning` directives (`-W#warnings`) even from system headers,
+so the `-isystem` treatment from `cmake/SystemIncludes.cmake` does not help and `-Werror`
+fails every test translation unit. Seen with Clang 21.1 on Ubuntu 26.04 (2026-09-08); GCC
+does not take that include path and clang-cl uses the MSVC STL. Workaround:
+`tasfw-tests/CMakeLists.txt` adds `-Wno-#warnings` to the tests target for Clang with the
+GNU front end only. Remove it when doctest drops the include.
+
+### CMake 3.28: no `$<CXX_COMPILER_FRONTEND_VARIANT>` generator expression
+
+That generator expression arrived in CMake 3.30. The project's minimum is 3.22 and Ubuntu
+24.04's apt CMake is 3.28.3, which fails the generate step with "Expression did not evaluate
+to a known generator expression", and only when the enclosing `$<AND>` gets that far, so
+the GCC configure passed while the Clang one failed (2026-09-08). Use the variable
+`CMAKE_CXX_COMPILER_FRONTEND_VARIANT` in an `if()` instead, as `AddOptimizationFlags.cmake`
+and `Warnings.cmake` do.
 
 ### clang-cl silently ignores GNU-style flags
 

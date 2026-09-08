@@ -185,6 +185,7 @@ namespace
 			LongLoad(_startFrame);
 			Object* pyramid = &((Object*)(resource->addr("gObjectPool")))[84];
 			// BitFS uses bhvBitfsTiltingInvertedPyramid; bhvLllTiltingInvertedPyramid is the LLL one.
+			// Newer builds export it as bhvBitFSTiltingInvertedPyramid; LibSm64::addr maps between them.
 			const void* pyramidBehavior = resource->addr("bhvBitfsTiltingInvertedPyramid");
 			MarioState* mario = *(MarioState**)(resource->addr("gMarioState"));
 			Camera* camera = *(Camera**)(resource->addr("gCamera"));

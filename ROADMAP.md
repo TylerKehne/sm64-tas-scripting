@@ -181,7 +181,14 @@ Goal: the DLL becomes a reproducible, swappable artifact instead of a mystery bi
 - [ ] **2.1 Document and script DLL production.** Record which wafel release the 2022 DLL came from,
       how to unlock a `.dll.locked` against a JP ROM with `libsm64_lock`, and add a script that
       makes the N per-thread copies. *Done when:* a fresh machine can populate `res/` from a wafel
-      release plus a ROM by following the doc.
+      release plus a ROM by following the doc. Progress 2026-09-08: docs/libsm64.md now
+      documents a second, scripted source, bitfs-sbb's `fernet-lock.py` (wafel's key
+      derivation in Python), which unlocks both the Windows `.dll` and the Linux `.so` for JP
+      and US from a ROM; its 2026-06-30 JP builds pass every check against the pinned DLL's
+      golden state on both platforms. Still open: which wafel release the pinned DLL is, the
+      copies script, and the source revision and build command behind any of the builds.
+      Policy set by the maintainer the same day: ROMs and unlocked binaries never enter the
+      public repo; a CI job that needs them takes the key from a maintainer-only secret.
 - [ ] **2.2 Generate the sm64 headers.** Replace the hand-copied `tasfw-core/inc/sm64/*.hpp` with
       headers generated from the decomp source (or from wafel's `sm64_layout` DWARF dump) for the
       exact DLL build. *Done when:* regenerating for a new DLL is one command and 1.1 passes.
@@ -189,10 +196,18 @@ Goal: the DLL becomes a reproducible, swappable artifact instead of a mystery bi
       from symbol addresses (Mario state, object pool, surfaces, camera, RNG, timers) or adopt the
       dirty-page tracking that the Linux branch already sketches. *Done when:* lightweight mode
       works unchanged on a different DLL build and is no slower than today.
-- [ ] **2.4 Find objects by behavior, not index.** Replace `gObjectPool[84]` with a scan for
-      `bhvLllTiltingInvertedPyramid`. *Done when:* no numeric object indices remain in scripts.
+- [ ] **2.4 Find objects by behavior, not index.** Replace `gObjectPool[84]` with a lookup by
+      `bhvBitfsTiltingInvertedPyramid` (the BitFS one; `bhvLllTiltingInvertedPyramid` is LLL's)
+      **plus a disambiguator**: the maintainer's note (2026-09-08) is that several objects in
+      the level share that behavior, so the index is what picks the specific pyramid. The
+      lookup therefore matches behavior and a stable per-object attribute such as the home
+      position the level script spawns it at, resolved once per script from the pool and
+      never per frame. *Done when:* no numeric object indices remain in scripts and the
+      lookup returns the same object as slot 84 on the pinned DLL.
 - [ ] **2.5 US ROM support.** `CountryCode` already exists; make the m64 header check and DLL
-      choice follow it. *Done when:* the smoke test passes on both JP and US DLLs.
+      choice follow it. *Done when:* the smoke test passes on both JP and US DLLs. The US
+      `.dll` and `.so` unlock from bitfs-sbb (docs/libsm64.md); what is missing is a US movie
+      and the header check.
 
 ## Phase 3: framework hardening
 
@@ -213,12 +228,31 @@ Goal: the core's implicit invariants become explicit and enforced.
       the DLL before each of 240 frames (Mario walks to the pyramid's centre, then it settles;
       91 frames move the normal), advances both, and requires the normal to match
       bit-for-bit. Passes with max |diff| = 0 on MSVC and clang-cl (2026-09-07), which is also
-      the bit-exactness test for the FP flags in docs/compilers.md. GCC needs a Linux DLL
-      (3.4). Learned on the way: terrain objects update before the player, so the pyramid
-      reads Mario's previous-frame position (ARCHITECTURE.md).
+      the bit-exactness test for the FP flags in docs/compilers.md. 2026-09-08: also max
+      |diff| = 0 with GCC 15 and Clang 21 on Linux against bitfs-sbb's JP `.so`, and on
+      Windows against bitfs-sbb's 2026 JP DLL (3.4, docs/libsm64.md). Learned on the way:
+      terrain objects update before the player, so the pyramid reads Mario's previous-frame
+      position (ARCHITECTURE.md).
 - [ ] **3.4 Linux parity.** Build with GCC/Clang, confirm the `mprotect`/`SIGSEGV` save path works,
       and note any divergence from MSVC results. *Done when:* the DLL-free tests run on Linux CI
       and the Linux `LibSm64` path passes the smoke test against a Linux libsm64 build.
+      Progress 2026-09-08: both halves hold once, by hand. The DLL-free tests run on Linux CI
+      (1.6), and in an Ubuntu 26.04 container the whole libsm64 test group passes against
+      bitfs-sbb's JP `.so` with GCC 15 and Clang 21: every layout check, the identical
+      golden state at frame 3330, save/load determinism and the drift test at max |diff| = 0.
+      `dllcheck` there reads 21.0 us per frame advance and about 45 us per save or load
+      (docs/performance.md change log). What keeps this open: (a) the `.so` needs glibc
+      2.43 (for `sqrtf`), which Ubuntu 24.04, CI's `ubuntu-latest`, does not have, so a CI
+      run needs a 26.04 runner as well as the maintainer-only secret for the unlock key;
+      (b) the Linux save path is single-instance: `regions_of_interest` is one process-wide
+      vector filled from one process-wide `SIGSEGV` handler, so a second `LibSm64` in the
+      same process would save and restore the other's pages. Per-instance dirty-page
+      tracking (pages keyed by which library's sections they fall in) is required before
+      scattershot can run threaded on Linux; (c) lightweight mode is Windows-only
+      (`LibSm64LightweightSupported`), so the Linux search would run on dirty-page saves.
+      Two things had to change to get here, both in docs/libsm64.md: the decomp renamed the
+      pyramid behaviors, now bridged by `LibSm64SymbolAliases`, and doctest's `<ciso646>`
+      include is a `#warning` under Clang 21 (docs/compilers.md).
 - [ ] **3.5 Savestate memory budget.** The 8 GB cap is per resource, so 16 threads can address
       128 GB. Make it a global budget in `Configuration`.
 - [ ] **3.6 Unify timing instrumentation.** `ExecuteAdhocBase` records milliseconds via

@@ -203,6 +203,13 @@ and `saves` are not. Both runs are skipped with `-Filter`, with `-NoTierD`, or w
 `res\sm64_jp_0.dll` .. `sm64_jp_15.dll` are missing; together they take about five minutes.
 Neither uses the full pipeline in `config.json`.
 
+When a Tier D wall row trips the gate while every exact count is identical, do not conclude
+from one run or one A/B: build the pre-change tree (`git stash`), and run pre, post, pre,
+post on the deterministic workload back to back. On 2026-09-08 this machine drifted from
+140 s to 160 s on that workload within one afternoon with no VM and nothing else running,
+and a single A/B in the middle pointed at a change that four interleaved runs then cleared
+(change log). Do not measure with Docker Desktop's VM up either; it alone adds about 11%.
+
 ### Reporting and gating
 
 - Tier A runs in CI on every PR.
@@ -391,6 +398,45 @@ What the Tier A and B numbers say together:
 ## Change log (measured)
 
 Every hot-path change records its delta table here, newest first.
+
+### 2026-09-08: renamed-symbol fallback in `LibSm64::addr`; the Linux `.so` measured (ROADMAP 2.1, 3.4)
+
+`LibSm64::addr` now resolves a symbol with the new non-throwing `SharedLib::tryGet` and,
+only when that fails, looks the name up in `LibSm64SymbolAliases` for the decomp's renamed
+spelling (docs/libsm64.md, "Renamed symbols"); the lightweight slice-coverage checks in
+`layoutCheckReport` are skipped where lightweight saves do not exist (Linux). On the pinned
+DLL every symbol the search asks for resolves on the first lookup, so the per-call work is
+the same single `GetProcAddress` as before plus a null test; nothing per frame changed.
+MSVC Release against the committed baselines, Docker Desktop's VM stopped:
+
+| Tier | Result |
+|---|---|
+| A and B (time rows) | 0 regressions over 10%; 3 rows faster (`Script_GetInputs_Uncached_Depth/1` -10.9%, `/4` -12.2%, `Resource_SaveLoadState` -56.3%, the layout-sensitive rows noise control already lists). Everything else within +1% to +6%, the DLL's own `FrameAdvance` rows included (13.7 -> 14.3 us), so the day's drift, not the change. |
+| allocations, exact counts, scaling efficiency | 0 / 0 / 0 regressions |
+| C (oscillation, downhill, sweep) | +2.2%, -7.2%, -1.0% |
+| D exact counts | identical: 55 solutions, 109,958 blocks, 520,052 scripts, 0 validation failures |
+| D wall | see below |
+
+The Tier D wall rows tripped the gate and took an hour to run down. The suite read
+155.5 s / 85.7 s (deterministic / throughput; +11% / +14%), two `-TierDOnly` reruns 153.0 /
+86.2 and 154.0 / 86.9, and a stash A/B of the pre-change tree in between read 141.9 / 71.1,
+which looked like a real regression with identical counts. Bisecting said otherwise: with
+only the `addr` body reverted the run read 155.1 / 84.2, and with `LibSm64.hpp`/`.cpp` at
+HEAD and only the unused `tryGet` added it read 165.8 / 90.5, a binary that cannot be
+slower for any reason. Four interleaved runs of the deterministic workload then read
+pre 159.0, post 162.6, pre 160.7, post 158.1 s: pre and post agree within 0.3% and the
+machine, with no VM and no other process above 1% CPU, had simply drifted from 140 s to
+160 s on the same workload over the afternoon (commit charge was 33.6 of 36.3 GB). The
+change costs nothing measurable. Two things learned for the procedure: a single A/B on a
+drifting machine can point the wrong way, so a Tier D wall regression with identical counts
+needs interleaved pre/post runs before it counts (Tier D section); and a suite run right
+after long builds and container work is a poor sample.
+
+Linux, first numbers (`dllcheck` on bitfs-sbb's JP `.so` at frame 3330, Ubuntu 26.04
+container on this machine, so not comparable with the Windows rows): frame advance 21.0 us
+(GCC 15) / 22.4 us (Clang 21), dirty-page save 44.9 / 46.4 us, load 44.1 / 41.6 us, `dlsym`
+33 / 37 ns. Windows `dllcheck` on bitfs-sbb's 2026 JP DLL: 8.5 us per frame, 41.0 us
+lightweight save, 41.8 us load, 583 ns `GetProcAddress`, all layout checks passing.
 
 ### 2026-09-08: warning levels raised on every compiler (ROADMAP 1.7)
 

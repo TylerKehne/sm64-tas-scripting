@@ -83,8 +83,9 @@ its place with numbers, and "it is cleaner" is not a number.
   committed one plus a `baseDirectory`, so its relative paths resolve into the source tree).
 - Dependencies (nlohmann/json; doctest and Google Benchmark for tests and perf) are fetched
   by CMake, hash-pinned and cached in `build\downloads` for offline builds. OpenMP is required.
-- Runtime inputs are not in git. You need `res\sm64_jp_0.dll` .. `res\sm64_jp_23.dll` and the
-  .m64 files named in `config.json`. See [docs/libsm64.md](docs/libsm64.md).
+- Runtime inputs are not in git. You need `res\sm64_jp_0.dll` .. `res\sm64_jp_23.dll` (on
+  Linux, `.so` copies) and the .m64 files named in `config.json`.
+  [docs/libsm64.md](docs/libsm64.md) says where to get either and how to unlock them.
 - `bitfs-turn.exe --list` and `--dry-run` are safe: no search runs. **Running it without
   arguments runs every configured stage**: 16 threads, hours, thousands of .m64 files under
   `analysis/m64/`. `--stage <name>` runs one stage from the previous stage's saved solutions
@@ -123,7 +124,11 @@ its place with numbers, and "it is cleaner" is not a number.
    diff can persist. Results leave a script through `CustomStatus`, not member side effects.
 5. **No absolute paths in source.** Route paths through `config.json` (`PipelineConfig`) or
    `Configuration`. There are none left; keep it that way.
-6. **Do not commit** anything under `res/`, `build/`, `out/`, or `analysis/*.csv`.
+6. **Do not commit** anything under `res/`, `build/`, `out/`, or `analysis/*.csv`, and never
+   a ROM or an unlocked libsm64 binary (`.dll` or `.so`) anywhere; do not vendor the locked
+   ones either, link to wafel or bitfs-sbb (docs/libsm64.md). If CI ever needs the game,
+   the unlock key lives in a maintainer-only secret and the job skips without it, so forks
+   and outside pull requests never see it.
 7. Do not "simplify" the lightweight save offsets in `LibSm64.cpp` without measuring; they are
    tuned to the pinned DLL build and are the main reason the search is fast.
 8. **Performance regressions are bugs.** Changes under `tasfw-core`, `tasfw-scattershot` or
@@ -214,8 +219,10 @@ Agents without hooks follow the same procedure by hand at the end of every chang
 - Warning C4715 in the `TurnAround` lambda of `Scattershot_BitfsDr.cpp` is a real bug (not
   all paths return a value).
 - The pyramid object is found as `gObjectPool[84]`, a level-specific index.
-- One DLL copy per thread is required on Windows (a path loads once per process), so
-  `Configuration::ResourcePaths` must have at least `TotalThreads` entries.
+- One DLL copy per thread is required on Windows and Linux (`LoadLibrary` and `dlopen` both
+  hand back the already-loaded image for a path), so `Configuration::ResourcePaths` must have
+  at least `TotalThreads` entries. On Linux the copies are not enough yet: `LibSm64`'s
+  dirty-page save path is single-instance per process (ROADMAP 3.4).
 
 ## Glossary
 
