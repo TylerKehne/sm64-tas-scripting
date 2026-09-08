@@ -177,7 +177,11 @@ works on individual per-frame inputs, whereas a pellet in TASFW can apply a whol
 move (a `MovementOption` may be a script, not just a random stick), so the search can be
 more discerning about which movements it tries. The aim is to find good paths faster and to
 keep the state space from exploding, because each move is a meaningful step rather than a
-random frame.
+random frame. The state tracker is the other contribution: because a thread's state bin,
+fitness and validation can read tracked state, a bin can describe progress that no single
+frame shows (oscillations completed, crossing history, phase) and a fitness can use a
+look-ahead the tracker computed, so the search ranks and distinguishes states by where they
+are going, not only by where they are.
 
 `Scattershot<TState, TResource, TStateTracker, TOutputState>` is the shared search state;
 `ScattershotThread<...>` is a `TopLevelScript` that each OpenMP thread runs. A concrete
