@@ -168,6 +168,17 @@ tracker; the framework instantiates it through `StateTrackerFactory`.
 
 ## Scattershot
 
+Scattershot is a randomized search that explores by coverage of a quantized state space:
+one block per distinct state bin, holding the best-fitness path that reached it, extended
+by firing random "pellets" from existing blocks. It predates this framework and has proven
+a good general-purpose algorithm for SM64, though configuring it (bin resolution, fitness,
+movement mix) is the hard part. It was ported here to be pushed further: the original
+works on individual per-frame inputs, whereas a pellet in TASFW can apply a whole scripted
+move (a `MovementOption` may be a script, not just a random stick), so the search can be
+more discerning about which movements it tries. The aim is to find good paths faster and to
+keep the state space from exploding, because each move is a meaningful step rather than a
+random frame.
+
 `Scattershot<TState, TResource, TStateTracker, TOutputState>` is the shared search state;
 `ScattershotThread<...>` is a `TopLevelScript` that each OpenMP thread runs. A concrete
 search subclasses `ScattershotThread` and implements:
