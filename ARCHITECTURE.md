@@ -88,6 +88,15 @@ Running children:
 | `ExecuteAdhoc` / `ModifyAdhoc` / `TestAdhoc` | Same three semantics for a lambda returning bool, run on the *same* script object at `_adhocLevel + 1`. |
 | `Compare<T>` family | Run `T` for each parameter tuple, keep the best by a comparator, optionally stop early. Lives in `ScriptCompareHelper.hpp`. |
 
+Both forms manage savestates, reverts, the input diff and tracked-state coherence
+automatically; the author never touches a slot. The difference is weight and reuse: a
+one-off attempt ("try these inputs, keep them if it worked") is better as an ad-hoc lambda,
+which captures whatever locals it needs instead of routing results through a status type;
+heavier or reusable logic warrants a named script class with its own `CustomScriptStatus`
+and lifecycle. The engine is built on the ad-hoc form: `Run` executes validation and
+assertion inside `ExecuteAdhoc` and execution inside `ModifyAdhoc`, and every scattershot
+pellet is one.
+
 Per script and per ad-hoc level the framework keeps: the input diff (`BaseStatus[level].m64Diff`),
 a `saveBank` of savestate handles keyed by frame, a `saveCache` and `inputsCache` that
 memoize lookups into ancestors, a `frameCounter` that accumulates replay cost per frame,

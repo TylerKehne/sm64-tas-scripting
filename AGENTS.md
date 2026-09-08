@@ -132,6 +132,8 @@ its place with numbers, and "it is cleaner" is not a number.
   three lifecycle methods. Child scripts are run with `Execute<X>` (revert), `Modify<X>`
   (keep diff if asserted) or `Test<X>` (revert and drop the diff from the status).
 - Ad-hoc lambdas use `ExecuteAdhoc` / `ModifyAdhoc` / `TestAdhoc` with the same semantics.
+  Use them for one-off attempts; write a script class when the logic is heavy or reused.
+  Both manage savestates and reverts for you.
 - Naming: PascalCase types and methods, `_camelCase` private members, `CustomStatus` for the
   public result object.
 - Compiler workarounds exist (`ScriptFriend`, `using` directives in `ScattershotThread`, the
