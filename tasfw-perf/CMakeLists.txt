@@ -1,4 +1,5 @@
-# Performance suite. Tier A (DLL-free microbenchmarks) lives here; see docs/performance.md.
+# Performance suite: Tier A (DLL-free microbenchmarks), Tier B (the game DLL) and Tier C
+# (framework workloads on the game); see docs/performance.md. Tier D runs bitfs-turn itself.
 # Only meaningful in Release / RelWithDebInfo. scripts/perf.ps1 is the supported runner.
 
 include(FetchContent)
@@ -25,9 +26,18 @@ add_executable(tasfw-perf
 	"src/bench_slots.cpp"
 	"src/bench_script.cpp"
 	"src/bench_libsm64.cpp"
+	"src/bench_framework.cpp"
 )
 target_include_directories(tasfw-perf PRIVATE src)
-target_link_libraries(tasfw-perf PRIVATE tasfw::core tasfw::resources tasfw::scattershot tasfw::testing benchmark::benchmark)
+target_link_libraries(tasfw-perf PRIVATE
+	tasfw::core
+	tasfw::resources
+	tasfw::scattershot
+	tasfw::testing
+	tasfw::scripts_bitfs_pyramid_osc
+	tasfw-scripts-scattershot-bitfs-dr
+	benchmark::benchmark
+)
 target_compile_features(tasfw-perf PRIVATE cxx_std_20)
 set_target_properties(tasfw-perf PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/out")
 

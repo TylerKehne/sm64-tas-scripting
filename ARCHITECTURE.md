@@ -144,8 +144,11 @@ cursor. Until 2026-09-08 it moved *every* child save into the parent when none w
 a later backwards load from a level whose diff started after such a save then restored a
 state made with reverted inputs. That was ROADMAP 4.5, and `test_script.cpp` pins it.
 `ApplyChildDiff` (after `Modify`) merges the diff and moves saves, then `Load(lastFrame + 1)`.
-That last step is why callers in `ScattershotThread` re-`Load` the frame the child actually
-stopped on (ROADMAP 3.1).
+The cursor ending after the child's diff rather than where the child stopped is by design:
+the common case is to keep going from there. A caller that needs the frame the child stopped
+on loads it (`ScattershotThread` does after every `ChooseScriptAndApply`, because a block is
+keyed by that frame), and a caller that wants to decide later runs `Execute` instead and
+applies the returned diff when it chooses.
 
 Other cursor operations: `Load(f)`, `LongLoad(f)` (no caching, always saves at the end),
 `Rollback(f)` (erase diff from *f* on, then load), `RollForward(f)` (drop diff before *f*),

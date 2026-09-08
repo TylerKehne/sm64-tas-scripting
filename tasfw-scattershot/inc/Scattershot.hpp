@@ -290,8 +290,11 @@ private:
                 }
             });
 
-        printf("Found %llu solutions in %llu shots (%llu base-block validation failures).\n", (unsigned long long)scattershot.Solutions.size(),
-            (unsigned long long)scattershot.TotalShots, (unsigned long long)scattershot.ValidationFailures);
+        // Parsed by scripts/perf.ps1 (Tier D); keep the format if you change it.
+        printf("Found %llu solutions in %llu shots, %llu blocks, %llu scripts (%llu base-block validation failures).\n",
+            (unsigned long long)scattershot.Solutions.size(), (unsigned long long)scattershot.TotalShots,
+            (unsigned long long)scattershot.Blocks.size(), (unsigned long long)scattershot.ScriptCount,
+            (unsigned long long)scattershot.ValidationFailures);
 
         std::vector<ScattershotSolution<TOutputState>> solutions;
         solutions.reserve(scattershot.Solutions.size());

@@ -16,6 +16,12 @@ an increase of more than --alloc-tolerance allocations per iteration (default 0.
 only absorbs one-time set-up amortised over the fixed iteration counts) is a regression
 regardless of timing.
 
+Tier C and D rows carry work counts (frameAdvances, saves, loads, shots, scripts, blocks,
+solutions, validationFailures). They are exact: the workloads run with the cost model off,
+or report only what is deterministic, so any increase is a regression ("the framework now
+does more work") and fails the compare; a decrease is printed and left for the reviewer to
+confirm and re-baseline.
+
 `merge` concatenates the benchmark rows of several result files (scripts/perf.ps1 runs each
 benchmark family in its own process so heap state from one family cannot skew another) and
 keeps the context of the first file.
@@ -26,9 +32,13 @@ import argparse
 import json
 import sys
 
+# Counters gated on exact equality (see the module docstring).
+EXACT_COUNTERS = ("frameAdvances", "saves", "loads", "shots", "scripts", "blocks", "solutions", "validationFailures")
+
 
 def read(path):
-    with open(path, "r", encoding="utf-8") as f:
+    # utf-8-sig: PowerShell's Set-Content -Encoding utf8 writes a BOM (the Tier D part).
+    with open(path, "r", encoding="utf-8-sig") as f:
         return json.load(f)
 
 
@@ -68,7 +78,29 @@ def fmt(value, unit):
         return "%.2f us" % (value / 1000.0)
     if value >= 1000 and unit == "us":
         return "%.2f ms" % (value / 1000.0)
+    if value >= 1000 and unit == "ms":
+        return "%.2f s" % (value / 1000.0)
     return "%.1f %s" % (value, unit)
+
+
+def fmt_count(value):
+    return "%.0f" % value if abs(value - round(value)) < 0.005 else "%.2f" % value
+
+
+def count_changes(base_row, cur_row):
+    """[(counter, baseline, current)] for the exact counters both rows carry, where they differ."""
+    changes = []
+    for key in EXACT_COUNTERS:
+        if key in base_row and key in cur_row:
+            b, c = float(base_row[key]), float(cur_row[key])
+            if abs(b - c) > 1e-9:
+                changes.append((key, b, c))
+    return changes
+
+
+def counts_of(row):
+    """The exact counters a row carries, as 'key value' pairs for display."""
+    return ", ".join("%s %s" % (key, fmt_count(float(row[key]))) for key in EXACT_COUNTERS if key in row)
 
 
 def ctx_line(ctx):
@@ -120,6 +152,7 @@ def cmd_compare(args):
     regressions = []
     improvements = []
     alloc_regressions = []
+    count_regressions = []
     for name in base:
         if name not in cur:
             print("%-*s %14s %14s %9s %17s  %s" % (name_w, name, "", "", "", "", "MISSING"))
@@ -147,18 +180,37 @@ def cmd_compare(args):
         if ba is not None and ca is not None and float(ca) - float(ba) > args.alloc_tolerance:
             status = "ALLOC REGRESSION" if status != "REGRESSION" else "REGRESSION + ALLOCS"
             alloc_regressions.append((name, float(ba), float(ca)))
+
+        changes = count_changes(b, c)
+        if any(cur_v > base_v for _, base_v, cur_v in changes):
+            status = "COUNT REGRESSION" if "REGRESSION" not in status else status + " + COUNTS"
+            count_regressions.append(name)
+        elif changes:
+            status += " (counts down, re-baseline after review)"
+
+        # Tier C overhead: the share of wall time outside the resource, gated in points.
+        bo, co = b.get("overheadPct"), c.get("overheadPct")
+        if bo is not None and co is not None and float(co) - float(bo) > args.overhead_tolerance:
+            status = "OVERHEAD REGRESSION" if "REGRESSION" not in status else status + " + OVERHEAD"
+            count_regressions.append(name)
+            changes = changes + [("overheadPct", float(bo), float(co))]
         print("%-*s %14s %14s %+8.1f%% %17s  %s" % (name_w, name, fmt(bv, unit), fmt(cv, unit), delta, allocs, status))
+        for key, base_v, cur_v in changes:
+            print("%-*s   %s %s -> %s" % (name_w, "", key, fmt_count(base_v), fmt_count(cur_v)))
 
     for name in cur:
         if name not in base:
             c = cur[name]
             print("%-*s %14s %14s %9s %17s  %s" % (name_w, name, "", fmt(float(c[args.metric]), c.get("time_unit", "ns")),
                                                     "", alloc_cell(None, c), "NEW"))
+            if counts_of(c):
+                print("%-*s   %s" % (name_w, "", counts_of(c)))
 
     print()
-    print("%d regression(s) over %.0f%%, %d improvement(s), %d allocation regression(s) over %.2f/iter"
-          % (len(regressions), args.threshold, len(improvements), len(alloc_regressions), args.alloc_tolerance))
-    return 1 if regressions or alloc_regressions else 0
+    print("%d regression(s) over %.0f%%, %d improvement(s), %d allocation regression(s) over %.2f/iter, %d count regression(s)"
+          % (len(regressions), args.threshold, len(improvements), len(alloc_regressions), args.alloc_tolerance,
+             len(count_regressions)))
+    return 1 if regressions or alloc_regressions or count_regressions else 0
 
 
 def alloc_cell(base_row, cur_row):
@@ -190,6 +242,8 @@ def main(argv):
                     help="allowed increase in allocations per iteration before it counts as a regression")
     cp.add_argument("--stat", default="min", choices=["min", "median"],
                     help="which repetition to compare (default min)")
+    cp.add_argument("--overhead-tolerance", type=float, default=2.0,
+                    help="allowed increase of the Tier C overheadPct counter, in percentage points")
     cp.set_defaults(func=cmd_compare)
 
     mp = sub.add_parser("merge", help="merge several result files into one")

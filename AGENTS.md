@@ -94,8 +94,9 @@ its place with numbers, and "it is cleaner" is not a number.
 - Performance numbers come from `Release` or `RelWithDebInfo` builds only. Debug uses `/Od`.
 - Perf suite: `powershell -ExecutionPolicy Bypass -File scripts\perf.ps1` builds Release,
   runs `tasfw-perf.exe`, and compares against `perf\baselines\<computername>.json`. Tier A
-  needs nothing; the Tier B (libsm64) families run when `res\` has the DLL and movie, or
-  pass `-Dll`/`-M64`, and are skipped otherwise.
+  needs nothing; the Tier B and C (libsm64) families run when `res\` has the DLL and movie,
+  or pass `-Dll`/`-M64`; Tier D runs `bitfs-turn` on `perf\tierd-*.json` when the 16 DLL
+  copies exist (about five minutes; `-NoTierD` skips it). Anything missing is skipped.
 
 ## Hard rules
 
@@ -156,11 +157,13 @@ Verification means:
 3. Reason explicitly about determinism and savestate purity for anything touching
    `Script.t.hpp`, `ScattershotThread.t.hpp` or `LibSm64.cpp`; `test_script.cpp` encodes
    those invariants on the fake resource, so extend it rather than arguing in prose.
-4. For anything on a hot path, measure. Run `scripts\perf.ps1` (Tier A, no DLL needed) and
-   paste its delta table; it exits non-zero on a regression over 10%. For DLL-dependent
-   paths also run a fixed workload before and after in Release and report wall time plus
-   `nFrameAdvances`, `nSaves` and `nLoads`. Counts must not go up; time must not regress.
-   See docs/performance.md for what counts as a hot path.
+4. For anything on a hot path, measure. Run `scripts\perf.ps1` and paste its delta table;
+   it exits non-zero on a time regression over 10%, an allocation increase, or any increase
+   in an exact work count (Tier C and D rows: frame advances, saves, loads, shots, scripts,
+   blocks, solutions). With the DLL in `res\` that covers Tiers A to D; without it, run a
+   fixed DLL workload before and after in Release and report wall time plus the frame
+   advances, saves and loads `bitfs-turn` prints. Counts must not go up; time must not
+   regress. See docs/performance.md for what counts as a hot path.
 5. Say in your summary exactly what you could not run.
 
 Work on a branch and open a PR against `master`; that is how the repo has always been merged.

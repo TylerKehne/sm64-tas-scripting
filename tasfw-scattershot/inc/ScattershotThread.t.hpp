@@ -463,9 +463,9 @@ bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::ChooseSc
             return success;
         });
 
-    // Needed to sync with original execution (block is saved after individual script diff is applied).
-    // Note that this often does nothing. It does not hurt performance unless it rewinds.
-    // TODO: Consider changing TASFW Modify methods to persist frame cursor so this isn't necessary
+    // Modify leaves the cursor after the end of the child's diff by design (ARCHITECTURE.md,
+    // "Script hierarchy"); a block is keyed by the frame the script stopped on, so go back to
+    // it. This often does nothing and only costs anything when it rewinds.
     if (status.executed)
         this->Load(postScriptFrame);
 
@@ -534,9 +534,9 @@ AdhocBaseScriptStatus ScattershotThread<TState, TResource, TStateTracker, TOutpu
             return true;
         });
 
-    // Needed to sync with original execution (block is saved after individual script diff is applied).
-    // Note that this often does nothing. It does not hurt performance unless it rewinds.
-    // TODO: Consider changing TASFW Modify methods to persist frame cursor so this isn't necessary
+    // Modify leaves the cursor after the end of the child's diff by design (ARCHITECTURE.md,
+    // "Script hierarchy"); a block is keyed by the frame the script stopped on, so go back to
+    // it. This often does nothing and only costs anything when it rewinds.
     this->Load(postScriptFrame);
     return status;
 }

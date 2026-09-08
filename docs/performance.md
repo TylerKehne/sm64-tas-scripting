@@ -5,8 +5,8 @@ millions of game frames per search, and it is written in C++ for that reason. A 
 is cleaner but slower is a regression. It is rejected unless the slowdown is measured,
 explained, and explicitly accepted in the PR.
 
-This document is the specification for how performance is measured and gated. The
-implementation is ROADMAP item 1.3; until it lands, the "manual" section at the end applies.
+This document is the specification for how performance is measured and gated, and the
+record of what the suite (`tasfw-perf`, `scripts/perf.ps1`, ROADMAP 1.3) measures.
 
 ## Design principle: zero-cost abstractions
 
@@ -35,13 +35,17 @@ Places where the code pays (or paid) for an abstraction it should not, gated by 
   `operator[]` default-inserts on the hot path.~~ Fixed: `LevelStack` (change log below).
 - Scripts re-resolve `gMarioState`, `gCamera`, behaviors and the object pool by string at
   the top of every `validation()` / `execution()` (62 ns each on this DLL).
-- `Script::GetTrackedState` performs a `dynamic_cast` on the root script per call, and
-  tracking goes through virtual hooks on `_rootScript` on every frame advance.
+- ~~`Script::GetTrackedState` performs a `dynamic_cast` on the root script per call.~~ Fixed:
+  a per-type tag compare (ROADMAP 3.7). Tracking still goes through virtual hooks on
+  `_rootScript` on every frame advance.
 - `Resource::save` / `load` / `advance` / `setInputs` are virtual and called per frame.
 - Block segments are `std::shared_ptr<Segment>` chains, touched on every decode.
-- Tracker scripts are constructed per tracked frame: six `std::map` head allocations on
-  MSVC's STL, three lifecycle sandboxes, and a `CustomStatus` copy (with `std::vector`s in
-  the real trackers).
+- Tracker scripts are constructed per tracked frame: three lifecycle sandboxes and a
+  `CustomStatus` move (with `std::vector`s in the real trackers). The per-level containers
+  are now created on first use (ROADMAP 3.7), but Tier C still counts 29 heap allocations
+  per frame in the `StateTracker_BitfsDr` sweep and about 9 per frame advanced in the
+  nested-script pyramid oscillation (2026-09-08), which is what ROADMAP 3.7's remainder and
+  3.8 are for.
 
 ## What costs what
 
@@ -140,27 +144,49 @@ fall below the baseline by more than 5 points.
 
 ### Tier C: framework benchmarks (DLL required, deterministic)
 
+Implemented in `tasfw-perf/src/bench_framework.cpp` as the `^BM_Framework` family, gated on
+the same environment as Tier B and run in its own process. One resource is played to
+`TASFW_FRAME` by hand, that state becomes the resource's start save, and every iteration
+starts by reloading it. The resource's cost model is off (`useCostModel = false`), so no
+automatic savestate is ever created and every count is an exact function of the code.
 Fixed workloads on the source movie:
 
-- `BitFsPyramidOscillation` from a fixed frame.
-- `BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle` through `PyramidUpdate`, 1,000 calls.
-- `StateTracker_BitfsDr` swept over 500 consecutive frames.
+- `PyramidOscillation`: `BitFsPyramidOscillation` after the pyramid-osc-approach preamble
+  (one stick input, wait until idle), 2 iterations.
+- `DownhillAngle_PyramidUpdate`: 1,000 calls of
+  `BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle` on a `PyramidUpdate` imported from
+  the game, exactly as `BitFsPyramidOscillation::execution` does, 3 iterations.
+- `TrackerSweep`: `StateTracker_BitfsDr` (the committed dr-oscillations parameters) over 500
+  consecutive `AdvanceFrameRead`s, 3 iterations.
 
-Metrics: wall time; `nFrameAdvances`, `nLoads`, `nSaves`; **replay ratio** = frames advanced
-per frame of output diff; **overhead %** = 1 minus (advance + save + load time) / wall.
+Metrics per row: wall time (fastest of nine, as in Tier A); `allocs`; the counters
+`frameAdvances`, `saves`, `loads` (per iteration, exact); **replay ratio** = frames advanced
+per frame of output diff (per frame swept for the tracker); **overhead %** = 1 minus
+(advance + save + load time) / wall, all in rdtsc cycles.
 
-Gate: counts exactly equal to baseline; wall within 10%; overhead % no more than 2 points
-above baseline.
+Gate: counts exactly equal to baseline (an increase fails; a decrease is printed for review
+and re-baselined); wall within 10%; allocations within 0.1 per iteration; overhead % no more
+than 2 points above baseline.
 
 ### Tier D: scattershot end to end (DLL required)
 
-- Deterministic run: `Deterministic = true`, fixed `Seed`, `MaxShots = 2000`, 8 threads.
-  Exact equality on `TotalShots`, `ScriptCount`, block count, solution count and the sum of
-  `nFrameAdvances` across threads; wall within 10%.
-- Throughput run: `Deterministic = false`, fixed `MaxShots`, 16 threads. Shots/s, scripts/s,
-  novel blocks/s, decode overhead %, and peak resident set. Wall within 10%.
+Run by `scripts/perf.ps1` through `bitfs-turn` on two configs under `perf/`, each one
+`tilt-target` stage from frame 3330 with 100 pellets per shot (output under `perf/results/`):
 
-Both runs use a dedicated small pipeline config, never the full one in `config.json`.
+- `tierd-deterministic.json`: `Deterministic = true`, seed 3, 600 shots, 8 threads, cost
+  model off. The row `TierD_Deterministic` carries exact counts summed over threads:
+  `shots`, `scripts`, `blocks`, `solutions`, `validationFailures` (must stay 0, ROADMAP 4.5),
+  `frameAdvances`, `saves`, `loads`; wall within 10%.
+- `tierd-throughput.json`: `Deterministic = false`, 1,200 shots, 16 threads, cost model on.
+  The row `TierD_Throughput` carries `shotsPerSecond`, `scriptsPerSecond`,
+  `frameAdvancesPerSecond`, `peakResidentMB` (reported) and `validationFailures` (exact, 0);
+  wall within 10%.
+
+The deterministic run has the cost model off because automatic savestates depend on measured
+timings: with it on the search outcome is still identical (ROADMAP 4.5), but `frameAdvances`
+and `saves` are not. Both runs are skipped with `-Filter`, with `-NoTierD`, or when
+`res\sm64_jp_0.dll` .. `sm64_jp_15.dll` are missing; together they take about five minutes.
+Neither uses the full pipeline in `config.json`.
 
 ### Reporting and gating
 
@@ -206,13 +232,16 @@ These are suspects, not verdicts. Measure before changing any of them.
 
 ## Running the suite
 
-Tier A is implemented in `tasfw-perf/` (Google Benchmark, fetched by CMake). Tiers B to D
-are not yet written; see ROADMAP 1.3.
+Tiers A, B and C are implemented in `tasfw-perf/` (Google Benchmark, fetched by CMake); Tier D
+runs `bitfs-turn` on the configs under `perf/`. One command runs everything the machine can
+run: Tier A always, B and C when the DLL and movie are found, D when the DLL copies are.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\perf.ps1                 # build Release, run, compare
 powershell -ExecutionPolicy Bypass -File scripts\perf.ps1 -SaveBaseline   # store this run as the baseline
-powershell -ExecutionPolicy Bypass -File scripts\perf.ps1 -Filter Script -NoBuild
+powershell -ExecutionPolicy Bypass -File scripts\perf.ps1 -Filter Script -NoBuild   # one family, no Tier D
+powershell -ExecutionPolicy Bypass -File scripts\perf.ps1 -NoTierD        # skip the five-minute Tier D
+powershell -ExecutionPolicy Bypass -File scripts\perf.ps1 -TierDOnly -NoBuild   # only Tier D (other rows read MISSING)
 ```
 
 Results go to `perf\results\<timestamp>-<sha>.json` (gitignored). The baseline for a machine
@@ -337,6 +366,41 @@ What the Tier A and B numbers say together:
 ## Change log (measured)
 
 Every hot-path change records its delta table here, newest first.
+
+### 2026-09-08: Tier C and Tier D land (ROADMAP 1.3); first numbers
+
+No code under measurement changed; these are the first baselines for the new rows, on the
+pinned DLL and movie at frame 3330, MSVC and clang-cl agreeing on every count.
+
+Tier C (`^BM_Framework`, cost model off, per iteration):
+
+| Workload | Wall | Frame advances | Saves | Loads | Allocs | Overhead |
+|---|---|---|---|---|---|---|
+| `PyramidOscillation` (quadrant 4, does not assert from here; 20 output frames) | 750 ms | 42,923 | 0 | 1,389 | 404.6 k | 5% |
+| `DownhillAngle_PyramidUpdate` (1,000 calls) | 3.0 ms MSVC, 2.4 ms clang-cl | 1,000 | 0 | 1,000 | 56.0 k | n/a |
+| `TrackerSweep` (500 frames) | 7.7 ms | 500 | 0 | 1 | 14.5 k | 14.5% |
+
+Read the allocation column: about 9 heap allocations per frame advanced in the nested-script
+oscillation, 56 per downhill-angle call (the `PyramidUpdateMem` import), 29 per tracked
+frame. That is the remainder of ROADMAP 3.7 and the input to 3.8.
+
+Tier D (`bitfs-turn`, `tilt-target` from frame 3330, 100 pellets per shot):
+
+| Run | Wall | Counts |
+|---|---|---|
+| Deterministic, 600 shots, 8 threads, cost model off | 140 s | 520,052 scripts, 109,958 blocks, 55 solutions, 18,014,927 frame advances, 608 saves, 1,038,084 loads, 0 validation failures; 121 MB peak resident |
+| Throughput, 1,200 shots, 16 threads, cost model on | 74 s | 16.1 shots/s, 13.7 k scripts/s, 475 k frame advances/s; 686 MB peak resident |
+
+An 800-shot deterministic run gave the same counts on MSVC and clang-cl to the last frame
+advance (24,229,711), which is the reproducibility ROADMAP 4.5 restored.
+
+The gates were checked by mutation before the baselines were committed: one extra
+save/advance/load per `LoadBase` call fails Tier C on counts (`frameAdvances 42923 -> 44331`
+in the oscillation, `500 -> 501` in the sweep) as well as time and allocations; a 3x
+`GetHash` loop fails Tier A at +189% and +273%. One row of the first MSVC baseline run,
+`Resource_SaveLoadState`, read 217 ns against 155 ns before on unchanged code and 149 ns on
+a re-run of its family: the per-process bimodality described under noise control. The
+family's rows in the baseline were taken from the re-run.
 
 ### 2026-09-08: `Revert` drops a reverted child's desynced saves (ROADMAP 4.5)
 

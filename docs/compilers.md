@@ -53,8 +53,11 @@ which mixes abbreviated (`AdhocScript auto`) and explicit template forms for thi
 ### MSVC: friend class template for `TopLevelScript`
 
 MSVC did not accept the friend template declaration that would let `TopLevelScript` reach
-`Script`'s private members. Workaround: `ScriptFriend<TResource>`, a class of static
-accessors in `Script.hpp`. Do not add new callers outside `TopLevelScript`.
+`Script`'s private members, and where MSVC accepted a form, Visual Studio's IntelliSense
+(a different front end) rejected it, or the other way round; the maintainer kept hitting one
+or the other. Workaround: `ScriptFriend<TResource>`, a class of static accessors in
+`Script.hpp`. Do not add new callers outside `TopLevelScript`, and treat IntelliSense as a
+fourth front end when retiring it (ROADMAP 3.2).
 
 ### MSVC: dependent base members need using-declarations
 

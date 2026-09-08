@@ -67,8 +67,10 @@ correctness and in speed.
         movie or the engine before frame 3330 fails it.
       Runs in CI (DLL-free part) on all four compilers. `PyramidUpdate` against the DLL is
       covered by 3.3; not yet covered: the scattershot loop end to end (Tier D territory).
-- [ ] **1.3 Performance test suite.** Implement [docs/performance.md](docs/performance.md) as a
-      `tasfw-perf` target tree, Release/RelWithDebInfo only:
+- [x] **1.3 Performance test suite.** Done 2026-09-08 (see the sub-items; what is left is
+      listed under them and is not part of the done condition). Implements
+      [docs/performance.md](docs/performance.md) as a `tasfw-perf` target tree plus the
+      `bitfs-turn` runs, Release/RelWithDebInfo only:
       - [x] Tier A microbenchmarks (Google Benchmark, DLL-free): hashing, state bins, input
         mapping, m64 I/O, `SlotManager`, `Script` per-operation overhead, hierarchy depth,
         state trackers. `scripts\perf.ps1` runs and compares; first baseline committed
@@ -78,14 +80,25 @@ correctness and in speed.
         fresh) and load, full and lightweight, in `bench_libsm64.cpp`; `perf.ps1` finds the
         DLL like `test.ps1` and the family is skipped without it. Still to do: thread
         scaling 1 to 16 and memory per slot.
-      - Tier C framework workloads with exact-count gates: fixed scripts, `PyramidUpdate`
-        probes, a tracker sweep; report replay ratio and overhead %.
-      - Tier D scattershot end to end: a deterministic exact-count run (which also asserts
-        zero base-block validation failures, see 4.5) and a throughput run.
-      - JSON output, checked-in baselines under `perf/baselines/`, a compare script that prints
-        the delta table for PRs, and the regression policy from the spec.
+      - [x] Tier C framework workloads with exact-count gates. Done 2026-09-08:
+        `bench_framework.cpp` (`^BM_Framework`): the pyramid oscillation, 1,000 downhill-angle
+        calls through `PyramidUpdate`, and a 500-frame `StateTracker_BitfsDr` sweep, with the
+        cost model off so frame advances, saves and loads are exact; replay ratio and
+        overhead % reported, overhead gated at 2 points.
+      - [x] Tier D scattershot end to end. Done 2026-09-08: `perf.ps1` runs `bitfs-turn` on
+        `perf/tierd-deterministic.json` (8 threads, cost model off, exact counts including
+        zero validation failures, see 4.5) and `perf/tierd-throughput.json` (16 threads,
+        rates and peak resident set), and folds both into the same delta table.
+      - [x] JSON output, checked-in baselines under `perf/baselines/`, a compare script that
+        prints the delta table for PRs (`perf_compare.py`: time, allocation, exact-count and
+        overhead gates), the regression policy from the spec, and a PR template
+        (`.github/PULL_REQUEST_TEMPLATE.md`) that asks for the table.
       *Done when:* a deliberate extra frame advance in `LoadBase` fails Tier C, a deliberate
       10% slowdown in `GetHash` fails Tier A, and a PR template asks for the delta table.
+      Verified 2026-09-08 against the first baselines: one extra save/advance/load per
+      `LoadBase` call read as `frameAdvances 42923 -> 44331` and `500 -> 501` (two count
+      regressions, plus time and allocation ones); a 3x `GetHash` loop read as +189% and
+      +273%. Both mutations were reverted.
 - [x] **1.4 Split `main.cpp`.** Done 2026-09-07: `bitfs-turn` runs named stages from a JSON
       pipeline config (`PipelineConfig`: DLL directory and pattern, threads, movie, output
       directory, scattershot defaults, per-stage overrides, typed `args`, `select`, `export`),
@@ -145,11 +158,17 @@ Goal: the DLL becomes a reproducible, swappable artifact instead of a mystery bi
 
 Goal: the core's implicit invariants become explicit and enforced.
 
-- [ ] **3.1 Frame cursor semantics.** `Modify` leaves the cursor at the end of the child's diff,
-      not where the child stopped; callers compensate with extra `Load`s (see the TODOs in
-      `ScattershotThread.t.hpp`). Decide the rule, document it, and remove the workarounds.
+- [x] **3.1 Frame cursor semantics.** Decided by the maintainer 2026-09-08: `Modify` leaves the
+      cursor at the end of the child's diff on purpose, because the common case is to keep
+      going from there. A caller that wants the child's stopping frame loads it (what
+      `ScattershotThread` does, since blocks are keyed by that frame), and a caller that wants
+      to roll back runs `Execute` and applies the returned diff later. Written into
+      ARCHITECTURE.md; the TODOs that proposed changing `Modify` are gone.
 - [ ] **3.2 Encapsulation.** Make `Script` internals private and retire `ScriptFriend` if current
-      MSVC accepts the friend template. Mark `resource` and `startSaveHandle` private.
+      MSVC accepts the friend template. Mark `resource` and `startSaveHandle` private. Note
+      from the maintainer: MSVC and Visual Studio IntelliSense disagree about such
+      declarations and one or the other kept failing, which is why `ScriptFriend` exists;
+      retiring it means checking both, not just the build.
 - [x] **3.3 PyramidUpdate drift test.** `test_libsm64.cpp` imports `PyramidUpdateMem` from
       the DLL before each of 240 frames (Mario walks to the pyramid's centre, then it settles;
       91 frames move the normal), advances both, and requires the normal to match
