@@ -133,10 +133,17 @@ one of:
 - `.ImportSave<TState>(frame, stateArgs...).Run(...)` (resource initialised from a state
   object, used to seed `PyramidUpdate` from `LibSm64`).
 
-A **state tracker** is a `Script` whose `CustomScriptStatus` describes the game at one frame
-(e.g. `StateTracker_BitfsDr`: phase, oscillation count, crossing history, ARE). The top-level
-script caches `trackedStates[script][adhocLevel][frame]` and fills it lazily: after every
-frame advance or load, `TrackState` runs the tracker at that frame inside a reverted sandbox.
+A script may depend on the game's state in the past or the future of its cursor, not only
+the present. The **state tracker** exists to make that state available automatically and
+cheaply: a script asks for the state at any frame and never manages the saves, loads,
+replays or caching behind the answer. A tracker is a `Script` whose `CustomScriptStatus`
+describes the game at one frame (e.g. `StateTracker_BitfsDr`: phase, oscillation count,
+crossing history, ARE). The top-level script caches
+`trackedStates[script][adhocLevel][frame]` and fills it lazily: after every frame advance or
+load, `TrackState` runs the tracker at that frame inside a reverted sandbox, and a request
+for a frame ahead of the cursor loads or advances to it in that sandbox and reverts, so the
+requesting script's cursor never moves. Because the tracker is a script, it may itself
+advance frames to look further ahead (`CalculateOscillations` does).
 Trackers may call `GetTrackedState<T>(frame - 1)` to compute recursive metrics; the cache
 makes this linear. Entries after a modified frame are erased on `AdvanceFrameWrite`,
 `Apply`, `Rollback`; on `Modify` they move from child to parent with the saves.

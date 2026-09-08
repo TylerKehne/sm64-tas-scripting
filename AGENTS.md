@@ -169,6 +169,11 @@ without re-discovering anything. After every change, reconcile it:
   anticipated. Do not edit the docs for it. Report it, propose the options (revert, or amend
   the docs with exact wording), and wait for the maintainer's approval.
 
+Clarifications count as extensions: when a conversation settles what something is for or how
+it behaves, write it into the doc that should have said so. Work you identify but leave for
+later (a missing test, a cleanup, a measurement) becomes a ROADMAP.md item; it is not
+offered in chat as a follow-up.
+
 Claude Code enforces this with a Stop hook in `.claude/settings.json`. At every prompt
 `.claude/hooks/doc-review.py` fingerprints every tracked or untracked non-`.md` file outside
 `docs/`; when the turn ends with that fingerprint changed, the hook blocks the stop once and

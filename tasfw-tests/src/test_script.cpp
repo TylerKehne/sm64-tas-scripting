@@ -491,6 +491,36 @@ TEST_CASE("State trackers compute per-frame state, recursively, without moving t
 		});
 }
 
+TEST_CASE("A tracked state ahead of the cursor is computed in a sandbox and the cursor stays")
+{
+	FakeResource resource;
+	M64 m64;
+	for (int i = 0; i < 20; i++)
+		m64.frames[i] = In(100 + i);
+
+	RunRoot<RecursiveTracker>(resource, m64, [&resource](auto& s)
+		{
+			for (int i = 0; i < 5; i++)
+				s.AdvanceFrameRead();
+			CHECK(s.GetCurrentFrame() == 5);
+			uint64_t checksum = resource.checksum();
+
+			// Frame 12 is seven frames ahead: the tracker advances there in its own sandbox
+			// and is reverted; the requesting script does not move and writes nothing.
+			const auto& at12 = s.template GetTrackedState<RecursiveTracker>(12);
+			CHECK(at12.sum == 78); // 0 + 1 + ... + 12
+			CHECK(s.GetCurrentFrame() == 5);
+			CHECK(resource.checksum() == checksum);
+			CHECK(s.IsDiffEmpty());
+
+			// The frames computed on the way are cached: no further frame advances.
+			uint64_t advances = resource.nFrameAdvances;
+			CHECK(s.template GetTrackedState<RecursiveTracker>(12).sum == 78);
+			CHECK(s.template GetTrackedState<RecursiveTracker>(9).sum == 45);
+			CHECK(resource.nFrameAdvances == advances);
+		});
+}
+
 TEST_CASE("Asking for a tracker type the root does not install throws instead of miscasting")
 {
 	FakeResource resource;

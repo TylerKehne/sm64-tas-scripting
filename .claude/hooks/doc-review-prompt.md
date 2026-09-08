@@ -19,7 +19,10 @@ Procedure:
      found compiler pitfall, a renamed or moved file). Update the documentation yourself,
      now, without asking: tick or annotate roadmap items, add the new thing where similar
      things are listed, refresh numbers and paths, extend the change log in
-     docs/performance.md. Minimal, factual edits in the existing style.
+     docs/performance.md. Minimal, factual edits in the existing style. Clarifications the
+     conversation settled (what something is for, how it behaves) are extensions too: write
+     them into the doc that should have said so. Work you identify but leave for later (a
+     missing test, a cleanup, a measurement) becomes a ROADMAP.md item, never an offer in chat.
    - DEVIATION: the change contradicts, weakens, reinterprets or bypasses something
      documented (a hard rule in AGENTS.md, an invariant or the semantics table in
      ARCHITECTURE.md, a roadmap goal, ordering, scope or "Done when", a policy in docs/, a
