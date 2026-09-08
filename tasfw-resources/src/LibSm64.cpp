@@ -202,6 +202,57 @@ uint32_t LibSm64::getCurrentFrame() const
 	return *_globalTimer - 1;
 }
 
+std::vector<std::string> LibSm64::objectCheckReport(const std::vector<LibSm64ExpectedObject>& expected) const
+{
+	std::vector<std::string> lines;
+	Object* pool = static_cast<Object*>(addr("gObjectPool"));
+	auto describe = [](const LibSm64ExpectedObject& e)
+	{
+		char buf[160];
+		if (e.checkHome)
+			std::snprintf(buf, sizeof(buf), "gObjectPool[%d] is %s at home (%g, %g, %g)", e.slot, e.behavior, e.homeX, e.homeY, e.homeZ);
+		else
+			std::snprintf(buf, sizeof(buf), "gObjectPool[%d] is %s", e.slot, e.behavior);
+		return std::string(buf);
+	};
+	for (const LibSm64ExpectedObject& e : expected)
+	{
+		if (e.slot < 0 || e.slot >= LibSm64ObjectPoolCapacity)
+		{
+			lines.push_back("FAIL: expected " + describe(e) + ", but the slot is outside the pool");
+			continue;
+		}
+		const void* behavior = addr(e.behavior);
+		const Object& o = pool[e.slot];
+		if (o.activeFlags == 0)
+		{
+			lines.push_back("FAIL: expected " + describe(e) + ", but the slot is inactive (not in that level, or the level reloaded)");
+			continue;
+		}
+		if (o.behavior != behavior)
+		{
+			// Name the intruder when we can: a slot shift shows up as a neighbouring level object.
+			std::string other;
+			for (const LibSm64ExpectedObject& f : expected)
+				if (o.behavior == addr(f.behavior))
+					other = std::string(" (it runs ") + f.behavior + ")";
+			lines.push_back("FAIL: expected " + describe(e) + ", but the slot runs a different behavior" + other
+				+ "; the object spawn order changed, so every hardcoded slot index is suspect");
+			continue;
+		}
+		if (e.checkHome && (o.oHomeX != e.homeX || o.oHomeY != e.homeY || o.oHomeZ != e.homeZ))
+		{
+			char buf[96];
+			std::snprintf(buf, sizeof(buf), " (%g, %g, %g)", o.oHomeX, o.oHomeY, o.oHomeZ);
+			lines.push_back("FAIL: expected " + describe(e) + ", but that object's home is" + buf
+				+ "; same behavior, different object (the level has more than one)");
+			continue;
+		}
+		lines.push_back("ok: " + describe(e));
+	}
+	return lines;
+}
+
 bool LibSm64::pointsIntoGameData(const void* p) const
 {
 	for (const SegVal& seg : segment)
@@ -216,8 +267,7 @@ bool LibSm64::pointsIntoGameData(const void* p) const
 
 std::vector<std::string> LibSm64::layoutCheckReport() const
 {
-	// OBJECT_POOL_CAPACITY in the decomp. The pool is a static array in .bss.
-	constexpr std::ptrdiff_t objectPoolCapacity = 240;
+	constexpr std::ptrdiff_t objectPoolCapacity = LibSm64ObjectPoolCapacity;
 
 	std::vector<std::string> lines;
 	auto ok = [&](const std::string& what) { lines.push_back("ok: " + what); };
@@ -318,6 +368,10 @@ std::vector<std::string> LibSm64::layoutCheckReport() const
 		ok("gCamera points into game data");
 	else
 		fail("gCamera (" + hex(camera) + ") is null or outside .data/.bss");
+
+	// --- Level objects the scripts address by slot -----------------------------------------
+	for (const std::string& line : objectCheckReport(config.expectedObjects))
+		lines.push_back(line);
 
 	// --- Lightweight save coverage --------------------------------------------------------
 	// Lightweight mode only saves fixed slices of .data/.bss. Every piece of state the search
@@ -432,6 +486,7 @@ void LibSm64::verifyLayout()
 	if (!failures.empty())
 	{
 		throw std::runtime_error("LibSm64 layout check failed for " + config.dllPath.string()
-			+ ". The struct headers in tasfw-core/inc/sm64 do not match this DLL build (see docs/libsm64.md):" + failures);
+			+ ". Either the struct headers in tasfw-core/inc/sm64 do not match this DLL build, or an object the scripts"
+			  " address by gObjectPool slot is not where they expect it (see docs/libsm64.md):" + failures);
 	}
 }

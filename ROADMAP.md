@@ -196,14 +196,20 @@ Goal: the DLL becomes a reproducible, swappable artifact instead of a mystery bi
       from symbol addresses (Mario state, object pool, surfaces, camera, RNG, timers) or adopt the
       dirty-page tracking that the Linux branch already sketches. *Done when:* lightweight mode
       works unchanged on a different DLL build and is no slower than today.
-- [ ] **2.4 Find objects by behavior, not index.** Replace `gObjectPool[84]` with a lookup by
-      `bhvBitfsTiltingInvertedPyramid` (the BitFS one; `bhvLllTiltingInvertedPyramid` is LLL's)
-      **plus a disambiguator**: the maintainer's note (2026-09-08) is that several objects in
-      the level share that behavior, so the index is what picks the specific pyramid. The
-      lookup therefore matches behavior and a stable per-object attribute such as the home
-      position the level script spawns it at, resolved once per script from the pool and
-      never per frame. *Done when:* no numeric object indices remain in scripts and the
-      lookup returns the same object as slot 84 on the pinned DLL.
+- [x] **2.4 Object indices: keep them, verify them.** Decided by the maintainer 2026-09-08 after
+      `dllcheck --objects` showed the live pool: BitFS spawns two objects running
+      `bhvBitfsTiltingInvertedPyramid` (slot 84 at home x = -1945, the one the setup happens
+      on; slot 83 at x = -2866), so the behavior alone cannot name the pyramid and the slot
+      index stays the identifier. Home position happens to tell the two apart here, but that
+      is not a rule that holds for every object, so it was not made the lookup. Instead each
+      hardcoded slot is declared once, with the behavior and (optionally) the home the level
+      script gives it (`BitFsExpectedObjects` in `tasfw-scripts/inc/BitFsObjects.hpp`: slots 84,
+      83 and 85), and `LibSm64::objectCheckReport` verifies the declaration as part of the
+      per-thread layout check, so a spawn-order change fails start-up with a message instead
+      of feeding scripts another object. `bitfs-turn --dry-run` now plays to the first
+      stage's frame and prints that in-level report. Verified: the three slots report `ok` on
+      the pinned DLL and bitfs-sbb's 2026 DLL, and `test_libsm64.cpp` shows a wrong home, a
+      wrong behavior and an empty slot each produce a `FAIL`.
 - [ ] **2.5 US ROM support.** `CountryCode` already exists; make the m64 header check and DLL
       choice follow it. *Done when:* the smoke test passes on both JP and US DLLs. The US
       `.dll` and `.so` unlock from bitfs-sbb (docs/libsm64.md); what is missing is a US movie

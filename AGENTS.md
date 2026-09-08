@@ -86,17 +86,21 @@ its place with numbers, and "it is cleaner" is not a number.
 - Runtime inputs are not in git. You need `res\sm64_jp_0.dll` .. `res\sm64_jp_23.dll` (on
   Linux, `.so` copies) and the .m64 files named in `config.json`.
   [docs/libsm64.md](docs/libsm64.md) says where to get either and how to unlock them.
-- `bitfs-turn.exe --list` and `--dry-run` are safe: no search runs. **Running it without
+- `bitfs-turn.exe --list` and `--dry-run` are safe: no search runs (`--dry-run` loads one
+  DLL, plays to the first stage's frame and prints the layout report, hardcoded object slots
+  included; it exits 1 on a `FAIL`). **Running it without
   arguments runs every configured stage**: 16 threads, hours, thousands of .m64 files under
   `analysis/m64/`. `--stage <name>` runs one stage from the previous stage's saved solutions
   (README.md, "Running the pipeline").
 - Tests: `powershell -ExecutionPolicy Bypass -File scripts\test.ps1` (add `-Config Release`,
   `-Compiler clang`, `-Filter '*Script*'`). Under a second without the DLL, a few seconds with it.
 - The DLL-level check is `build\Release\out\dllcheck.exe <dll> <m64> <frame> [--lightweight]
-  [--leak-scan [frames]]` (docs/libsm64.md). It plays to a frame, verifies the struct layouts
-  against the game, and prints frame-advance and save/load cost. Takes under a second.
-  `--leak-scan` lists every byte range of `.data`/`.bss` that a load does not restore;
-  `python scripts\dll_symbols.py <dll> -` names them from the DLL's exports.
+  [--leak-scan [frames]] [--objects]` (docs/libsm64.md). It plays to a frame, verifies the
+  struct layouts against the game, and prints frame-advance and save/load cost. Takes under a
+  second. `--leak-scan` lists every byte range of `.data`/`.bss` that a load does not restore;
+  `--objects` lists every active object in `gObjectPool` with its behavior, params, position
+  and home; `python scripts\dll_symbols.py <dll> -` names the offsets in either output from
+  the DLL's exports.
 - Performance numbers come from `Release` or `RelWithDebInfo` builds only. Debug uses `/Od`.
 - Perf suite: `powershell -ExecutionPolicy Bypass -File scripts\perf.ps1` builds Release,
   runs `tasfw-perf.exe`, and compares against `perf\baselines\<computername>.json`. Tier A
@@ -218,7 +222,11 @@ Agents without hooks follow the same procedure by hand at the end of every chang
   `PyramidUpdate` also has on its own surface type, and it is not covered by the drift test.
 - Warning C4715 in the `TurnAround` lambda of `Scattershot_BitfsDr.cpp` is a real bug (not
   all paths return a value).
-- The pyramid object is found as `gObjectPool[84]`, a level-specific index.
+- The pyramid object is `gObjectPool[84]` and the track platform `gObjectPool[85]`,
+  level-specific indices that stay by decision (ROADMAP 2.4: two objects share the pyramid
+  behavior). They are declared with their behavior and home in `BitFsObjects.hpp` and
+  verified by the per-thread layout check, so a spawn-order change fails at start-up. Any
+  new hardcoded slot goes into that list.
 - One DLL copy per thread is required on Windows and Linux (`LoadLibrary` and `dlopen` both
   hand back the already-loaded image for a path), so `Configuration::ResourcePaths` must have
   at least `TotalThreads` entries. On Linux the copies are not enough yet: `LibSm64`'s

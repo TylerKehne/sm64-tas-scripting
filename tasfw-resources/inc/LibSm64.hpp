@@ -11,6 +11,30 @@
 #ifndef LIBSM64_H
 #define LIBSM64_H
 
+// OBJECT_POOL_CAPACITY in the decomp: gObjectPool is a static array of this many Objects.
+inline constexpr int LibSm64ObjectPoolCapacity = 240;
+
+// What a script expects to find in a gObjectPool slot. Scripts address level objects by slot
+// (`objectPool[84]` is the BitFS pyramid), which is the maintainer's decision (ROADMAP 2.4):
+// several objects share a behavior, so the slot is the identifier. The slot is a side effect
+// of spawn order, though, so each expectation is verified once per thread by the layout check
+// (LibSm64::objectCheckReport): the slot must be active and run the named behavior, and, when
+// checkHome is set, sit at the home position the level script spawned it at. Home is what
+// tells the two BitFS pyramids apart (their behavior runs SET_HOME), but it is not a rule
+// that holds for every object: many never set it and moving objects may update it, so an
+// expectation can leave it unchecked. A mismatch fails start-up with a readable message
+// instead of letting scripts read another object. The BitFS list is
+// tasfw-scripts/inc/BitFsObjects.hpp.
+struct LibSm64ExpectedObject
+{
+	int slot;
+	const char* behavior; // exported behavior symbol, pinned-DLL spelling (LibSm64SymbolAliases apply)
+	float homeX;
+	float homeY;
+	float homeZ;
+	bool checkHome = true;
+};
+
 class LibSm64Config
 {
 public:
@@ -18,6 +42,7 @@ public:
 	CountryCode countryCode;
 	bool lightweight; // true = faster, but accuracy not guaranteed in all situations.
 	                  // Windows only; see LibSm64LightweightSupported.
+	std::vector<LibSm64ExpectedObject> expectedObjects; // verified by layoutCheckReport once in a level
 };
 
 constexpr int pagesize = 4096;
@@ -115,6 +140,12 @@ public:
 	// True if the pointer lies inside the DLL's .data or .bss section, i.e. it is plausibly
 	// a pointer into game memory rather than garbage read through a wrong layout.
 	bool pointsIntoGameData(const void* p) const;
+
+	// One "ok: "/"FAIL: " line per expectation: does gObjectPool[slot] hold an active object
+	// running `behavior` at home (homeX, homeY, homeZ)? Only meaningful inside a level.
+	// layoutCheckReport calls it with config.expectedObjects; exposed so a test can hand it a
+	// wrong expectation and see the FAIL.
+	std::vector<std::string> objectCheckReport(const std::vector<LibSm64ExpectedObject>& expected) const;
 
 private:
 	// Resolved once at construction. DLL symbol addresses never move. (GetProcAddress

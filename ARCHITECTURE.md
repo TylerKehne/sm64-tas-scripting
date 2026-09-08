@@ -294,7 +294,10 @@ Everything below assumes the pinned DLL in `res/` (see `docs/libsm64.md`):
   the pinned build's; later builds export `bhvBitFSTiltingInvertedPyramid` and
   `bhvLLLTiltingInvertedPyramid`, and `LibSm64::addr` falls back from one spelling to the
   other through `LibSm64SymbolAliases` (docs/libsm64.md, "Renamed symbols").
-- The pyramid is `gObjectPool[84]` in the BitFS area of the source m64.
+- The pyramid is `gObjectPool[84]` in the BitFS area of the source m64 (the far pyramid is
+  slot 83, the track platform slot 85). The slots are the identifier by decision (ROADMAP
+  2.4); `BitFsObjects.hpp` declares what each must hold and `LibSm64::objectCheckReport`
+  verifies it in the per-thread layout check.
 - `tasfw-core/src/decomp/` reimplements `mtxf_align_terrain_normal`, object surface loading,
   `find_floor`, `floor_is_slope` and `simulate_platform_tilt` on the copied structs.
   `GetMinimumDownhillWalkingAngle` uses them to predict Mario's floor angle after the next

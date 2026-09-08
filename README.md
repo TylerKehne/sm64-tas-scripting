@@ -67,8 +67,10 @@ stage in order, or one stage with `--stage <name>`. Without `--config` it reads 
 `config.json` next to the executable, which the build writes from
 [tasfw-bruteforcers/bitfs-turnaround/config.json](tasfw-bruteforcers/bitfs-turnaround/config.json).
 `--list` prints the stage types and the configured stages; `--dry-run` resolves every path,
-checks the files exist, loads one DLL and prints its layout report. Both are safe. A full
-run is not a smoke test: 16 threads, hours, and thousands of exported `.m64` files.
+checks the files exist, loads one DLL, plays to the first stage's start frame and prints the
+layout report there (struct layout, the hardcoded object slots, lightweight-save coverage),
+exiting 1 on any `FAIL`. Both are safe. A full run is not a smoke test: 16 threads, hours,
+and thousands of exported `.m64` files.
 
 Each stage writes its solutions to `<outputDirectory>/solutions/<stage>.json` (input diffs
 plus named metrics). A stage run alone reads its input from the file its input stage wrote

@@ -399,6 +399,23 @@ What the Tier A and B numbers say together:
 
 Every hot-path change records its delta table here, newest first.
 
+### 2026-09-08: hardcoded object slots verified at start-up (ROADMAP 2.4)
+
+Nothing on a per-frame path changed. `LibSm64::objectCheckReport` runs inside
+`layoutCheckReport`, so once per scattershot thread from `verifyLayout` (three `addr`
+lookups and a handful of compares per declared slot), and `bitfs-turn --dry-run` plays to
+the first stage's frame once. MSVC Release against the committed baselines, Docker Desktop's
+VM stopped:
+
+| Tier | Result |
+|---|---|
+| A and B time rows | 0 regressions over 10%; 4 rows faster (`LibSm64Scaling_SaveErase` at 1, 2 and 4 threads, -13% to -17%; `Resource_SaveLoadState` -56%, the layout-sensitive row already on record). The untouched DLL rows drifted +1% to +5% (`FrameAdvance` 13.7 -> 14.4 us). |
+| allocations, exact counts | 0 / 0 regressions |
+| scaling efficiency | 1 flag: `SaveErase` at 8 threads fell more than 5 points below the baseline's efficiency because its 1-thread row ran 13% faster than baseline while the 8-thread row ran 6% faster. Every absolute time in the family improved; the gate reads a ratio, and a faster single thread lowers it. |
+| C (oscillation, downhill, sweep) | +5.2%, -1.2%, +4.2% |
+| D exact counts | identical: 55 solutions, 109,958 blocks, 520,052 scripts, 0 validation failures |
+| D wall | 142.3 s (+1.9%) and 75.6 s (+0.9%); the machine was back at baseline pace for this run |
+
 ### 2026-09-08: renamed-symbol fallback in `LibSm64::addr`; the Linux `.so` measured (ROADMAP 2.1, 3.4)
 
 `LibSm64::addr` now resolves a symbol with the new non-throwing `SharedLib::tryGet` and,

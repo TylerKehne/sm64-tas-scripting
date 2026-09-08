@@ -1,4 +1,5 @@
 #include <doctest/doctest.h>
+#include <BitFsObjects.hpp>
 #include <LibSm64.hpp>
 #include <sm64/Camera.hpp>
 #include <sm64/ObjectFields.hpp>
@@ -51,6 +52,9 @@ namespace
 	{
 		MarioSnapshot snapshot {};
 		std::vector<std::string> report;
+		// objectCheckReport for deliberately wrong expectations, taken inside the level: the
+		// far pyramid's home on slot 84, the track platform's behavior on slot 83, an empty slot.
+		std::vector<std::string> wrongExpectations;
 	};
 
 	class PlayAndSnapshot : public TopLevelScript<LibSm64>
@@ -63,6 +67,11 @@ namespace
 		{
 			LongLoad(_frame);
 			_results.report = resource->layoutCheckReport();
+			_results.wrongExpectations = resource->objectCheckReport({
+				{84, "bhvBitfsTiltingInvertedPyramid", -2866.0f, -3225.0f, -715.0f},
+				{83, "bhvPlatformOnTrack", -5744.0f, -3072.0f, 0.0f},
+				{239, "bhvBitfsTiltingInvertedPyramid", 0.0f, 0.0f, 0.0f, false},
+			});
 
 			MarioState* m = *(MarioState**)(resource->addr("gMarioState"));
 			Object* pyramid = &((Object*)(resource->addr("gObjectPool")))[84];
@@ -103,6 +112,7 @@ TEST_CASE("libsm64: loads, passes the layout check, and plays the movie determin
 	config.dllPath = Env("TASFW_LIBSM64");
 	config.countryCode = CountryCode::SUPER_MARIO_64_J;
 	config.lightweight = true;
+	config.expectedObjects = BitFsExpectedObjects;
 	int64_t frame = Env("TASFW_FRAME").empty() ? 3330 : std::stoll(Env("TASFW_FRAME"));
 
 	LibSm64 resource(config);
@@ -116,6 +126,23 @@ TEST_CASE("libsm64: loads, passes the layout check, and plays the movie determin
 		CHECK(line.rfind("FAIL: ", 0) != 0);
 	}
 	CHECK(first.snapshot.frame == uint32_t(frame));
+
+	// The slots the scripts hardcode hold what BitFsObjects.hpp says (ROADMAP 2.4), and the
+	// check does fail for a wrong home, a wrong behavior and an empty slot.
+	auto has = [&](const std::vector<std::string>& lines, const char* prefix)
+	{
+		return std::any_of(lines.begin(), lines.end(), [&](const std::string& l) { return l.rfind(prefix, 0) == 0; });
+	};
+	CHECK(has(first.report, "ok: gObjectPool[84] is bhvBitfsTiltingInvertedPyramid at home (-1945, -3225, -715)"));
+	CHECK(has(first.report, "ok: gObjectPool[83] is bhvBitfsTiltingInvertedPyramid at home (-2866, -3225, -715)"));
+	CHECK(has(first.report, "ok: gObjectPool[85] is bhvPlatformOnTrack at home (-5744, -3072, 0)"));
+	REQUIRE(first.wrongExpectations.size() == 3);
+	CHECK(first.wrongExpectations[0].find("FAIL: expected gObjectPool[84]") == 0);
+	CHECK(first.wrongExpectations[0].find("home is (-1945, -3225, -715)") != std::string::npos);
+	CHECK(first.wrongExpectations[1].find("FAIL: expected gObjectPool[83]") == 0);
+	CHECK(first.wrongExpectations[1].find("different behavior") != std::string::npos);
+	CHECK(first.wrongExpectations[2].find("FAIL: expected gObjectPool[239]") == 0);
+	CHECK(first.wrongExpectations[2].find("inactive") != std::string::npos);
 
 	// Second play: ImportResource resets to the start save and replays from power-on.
 	SmokeResults second = Play(resource, m64, frame);

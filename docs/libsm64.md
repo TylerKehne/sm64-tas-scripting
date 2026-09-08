@@ -103,7 +103,7 @@ here calls it.
 ## Checking a DLL: `dllcheck`
 
 ```
-build\Release\out\dllcheck.exe <libsm64.dll> <movie.m64> <frame> [--lightweight] [--leak-scan [frames]]
+build\Release\out\dllcheck.exe <libsm64.dll> <movie.m64> <frame> [--lightweight] [--leak-scan [frames]] [--objects]
 ```
 
 Plays the movie to `<frame>` (pick one inside a level), runs `LibSm64::layoutCheckReport()`,
@@ -123,7 +123,18 @@ The camera globals (`gLakituState`, `gPlayerCameraState`, `sModeTransition`, ...
 controller structs (`gControllers`, `gControllerBits`) are reported as `WARN:` rather than
 `FAIL:` when outside the slices; on the pinned DLL all of them are inside. On Linux, where
 lightweight saves do not exist (`LibSm64LightweightSupported`), `--lightweight` is accepted
-and the coverage checks are replaced by one `note:` line.
+and the coverage checks are replaced by one `note:` line. When `LibSm64Config::expectedObjects`
+is set (the pipeline passes `BitFsExpectedObjects`; `dllcheck` does not), the in-level report
+also verifies each hardcoded `gObjectPool` slot: active, running the declared behavior and,
+unless the declaration opts out, at the declared home. `bitfs-turn --dry-run` prints that
+report at the first stage's frame.
+
+`--objects` prints every active object in the pool at `<frame>`: slot, behavior as
+`<section>+<offset>`, `oBehParams`, position and home. Pipe it through
+`python scripts\dll_symbols.py <dll> -` to turn the offsets into behavior names. This is how
+the slot declarations in `BitFsObjects.hpp` were established (2026-09-08: 89 active objects
+at frame 3330, two of them `bhvBitfsTiltingInvertedPyramid`, at homes x = -2866 in slot 83
+and x = -1945 in slot 84; `bhvPlatformOnTrack` in slot 85 at (-5744, -3072, 0)).
 
 `--leak-scan` answers the other question about a save mode: not "are the symbols we know
 about inside the slices" but "does a load restore everything that changed". It saves a state
@@ -194,8 +205,11 @@ making these derived instead of hardcoded.
    2026 builds, as the checks above show.)
 2. **Lightweight save slices** in `LibSm64::save`/`load` (`tasfw-resources/src/LibSm64.cpp`):
    fixed byte offsets into `.data` and `.bss` chosen for this build. Windows only.
-3. **Object pool index 84** for the pyramid, which depends on the level's object load order,
-   not the DLL, but is equally fragile.
+3. **Object pool slots 84, 83 and 85** (the pyramid, the far pyramid, the track platform),
+   which depend on the level's object spawn order, not the DLL, but are equally fragile. Kept
+   by decision (ROADMAP 2.4) and declared with behavior and home in
+   `tasfw-scripts/inc/BitFsObjects.hpp`; `LibSm64::objectCheckReport` verifies them inside
+   the level as part of the layout check, so a shift fails start-up loudly.
 4. **ROM/country checks** in `Inputs.hpp` (`Rom::SUPER_MARIO_64`, `CountryCode::SUPER_MARIO_64_J`).
 5. **Exported names.** See "Renamed symbols"; new renames go into `LibSm64SymbolAliases`.
 

@@ -29,6 +29,8 @@
 #include <vector>
 
 #include <LibSm64.hpp>
+#include <sm64/ObjectFields.hpp>
+#include <sm64/Types.hpp>
 #include <tasfw/Inputs.hpp>
 #include <tasfw/Script.hpp>
 
@@ -55,6 +57,8 @@ namespace
 		double loadMicros = 0;
 		double addrNanos = 0;
 		std::vector<std::string> report;
+		bool listObjects = false;
+		std::vector<std::string> objects; // one line per active object in gObjectPool
 		int leakScanFrames = 0;
 		std::vector<LeakRange> leaksPass1; // differs after play + load
 		std::vector<LeakRange> leaksPass2; // differs after a different play + load
@@ -155,9 +159,45 @@ namespace
 			_results.addrNanos = MicrosecondsSince(start) * 1000.0 / addrReps;
 			(void)sink;
 
+			if (_results.listObjects)
+				ListObjects();
 			if (_results.leakScanFrames > 0)
 				LeakScan();
 			return true;
+		}
+
+		// Every active object in the pool: index, behavior as <section>+<offset> (so that
+		// `scripts/dll_symbols.py <dll> -` names it from the export table), behavior params,
+		// position and home. What a level-specific index like gObjectPool[84] actually refers
+		// to, and what distinguishes objects that share a behavior (ROADMAP 2.4).
+		void ListObjects()
+		{
+			constexpr int poolCapacity = LibSm64ObjectPoolCapacity;
+			Object* pool = (Object*)(resource->addr("gObjectPool"));
+			auto sections = resource->dll.readSections();
+			auto where = [&](const void* p) -> std::string
+			{
+				const char* ptr = static_cast<const char*>(p);
+				for (const auto& [name, info] : sections)
+				{
+					const char* begin = static_cast<const char*>(info.address);
+					if (ptr >= begin && ptr < begin + info.length)
+						return name + "+" + std::to_string(ptr - begin);
+				}
+				char buf[32];
+				std::snprintf(buf, sizeof(buf), "%p", p);
+				return buf;
+			};
+			for (int i = 0; i < poolCapacity; i++)
+			{
+				Object& o = pool[i];
+				if (o.activeFlags == 0)
+					continue;
+				char buf[256];
+				std::snprintf(buf, sizeof(buf), "obj %3d: behavior %s, behParams 0x%08X, pos (%.1f, %.1f, %.1f), home (%.1f, %.1f, %.1f)",
+					i, where(o.behavior).c_str(), unsigned(o.oBehParams), o.oPosX, o.oPosY, o.oPosZ, o.oHomeX, o.oHomeY, o.oHomeZ);
+				_results.objects.push_back(buf);
+			}
 		}
 
 		void LeakScan()
@@ -199,7 +239,7 @@ int main(int argc, char** argv)
 {
 	if (argc < 4)
 	{
-		std::fprintf(stderr, "usage: dllcheck <libsm64.dll> <movie.m64> <frame> [--lightweight]\n");
+		std::fprintf(stderr, "usage: dllcheck <libsm64.dll> <movie.m64> <frame> [--lightweight] [--leak-scan [frames]] [--objects]\n");
 		return 2;
 	}
 
@@ -207,12 +247,15 @@ int main(int argc, char** argv)
 	std::filesystem::path m64Path = argv[2];
 	int64_t frame = std::stoll(argv[3]);
 	bool lightweight = false;
+	bool listObjects = false;
 	int leakScanFrames = 0;
 	for (int i = 4; i < argc; i++)
 	{
 		std::string arg = argv[i];
 		if (arg == "--lightweight")
 			lightweight = true;
+		else if (arg == "--objects")
+			listObjects = true;
 		else if (arg == "--leak-scan")
 		{
 			leakScanFrames = 120;
@@ -252,6 +295,7 @@ int main(int argc, char** argv)
 
 		Results results;
 		results.leakScanFrames = leakScanFrames;
+		results.listObjects = listObjects;
 		TopLevelScriptBuilder<PlayToFrame>::Build(m64).ImportResource(&resource).Run(frame, results);
 
 		std::cout << "\nLayout checks at frame " << results.frameReached << ":\n";
@@ -261,6 +305,13 @@ int main(int argc, char** argv)
 			std::cout << "  " << line << "\n";
 			if (line.rfind("FAIL: ", 0) == 0)
 				failures++;
+		}
+
+		if (listObjects)
+		{
+			std::cout << "\nActive objects at frame " << results.frameReached << " (" << results.objects.size() << "):\n";
+			for (const std::string& line : results.objects)
+				std::cout << "  " << line << "\n";
 		}
 
 		std::cout << "\nCost:\n";

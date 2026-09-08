@@ -15,7 +15,9 @@
 #include <string>
 #include <vector>
 
+#include <BitFsObjects.hpp>
 #include <LibSm64.hpp>
+#include <tasfw/Script.hpp>
 
 #include "PipelineConfig.hpp"
 #include "SelfPath.hpp"
@@ -128,6 +130,28 @@ namespace
 		return total;
 	}
 
+	// --dry-run: play the movie to a stage's start frame and take the in-level layout report
+	// there. The power-on report cannot check anything that needs Mario or the level's objects
+	// (the slots the scripts hardcode among them), and a TopLevelScript that writes no inputs
+	// is rewound when it returns, so the report has to be taken inside execution().
+	class DryRunPlay : public TopLevelScript<LibSm64>
+	{
+	public:
+		DryRunPlay(int64_t frame, std::vector<std::string>& report) : _frame(frame), _report(report) {}
+		bool validation() override { return true; }
+		bool execution() override
+		{
+			LongLoad(_frame);
+			_report = resource->layoutCheckReport();
+			return true;
+		}
+		bool assertion() override { return true; }
+
+	private:
+		int64_t _frame;
+		std::vector<std::string>& _report;
+	};
+
 	std::vector<LibSm64> BuildResources(const PipelineConfig& pipeline, int count)
 	{
 		std::vector<fs::path> paths = pipeline.DllPaths();
@@ -139,6 +163,7 @@ namespace
 			config.dllPath = paths[size_t(i)];
 			config.lightweight = pipeline.lightweight;
 			config.countryCode = CountryCode::SUPER_MARIO_64_J;
+			config.expectedObjects = BitFsExpectedObjects; // the slots the scripts hardcode, verified per thread
 			resources.emplace_back(config);
 			resources.back().useCostModel = pipeline.costModel;
 		}
@@ -184,6 +209,33 @@ namespace
 			std::printf("\nlayout checks at power-on (%s):\n", pipeline.DllPaths()[0].filename().string().c_str());
 			for (const std::string& line : one[0].layoutCheckReport())
 				std::printf("  %s\n", line.c_str());
+
+			// The in-level checks, at the first stage's start frame of its movie.
+			if (!pipeline.stages.empty() && pipeline.stages.front().startFrame >= 0)
+			{
+				const StageConfig& stage = pipeline.stages.front();
+				M64 m64(stage.m64.value_or(pipeline.m64));
+				if (m64.load() != 1)
+				{
+					std::fprintf(stderr, "error: could not load movie %s\n", stage.m64.value_or(pipeline.m64).string().c_str());
+					return 1;
+				}
+				std::vector<std::string> report;
+				TopLevelScriptBuilder<DryRunPlay>::Build(m64).ImportResource(&one[0]).Run(stage.startFrame, report);
+				std::printf("\nlayout checks at frame %lld (stage \"%s\"):\n", (long long)stage.startFrame, stage.name.c_str());
+				int failures = 0;
+				for (const std::string& line : report)
+				{
+					std::printf("  %s\n", line.c_str());
+					if (line.rfind("FAIL: ", 0) == 0)
+						failures++;
+				}
+				if (failures > 0)
+				{
+					std::fprintf(stderr, "error: %d layout check(s) failed; a run would stop at start-up with the same message\n", failures);
+					return 1;
+				}
+			}
 			return 0;
 		}
 
