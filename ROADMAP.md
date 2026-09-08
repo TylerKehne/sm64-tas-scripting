@@ -230,6 +230,22 @@ Goal: finish the thing the framework was built for.
       *Done when:* the cause is documented and a Tier D run reports zero unexplained
       validation failures.
 
+### After the makeover: the three squish-cancel goals
+
+Once the BitFS squish-cancel brute forcer is running end to end again, the shorter-term
+goals are (status as stated by the maintainer, 2026-09-08):
+
+- [ ] **4.6 Enumerate every corner.** A brute forcer that enumerates the squish-cancel and
+      fast-bully-battery possibilities on all 16 pyramid corners, not just the one the
+      current pipeline targets. Progress exists in the current scripts and stages.
+- [ ] **4.7 A solutions database.** Store the input files (or compressed versions) with
+      numerical data about each, queryable and filterable. Nothing exists yet; the per-stage
+      solution files from 1.4 (`solutions/<stage>.json`: diffs plus named metrics) are the
+      nearest thing and a natural import format.
+- [ ] **4.8 Fine-tuned targeting.** A squish-cancel brute forcer that hits floating-point
+      precise target values when given a sufficiently close starting m64 (the ARE machinery
+      in `TiltTargetShot` is the seed of this). Progress exists.
+
 ## Phase 5: toward a game-agnostic framework
 
 Not scheduled. Listed so decisions in earlier phases do not paint us into a corner.
