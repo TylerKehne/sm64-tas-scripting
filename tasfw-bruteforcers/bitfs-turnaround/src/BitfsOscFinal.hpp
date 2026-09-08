@@ -153,6 +153,8 @@ private:
             if (marioState->action == ACT_FREEFALL || marioState->action == ACT_FREEFALL_LAND)
                 CustomStatus.phase = Phase::FALLING;
             break;
+        default:
+            break;
         }
     }
 
@@ -286,7 +288,7 @@ public:
     BitfsOscFinal(Alias_Scattershot_BitfsOscFinal& scattershot, const BitfsOscFinalArgs& args)
         : Alias_ScattershotThread_BitfsOscFinal(scattershot), _args(args) {}
 
-    void SelectMovementOptions()
+    void SelectMovementOptions() override
     {
         MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
 
@@ -327,7 +329,7 @@ public:
 
     }
 
-    bool ApplyMovement()
+    bool ApplyMovement() override
     {
         MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
         Camera* camera = *(Camera**)(resource->addr("gCamera"));
@@ -406,7 +408,7 @@ public:
         return true;
     }
 
-    BinaryStateBin<16> GetStateBin()
+    BinaryStateBin<16> GetStateBin() override
     {
         MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
         Camera* camera = *(Camera**)(resource->addr("gCamera"));
@@ -492,7 +494,7 @@ public:
         return state;
     }
 
-    bool ValidateState()
+    bool ValidateState() override
     {
         MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
         Camera* camera = *(Camera**)(resource->addr("gCamera"));
@@ -546,7 +548,7 @@ public:
         return true;
     }
 
-    float GetStateFitness()
+    float GetStateFitness() override
     {
         auto state = GetTrackedState<BitfsOscFinalMetrics>(GetCurrentFrame());
         if (state.initialized)
@@ -608,7 +610,7 @@ public:
             pyramid->oTiltingPyramidNormalX,
             pyramid->oTiltingPyramidNormalY,
             pyramid->oTiltingPyramidNormalZ,
-            state.phase,
+            int(state.phase),
             marioState->vel[1],
             state.normalDistance);
 
@@ -685,7 +687,7 @@ private:
                 AdvanceFrameWrite(Inputs(0, stick.first, stick.second));
 
                 return true;
-            }).executed;
+            });
 
         return marioState->action == ACT_FINISH_TURNING_AROUND || marioState->action == ACT_WALKING;
     }
@@ -730,7 +732,7 @@ private:
                 AdvanceFrameWrite(Inputs(0, inputs.first, inputs.second));
 
                 return true;
-            }).executed;
+            });
 
         return marioState->action == ACT_FINISH_TURNING_AROUND || marioState->action == ACT_WALKING;
     }

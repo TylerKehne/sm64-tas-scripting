@@ -3,12 +3,16 @@ include(CheckCXXCompilerFlag)
 
 function(msvc_arch_check)
 	message(STATUS "Detecting MSVC /arch flag")
-	try_run(run_result compile_result "${PROJECT_BINARY_DIR}/CMakeFiles/_arch_detect" "arch_detect/arch_detect.cpp" RUN_OUTPUT_VARIABLE msvc_flag)
-	message(STATUS "Detecting MSVC /arch flag - done")
+	# The probe source lives next to this module; try_run needs an absolute path here.
+	try_run(run_result compile_result "${PROJECT_BINARY_DIR}/CMakeFiles/_arch_detect"
+		"${CMAKE_CURRENT_LIST_DIR}/arch_detect/arch_detect.cpp" RUN_OUTPUT_VARIABLE msvc_flag)
+	string(STRIP "${msvc_flag}" msvc_flag)
+	message(STATUS "Detecting MSVC /arch flag - done (${msvc_flag})")
 
-	if(${run_result} EQUAL 0)
+	if(compile_result AND run_result EQUAL 0)
 		set(_arch_flag "${msvc_flag}" CACHE INTERNAL "Architecture optimization flag.")
 	else()
+		message(WARNING "MSVC /arch probe failed to compile or run; building without an /arch flag.")
 		set(_arch_flag "" CACHE INTERNAL "Architecture optimization flag.")
 	endif()
 endfunction()
@@ -24,11 +28,31 @@ function(generic_arch_check)
 endfunction()
 
 if(NOT _arch_flag)
-	if(${CMAKE_CXX_COMPILER_ID} STREQUAL "MSVC")
+	# Note the quoting: an unquoted ${CMAKE_CXX_COMPILER_ID} expands to the token MSVC, which
+	# if() then dereferences as the variable MSVC (= 1), so the comparison was always false and
+	# MSVC builds silently got no /arch flag at all. Compare the variable by name instead.
+	# clang-cl reports "Clang" with an MSVC front end; it understands -march=native.
+	if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
 		msvc_arch_check()
 	else()
 		generic_arch_check()
 	endif()
+endif()
+
+# Floating-point determinism. The framework re-implements pieces of game physics in C++
+# (PyramidUpdate) and must produce bit-identical floats to the game DLL and to itself across
+# compilers. With an AVX2+ target, GCC (-ffp-contract=fast) and Clang (-ffp-contract=on)
+# fuse a*b+c into FMA by default, which changes rounding. MSVC does not contract under its
+# default /fp:precise. Force the same behavior everywhere.
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+	set(_fp_flags "/fp:precise")
+elseif(CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
+	# clang-cl: GNU-style flags must go through /clang:, otherwise clang-cl *ignores* them with
+	# only a -Wunknown-argument warning and contraction stays on (its /fp:precise means
+	# -ffp-contract=on). Found 2026-09-07; see docs/compilers.md.
+	set(_fp_flags "/clang:-ffp-contract=off")
+else()
+	set(_fp_flags "-ffp-contract=off")
 endif()
 
 # Check for IPO/LTO
@@ -46,6 +70,7 @@ function(add_optimization_flags target)
 		if(_arch_flag)
 			target_compile_options(${target} INTERFACE ${_arch_flag})
 		endif()
+		target_compile_options(${target} INTERFACE ${_fp_flags})
 
 		# add OpenMP
 		target_link_libraries(${target} INTERFACE OpenMP::OpenMP_CXX)
@@ -54,6 +79,7 @@ function(add_optimization_flags target)
 		if(_arch_flag)
 			target_compile_options(${target} PUBLIC ${_arch_flag})
 		endif()
+		target_compile_options(${target} PUBLIC ${_fp_flags})
 
 		# add LTO
 		if(_ipo_supported)

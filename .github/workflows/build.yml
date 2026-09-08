@@ -1,0 +1,132 @@
+# Compiler matrix (ROADMAP 1.6, docs/compilers.md). Each job configures from the matching
+# CMakePresets.json preset (the same ones scripts/build.ps1 and the IDEs use) with warnings
+# as errors (ROADMAP 1.5), builds every target with MSVC, clang-cl, GCC and Clang, runs the
+# DLL-free correctness tests, and runs every Tier A benchmark briefly to prove the perf
+# binary executes. Nothing here needs the game DLL. Benchmark timings from CI runners are not
+# gated; the gate is the local perf.ps1 comparison against a committed baseline.
+#
+# Failures are re-emitted as ::error:: annotations so they are readable through the public
+# API without downloading logs. On Linux a problem matcher turns compiler warnings into
+# annotations too (GitHub keeps at most 10 per step).
+
+name: build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows-msvc
+            os: windows-latest
+            preset: msvc-release
+            bindir: build/Release
+          - name: windows-clang-cl
+            os: windows-latest
+            preset: clang-cl-release
+            bindir: build/Release-clang
+          - name: ubuntu-gcc
+            os: ubuntu-latest
+            preset: gcc-release
+            bindir: build/Release-gcc
+            cxx: g++-13
+          - name: ubuntu-clang
+            os: ubuntu-latest
+            preset: clang-release
+            bindir: build/Release-clang
+            cxx: clang++-17
+
+    steps:
+      - uses: actions/checkout@v5
+
+      # ---------------------------------------------------------------- Linux
+      - name: Install Linux toolchain
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build gcc-13 g++-13 clang-17 libomp-17-dev
+          echo "::add-matcher::.github/matchers/gcc.json"
+
+      - name: Configure (Linux)
+        if: runner.os == 'Linux'
+        shell: bash   # GitHub's explicit bash shell enables pipefail, so `| tee` cannot hide a failure
+        run: |
+          cmake --version
+          # The preset names the generic g++ / clang++; pin the version the matrix tests.
+          cmake --preset ${{ matrix.preset }} -DCMAKE_CXX_COMPILER=${{ matrix.cxx }} -DTASFW_WARNINGS_AS_ERRORS=ON 2>&1 | tee configure.log
+
+      - name: Build (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: cmake --build --preset ${{ matrix.preset }} -- -k 0 2>&1 | tee build.log
+
+      # -------------------------------------------------------------- Windows
+      - name: Set up MSVC environment
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Install Ninja (Windows)
+        if: runner.os == 'Windows'
+        run: choco install ninja --no-progress -y
+
+      - name: Configure (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cmake --version
+          $override = @()
+          if ('${{ matrix.preset }}' -like 'clang-cl-*') {
+            # The preset names clang-cl; on the runner the standalone LLVM is first on PATH and
+            # has no OpenMP runtime, so point at the clang-cl that ships with Visual Studio.
+            $override = @('-DCMAKE_CXX_COMPILER=' + (Join-Path $env:VCINSTALLDIR 'Tools\Llvm\x64\bin\clang-cl.exe'))
+          }
+          Write-Host "override: $override"
+          cmake --preset ${{ matrix.preset }} @override -DTASFW_WARNINGS_AS_ERRORS=ON 2>&1 | Tee-Object -FilePath configure.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cmake --build --preset ${{ matrix.preset }} -- -k 0 2>&1 | Tee-Object -FilePath build.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      # ---------------------------------------------------------------- Common
+      - name: Correctness tests (DLL-free)
+        shell: bash
+        run: ${{ matrix.bindir }}/out/tasfw-tests
+
+      - name: Tier A benchmarks (every family once, not gated)
+        shell: bash
+        run: |
+          ${{ matrix.bindir }}/out/tasfw-perf --benchmark_filter='^BM_(BinaryStateBin|Scattershot|Inputs|M64|SlotManager|Resource|Script)' --benchmark_min_time=0.01s
+
+      - name: Report failure details as annotations
+        if: failure()
+        shell: bash
+        run: |
+          for f in configure.log build.log; do
+            if [ -f "$f" ]; then
+              echo "::group::$f (errors)"
+              grep -inE 'error|warning|fatal|could not|not found|no such' "$f" | head -40 | while IFS= read -r line; do
+                echo "::error title=$f::${line}"
+              done
+              echo "::endgroup::"
+            fi
+          done
+          if [ -f ${{ matrix.bindir }}/CMakeFiles/CMakeConfigureLog.yaml ]; then
+            echo "::group::CMakeConfigureLog.yaml (tail)"
+            tail -60 ${{ matrix.bindir }}/CMakeFiles/CMakeConfigureLog.yaml | while IFS= read -r line; do
+              echo "::error title=CMakeConfigureLog::${line}"
+            done
+            echo "::endgroup::"
+          fi

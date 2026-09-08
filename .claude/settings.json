@@ -1,0 +1,27 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if command -v python >/dev/null 2>&1; then exec python .claude/hooks/doc-review.py baseline; else exec python3 .claude/hooks/doc-review.py baseline; fi",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if command -v python >/dev/null 2>&1; then exec python .claude/hooks/doc-review.py stop; else exec python3 .claude/hooks/doc-review.py stop; fi",
+            "timeout": 60,
+            "statusMessage": "Checking documentation against this turn's changes"
+          }
+        ]
+      }
+    ]
+  }
+}

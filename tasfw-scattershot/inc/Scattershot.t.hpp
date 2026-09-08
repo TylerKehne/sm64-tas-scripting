@@ -149,7 +149,7 @@ template <class TState, derived_from_specialization_of<Resource> TResource,
     class TOutputState>
 void Scattershot<TState, TResource, TStateTracker, TOutputState>::PrintStatus()
 {
-    printf("\nCombined Loops: %d Blocks: %d Solutions: %d\n", TotalShots, Blocks.size(), Solutions.size());
+    printf("\nCombined Loops: %llu Blocks: %llu Solutions: %llu\n", (unsigned long long)TotalShots, (unsigned long long)Blocks.size(), (unsigned long long)Solutions.size());
 
     // Print cumulative script results
     if (ScriptCount != 0)
@@ -160,7 +160,10 @@ void Scattershot<TState, TResource, TStateTracker, TOutputState>::PrintStatus()
             int redundancy = double(RedundantScripts) / double(ScriptCount) * 100;
             int discovery = double(NovelScripts) / double(ScriptCount) * 100;
 
-            printf("Futility: %d%% Redundancy: %d%% Discovery: %d%%\n", futility, redundancy, discovery);
+            printf("Futility: %d%% Redundancy: %d%% Discovery: %d%%", futility, redundancy, discovery);
+            if (ValidationFailures != 0)
+                printf(" Validation failures: %llu", (unsigned long long)ValidationFailures);
+            printf("\n");
         }
     }
 

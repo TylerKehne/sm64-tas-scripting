@@ -1,5 +1,8 @@
 #pragma once
+#include <cmath>
+#include <concepts>
 #include <cstdint>
+#include <stdexcept>
 
 template <int nBytes>
 class BinaryStateBin

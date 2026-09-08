@@ -205,6 +205,8 @@ private:
                 if (marioState->action == ACT_IDLE)
                     CustomStatus.phase = Phase::C_UP_TRICK;
                 break;
+            default:
+                break;
         }
     }
 
@@ -263,7 +265,7 @@ public:
     Scattershot_BitfsDrApproach(Alias_Scattershot_BitfsDrApproach& scattershot)
         : Alias_ScattershotThread_BitfsDrApproach(scattershot) { }
 
-    void SelectMovementOptions()
+    void SelectMovementOptions() override
     {
         MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
 
@@ -327,7 +329,7 @@ public:
         }
     }
 
-    bool ApplyMovement()
+    bool ApplyMovement() override
     {
         MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
         Camera* camera = *(Camera**)(resource->addr("gCamera"));
@@ -384,7 +386,7 @@ public:
         return true;
     }
 
-    BinaryStateBin<16> GetStateBin()
+    BinaryStateBin<16> GetStateBin() override
     {
         MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
         Camera* camera = *(Camera**)(resource->addr("gCamera"));
@@ -470,7 +472,7 @@ public:
         return state;
     }
 
-    bool ValidateState()
+    bool ValidateState() override
     {
         MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
         Camera* camera = *(Camera**)(resource->addr("gCamera"));
@@ -524,8 +526,11 @@ public:
         auto state = GetTrackedState<StateTracker_BitfsDrApproach>(GetCurrentFrame());
         auto lastFrameState = GetTrackedState<StateTracker_BitfsDrApproach>(GetCurrentFrame() - 1);
 
+        // Was an empty statement (`if (...);`) until 2026-09; Clang's -Wempty-body found it.
+        // Reject leaving the C-up trick phase without going airborne.
         if (state.initialized && state.phase == StateTracker_BitfsDrApproach::Phase::C_UP_TRICK
-            && state.marioAction != ACT_FREEFALL && state.marioAction != ACT_FREEFALL_LAND);
+            && state.marioAction != ACT_FREEFALL && state.marioAction != ACT_FREEFALL_LAND)
+            return false;
 
         // Reject departures from norm regime
         //float normRegimeThreshold = 0.69f;
@@ -552,7 +557,7 @@ public:
         return true;
     }
 
-    float GetStateFitness()
+    float GetStateFitness() override
     {
         MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
         Object* objectPool = (Object*)(resource->addr("gObjectPool"));
@@ -726,7 +731,7 @@ private:
                 AdvanceFrameWrite(Inputs(0, stick.first, stick.second));
 
                 return true;
-            }).executed;
+            });
 
         return marioState->action == ACT_FINISH_TURNING_AROUND || marioState->action == ACT_WALKING;
     }
@@ -771,7 +776,7 @@ private:
                 AdvanceFrameWrite(Inputs(0, inputs.first, inputs.second));
 
                 return true;
-            }).executed;
+            });
 
         return marioState->action == ACT_FINISH_TURNING_AROUND || marioState->action == ACT_WALKING;
     }

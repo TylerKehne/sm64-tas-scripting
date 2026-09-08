@@ -1,6 +1,10 @@
 #pragma once
 
 #include <concepts>
+#include <cstdint>
+#include <cstdio>
+#include <map>
+#include <memory>
 #include <stdexcept>
 #include <cmath>
 #include <BinaryStateBin.hpp>
@@ -9,6 +13,7 @@
 #include <omp.h>
 #include <vector>
 #include <filesystem>
+#include <set>
 #include <unordered_set>
 #include <chrono>
 #include <iostream>
@@ -157,6 +162,7 @@ class Scattershot
 public:
     const Configuration& config;
     friend class ScattershotThread<TState, TResource, TStateTracker, TOutputState>;
+    friend class PerfAccess; // tasfw-perf benchmarks; see docs/performance.md
 
     Scattershot(const Configuration& configuration, const std::vector<ScattershotSolution<TOutputState>>& inputSolutions);
 
@@ -174,7 +180,7 @@ public:
                     [&]<typename... Ts>(Ts&&... args) -> ScriptStatus<TScattershotThread>
                     {
                         return TopLevelScriptBuilder<TScattershotThread>::Build(m64)
-                            .ConfigureResource<TResourceConfig>(resourceConfigGenerator(threadId))
+                            .template ConfigureResource<TResourceConfig>(resourceConfigGenerator(threadId)) // `template`: dependent object (docs/compilers.md)
                             .ConfigureStateTracker(std::forward<Ts>(args)...)
                             .Run(scattershot, std::forward<TParams>(params)...);
                     }, *stateTrackerParams);
@@ -195,7 +201,7 @@ public:
                     [&]<typename... Ts>(Ts&&... args) -> ScriptStatus<TScattershotThread>
                     {
                         return TopLevelScriptBuilder<TScattershotThread>::Build(m64)
-                            .ImportResource<TResource>(resourceImportGenerator(threadId))
+                            .template ImportResource<TResource>(resourceImportGenerator(threadId)) // `template`: dependent object (docs/compilers.md)
                             .ConfigureStateTracker(std::forward<Ts>(args)...)
                             .Run(scattershot, std::forward<TParams>(params)...);
                     }, *stateTrackerParams);
@@ -225,6 +231,9 @@ private:
     uint64_t FailedScripts = 0;
     uint64_t RedundantScripts = 0;
     uint64_t NovelScripts = 0;
+    // Shots whose decoded base block did not reproduce the block's state bin (ROADMAP 4.5).
+    // A non-zero count means replaying a segment chain is not a pure function of its seeds.
+    uint64_t ValidationFailures = 0;
 
     void PrintStatus();
     bool UpsertBlock(TState stateBin, bool isSolution, ScattershotSolution<TOutputState> solution, float fitness,
@@ -281,7 +290,11 @@ private:
                 }
             });
 
-        printf("Found %d solutions in %d shots.\n", scattershot.Solutions.size(), scattershot.TotalShots);
+        // Parsed by scripts/perf.ps1 (Tier D); keep the format if you change it.
+        printf("Found %llu solutions in %llu shots, %llu blocks, %llu scripts (%llu base-block validation failures).\n",
+            (unsigned long long)scattershot.Solutions.size(), (unsigned long long)scattershot.TotalShots,
+            (unsigned long long)scattershot.Blocks.size(), (unsigned long long)scattershot.ScriptCount,
+            (unsigned long long)scattershot.ValidationFailures);
 
         std::vector<ScattershotSolution<TOutputState>> solutions;
         solutions.reserve(scattershot.Solutions.size());
@@ -431,6 +444,11 @@ private:
     uint64_t RngHashTemp = 0;
     TState BaseBlockStateBin;
     std::shared_ptr<Segment> BaseBlockTailSegment = nullptr;
+    // Set by ValidateBaseBlock on a mismatch so execution() can decode the same block a second
+    // time and report whether the two decodes agree with each other (ROADMAP 4.5 diagnosis).
+    bool LastValidationFailed = false;
+    TState LastDecodedBin;
+    M64Diff LastDecodedDiff;
     std::unordered_set<MovementOption> movementOptions;
 
     short startCourse;

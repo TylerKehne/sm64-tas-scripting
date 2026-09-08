@@ -40,14 +40,27 @@ int64_t SlotManager<TState>::CreateSlot()
 {
 	while (true)
 	{
+		// A pooled state is reused without growing memory, so it is always admitted. A fresh
+		// state is admitted while live plus pooled memory plus one average slot fits.
+		bool reuse = !_pool.empty();
 		int64_t additionalMem = slotsById.empty() ? 0 : _currentSaveMem / slotsById.size();
-		if (_currentSaveMem + additionalMem <= _saveMemLimit)
+		if (reuse || _currentSaveMem + _pooledMem + additionalMem <= _saveMemLimit)
 		{
 			//NOTE: IDs/Order will not overflow on realistic timescales
 			int64_t slotId = nextSlotId++;
 			if (nextSlotId == 1)
 				throw std::runtime_error("Max slot id exceeded.");
-			slotsById[slotId] = TState();
+
+			TState* slot;
+			if (reuse)
+			{
+				_pooledMem -= _resource->getStateSize(_pool.back());
+				slot = &slotsById.emplace(slotId, std::move(_pool.back())).first->second;
+				_pool.pop_back();
+				nPoolReuses++;
+			}
+			else
+				slot = &slotsById.emplace(slotId, TState()).first->second;
 
 			//NOTE: Order will not overflow on realistic timescales
 			int64_t newSlotOrder = slotIdsByLastAccess.size() == 0 ? 0 : std::prev(slotIdsByLastAccess.end())->first + 1;
@@ -57,9 +70,9 @@ int64_t SlotManager<TState>::CreateSlot()
 			slotIdsByLastAccess[newSlotOrder] = slotId;
 			slotLastAccessOrderById[slotId] = newSlotOrder;
 
-			//Save memory into slot
-			_resource->save(slotsById[slotId]);
-			_currentSaveMem += _resource->getStateSize(slotsById[slotId]);
+			//Save memory into slot (a recycled state already has its buffers sized)
+			_resource->save(*slot);
+			_currentSaveMem += _resource->getStateSize(*slot);
 
 			return slotId;
 		}
@@ -67,7 +80,7 @@ int64_t SlotManager<TState>::CreateSlot()
 		if (slotsById.size() == 0)
 			throw std::runtime_error("Not enough resource slot memory allocated");
 
-		// If save memory is full, remove the earliest save and try again
+		// If save memory is full, remove the earliest save (into the pool) and try again
 		EraseOldestSlot();
 	}
 }
@@ -75,15 +88,22 @@ int64_t SlotManager<TState>::CreateSlot()
 template <class TState>
 void SlotManager<TState>::EraseSlot(int64_t slotId)
 {
-	if (slotsById.contains(slotId))
-	{
-		_currentSaveMem -= _resource->getStateSize(slotsById[slotId]);
+	auto slot = slotsById.find(slotId);
+	if (slot == slotsById.end())
+		return;
 
-		int64_t slotOrder = slotLastAccessOrderById[slotId];
-		slotsById.erase(slotId);
-		slotLastAccessOrderById.erase(slotId);
-		slotIdsByLastAccess.erase(slotOrder);
+	int64_t size = _resource->getStateSize(slot->second);
+	_currentSaveMem -= size;
+	if (_pool.size() < _maxPooledStates)
+	{
+		_pool.push_back(std::move(slot->second));
+		_pooledMem += size;
 	}
+
+	int64_t slotOrder = slotLastAccessOrderById[slotId];
+	slotsById.erase(slot);
+	slotLastAccessOrderById.erase(slotId);
+	slotIdsByLastAccess.erase(slotOrder);
 }
 
 template <class TState>
@@ -172,7 +192,7 @@ uint64_t Resource<TState>::GetTotalFrameAdvanceTime()
 template <class TState>
 bool Resource<TState>::shouldSave(int64_t estFrameAdvances) const
 {
-	if (estFrameAdvances == 0)
+	if (!useCostModel || estFrameAdvances == 0)
 		return false;
 
 	if (nSaveStates == 0 || nFrameAdvances == 0 || estFrameAdvances < 0)
@@ -188,7 +208,7 @@ bool Resource<TState>::shouldSave(int64_t estFrameAdvances) const
 template <class TState>
 bool Resource<TState>::shouldLoad(int64_t framesAhead) const
 {
-	if (framesAhead == 0)
+	if (!useCostModel || framesAhead == 0)
 		return false;
 
 	if (nLoadStates == 0 || nFrameAdvances == 0 || framesAhead < 0)

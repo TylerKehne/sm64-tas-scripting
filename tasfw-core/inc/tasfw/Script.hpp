@@ -1,10 +1,19 @@
 #pragma once
+#include <cstdint>
+#include <map>
+#include <memory>
+#include <set>
+#include <stdexcept>
+#include <string>
+#include <tuple>
+#include <typeinfo>
 #include <unordered_map>
+#include <utility>
+#include <tasfw/LevelStack.hpp>
 #include <tasfw/Resource.hpp>
 #include <tasfw/Inputs.hpp>
 #include <sm64/Types.hpp>
 #include <tasfw/ScriptStatus.hpp>
-#include <set>
 #include <tasfw/SharedLib.hpp>
 #include <tasfw/ScriptCompareHelper.hpp>
 
@@ -38,24 +47,58 @@ class StateTrackerFactoryBase;
 template <derived_from_specialization_of<Resource> TResource>
 class ScriptFriend;
 
+// Identity of a state-tracker type without RTTI: `&StateTrackerTag<T>::value` is one
+// address per T for the whole program. TopLevelScript stores its tracker's tag in the root
+// and GetTrackedState compares against it instead of a dynamic_cast on every lookup.
+template <class T>
+struct StateTrackerTag
+{
+	static constexpr char value = 0;
+};
+
+// Owns one savestate slot: destroying the handle erases the slot. slotId -1 with a resource
+// is the start save, which is never erased.
 template <derived_from_specialization_of<Resource> TResource>
 class SlotHandle
 {
 public:
-	TResource* resource = NULL;
+	TResource* resource = nullptr;
 	int64_t slotId = -1;
 
 	SlotHandle(TResource* resource, int64_t slotId) : resource(resource), slotId(slotId) { }
 
-	SlotHandle(SlotHandle<TResource>&&) = default;
-	SlotHandle<TResource>& operator = (SlotHandle<TResource>&&) = default;
+	// A move transfers ownership: the source forgets its resource, so its destructor
+	// releases nothing. With the defaulted move the source kept the id and erased the slot
+	// the destination had just received, which lost every save a child handed to its
+	// parent on Modify (they were then replayed instead of loaded; see test_script.cpp).
+	SlotHandle(SlotHandle<TResource>&& other) noexcept : resource(other.resource), slotId(other.slotId)
+	{
+		other.resource = nullptr;
+		other.slotId = -1;
+	}
+
+	SlotHandle<TResource>& operator=(SlotHandle<TResource>&& other) noexcept
+	{
+		if (this != &other)
+		{
+			Release();
+			resource = other.resource;
+			slotId = other.slotId;
+			other.resource = nullptr;
+			other.slotId = -1;
+		}
+		return *this;
+	}
 
 	SlotHandle(const SlotHandle<TResource>&) = delete;
 	SlotHandle<TResource>& operator= (const SlotHandle<TResource>&) = delete;
 
-	~SlotHandle();
+	~SlotHandle() { Release(); }
 
 	bool isValid();
+
+private:
+	void Release();
 };
 
 template <derived_from_specialization_of<Resource> TResource>
@@ -147,13 +190,13 @@ protected:
 		BaseStatus[_adhocLevel].totalDuration = finish - start;
 
 		// Load if necessary
-		Revert(initialFrame, script.BaseStatus[0].m64Diff, script.saveBank[0], &script);
+		Revert(initialFrame, script.BaseStatus[0].m64Diff, SaveBankIfCreated(script, 0), &script);
 
 		BaseStatus[_adhocLevel].nLoads += script.BaseStatus[0].nLoads;
 		BaseStatus[_adhocLevel].nSaves += script.BaseStatus[0].nSaves;
 		BaseStatus[_adhocLevel].nFrameAdvances += script.BaseStatus[0].nFrameAdvances;
 
-		return ScriptStatus<TScript>(script.BaseStatus[0], script.CustomStatus);
+		return ScriptStatus<TScript>(std::move(script.BaseStatus[0]), std::move(script.CustomStatus));
 	}
 
 	template <derived_from_specialization_of<Script> TScript, typename... Us>
@@ -179,13 +222,13 @@ protected:
 		BaseStatus[_adhocLevel].advanceFrameDuration = resource->GetTotalFrameAdvanceTime() - advanceFrameTimeStart;
 		BaseStatus[_adhocLevel].totalDuration = finish - start;
 
-		ApplyChildDiff(script.BaseStatus[0], script.saveBank[0], initialFrame, &script);
+		ApplyChildDiff(script.BaseStatus[0], SaveBankIfCreated(script, 0), initialFrame, &script);
 
 		BaseStatus[_adhocLevel].nLoads += script.BaseStatus[0].nLoads;
 		BaseStatus[_adhocLevel].nSaves += script.BaseStatus[0].nSaves;
 		BaseStatus[_adhocLevel].nFrameAdvances += script.BaseStatus[0].nFrameAdvances;
 
-		return ScriptStatus<TScript>(script.BaseStatus[0], script.CustomStatus);
+		return ScriptStatus<TScript>(std::move(script.BaseStatus[0]), std::move(script.CustomStatus));
 	}
 
 	template <derived_from_specialization_of<Script> TScript, typename... Us>
@@ -582,30 +625,21 @@ protected:
 
 	#pragma endregion
 
+	// The tracked state at `frame`, computed on first request. The reference points into the
+	// root's table and stays valid until a write at or before `frame` invalidates it; copy
+	// it (`auto state = ...`) if it has to outlive the next AdvanceFrameWrite/Load.
 	template <std::derived_from<Script<TResource>> TStateTracker>
 		requires std::constructible_from<TStateTracker>
-	typename TStateTracker::CustomScriptStatus GetTrackedState(int64_t frame)
+	const typename TStateTracker::CustomScriptStatus& GetTrackedState(int64_t frame)
 	{
-		TopLevelScript<TResource, TStateTracker>* root = dynamic_cast<TopLevelScript<TResource, TStateTracker>*>(_rootScript);
-		if (!root) {
-			std::cout << "Type mismatch! Expected TopLevelScript<" << typeid(TResource).name() << ", " << typeid(TStateTracker).name() << ">.\n";
-			throw std::runtime_error("Type mismatch in GetTrackedState<TStateTracker>()");
-		}
-
-		return root->GetTrackedStateInternal(this, GetInputsMetadataAndCache(frame));
+		return TrackerRoot<TStateTracker>()->GetTrackedStateInternal(this, GetInputsMetadataAndCache(frame));
 	}
 
 	template <std::derived_from<Script<TResource>> TStateTracker>
 		requires std::constructible_from<TStateTracker>
 	bool TrackedStateExists(int64_t frame)
 	{
-		TopLevelScript<TResource, TStateTracker>* root = dynamic_cast<TopLevelScript<TResource, TStateTracker>*>(_rootScript);
-		if (!root) {
-			std::cout << "Type mismatch! Expected TopLevelScript<" << typeid(TResource).name() << ", " << typeid(TStateTracker).name() << ">.\n";
-			throw std::runtime_error("Type mismatch in GetTrackedState<TStateTracker>()");
-		}
-
-		return root->TrackedStateExistsInternal(this, GetInputsMetadataAndCache(frame));
+		return TrackerRoot<TStateTracker>()->TrackedStateExistsInternal(this, GetInputsMetadataAndCache(frame));
 	}
 
 	// TODO: move this method to some utility class
@@ -647,14 +681,17 @@ private:
 
 	int64_t _adhocLevel = 0;
 	int32_t _initialFrame = 0;
-	std::unordered_map<int64_t, BaseScriptStatus> BaseStatus;
-	std::unordered_map<int64_t, std::map<int64_t, SlotHandle<TResource>>> saveBank;// contains handles to savestates
-	std::unordered_map<int64_t, std::map<int64_t, uint64_t>> frameCounter;// tracks opportunity cost of having to frame advance from an earlier save
-	std::unordered_map<int64_t, std::map<int64_t, SaveMetadata<TResource>>> saveCache;// stores metadata of ancestor saves to save recursion time
-	std::unordered_map<int64_t, std::map<int64_t, InputsMetadata<TResource>>> inputsCache;// caches ancestor inputs to save recursion time
-	std::unordered_map<int64_t, std::set<int64_t>> loadTracker;// track past loads to know whether a cached save is optimal
+	// One entry per ad-hoc level (see LevelStack.hpp); level 0 is the script itself.
+	LevelStack<BaseScriptStatus> BaseStatus;
+	LevelStack<std::map<int64_t, SlotHandle<TResource>>> saveBank;// contains handles to savestates
+	LevelStack<std::map<int64_t, uint64_t>> frameCounter;// tracks opportunity cost of having to frame advance from an earlier save
+	LevelStack<std::map<int64_t, SaveMetadata<TResource>>> saveCache;// stores metadata of ancestor saves to save recursion time
+	LevelStack<std::map<int64_t, InputsMetadata<TResource>>> inputsCache;// caches ancestor inputs to save recursion time
+	LevelStack<std::set<int64_t>> loadTracker;// track past loads to know whether a cached save is optimal
 	Script* _parentScript;
 	Script* _rootScript;
+	// Set by TopLevelScript on the root; see StateTrackerTag.
+	const void* _stateTrackerTag = nullptr;
 	bool isStateTracker = false;
 	ScriptCompareHelper<TResource> compareHelper = ScriptCompareHelper<TResource>(this);
 
@@ -667,13 +704,34 @@ private:
 	InputsMetadata<TResource> GetInputsMetadataAndCache(int64_t frame);
 	void DeleteSave(int64_t frame, int64_t adhocLevel);
 	void SetInputs(Inputs inputs);
-	void Revert(uint64_t frame, const M64Diff& m64, std::map<int64_t, SlotHandle<TResource>>& childSaveBank, Script<TResource>* childScript);
+	void Revert(uint64_t frame, const M64Diff& m64, std::map<int64_t, SlotHandle<TResource>>* childSaveBank, Script<TResource>* childScript);
 	void AdvanceFrameRead(uint64_t& counter);
 	uint64_t GetFrameCounter(InputsMetadata<TResource> cachedInputs);
 	uint64_t IncrementFrameCounter(InputsMetadata<TResource> cachedInputs);
-	void ApplyChildDiff(const BaseScriptStatus& status, std::map<int64_t, SlotHandle<TResource>>& childSaveBank, int64_t initialFrame, Script<TResource>* childScript);
+	void ApplyChildDiff(const BaseScriptStatus& status, std::map<int64_t, SlotHandle<TResource>>* childSaveBank, int64_t initialFrame, Script<TResource>* childScript);
 	SaveMetadata<TResource> Save(int64_t adhocLevel);
 	void LoadBase(uint64_t frame, bool desync);
+
+	// A child's save bank at `adhocLevel`, or nullptr if the child never saved (the level was
+	// never created). Reverting through a pointer avoids constructing an empty map just to
+	// find out it is empty.
+	static std::map<int64_t, SlotHandle<TResource>>* SaveBankIfCreated(Script<TResource>& script, int64_t adhocLevel)
+	{
+		return script.saveBank.contains(adhocLevel) ? &script.saveBank[adhocLevel] : nullptr;
+	}
+
+	// The root as its TopLevelScript type. Checked by comparing type tags rather than with
+	// dynamic_cast because this runs on every tracked-state lookup (ROADMAP 3.7).
+	template <class TStateTracker>
+	TopLevelScript<TResource, TStateTracker>* TrackerRoot()
+	{
+		if (_rootScript->_stateTrackerTag != &StateTrackerTag<TStateTracker>::value) [[unlikely]]
+		{
+			throw std::runtime_error(std::string("GetTrackedState<") + typeid(TStateTracker).name()
+				+ ">: the root script's state tracker is a different type");
+		}
+		return static_cast<TopLevelScript<TResource, TStateTracker>*>(_rootScript);
+	}
 
 	template <typename F>
 	BaseScriptStatus ExecuteAdhocBase(F adhocScript);
@@ -706,19 +764,19 @@ private:
 		BaseStatus[_adhocLevel].totalDuration = finish - start;
 
 		// Load if necessary
-		Revert(initialFrame, script.BaseStatus[0].m64Diff, script.saveBank[0], &script);
+		Revert(initialFrame, script.BaseStatus[0].m64Diff, SaveBankIfCreated(script, 0), &script);
 
 		BaseStatus[_adhocLevel].nLoads += script.BaseStatus[0].nLoads;
 		BaseStatus[_adhocLevel].nSaves += script.BaseStatus[0].nSaves;
 		BaseStatus[_adhocLevel].nFrameAdvances += script.BaseStatus[0].nFrameAdvances;
 
-		return ScriptStatus<TStateTracker>(script.BaseStatus[0], script.CustomStatus);
+		return ScriptStatus<TStateTracker>(std::move(script.BaseStatus[0]), std::move(script.CustomStatus));
 	}
 
 	// Needed for state tracking. These do nothing, but TopLevelScript overrides them. Can't access explicitly because of lack of template information.
+	// Tracked-state containers are created on first use, so there is no "push"; "pop" drops them.
 	virtual void TrackState(Script<TResource>* currentScript, const InputsMetadata<TResource>& inputsMetadata) { return; }
 	virtual bool TrackedStateExistsInternal(Script<TResource>* currentScript, const InputsMetadata<TResource>& inputsMetadata) { return false; }
-	virtual void PushTrackedStatesContainer(Script<TResource>* currentScript, int adhocLevel) { return; }
 	virtual void PopTrackedStatesContainer(Script<TResource>* currentScript, int adhocLevel) { return; }
 	virtual void MoveSyncedTrackedStates(Script<TResource>* sourceScript, int sourceAdhocLevel, Script<TResource>* destScript, int destAdhocLevel) { return; }
 	virtual void EraseTrackedStates(Script<TResource>* currentScript, int adhocLevel, int64_t firstFrame) { return; }
@@ -762,12 +820,12 @@ public:
 		return script->_adhocLevel;
 	}
 
-	static std::unordered_map<int64_t, BaseScriptStatus>& GetBaseStatus(Script<TResource>* script)
+	static LevelStack<BaseScriptStatus>& GetBaseStatus(Script<TResource>* script)
 	{
 		return script->BaseStatus;
 	}
 
-	static std::unordered_map<int64_t, std::map<int64_t, InputsMetadata<TResource>>>& GetInputsCache(Script<TResource>* script)
+	static LevelStack<std::map<int64_t, InputsMetadata<TResource>>>& GetInputsCache(Script<TResource>* script)
 	{
 		return script->inputsCache;
 	}
@@ -797,11 +855,18 @@ public:
 		return script->isStateTracker;
 	}
 
+	static void SetStateTrackerTag(Script<TResource>* script, const void* tag)
+	{
+		script->_stateTrackerTag = tag;
+	}
+
 	template <derived_from_specialization_of<Script> TStateTracker>
 	static ScriptStatus<TStateTracker> ExecuteStateTracker(
 		int64_t frame, Script<TResource>* script, std::shared_ptr<StateTrackerFactoryBase<TStateTracker>> stateTrackerFactory)
 	{
-		return script->ExecuteStateTracker<TStateTracker>(frame, stateTrackerFactory);
+		// `template` is required: `script` has a dependent type, so without it GCC and Clang
+		// parse `<` as less-than. MSVC accepts the omission (docs/compilers.md).
+		return script->template ExecuteStateTracker<TStateTracker>(frame, stateTrackerFactory);
 	}
 
 	static uint64_t GetCurrentFrame(Script<TResource>* script)
@@ -826,7 +891,10 @@ template <derived_from_specialization_of<Resource> TResource,
 class TopLevelScript : public Script<TResource>
 {
 public:
-	TopLevelScript() = default;
+	TopLevelScript()
+	{
+		ScriptFriend<TResource>::SetStateTrackerTag(this, &StateTrackerTag<TStateTracker>::value);
+	}
 
 	template <derived_from_specialization_of<TopLevelScript> TTopLevelScript, typename... TStateTrackerParams, typename... Ts>
 		requires(std::constructible_from<TTopLevelScript, Ts...> && std::constructible_from<TResource> && std::constructible_from<TStateTracker, TStateTrackerParams...>)
@@ -927,19 +995,18 @@ protected:
 
 private:
 	friend class Script<TResource>;
-	friend class TopLevelScript<TResource, TStateTracker>;
+	// (No self-friend declaration: a class is always its own friend, and GCC warns about it.)
 
 	// Data: trackedStates[script][adhocLevel][frame] = state;
 	std::shared_ptr<StateTrackerFactoryBase<TStateTracker>> stateTrackerFactory = nullptr;
-	std::unordered_map<Script<TResource>*, std::unordered_map<int64_t, std::map<int64_t, typename TStateTracker::CustomScriptStatus>>> trackedStates;
+	std::unordered_map<Script<TResource>*, LevelStack<std::map<int64_t, typename TStateTracker::CustomScriptStatus>>> trackedStates;
 
 	void TrackState(Script<TResource>* currentScript, const InputsMetadata<TResource>& inputsMetadata) override;
 	bool TrackedStateExistsInternal(Script<TResource>* currentScript, const InputsMetadata<TResource>& inputsMetadata) override;
-	void PushTrackedStatesContainer(Script<TResource>* currentScript, int adhocLevel) override;
 	void PopTrackedStatesContainer(Script<TResource>* currentScript, int adhocLevel) override;
 	void MoveSyncedTrackedStates(Script<TResource>* sourceScript, int sourceAdhocLevel, Script<TResource>* destScript, int destAdhocLevel) override;
 	void EraseTrackedStates(Script<TResource>* currentScript, int adhocLevel, int64_t firstFrame) override;
-	typename TStateTracker::CustomScriptStatus GetTrackedStateInternal(Script<TResource>* currentScript, const InputsMetadata<TResource>& inputsMetadata);
+	const typename TStateTracker::CustomScriptStatus& GetTrackedStateInternal(Script<TResource>* currentScript, const InputsMetadata<TResource>& inputsMetadata);
 
 	InputsMetadata<TResource> GetInputsMetadata(int64_t frame) override;
 
@@ -969,7 +1036,7 @@ private:
 		//Dispose of slot handles before resource goes out of scope because they trigger destructor events in the resource.
 		ScriptFriend<TResource>::DisposeSlotHandles(&script);
 
-		return ScriptStatus<TTopLevelScript>(baseStatus, script.CustomStatus);
+		return ScriptStatus<TTopLevelScript>(std::move(baseStatus), std::move(script.CustomStatus));
 	}
 };
 

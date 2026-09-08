@@ -47,6 +47,8 @@ sm64-tas-scripting/x64/
 res/
 analysis/*.csv
 analysis/*.png
+analysis/solutions/
+analysis/m64/
 
 # clangd
 .cache
@@ -54,3 +56,6 @@ analysis/*.png
 build/
 out/
 local/
+
+# perf suite runs (baselines under perf/baselines/ are committed)
+perf/results/

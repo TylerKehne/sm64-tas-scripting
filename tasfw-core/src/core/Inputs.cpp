@@ -67,12 +67,14 @@ PopulateInputMappings()
 			if (intendedMag > 0.0f)
 			{
 				baseIntendedYaw = atan2s(-adjustedStickY, adjustedStickX);
+				// stickX/stickY are int16_t loop counters that stay within int8_t range.
+				std::pair<int8_t, int8_t> stick {int8_t(stickX), int8_t(stickY)};
 				if (!yawMagToInputs.contains(baseIntendedYaw))
 					yawMagToInputs[baseIntendedYaw] =
 						std::map<float, std::pair<int8_t, int8_t>> {
-							{intendedMag, {stickX, stickY}}};
+							{intendedMag, stick}};
 				else if (!yawMagToInputs[baseIntendedYaw].contains(intendedMag))
-					yawMagToInputs[baseIntendedYaw][intendedMag] = {stickX, stickY};
+					yawMagToInputs[baseIntendedYaw][intendedMag] = stick;
 			}
 
 			inputsToYawMag[stickX][stickY] = {baseIntendedYaw, intendedMag};
@@ -81,7 +83,12 @@ PopulateInputMappings()
 	return {yawMagToInputs, inputsToYawMag};
 }
 
-const auto static[yawMagToInputs, inputsToYawMag] = PopulateInputMappings();
+// Not a structured binding on purpose: Clang 19.1 (clang-cl) crashes with an access violation
+// while parsing a function that references a namespace-scope `static` structured binding.
+// See docs/compilers.md. Two references to the members of a named static are equivalent.
+static const auto inputMappings = PopulateInputMappings();
+static const auto& yawMagToInputs = inputMappings.first;
+static const auto& inputsToYawMag = inputMappings.second;
 
 std::pair<int8_t, int8_t> Inputs::GetClosestInputByYawHau(
 	int16_t intendedYaw, float intendedMag, int16_t cameraYaw, Rotation bias)
@@ -378,8 +385,12 @@ int M64::save(long initFrame)
 	else
 		f = std::ofstream(fileName, std::ios_base::trunc | std::ios_base::binary);
 
-	f.exceptions(std::ios_base::failbit | std::ios_base::badbit);
+	// An open failure (missing directory, locked file) must be a false return, not an exception:
+	// callers export from inside OpenMP regions, where an escaping exception aborts the process.
+	if (!f.is_open())
+		return 0;
 
+	f.exceptions(std::ios_base::failbit | std::ios_base::badbit);
 
 	uint64_t lastFrame = frames.rbegin()->first;
 

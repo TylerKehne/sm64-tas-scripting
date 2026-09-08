@@ -175,7 +175,7 @@ void StateTracker_BitfsDr::CalculatePhase(CustomScriptStatus lastFrameState, Mar
             )
         {
             CustomStatus.crossingData.emplace_back(
-                GetCurrentFrame(), 0, CustomStatus.xzSum, CustomStatus.pyraNormX, CustomStatus.pyraNormZ, marioState->forwardVel, 0.f);
+                GetCurrentFrame(), 0.f, CustomStatus.xzSum, CustomStatus.pyraNormX, CustomStatus.pyraNormZ, marioState->forwardVel, 0.f);
             CustomStatus.currentCrossing++;
 
             // choose further target angle

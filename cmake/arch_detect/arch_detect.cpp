@@ -21,11 +21,13 @@
 #endif
 #include <cstdio>
 
+// MSVC's option is /arch:AVX512 (no F suffix); cl ignores unknown /arch values with only a
+// warning, so a wrong string here silently disables vectorization.
 const char* arch_flags[] = {
 	"",
 	"/arch:AVX",
 	"/arch:AVX2",
-	"/arch:AVX512F"
+	"/arch:AVX512"
 };
 
 int main() {

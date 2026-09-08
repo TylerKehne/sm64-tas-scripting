@@ -2,6 +2,8 @@
 
 #include <cstring>
 #include <iostream>
+#include <map>
+#include <utility>
 #include <vector>
 
 #include <tasfw/Inputs.hpp>
@@ -41,6 +43,15 @@ public:
 	int64_t _saveMemLimit = 0;
 	int64_t _currentSaveMem = 0;
 
+	// Erased and evicted states are kept here and handed to the next CreateSlot, so a save
+	// into a recycled state is one copy instead of allocating and zero-filling fresh buffers
+	// (a full LibSm64 save was 8x its load before this; ROADMAP 3.9). Pooled memory counts
+	// toward _saveMemLimit; the pool is bounded so idle memory does not pile up.
+	std::vector<TState> _pool;
+	int64_t _pooledMem = 0;
+	size_t _maxPooledStates = 32;
+	uint64_t nPoolReuses = 0;
+
 	SlotManager(Resource<TState>* resource) : _resource(resource) { }
 
 	int64_t CreateSlot();
@@ -48,6 +59,7 @@ public:
 	void EraseSlot(int64_t slotId);
 	void LoadSlot(int64_t slotId);
 	bool isValid(int64_t slotId);
+	size_t PooledStates() const { return _pool.size(); }
 };
 
 // Interface for the state machine that represents the game. Can either contain the state machine itself, or be a client to an external state machine.
@@ -65,6 +77,12 @@ public:
 	TState startSave = TState();
 	int64_t initialFrame = -1;
 	SlotManager<TState> slotManager = SlotManager<TState>(this);
+
+	// When false, shouldSave/shouldLoad answer false: no automatic saves during replays and
+	// no loading ahead, only explicit saves and replays. The cost model's decisions depend on
+	// measured timings, so this is the switch that makes a run timing-independent; it costs
+	// performance and exists for diagnosis (ROADMAP 4.5) and tests.
+	bool useCostModel = true;
 
 	Resource() = default;
 
@@ -93,10 +111,21 @@ public:
 	virtual void save(TState& state) const = 0;
 	virtual void load(const TState& state) = 0;
 	virtual void advance() = 0;
+	// Write the controller inputs that the next advance() will see. Called once per frame;
+	// implementations must not do any lookup here (cache pointers at construction).
+	virtual void setInputs(const Inputs& inputs) = 0;
+	// Symbol lookup for scripts. Not for per-frame use: LibSm64 resolves through the OS
+	// loader. Cache the result where a script needs it every frame.
 	virtual void* addr(const char* symbol) const = 0;
 	virtual std::size_t getStateSize(const TState& state) const = 0;
 	//TODO: make this resource-agnostic
 	virtual uint32_t getCurrentFrame() const = 0;
+
+	// Throw std::runtime_error with a readable explanation if the resource's view of game
+	// memory does not match reality (for example the struct headers do not match the DLL
+	// build). Called once per scattershot thread after the start frame is loaded; not a hot
+	// path. Default: nothing to verify.
+	virtual void verifyLayout() {}
 };
 
 //Include template method implementations

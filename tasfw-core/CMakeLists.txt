@@ -2,6 +2,8 @@ add_library(tasfw-core STATIC
 	"src/core/SharedLib.cpp"
 	"src/core/Inputs.cpp"
 	"src/decomp/Math.cpp"
+	"src/decomp/Pyramid.cpp"
+	"src/decomp/Surface.cpp"
 )
 target_include_directories(tasfw-core PUBLIC inc)
 target_link_libraries(tasfw-core PUBLIC ${CMAKE_DL_LIBS})

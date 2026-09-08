@@ -1,0 +1,70 @@
+#pragma once
+#include <array>
+#include <cstdint>
+#include <cstring>
+#include <tasfw/Resource.hpp>
+
+// A Resource with a tiny, cheap, fully deterministic state. Shared by the perf suite and the
+// unit tests: benchmarks built on it measure the framework's own bookkeeping (script
+// hierarchy, savestate slots, caches, tracking) rather than memcpy or the game DLL, and tests
+// use its rolling checksum to prove "state is a pure function of (start save, inputs)".
+// The state is 256 bytes so save/load are real copies but negligible.
+struct FakeState
+{
+	uint32_t frame = 0;
+	uint16_t buttons = 0;
+	int8_t stickX = 0;
+	int8_t stickY = 0;
+	uint64_t checksum = 0;
+	std::array<uint8_t, 240> payload {};
+};
+
+class FakeResource : public Resource<FakeState>
+{
+public:
+	FakeResource()
+	{
+		slotManager._saveMemLimit = int64_t(1) << 40;
+	}
+
+	void save(FakeState& state) const override { state = _state; }
+	void load(const FakeState& state) override { _state = state; }
+
+	void advance() override
+	{
+		_state.buttons = _pad.buttons;
+		_state.stickX = _pad.stickX;
+		_state.stickY = _pad.stickY;
+		_state.frame++;
+		_state.checksum = _state.checksum * 6364136223846793005ull
+			+ (uint64_t(_state.buttons) << 16) + uint64_t(uint8_t(_state.stickX)) * 256 + uint8_t(_state.stickY) + 1442695040888963407ull;
+	}
+
+	void setInputs(const Inputs& inputs) override
+	{
+		_pad.buttons = inputs.buttons;
+		_pad.stickX = inputs.stick_x;
+		_pad.stickY = inputs.stick_y;
+	}
+
+	// Nothing in the framework core asks for symbols any more; keep the pad reachable for
+	// tests that want to poke it the way a script would.
+	void* addr(const char*) const override { return const_cast<Pad*>(&_pad); }
+
+	std::size_t getStateSize(const FakeState&) const override { return sizeof(FakeState); }
+	uint32_t getCurrentFrame() const override { return _state.frame; }
+
+	uint64_t checksum() const { return _state.checksum; }
+	const FakeState& state() const { return _state; }
+
+private:
+	struct Pad
+	{
+		uint16_t buttons = 0;
+		int8_t stickX = 0;
+		int8_t stickY = 0;
+	};
+
+	Pad _pad {};
+	FakeState _state {};
+};

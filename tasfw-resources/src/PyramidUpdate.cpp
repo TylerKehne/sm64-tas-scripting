@@ -478,6 +478,15 @@ void PyramidUpdate::advance()
 	_state.frame++;
 }
 
+void PyramidUpdate::setInputs(const Inputs& inputs)
+{
+	// Same byte layout Script::SetInputs used to write through addr("gControllerPads"):
+	// u16 buttons, s8 stick_x, s8 stick_y packed little-endian into the u32.
+	_state.inputs = uint32_t(inputs.buttons)
+		| (uint32_t(uint8_t(inputs.stick_x)) << 16)
+		| (uint32_t(uint8_t(inputs.stick_y)) << 24);
+}
+
 void* PyramidUpdate::addr(const char* symbol) const
 {
 	std::string symbolStr = std::string(symbol);
@@ -543,7 +552,7 @@ void PyramidUpdate::UpdatePyramid()
 			dz = 0.0f;
 		}
 
-		if (_state.pyramid.tiltingPyramidMarioOnPlatform == true)
+		if (_state.pyramid.tiltingPyramidMarioOnPlatform != 0)
 			marioOnPlatform++;
 
 		_state.pyramid.tiltingPyramidMarioOnPlatform = true;

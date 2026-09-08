@@ -58,6 +58,54 @@ bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::executio
                 return true;
             });
 
+        // Diagnosis of a validation failure (ROADMAP 4.5): decode the same block again from the
+        // same reverted state. If the second decode matches the first, decoding is deterministic
+        // and the disagreement is between encoding and decoding; if it does not, state survives
+        // a load. The first frame where the two decoded input sequences differ is printed.
+        if (LastValidationFailed)
+        {
+            LastValidationFailed = false;
+            ExecuteAdhoc([&]()
+                {
+                    DecodeBaseBlockDiffAndApply();
+                    TState again = GetStateBinSafe();
+                    M64Diff diff = this->GetTotalDiff();
+
+                    #pragma omp critical (print)
+                    {
+                        std::cout << "  re-decode: " << (again == LastDecodedBin
+                            ? "same bin as the first decode, so decoding is deterministic and the recording disagrees with it"
+                            : "different bin from the first decode, so state survives a load") << "\n";
+
+                        std::set<uint64_t> frames;
+                        for (const auto& pair : LastDecodedDiff.frames) frames.insert(pair.first);
+                        for (const auto& pair : diff.frames) frames.insert(pair.first);
+                        bool reported = false;
+                        for (uint64_t frame : frames)
+                        {
+                            auto a = LastDecodedDiff.frames.find(frame);
+                            auto b = diff.frames.find(frame);
+                            bool same = a != LastDecodedDiff.frames.end() && b != diff.frames.end() && a->second == b->second;
+                            if (same)
+                                continue;
+                            auto show = [](auto it, auto end)
+                            {
+                                if (it == end)
+                                    return std::string("(none)");
+                                return std::to_string(it->second.buttons) + "/" + std::to_string(it->second.stick_x) + "/" + std::to_string(it->second.stick_y);
+                            };
+                            std::cout << "  first differing decoded input at frame " << frame << ": first " << show(a, LastDecodedDiff.frames.end())
+                                << ", second " << show(b, diff.frames.end()) << " (diffs span " << *frames.begin() << ".." << *frames.rbegin() << ")\n";
+                            reported = true;
+                            break;
+                        }
+                        if (!reported)
+                            std::cout << "  the two decoded input sequences are identical (" << frames.size() << " frames)\n";
+                    }
+                    return false;
+                });
+        }
+
         size_t nSolutions = 0;
         bool maxShotsReached = false;
         #pragma omp critical (print)
@@ -98,12 +146,18 @@ void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::Initiali
 {
     LongLoad(config.StartFrame);
 
+    // Fail loudly if the resource's struct layouts do not match the game (ROADMAP 1.1).
+    // Once per thread; not a hot path.
+    this->resource->verifyLayout();
+
     // Load piped-in diffs as root blocks
     if (!scattershot.InputSolutions.empty())
     {
         bool finishedProcessingDiffs = false;
         uint16_t inputSolutionsIndex = 0;
-        std::shared_ptr<Segment> rootSegment = std::make_shared<Segment>(nullptr, 0, RngHash, 0);
+        // (parent, seed, nScripts, pipedDiff1Index). Root segments are never decoded, so the
+        // values are informational; the old call passed RngHash as nScripts (truncated to 8 bits).
+        std::shared_ptr<Segment> rootSegment = std::make_shared<Segment>(nullptr, RngHash, uint8_t(0), uint16_t(0));
         while (true)
         {
             #pragma omp critical (inputsolutions)
@@ -242,13 +296,44 @@ template <class TState, derived_from_specialization_of<Resource> TResource,
 bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::ValidateBaseBlock(int shot)
 {
     TState currentStateBin = GetStateBinSafe();
-    if (BaseBlockStateBin != currentStateBin) {
-        this->ExportM64("C:\\repos\\sm64-tas-scripting\\analysis\\error.m64", this->GetTotalDiff().frames.rbegin()->first + 1);
-        std::cout << Id << " " << shot << "\n";
-        //BaseBlockStateBin.print();
-        //currentStateBin.print();
-        std::cout << scattershot.GetHash(BaseBlockStateBin, false) << "\n";
-        std::cout << scattershot.GetHash(currentStateBin, false) << "\n";
+    LastValidationFailed = BaseBlockStateBin != currentStateBin;
+    if (LastValidationFailed) {
+        LastDecodedBin = currentStateBin;
+        LastDecodedDiff = this->GetTotalDiff();
+
+        #pragma omp critical (scriptcounters)
+        {
+            scattershot.ValidationFailures++;
+        }
+
+        // Dumped next to the CSVs for post-mortem; the path comes from the configuration (AGENTS.md hard rule 5).
+        this->ExportM64(std::filesystem::path(scattershot.config.CsvOutputDirectory) / "error.m64", this->GetTotalDiff().frames.rbegin()->first + 1);
+
+        #pragma omp critical (print)
+        {
+            std::cout << "base-block validation failed: thread " << Id << " shot " << shot << " frame " << this->GetCurrentFrame()
+                << " chain depth " << int(BaseBlockTailSegment->depth) << "\n";
+            if constexpr (requires { BaseBlockStateBin.bytes; })
+            {
+                auto hex = [](const TState& bin)
+                {
+                    std::string text;
+                    char buffer[4];
+                    for (auto byte : bin.bytes)
+                    {
+                        std::snprintf(buffer, sizeof buffer, "%02x", unsigned(byte));
+                        text += buffer;
+                    }
+                    return text;
+                };
+                std::cout << "  expected " << hex(BaseBlockStateBin) << "\n  decoded  " << hex(currentStateBin) << "\n";
+            }
+            else
+            {
+                std::cout << "  expected hash " << scattershot.GetHash(BaseBlockStateBin, false)
+                    << "\n  decoded hash  " << scattershot.GetHash(currentStateBin, false) << "\n";
+            }
+        }
         return false;
     }
 
@@ -378,9 +463,9 @@ bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::ChooseSc
             return success;
         });
 
-    // Needed to sync with original execution (block is saved after individual script diff is applied).
-    // Note that this often does nothing. It does not hurt performance unless it rewinds.
-    // TODO: Consider changing TASFW Modify methods to persist frame cursor so this isn't necessary
+    // Modify leaves the cursor after the end of the child's diff by design (ARCHITECTURE.md,
+    // "Script hierarchy"); a block is keyed by the frame the script stopped on, so go back to
+    // it. This often does nothing and only costs anything when it rewinds.
     if (status.executed)
         this->Load(postScriptFrame);
 
@@ -449,9 +534,9 @@ AdhocBaseScriptStatus ScattershotThread<TState, TResource, TStateTracker, TOutpu
             return true;
         });
 
-    // Needed to sync with original execution (block is saved after individual script diff is applied).
-    // Note that this often does nothing. It does not hurt performance unless it rewinds.
-    // TODO: Consider changing TASFW Modify methods to persist frame cursor so this isn't necessary
+    // Modify leaves the cursor after the end of the child's diff by design (ARCHITECTURE.md,
+    // "Script hierarchy"); a block is keyed by the frame the script stopped on, so go back to
+    // it. This often does nothing and only costs anything when it rewinds.
     this->Load(postScriptFrame);
     return status;
 }
@@ -481,9 +566,6 @@ AdhocBaseScriptStatus ScattershotThread<TState, TResource, TStateTracker, TOutpu
                 // Create and add block to list if it is new.
                 bool novelScript = false;
                 auto newStateBin = validated ? GetStateBinSafe() : TState();
-                //auto hash = scattershot.GetHash(newStateBin, false);
-                //if (hash == 12263244266731199609)
-                    //this->ExportM64("C:\\repos\\sm64-tas-scripting\\res\\error.m64", this->GetTotalDiff().frames.rbegin()->first + 1);
                 float fitness = validated ? GetStateFitnessSafe() : 0.f;
                 bool isSolution = validated ? ExecuteAdhoc([&]() { return IsSolution(); }).executed : false;
                 ScattershotSolution<TOutputState> solution = isSolution ? ScattershotSolution<TOutputState>(GetSolutionState(), this->GetTotalDiff())

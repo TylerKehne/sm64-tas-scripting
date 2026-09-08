@@ -118,12 +118,13 @@ class PyramidUpdate : public Resource<PyramidUpdateMem>
 public:
 	PyramidUpdate();
 	PyramidUpdate(PyramidUpdateConfig config) : _enableMarioMovement(config.EnableMarioMovement) { }
-	void save(PyramidUpdateMem& state) const;
-	void load(const PyramidUpdateMem& state);
-	void advance();
-	void* addr(const char* symbol) const;
-	std::size_t getStateSize(const PyramidUpdateMem& state) const;
-	uint32_t getCurrentFrame() const;
+	void save(PyramidUpdateMem& state) const override;
+	void load(const PyramidUpdateMem& state) override;
+	void advance() override;
+	void setInputs(const Inputs& inputs) override;
+	void* addr(const char* symbol) const override;
+	std::size_t getStateSize(const PyramidUpdateMem& state) const override;
+	uint32_t getCurrentFrame() const override;
 
 private:
 	PyramidUpdateMem _state;

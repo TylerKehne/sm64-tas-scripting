@@ -1,5 +1,6 @@
 #include <BitFSPyramidOscillation.hpp>
 
+#include <cmath>
 #include <tasfw/Script.hpp>
 #include <sm64/Sm64.hpp>
 #include <sm64/Types.hpp>
@@ -40,7 +41,9 @@ bool BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle::execution()
 	auto floor = &pyramid->surfaces[1][_floorId];
 	short floorAngle = atan2s(floor->normal.z, floor->normal.x);
 	CustomStatus.isSlope = PyramidUpdateMem::FloorIsSlope(floor, marioState->action);
-	CustomStatus.steepness = std::sqrtf(floor->normal.x * floor->normal.x + floor->normal.z * floor->normal.z);
+	// std::sqrt(float) overload, not std::sqrtf: libstdc++ 13 does not declare the f-suffixed
+	// names in namespace std (docs/compilers.md). Same instruction, same result.
+	CustomStatus.steepness = std::sqrt(floor->normal.x * floor->normal.x + floor->normal.z * floor->normal.z);
 
 	// m->floorAngle - m->faceAngle[1] >= -0x3FFF && m->floorAngle -
 	// m->faceAngle[1] <= 0x3FFF
