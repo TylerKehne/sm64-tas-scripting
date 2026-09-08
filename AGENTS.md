@@ -66,7 +66,7 @@ its place with numbers, and "it is cleaner" is not a number.
 | `analysis/` | R script that plots scattershot CSV output; also the pipeline's default output directory (CSVs, `solutions/*.json`, `m64/`), all gitignored. |
 | `res/` | Gitignored runtime inputs: 24 copies of the libsm64 DLL, source .m64 files, and thousands of exported solution .m64 files. |
 | `scripts/` | `build.ps1`, the supported build entry point on Windows. |
-| `cmake/` | `AddOptimizationFlags` (arch flag, FP determinism, LTO, OpenMP; applied to every first-party target) and `WarningsAsErrors` (`TASFW_WARNINGS_AS_ERRORS`). |
+| `cmake/` | `AddOptimizationFlags` (arch flag, FP determinism, LTO, OpenMP; applied to every first-party target), `WarningsAsErrors` (`TASFW_WARNINGS_AS_ERRORS`) and `SystemIncludes` (fetched dependencies as system headers, so their warnings never count). |
 | `docs/` | Provenance of the DLL and other reference notes. |
 
 ## Build and run

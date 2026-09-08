@@ -11,6 +11,7 @@ FetchContent_Declare(doctest
 	URL https://github.com/doctest/doctest/archive/refs/tags/v2.4.11.tar.gz
 )
 FetchContent_MakeAvailable(doctest)
+tasfw_system_includes(doctest)
 
 add_executable(tasfw-tests
 	"src/main.cpp"

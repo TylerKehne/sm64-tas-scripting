@@ -156,6 +156,11 @@ correctness and in speed.
       Fix them tree by tree, each PR with the perf delta table, since most are in hot code
       and a narrowing fix can change a type. *Done when:* `/W3` and `-Wall -Wextra` are on
       for every first-party target and the 1.5 option still passes on all four compilers.
+- [ ] **1.8 Bump nlohmann/json to 3.12.** 3.11.2's spaced `operator "" _json` is deprecated
+      by newer clang (masked today because dependency headers are system includes,
+      docs/compilers.md), and 3.12 declares a CMake minimum that lets the
+      `CMAKE_POLICY_VERSION_MINIMUM` workaround in the root `CMakeLists.txt` go. *Done when:*
+      the pipeline config tests pass on the new version and the workaround is removed.
 
 ## Phase 2: loosen the grip of the pinned DLL
 

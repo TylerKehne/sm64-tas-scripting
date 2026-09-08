@@ -26,6 +26,7 @@ endif()
 # add CMake modules in /cmake
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(AddOptimizationFlags)
+include(SystemIncludes)
 
 # Download dependencies
 include(FetchContent)
@@ -41,6 +42,7 @@ FetchContent_Declare(json
 	URL_HASH SHA256=8c4b26bf4b422252e13f332bc5e388ec0ab5c3443d24399acb675e68278d341f
 )
 FetchContent_MakeAvailable(json)
+tasfw_system_includes(nlohmann_json)
 
 # Library components
 add_subdirectory(tasfw-core)

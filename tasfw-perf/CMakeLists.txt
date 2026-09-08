@@ -15,6 +15,7 @@ FetchContent_Declare(benchmark
 	URL https://github.com/google/benchmark/archive/refs/tags/v1.9.1.tar.gz
 )
 FetchContent_MakeAvailable(benchmark)
+tasfw_system_includes(benchmark benchmark_main)
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
 	# Google Benchmark appends /MP (MSVC's parallel-compile switch) to its own flags under any

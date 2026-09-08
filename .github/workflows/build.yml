@@ -117,7 +117,7 @@ jobs:
           for f in configure.log build.log; do
             if [ -f "$f" ]; then
               echo "::group::$f (errors)"
-              grep -inE 'error|fatal|could not|not found|no such' "$f" | head -40 | while IFS= read -r line; do
+              grep -inE 'error|warning|fatal|could not|not found|no such' "$f" | head -40 | while IFS= read -r line; do
                 echo "::error title=$f::${line}"
               done
               echo "::endgroup::"

@@ -145,6 +145,20 @@ their optional inputs through one `tasfw::testing::Env`
 `_CRT_SECURE_NO_WARNINGS` for its consumers. Do not fork to `_dupenv_s`, and do not put the
 define in a header: it has to precede the first CRT include of the translation unit.
 
+### CI's newer compilers warn inside dependency headers
+
+The first matrix run with `TASFW_WARNINGS_AS_ERRORS` on (2026-09-08) failed both Windows
+jobs on headers we do not own while the same option passed locally: the runner's MSVC
+warned at doctest 2.4.11's forward declarations of `std` types (`doctest.h` line 539; the
+runner's warning text is not in the annotations, only its C2220), and its clang-cl, newer
+than the 19.1 in Visual Studio here, deprecated nlohmann/json 3.11.2's spaced
+`operator "" _json` (`-Wdeprecated-literal-operator`; json 3.12 writes `operator ""_json`,
+ROADMAP 1.8). The general answer is `cmake/SystemIncludes.cmake`: every fetched dependency's
+interface include directories are re-declared as system directories, so its headers get
+`-isystem` on GCC and Clang, `-imsvc` on clang-cl and `-external:I` with `-external:W0` on
+MSVC, and warnings from them never reach `-Werror`. Apply `tasfw_system_includes` to any
+dependency added later.
+
 ### Clang: `-Winconsistent-missing-override`
 
 Classes that mark some overriding functions `override` and not others warn on Clang. The
