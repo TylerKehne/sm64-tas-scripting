@@ -11,8 +11,15 @@
 
 #include <tasfw/Inputs.hpp>
 #include <tasfw/Script.hpp>
+#include <sm64/Camera.hpp>
+#include <sm64/Sm64.hpp>
+#include <sm64/Types.hpp>
 
+#include <BitFSPyramidOscillation.hpp>
+#include <BitFsScApproach.hpp>
 #include <Scattershot_BitfsDr.hpp>
+#include <Scattershot_BitfsDrApproach.hpp>
+#include <Scattershot_BitfsDrRecover.hpp>
 #include "BitfsOscFinal.hpp"
 #include "TiltTargetShot.hpp"
 
@@ -60,6 +67,22 @@ namespace
 	}
 
 	std::map<std::string, double> Metrics(const BitfsOscSolution& data)
+	{
+		return {
+			{ "fSpd", data.fSpd }, { "pyraNormX", data.pyraNormX }, { "pyraNormY", data.pyraNormY }, { "pyraNormZ", data.pyraNormZ },
+			{ "xzSum", data.xzSum }
+		};
+	}
+
+	std::map<std::string, double> Metrics(const Scattershot_BitfsDrApproach_Solution& data)
+	{
+		return {
+			{ "fSpd", data.fSpd }, { "pyraNormX", data.pyraNormX }, { "pyraNormY", data.pyraNormY }, { "pyraNormZ", data.pyraNormZ },
+			{ "xzSum", data.xzSum }
+		};
+	}
+
+	std::map<std::string, double> Metrics(const Scattershot_BitfsDrRecover_Solution& data)
 	{
 		return {
 			{ "fSpd", data.fSpd }, { "pyraNormX", data.pyraNormX }, { "pyraNormY", data.pyraNormY }, { "pyraNormZ", data.pyraNormZ },
@@ -286,10 +309,140 @@ namespace
 		return ToSet(context, solutions);
 	}
 
-	// The original main.cpp also held a single-threaded BitFsPyramidOscillation + BitFsScApproach
-	// experiment. It is not a stage: those scripts reach GetMinimumDownhillWalkingAngle, whose
-	// simulate_platform_tilt lost its definition when the tasfw-decomp sources were removed,
-	// so referencing them does not link (ROADMAP 4.1).
+	// --- dr-approach: Scattershot_BitfsDrApproach (dive from the oscillation) --------------------
+
+	SolutionSet RunDrApproach(StageContext& context)
+	{
+		const std::string where = ArgsWhere(context);
+		const json& a = context.stage.args;
+		RejectUnknownKeys(a, { "initialFrame", "oscQuadrant", "targetQuadrant", "minXzSum", "targetNx", "targetNz" }, where);
+
+		int64_t initialFrame = int64_t(ArgNumber(a, "initialFrame", context.input, double(context.stage.startFrame), where));
+		int oscQuadrant = int(ArgNumber(a, "oscQuadrant", context.input, 4, where));
+		int targetQuadrant = int(ArgNumber(a, "targetQuadrant", context.input, 1, where));
+		float minXzSum = float(ArgNumber(a, "minXzSum", context.input, where));
+		float targetNx = float(ArgNumber(a, "targetNx", context.input, where));
+		float targetNz = float(ArgNumber(a, "targetNz", context.input, where));
+
+		Configuration config = context.pipeline.ScattershotConfiguration(context.stage);
+		auto input = PipeIn<Scattershot_BitfsDrApproach_Solution>(context.input);
+		auto solutions = Scattershot_BitfsDrApproach::ConfigureScattershot(config)
+			.ImportResourcePerThread([&](auto threadId) { return &context.resources[threadId]; })
+			.PipeFrom(input)
+			.ConfigureStateTracker(initialFrame, oscQuadrant, targetQuadrant, minXzSum, targetNx, targetNz)
+			.Run<Scattershot_BitfsDrApproach>();
+		return ToSet(context, solutions);
+	}
+
+	// --- dr-recover: Scattershot_BitfsDrRecover (land the dive, then the C-up trick) -----------
+
+	SolutionSet RunDrRecover(StageContext& context)
+	{
+		const std::string where = ArgsWhere(context);
+		const json& a = context.stage.args;
+		RejectUnknownKeys(a, { "initialFrame", "oscQuadrant", "targetQuadrant", "minXzSum", "phase" }, where);
+
+		int64_t initialFrame = int64_t(ArgNumber(a, "initialFrame", context.input, double(context.stage.startFrame), where));
+		int oscQuadrant = int(ArgNumber(a, "oscQuadrant", context.input, 4, where));
+		int targetQuadrant = int(ArgNumber(a, "targetQuadrant", context.input, 1, where));
+		float minXzSum = float(ArgNumber(a, "minXzSum", context.input, where));
+
+		std::string phaseName = ArgString(a, "phase", "attempt-dr", where);
+		StateTracker_BitfsDrRecover::Phase phase;
+		if (phaseName == "attempt-dr")
+			phase = StateTracker_BitfsDrRecover::Phase::ATTEMPT_DR;
+		else if (phaseName == "c-up-trick")
+			phase = StateTracker_BitfsDrRecover::Phase::C_UP_TRICK;
+		else
+			ConfigError("\"phase\" in " + where + " must be \"attempt-dr\" or \"c-up-trick\"");
+
+		Configuration config = context.pipeline.ScattershotConfiguration(context.stage);
+		auto input = PipeIn<Scattershot_BitfsDrRecover_Solution>(context.input);
+		auto solutions = Scattershot_BitfsDrRecover::ConfigureScattershot(config)
+			.ImportResourcePerThread([&](auto threadId) { return &context.resources[threadId]; })
+			.PipeFrom(input)
+			.ConfigureStateTracker(initialFrame, oscQuadrant, targetQuadrant, minXzSum)
+			.Run<Scattershot_BitfsDrRecover>(phase);
+		return ToSet(context, solutions);
+	}
+
+	// --- pyramid-osc-approach: the original single-threaded experiment ---------------------------
+
+	class PyramidOscApproach : public TopLevelScript<LibSm64>
+	{
+	public:
+		struct Args
+		{
+			int64_t startFrame = 0;
+			int16_t stickYaw = -16384;
+			float stickMagnitude = 32;
+			float targetXzSum = 0.69f;
+			int quadrant = 3;
+			bool alwaysBrake = false;
+			int16_t roughTargetAngle = 0;
+			int maxIdleWait = 1000;
+		};
+
+		explicit PyramidOscApproach(Args args) : _args(args) {}
+
+		bool validation() override { return true; }
+
+		bool execution() override
+		{
+			LongLoad(_args.startFrame);
+
+			Camera* camera = *(Camera**)(resource->addr("gCamera"));
+			MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
+			auto stick = Inputs::GetClosestInputByYawExact(_args.stickYaw, _args.stickMagnitude, camera->yaw);
+			AdvanceFrameWrite(Inputs(0, stick.first, stick.second));
+
+			int waited = 0;
+			while (marioState->action != ACT_IDLE)
+			{
+				if (++waited > _args.maxIdleWait)
+					return false;
+				AdvanceFrameWrite(Inputs(0, 0, 0));
+			}
+
+			auto oscillation = Modify<BitFsPyramidOscillation>(_args.targetXzSum, _args.quadrant, _args.alwaysBrake);
+			Modify<BitFsScApproach>(_args.roughTargetAngle, _args.quadrant, _args.targetXzSum, oscillation);
+			return true;
+		}
+
+		bool assertion() override { return true; }
+
+	private:
+		Args _args;
+	};
+
+	SolutionSet RunPyramidOscApproach(StageContext& context)
+	{
+		const std::string where = ArgsWhere(context);
+		const json& a = context.stage.args;
+		RejectUnknownKeys(a, { "stickYaw", "stickMagnitude", "targetXzSum", "quadrant", "alwaysBrake", "roughTargetAngle", "maxIdleWait" }, where);
+
+		PyramidOscApproach::Args args;
+		args.startFrame = context.stage.startFrame;
+		args.stickYaw = int16_t(ArgNumber(a, "stickYaw", context.input, args.stickYaw, where));
+		args.stickMagnitude = float(ArgNumber(a, "stickMagnitude", context.input, args.stickMagnitude, where));
+		args.targetXzSum = float(ArgNumber(a, "targetXzSum", context.input, args.targetXzSum, where));
+		args.quadrant = int(ArgNumber(a, "quadrant", context.input, args.quadrant, where));
+		args.alwaysBrake = ArgBool(a, "alwaysBrake", args.alwaysBrake, where);
+		args.roughTargetAngle = int16_t(ArgNumber(a, "roughTargetAngle", context.input, args.roughTargetAngle, where));
+		args.maxIdleWait = int(ArgNumber(a, "maxIdleWait", context.input, args.maxIdleWait, where));
+
+		Configuration config = context.pipeline.ScattershotConfiguration(context.stage);
+		M64 m64 = LoadMovie(config);
+		auto status = TopLevelScriptBuilder<PyramidOscApproach>::Build(m64).ImportResource(&context.resources[0]).Run(args);
+
+		SolutionSet set;
+		set.stage = context.stage.name;
+		set.type = context.stage.type;
+		set.startFrame = context.stage.startFrame;
+		if (status.asserted && !status.m64Diff.frames.empty())
+			set.solutions.push_back(SolutionRecord { status.m64Diff, {} });
+		return set;
+	}
 
 	// --- export: pass the input through (and let the export flag write it) ---------------------
 
@@ -308,6 +461,9 @@ namespace
 		{ "tilt-target", "TiltTargetShot: reach a target pyramid normal (one pass; chain passes through input)", RunTiltTarget },
 		{ "dr-oscillations", "Scattershot_BitfsDr once per target oscillation, filtering between oscillations", RunDrOscillations },
 		{ "osc-final", "BitfsOscFinal: the final oscillation into the target quadrant", RunOscFinal },
+		{ "dr-approach", "Scattershot_BitfsDrApproach: dive from the oscillation (was disabled in main.cpp; unverified)", RunDrApproach },
+		{ "dr-recover", "Scattershot_BitfsDrRecover: land the dive (\"attempt-dr\") or the C-up trick (\"c-up-trick\"); unverified", RunDrRecover },
+		{ "pyramid-osc-approach", "single-threaded BitFsPyramidOscillation + BitFsScApproach from the start frame", RunPyramidOscApproach },
 		{ "export", "no search; passes its input through (use with \"export\": true)", RunExport },
 	};
 }

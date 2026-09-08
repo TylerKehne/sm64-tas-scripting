@@ -242,12 +242,17 @@ Stage types, in the order the committed config uses them:
    oscillation took, keeping the fastest few between oscillations, and requiring
    increment-frame parity at the end.
 4. **osc-final** again from the equilibrium frame, piped from the oscillation solutions.
+5. **dr-approach** (`Scattershot_BitfsDrApproach`): dive from the oscillation solutions;
+   then **dr-recover** (`Scattershot_BitfsDrRecover`) twice, phase `attempt-dr` to land the
+   dive and phase `c-up-trick` after it. This chain was disabled in the old `main.cpp` and
+   has never run to completion; it links and runs, nothing more is known.
 
+`pyramid-osc-approach` is the original single-threaded experiment (`BitFsPyramidOscillation`
+then `BitFsScApproach` from the start frame) as a stage; it is not in the committed config.
 `export` is a stage type that passes its input through, and `"export": true` on any stage
 replays each solution on the first resource (`ExportSolutions`) and writes one movie per
 solution under `<outputDirectory>/m64/<stage>/`, named by index, pyramid normal and Mario's
-speed. `Scattershot_BitfsDrApproach` and `Scattershot_BitfsDrRecover` (dive recover, C-up
-trick) are not stage types yet (ROADMAP 4.1).
+speed.
 
 ## Coupling to the game binary
 
@@ -260,6 +265,11 @@ Everything below assumes the pinned DLL in `res/` (see `docs/libsm64.md`):
   `gCurrCourseNum`, `gCurrAreaIndex`, `bhvLllTiltingInvertedPyramid`,
   `bhvBitfsTiltingInvertedPyramid`, `sm64_init`, `sm64_update`.
 - The pyramid is `gObjectPool[84]` in the BitFS area of the source m64.
+- `tasfw-core/src/decomp/` reimplements `mtxf_align_terrain_normal`, object surface loading,
+  `find_floor`, `floor_is_slope` and `simulate_platform_tilt` on the copied structs.
+  `GetMinimumDownhillWalkingAngle` uses them to predict Mario's floor angle after the next
+  tilt without advancing a frame. The DLL stays the reference; this code is the same physics
+  `PyramidUpdate` implements on its own surface type, and only `PyramidUpdate` is drift-tested.
 - Lightweight save slices (`LibSm64LightweightSlices` in `LibSm64.hpp`).
 - `LibSm64::layoutCheckReport()` verifies all of the above relationships at run time; the
   scattershot thread calls `Resource::verifyLayout()` once after loading the start frame,

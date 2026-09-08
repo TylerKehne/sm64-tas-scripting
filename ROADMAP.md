@@ -196,17 +196,14 @@ Goal: the core's implicit invariants become explicit and enforced.
 
 Goal: finish the thing the framework was built for.
 
-- [ ] **4.1 Re-enable the disabled stages.** `Scattershot_BitfsDrApproach` and
-      `Scattershot_BitfsDrRecover` (`ATTEMPT_DR`, `C_UP_TRICK` phases) were commented out in
-      the old `main.cpp`; add them as stage types in `Stages.cpp` with their own `args`. First
-      restore what they link against: the downhill-angle scripts call
-      `simulate_platform_tilt` (`sm64/Pyramid.hpp`), whose definition left with the
-      `tasfw-decomp` sources in the big refactor. `Math.cpp` survived in `tasfw-core/src/decomp`;
-      `Pyramid.cpp` and `Surface.cpp` (`get_surfaces`, `transform_surfaces`, `find_floor`,
-      `floor_is_slope`) are in git at `69792ad:src/lib/tasfw-decomp/src/`. Restore them there
-      (or reimplement on `PyramidUpdate`, which has the same logic on its own surface type),
-      then also bring back the single-threaded `BitFsPyramidOscillation` + `BitFsScApproach`
-      experiment as a stage. *Done when:* all three link and run from `config.json`.
+- [x] **4.1 Re-enable the disabled stages.** Done 2026-09-08: `Pyramid.cpp` and `Surface.cpp`
+      restored from `69792ad` into `tasfw-core/src/decomp` (plus a `free` for the surfaces
+      `get_surfaces` mallocs per call), so the downhill-angle scripts link again;
+      `dr-approach`, `dr-recover` (`phase`: `attempt-dr` / `c-up-trick`) and
+      `pyramid-osc-approach` are stage types, and the dive-recover chain is in `config.json`
+      after `osc-final`. Verified to link and run a few shots from a config; whether the
+      chain finds anything is unknown (it never ran to completion in `main.cpp` either), so
+      the stage descriptions say "unverified" until a real run says otherwise.
 - [ ] **4.2 Persist search state.** Serialize blocks/segments so a multi-hour run can be
       resumed. Solutions already persist per stage (1.4); blocks and segments do not.
 - [ ] **4.3 Faster block decoding.** Each shot replays the whole segment chain from the root.

@@ -97,6 +97,33 @@
 			"scattershot": { "csvSamplePeriod": 10, "maxShots": 50000, "maxSolutions": 1000 },
 			"args": { "initialFrame": "input:equilibriumFrame", "oscQuadrant": 4, "targetQuadrant": 1, "targetNx": -0.17944, "targetNz": 0.3936 },
 			"export": true
+		},
+		{
+			"_comment": "The dive-recover chain, disabled in the old main.cpp and never run to completion: dive from the oscillation solutions, land it, then the C-up trick.",
+			"name": "dr-approach",
+			"type": "dr-approach",
+			"startFrame": 3330,
+			"input": "dr",
+			"scattershot": { "csvSamplePeriod": 10, "maxShots": 50000, "maxSolutions": 1000 },
+			"args": { "initialFrame": "input:equilibriumFrame", "oscQuadrant": 4, "targetQuadrant": 1, "minXzSum": 0.69, "targetNx": -0.17944, "targetNz": 0.3936 },
+			"export": true
+		},
+		{
+			"name": "dr-recover",
+			"type": "dr-recover",
+			"startFrame": 3330,
+			"input": "dr-approach",
+			"scattershot": { "csvSamplePeriod": 1, "maxShots": 50000, "maxSolutions": 100 },
+			"args": { "oscQuadrant": 4, "targetQuadrant": 1, "minXzSum": 0.69, "phase": "attempt-dr" }
+		},
+		{
+			"name": "dr-nut",
+			"type": "dr-recover",
+			"startFrame": 3330,
+			"input": "dr-recover",
+			"scattershot": { "csvSamplePeriod": 1, "maxShots": 10000, "maxSolutions": 100 },
+			"args": { "oscQuadrant": 4, "targetQuadrant": 1, "minXzSum": 0.69, "phase": "c-up-trick" },
+			"export": true
 		}
 	]
 }

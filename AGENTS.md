@@ -192,11 +192,10 @@ Agents without hooks follow the same procedure by hand at the end of every chang
 
 ## Known problems you will run into
 
-- The downhill-angle scripts (`GetMinimumDownhillWalkingAngle` and everything that calls it:
-  `BitFsPyramidOscillation`, `BitFsScApproach`, the Approach/Recover scattershot stages) call
-  `simulate_platform_tilt`, whose definition left with the `tasfw-decomp` sources. They
-  compile, and link only while nothing references them (LTO drops the chain); referencing
-  one fails at link time. ROADMAP 4.1 says where to restore it from.
+- `tasfw-core/src/decomp/` (`Math.cpp`, `Surface.cpp`, `Pyramid.cpp`) reimplements pieces of
+  the game on the copied structs so the downhill-angle scripts can predict the floor angle
+  after the pyramid tilts without advancing a frame. It duplicates physics that
+  `PyramidUpdate` also has on its own surface type, and it is not covered by the drift test.
 - Warning C4715 in the `TurnAround` lambda of `Scattershot_BitfsDr.cpp` is a real bug (not
   all paths return a value).
 - `build/` may contain a stale mix of Visual Studio and Ninja Multi-Config artifacts from
