@@ -24,9 +24,10 @@ add_executable(tasfw-perf
 	"src/bench_m64.cpp"
 	"src/bench_slots.cpp"
 	"src/bench_script.cpp"
+	"src/bench_libsm64.cpp"
 )
 target_include_directories(tasfw-perf PRIVATE src)
-target_link_libraries(tasfw-perf PRIVATE tasfw::core tasfw::scattershot tasfw::testing benchmark::benchmark)
+target_link_libraries(tasfw-perf PRIVATE tasfw::core tasfw::resources tasfw::scattershot tasfw::testing benchmark::benchmark)
 target_compile_features(tasfw-perf PRIVATE cxx_std_20)
 set_target_properties(tasfw-perf PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/out")
 

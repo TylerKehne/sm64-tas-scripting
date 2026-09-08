@@ -117,14 +117,26 @@ Gate: time within 10% of baseline; heap allocations per iteration within 0.1 of 
 
 ### Tier B: resource benchmarks (DLL required)
 
-- Frame advance: mean, p50, p99 microseconds over 10,000 frames starting at the BitFS start frame.
-- `save` / `load`: full versus lightweight, microseconds and GB/s.
-- Thread scaling: aggregate frames/s and saves/s at 1, 2, 4, 8 and 16 threads, each with its
-  own DLL copy, reported as efficiency relative to one thread.
-- Memory: resident set per resource with 100 and 1,000 live slots.
+Implemented in `tasfw-perf/src/bench_libsm64.cpp` as two families, `^BM_LibSm64Full` and
+`^BM_LibSm64Light`, one per save mode (a DLL path loads once per process, so `perf.ps1`
+runs each family in its own process). They run when `TASFW_LIBSM64`/`TASFW_M64` name a DLL
+and a movie (`perf.ps1` finds them in `res\` like `test.ps1` does) and are skipped
+otherwise, so the suite still runs in CI. Each family plays the movie to `TASFW_FRAME`
+(default 3330) once, then measures:
 
-Gate: counts exact; times within 10%; scaling efficiency at 8 threads must not fall below the
-baseline by more than 5 points.
+- `FrameAdvance`: one game frame with neutral inputs (fixed 3,000 iterations, then the
+  anchor frame is reloaded).
+- `SaveErase`: save into a recycled slot and release it, the steady-state cost of `Save()`.
+- `SaveFresh`: save into fresh storage, what a save costs before anything was released
+  (fixed few iterations; each keeps its buffers until the end).
+- `Load`: load the anchor slot.
+
+Still to write: thread scaling (aggregate frames/s and saves/s at 1 to 16 threads, each with
+its own DLL copy, as efficiency relative to one thread) and resident set per resource at 100
+and 1,000 live slots.
+
+Gate: counts exact; times within 10%; when scaling exists, efficiency at 8 threads must not
+fall below the baseline by more than 5 points.
 
 ### Tier C: framework benchmarks (DLL required, deterministic)
 
@@ -241,6 +253,11 @@ Noise control, learned the hard way while setting this up:
   ROADMAP 3.7 target.
 - Deltas under 1 ns in absolute terms never count, so sub-nanosecond benchmarks cannot trip
   the gate on jitter.
+- Tight loops are sensitive to code layout. Adding code elsewhere in the binary has moved
+  clang-cl's uncached `GetInputs` rows by about 15% in both directions, stably across
+  processes, while the same rows on MSVC and every benchmark that touched the changed code
+  stayed put. A shift on one compiler only, on a benchmark whose code did not change, is
+  layout: confirm with a re-run, say so in the change log, and re-save the baseline.
 
 If a result still looks like noise, rerun with `-Repetitions 9` and close other programs
 before believing it. Never run two benchmark processes at once, and never benchmark while a
@@ -294,21 +311,22 @@ MSVC build, single thread, idle machine:
 | Save, full (7.3 MB) | 1.4 ms |
 | Load, full | 190 us |
 
-A save costs 5 to 7 times its load in both modes: every `SaveState` allocates and zero-fills
-fresh vectors because slots are never reused (ROADMAP 3.9). A lightweight save is worth about
-30 frame advances, a lightweight load about 4, which is what the `shouldSave`/`shouldLoad`
-cost model is trading against.
+A save cost 5 to 7 times its load in both modes at that point: every `SaveState` allocated and
+zero-filled fresh vectors because slots were never reused. That is fixed (ROADMAP 3.9; the
+change log below has the after numbers): a save now costs about what a load does, so a
+lightweight save is worth about 5 frame advances and a lightweight load about 5, which is what
+the `shouldSave`/`shouldLoad` cost model is trading against.
 
 What the Tier A and B numbers say together:
 
-- The bare per-frame framework cost (216 ns on MSVC) is about 2% of a 10 us game frame. The
-  hierarchy itself is close to zero-cost.
-- A **state tracker costs about 2.6 us per frame**, which is a quarter of a game frame, on
-  every frame of every thread. Every tracked frame instantiates a script, runs all three
-  lifecycle phases inside ad-hoc sandboxes and reverts. That is the first target for
-  ROADMAP 3.7.
-- **Instantiating a child script costs about 2.2 us** even when it does nothing. Scripts
-  that are run per frame (the downhill angle probes) pay this every time.
+- The bare per-frame framework cost (216 ns on MSVC then, 170 ns now) is about 2% of a 10 us
+  game frame. The hierarchy itself is close to zero-cost.
+- A **state tracker cost about 2.6 us per frame** at that point, a quarter of a game frame,
+  on every frame of every thread: every tracked frame instantiates a script, runs all three
+  lifecycle phases inside ad-hoc sandboxes and reverts. The 3.7 work in the change log
+  brought it to about 0.8 us.
+- **Instantiating a child script cost about 2.2 us** even when it did nothing (0.7 us since
+  3.7). Scripts that are run per frame (the downhill angle probes) pay this every time.
 - `LongLoad` at depth 16 is 20x depth 1; the ancestor walk is linear and not free.
 - Slot bookkeeping grows with live slots (three `std::map`s per slot).
 - **The two compilers disagree by up to 60% on individual paths, in both directions**, with
@@ -319,6 +337,46 @@ What the Tier A and B numbers say together:
 ## Change log (measured)
 
 Every hot-path change records its delta table here, newest first.
+
+### 2026-09-08: recycled savestate buffers (ROADMAP 3.9) and the first Tier B benchmarks
+
+`SlotManager` used to construct a fresh `TState` for every save (`save()` then grew empty
+vectors, zero-filling them) and destroy it on erase or eviction. Erased and evicted states
+now go to a bounded pool (32 states, pooled memory counted against the slot budget) and the
+next `CreateSlot` reuses one, so the save is a single copy into already-sized buffers.
+
+`dllcheck`, MSVC, single thread (before -> after):
+
+| Primitive | Save | Load |
+|---|---|---|
+| Full (7.3 MB) | 1561 -> 191 us | 197 -> 222 us |
+| Lightweight (1.5 MB) | 285 -> 50 us | 42 -> 53 us |
+
+The Tier B family that now gates this (`bench_libsm64.cpp`, fastest of nine, MSVC / clang-cl):
+
+| Benchmark | MSVC | clang-cl | allocs/iter |
+|---|---|---|---|
+| `LibSm64Full_SaveErase` (recycled) | 189 us | 192 us | 3 |
+| `LibSm64Full_SaveFresh` | 1.26 ms | 1.26 ms | 5.25 |
+| `LibSm64Full_Load` | 189 us | 189 us | 1 |
+| `LibSm64Light_SaveErase` (recycled) | 42 us | 44 us | 3 |
+| `LibSm64Light_SaveFresh` | 278 us | 284 us | 5.07 |
+| `LibSm64Light_Load` | 44 us | 41 us | 1 |
+| `LibSm64*_FrameAdvance` (neutral inputs at frame 3330) | 14.3 us | 14.2 us | 0 |
+
+A recycled save now costs the same as a load in both modes (the 3.9 bar was 2x). The three
+allocations per recycled save are the slot's map node and the two access-order map nodes;
+the fresh save adds the two buffers (and their growth). Tier A on MSVC: 0 regressions, 10
+improvements, among them `SlotManager` create + erase -22 to -56% and create at the cap -15
+to -26% (the fake state is 256 bytes, so that is the map churn the pool removes, not the
+copy). clang-cl: the same `SlotManager` gains, and four rows the pool does not touch read +12 to
++19% against the previous baseline. Re-run: `LoadSlot` at 100 slots flips between 93 and
+104 ns from process to process (the bimodality described under noise control), while
+`GetInputs` uncached at depths 1, 4 and 16 is stable at 200 / 226 / 333 ns, against
+169 / 202 / 296 in the previous baseline and 204 / 246 / 406 before the 3.7 work. That
+loop calls nothing the change touched and MSVC's rows did not move, so this is the
+code-layout sensitivity noted under noise control; the baseline was re-saved with the new
+values.
 
 ### 2026-09-07: allocation-free ad-hoc levels, cheaper child scripts and trackers (ROADMAP 3.7)
 

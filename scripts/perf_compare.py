@@ -42,7 +42,8 @@ def rows_of(data, stat="min", metric="real_time"):
     reps = {}
     medians = {}
     for b in data.get("benchmarks", []):
-        if b.get("error_occurred"):
+        # Skipped rows (the DLL-gated Tier B family without a DLL) carry no timing.
+        if b.get("error_occurred") or b.get("skipped") or b.get("skip_reason"):
             continue
         name = b.get("run_name") or b["name"]
         if b.get("run_type", "iteration") == "aggregate":

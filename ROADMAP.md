@@ -74,8 +74,10 @@ correctness and in speed.
         state trackers. `scripts\perf.ps1` runs and compares; first baseline committed
         (2026-09-07). Heap allocations per iteration are counted on every benchmark and
         gated at 0.1 (2026-09-07). Still to do: run it in CI.
-      - Tier B resource benchmarks: frame advance latency, save/load full vs lightweight,
-        thread scaling 1 to 16, memory per slot.
+      - [ ] Tier B resource benchmarks. Done 2026-09-07: frame advance, save (recycled and
+        fresh) and load, full and lightweight, in `bench_libsm64.cpp`; `perf.ps1` finds the
+        DLL like `test.ps1` and the family is skipped without it. Still to do: thread
+        scaling 1 to 16 and memory per slot.
       - Tier C framework workloads with exact-count gates: fixed scripts, `PyramidUpdate`
         probes, a tracker sweep; report replay ratio and overhead %.
       - Tier D scattershot end to end: a deterministic exact-count run and a throughput run.
@@ -179,10 +181,11 @@ Goal: the core's implicit invariants become explicit and enforced.
       on `Resource` per frame if measurement says it matters.
 - [ ] **3.8 Hotspot investigations.** Work through the "known hotspots" list in
       docs/performance.md, measurement first, one PR each, with the Tier C/D delta table.
-- [ ] **3.9 Pool savestate buffers.** `dllcheck` measures a full save at 1.4 ms against a
-      0.19 ms load, and lightweight at 0.28 ms against 0.04 ms: each `SaveState` allocates and
-      zero-fills fresh `std::vector`s because slots are never reused. Recycle evicted slot
-      buffers. *Done when:* save cost is within 2x of load cost in both modes, gated by Tier B.
+- [x] **3.9 Pool savestate buffers.** Done 2026-09-07: `SlotManager` keeps erased and evicted
+      states in a bounded pool (32) that the next `CreateSlot` reuses, so a save into a
+      recycled state is one copy. `dllcheck`: full save 1561 -> 191 us against a 222 us load,
+      lightweight 285 -> 50 us against 53 us. Pooled memory counts toward the slot budget.
+      Gated by the Tier B `SaveErase`/`Load` benchmarks (docs/performance.md change log).
 
 - [ ] **3.10 Make the compare concepts actually constrain.** The concepts in
       `ScriptCompareHelper.hpp` test whether `std::same_as<...>` is a valid *expression*, not

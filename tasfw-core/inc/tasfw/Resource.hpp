@@ -2,6 +2,8 @@
 
 #include <cstring>
 #include <iostream>
+#include <map>
+#include <utility>
 #include <vector>
 
 #include <tasfw/Inputs.hpp>
@@ -41,6 +43,15 @@ public:
 	int64_t _saveMemLimit = 0;
 	int64_t _currentSaveMem = 0;
 
+	// Erased and evicted states are kept here and handed to the next CreateSlot, so a save
+	// into a recycled state is one copy instead of allocating and zero-filling fresh buffers
+	// (a full LibSm64 save was 8x its load before this; ROADMAP 3.9). Pooled memory counts
+	// toward _saveMemLimit; the pool is bounded so idle memory does not pile up.
+	std::vector<TState> _pool;
+	int64_t _pooledMem = 0;
+	size_t _maxPooledStates = 32;
+	uint64_t nPoolReuses = 0;
+
 	SlotManager(Resource<TState>* resource) : _resource(resource) { }
 
 	int64_t CreateSlot();
@@ -48,6 +59,7 @@ public:
 	void EraseSlot(int64_t slotId);
 	void LoadSlot(int64_t slotId);
 	bool isValid(int64_t slotId);
+	size_t PooledStates() const { return _pool.size(); }
 };
 
 // Interface for the state machine that represents the game. Can either contain the state machine itself, or be a client to an external state machine.

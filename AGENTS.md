@@ -91,7 +91,9 @@ its place with numbers, and "it is cleaner" is not a number.
   prints frame-advance and save/load cost. Takes under a second.
 - Performance numbers come from `Release` or `RelWithDebInfo` builds only. Debug uses `/Od`.
 - Perf suite: `powershell -ExecutionPolicy Bypass -File scripts\perf.ps1` builds Release,
-  runs `tasfw-perf.exe`, and compares against `perf\baselines\<computername>.json`.
+  runs `tasfw-perf.exe`, and compares against `perf\baselines\<computername>.json`. Tier A
+  needs nothing; the Tier B (libsm64) families run when `res\` has the DLL and movie, or
+  pass `-Dll`/`-M64`, and are skipped otherwise.
 
 ## Hard rules
 

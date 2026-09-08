@@ -30,7 +30,9 @@ below `tasfw-scripts` in CMake even though it is drawn below core here; the head
 
 - `SlotManager` stores savestates by integer slot id, evicts least-recently-touched slots when
   `_saveMemLimit` (8 GB, set in `LibSm64`'s constructor) would be exceeded, and throws if a
-  single save cannot fit.
+  single save cannot fit. Erased and evicted states go to a bounded pool (32) that the next
+  save reuses, so a save into a recycled state is one copy; pooled memory counts toward the
+  limit.
 - `shouldSave(n)` / `shouldLoad(n)` compare the measured average cost of a save or load
   (rdtsc cycles) against `n` frame advances. Scripts call these to decide whether a
   savestate is worth creating. Every "cost-based" decision in the framework routes here.
@@ -249,8 +251,8 @@ The full measurement plan is in [docs/performance.md](docs/performance.md); this
 mental model behind it.
 
 Cost hierarchy, most to least: frame advance (`sm64_update`, measured at about 10 us),
-savestate save/load (`memcpy` of 1.5 MB lightweight or 7.3 MB full: about 285/42 us
-lightweight, 1400/190 us full, memory-bandwidth and allocation bound),
+savestate save/load (`memcpy` of 1.5 MB lightweight or 7.3 MB full: about 50/53 us
+lightweight, 190/220 us full, memory-bandwidth bound now that slot buffers are recycled),
 block decoding (replay from the root every shot), state trackers (run at every frame advance
 and load, and may advance frames themselves), `Script` bookkeeping (map operations per frame
 per hierarchy level), synchronization (named critical sections, barriers in deterministic

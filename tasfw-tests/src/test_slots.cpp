@@ -79,6 +79,54 @@ TEST_CASE("A cap smaller than one slot still admits exactly one slot at a time")
 	CHECK(slots.slotsById.size() == 1);
 }
 
+TEST_CASE("Erased and evicted slots are pooled and the next save reuses their storage")
+{
+	FakeResource resource;
+	auto& slots = resource.slotManager;
+
+	int64_t a = slots.CreateSlot();
+	CHECK(slots.PooledStates() == 0);
+	slots.EraseSlot(a);
+	CHECK(slots.PooledStates() == 1);
+	CHECK(slots._pooledMem == int64_t(sizeof(FakeState)));
+
+	// The recycled state holds the new save, not the old one.
+	resource.advance();
+	uint64_t atB = resource.checksum();
+	int64_t b = slots.CreateSlot();
+	CHECK(b != a);
+	CHECK(slots.PooledStates() == 0);
+	CHECK(slots._pooledMem == 0);
+	CHECK(slots.nPoolReuses == 1);
+	resource.advance();
+	slots.LoadSlot(b);
+	CHECK(resource.checksum() == atB);
+
+	// Eviction at the memory cap goes through the pool as well: two slots fit, the third
+	// evicts the oldest and reuses its storage.
+	slots._saveMemLimit = int64_t(3 * sizeof(FakeState)) - 1;
+	int64_t c = slots.CreateSlot();
+	int64_t d = slots.CreateSlot();
+	CHECK_FALSE(slots.isValid(b));
+	CHECK(slots.isValid(c));
+	CHECK(slots.isValid(d));
+	CHECK(slots.nPoolReuses == 2);
+	CHECK(slots.PooledStates() == 0);
+	CHECK(slots.slotsById.size() == 2);
+
+	// The pool is bounded; states beyond the bound are released.
+	slots._saveMemLimit = int64_t(64 * sizeof(FakeState));
+	slots._maxPooledStates = 2;
+	std::vector<int64_t> ids;
+	for (int i = 0; i < 5; i++)
+		ids.push_back(slots.CreateSlot());
+	for (int64_t id : ids)
+		slots.EraseSlot(id);
+	CHECK(slots.PooledStates() == 2);
+	CHECK(slots._pooledMem == int64_t(2 * sizeof(FakeState)));
+	CHECK(slots._currentSaveMem == int64_t(2 * sizeof(FakeState))); // c and d
+}
+
 TEST_CASE("Resource counters and LoadState(-1) restore the start save")
 {
 	FakeResource resource;

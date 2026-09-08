@@ -44,6 +44,11 @@
     msvc (default) or clang. Uses build\<Config>-clang and the baseline
     perf\baselines\<computername>-clang.json, so the two compilers are tracked separately.
 
+.PARAMETER Dll, M64, Frame
+    Inputs for the Tier B (libsm64) families. Default to res\sm64_jp_0.dll,
+    res\comissonPyra2-Fanart_x-Z.m64 and frame 3330 when those files exist; the Tier B
+    benchmarks are skipped otherwise.
+
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File scripts\perf.ps1
     powershell -ExecutionPolicy Bypass -File scripts\perf.ps1 -SaveBaseline
@@ -61,7 +66,10 @@ param(
     [int]$Processes = 3,
     [ValidateSet('msvc', 'clang')]
     [string]$Compiler = 'msvc',
-    [int]$Affinity = 0x10
+    [int]$Affinity = 0x10,
+    [string]$Dll = '',
+    [string]$M64 = '',
+    [int]$Frame = 3330
 )
 
 $ErrorActionPreference = 'Stop'
@@ -76,6 +84,26 @@ if ($Compiler -eq 'clang') { $buildDir = "$buildDir-clang" }
 $exe = Join-Path $buildDir 'out\tasfw-perf.exe'
 if (-not (Test-Path $exe)) {
     throw "tasfw-perf.exe not found at $exe. Build with scripts\build.ps1 -Config $Config first."
+}
+
+# Tier B needs the game; same discovery as scripts\test.ps1.
+if (-not $Dll) {
+    $candidate = Join-Path $root 'res\sm64_jp_0.dll'
+    if (Test-Path $candidate) { $Dll = $candidate }
+}
+if (-not $M64) {
+    $candidate = Join-Path $root 'res\comissonPyra2-Fanart_x-Z.m64'
+    if (Test-Path $candidate) { $M64 = $candidate }
+}
+if ($Dll -and $M64) {
+    $env:TASFW_LIBSM64 = $Dll
+    $env:TASFW_M64 = $M64
+    $env:TASFW_FRAME = "$Frame"
+    Write-Host "Tier B (libsm64) enabled: $Dll, $M64, frame $Frame"
+} else {
+    Remove-Item Env:TASFW_LIBSM64 -ErrorAction SilentlyContinue
+    Remove-Item Env:TASFW_M64 -ErrorAction SilentlyContinue
+    Write-Host "Tier B (libsm64) skipped (no DLL/movie found; pass -Dll and -M64)"
 }
 
 $resultsDir = Join-Path $root 'perf\results'
@@ -102,7 +130,9 @@ $families = @(
     '^BM_Inputs',
     '^BM_M64',
     '^BM_SlotManager|^BM_Resource',
-    '^BM_Script'
+    '^BM_Script',
+    '^BM_LibSm64Full',
+    '^BM_LibSm64Light'
 )
 if ($Filter) { $families = @($Filter) }
 
