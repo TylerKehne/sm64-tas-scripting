@@ -112,7 +112,8 @@ Google Benchmark via FetchContent. Cases:
   hierarchy depth 1, 4 and 16 and ad-hoc level 0 and 4; `AdvanceFrameWrite` erase cost with
   10,000 cached frames.
 
-Gate: time within 10% of baseline; allocation counts exact where measured.
+Gate: time within 10% of baseline; heap allocations per iteration within 0.1 of baseline
+(counted on every benchmark; see "Running the suite").
 
 ### Tier B: resource benchmarks (DLL required)
 
@@ -206,6 +207,15 @@ Results go to `perf\results\<timestamp>-<sha>.json` (gitignored). The baseline f
 is `perf\baselines\<computername>.json` (committed). `scripts\perf_compare.py` prints the delta
 table and exits non-zero on any regression over the threshold (default 10%). Paste that table
 into the PR.
+
+Every benchmark also reports `allocs`, heap allocations per iteration. `tasfw-perf` replaces
+the global `operator new` (`tasfw-perf/src/alloc_counter.cpp`) and each benchmark reads the
+count around its timed loop. The count is deterministic, so the compare gates it separately
+from time: an increase of more than 0.1 allocations per iteration (`--alloc-tolerance`; the
+slack only absorbs one-time set-up amortised over the fixed iteration counts) fails the run
+even when the clock does not notice. The counter is a relaxed load and store, not
+`fetch_add`: a locked read-modify-write right after every `malloc` cost 10 to 20 ns per
+allocation and read as a 75% regression on the allocation-heavy benchmarks.
 
 Noise control, learned the hard way while setting this up:
 
@@ -309,6 +319,60 @@ What the Tier A and B numbers say together:
 ## Change log (measured)
 
 Every hot-path change records its delta table here, newest first.
+
+### 2026-09-07: allocation-free ad-hoc levels, cheaper child scripts and trackers (ROADMAP 3.7)
+
+Measured first with the new allocation counter: a frame advance with a trivial tracker cost
+64 heap allocations on MSVC, an empty child script 53, an empty `ExecuteAdhoc` 9. MSVC's
+`std::map` allocates a head node in its constructor, a `Script` holds six such containers
+per ad-hoc level, and every pop replaced a level by assigning a fresh `T()`. Changes:
+`LevelStack` constructs every level (including 0) on first use and resets popped levels in
+place (`clear()`, `BaseScriptStatus::Reset()`); `ExecuteAdhocBase` and `Initialize` no
+longer pre-create containers; `Revert`/`ApplyChildDiff` take the child's save bank as a
+pointer that is null when the child never saved; tracked-state entries are created on first
+insert and looked up with `find()`; the `dynamic_cast` in `GetTrackedState` became a type-tag
+compare; statuses are moved out of finished scripts and `GetTrackedState` returns a
+reference. While at it, a `SlotHandle` move that copied the slot id (so every save a child
+handed to its parent on `Modify` was erased by the child's bank and later replayed) was
+fixed and pinned by a test, and `LevelStack::operator[]` was split so MSVC keeps inlining it
+(docs/compilers.md).
+
+Before and after are both measured with the counting binary, fastest of nine:
+
+| Benchmark | allocs/iter | MSVC | clang-cl |
+|---|---|---|---|
+| Frame advance with a trivial tracker | 64 → 14 | 2.18 → 0.83 us (-62%) | 2.41 → 0.96 us (-60%) |
+| Frame advance with a recursive tracker | 65 → 19 | 2.36 → 1.08 us (-54%) | 2.72 → 1.26 us (-54%) |
+| `Execute<EmptyScript>` | 53 → 11 | 1.48 → 0.67 us (-55%) | 2.37 → 0.43 us (-82%) |
+| `Execute` / `Modify<OneFrameScript>` | 62 → 31 | 1.97 / 2.06 → 1.13 / 1.17 us (-43%) | 2.05 / 2.15 → 1.02 / 1.14 us (-50% / -47%) |
+| `ExecuteAdhoc`, one frame + revert | 15 → 5 | 571 → 296 ns (-48%) | 566 → 271 ns (-52%) |
+| `ModifyAdhoc`, one frame | 15 → 5 | 608 → 328 ns (-46%) | 657 → 358 ns (-46%) |
+| `ExecuteAdhoc`, empty lambda | 9 → 2 | 262 → 283 ns (+8%) | 248 → 81 ns (-68%) |
+| `AdvanceFrameWrite` / `AdvanceFrameRead` | 2 / 1 | 179 / 259 → 170 / 229 ns | 252 / 354 → 224 / 366 ns |
+| Write one frame + `Load` back | 3 | 202 → 176 ns (-13%) | 215 → 171 ns (-21%) |
+| `LongLoad` to root and back, depth 1 / 16 | 1 | 243 / 4130 → 209 / 3880 ns | 252 / 4390 → 194 / 2630 ns |
+| `GetInputs` uncached, depth 1 / 16 | 1 | 126 / 322 → 138 / 315 ns | 204 / 406 → 169 / 296 ns |
+
+Clang-cl: 16 improvements, 0 regressions. MSVC: 10 improvements; the two `GetInputs` depth
+1 and 4 rows read +10% against an unusually fast before-run but are 8% and 4% faster than
+the committed baseline, and the empty `ExecuteAdhoc` is the one MSVC case that got slower:
+its two remaining allocations are MSVC's `std::map` move constructor (it gives the moved-from
+map a new head) and the returned status's own diff, which cost more than the seven it no
+longer does. All 616 test assertions unchanged on both compilers. Other families: all
+within noise, allocation counts identical.
+
+Two effects of the counting binary itself, visible against the previous baselines and now
+baked into the re-saved ones: `SlotManager_CreateErase/100` measures 350 ns in the suite and
+215 ns standalone (the per-process heap-layout effect described above), and clang-cl's
+`Execute<EmptyScript>` rose from 1.5 to 2.4 us before any core change, consistent with
+clang eliding new/delete pairs when `operator new` is the library's and no longer being able
+to once a replacement is visible under LTO. Both compilers now measure the un-elided cost,
+which is the honest one for code that runs on MSVC as well.
+
+What remains in a tracked frame (0.8 us, 14 allocations): the head nodes MSVC allocates for
+the containers the tracker actually touches, one `inputsCache` node per frame, the
+`unordered_map` entry for the tracker's own tracked states, and the moved status. A flat or
+pooled per-level container would remove most of it (ROADMAP 3.7, remaining).
 
 ### 2026-09-07: per-level bookkeeping as a `LevelStack` (ROADMAP 3.7)
 

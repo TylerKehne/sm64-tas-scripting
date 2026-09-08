@@ -90,8 +90,11 @@ Per script and per ad-hoc level the framework keeps: the input diff (`BaseStatus
 a `saveBank` of savestate handles keyed by frame, a `saveCache` and `inputsCache` that
 memoize lookups into ancestors, a `frameCounter` that accumulates replay cost per frame,
 and a `loadTracker`. Each is a `LevelStack<T>` (`tasfw/LevelStack.hpp`): levels are pushed
-and popped in stack order, level 0 is stored inline, and higher levels' storage is reused,
-so entering an ad-hoc level does not hash or allocate.
+and popped in stack order, every level (including 0) is constructed on first use, and a
+popped level is reset in place (`clear()`, or `BaseScriptStatus::Reset()`) and its storage
+reused. Entering or leaving an ad-hoc level therefore neither hashes nor allocates, and a
+script that never saves never constructs a save bank (MSVC's `std::map` allocates a head
+node per construction, which is what made child scripts and trackers expensive).
 
 Input resolution (`GetInputsMetadata`): to find the inputs for frame *f*, walk the current
 script's ad-hoc levels from innermost outward, then the parent chain, then the source `M64`,
@@ -137,6 +140,10 @@ frame advance or load, `TrackState` runs the tracker at that frame inside a reve
 Trackers may call `GetTrackedState<T>(frame - 1)` to compute recursive metrics; the cache
 makes this linear. Entries after a modified frame are erased on `AdvanceFrameWrite`,
 `Apply`, `Rollback`; on `Modify` they move from child to parent with the saves.
+`GetTrackedState` returns a `const` reference into that table and a finished tracker's
+`CustomStatus` is moved into it, not copied. A script's entry in the table is created on its
+first tracked frame and dropped when the script's scope ends; the root verifies the
+requested tracker type by comparing a per-type tag (`StateTrackerTag`), not with RTTI.
 
 `ConfigureStateTracker(args...)` on any builder supplies constructor arguments for the
 tracker; the framework instantiates it through `StateTrackerFactory`.
@@ -235,10 +242,9 @@ hundred floating-point operations where only the platform matters.
 Design intent is zero-cost abstraction: resource, tracker and state-bin types are template
 parameters constrained by concepts; `if constexpr` compiles state tracking out when the
 tracker is `DefaultStateTracker`; LTO is on for every configuration. Where the code falls
-short today (string-keyed symbol lookups per frame in `SetInputs` and `advance`, a
-`dynamic_cast` per `GetTrackedState`, virtual per-frame calls on `Resource`, `shared_ptr`
-segment chains, default-inserting map bookkeeping) is listed in the performance doc and on
-the roadmap.
+short today (scripts resolving symbols by name per execution, virtual per-frame calls on
+`Resource`, `shared_ptr` segment chains, one `std::map` node per cached frame in the
+bookkeeping) is listed in the performance doc and on the roadmap.
 
 Instrumentation already in the code: rdtsc totals and counts on `Resource`, per-script
 durations and counts in `BaseScriptStatus`, and the scattershot end-of-run percentages.
@@ -248,6 +254,9 @@ Counts are the metrics to trust; they are deterministic and machine-independent.
 
 - `Modify` moves the cursor to the end of the child's diff (see above).
 - `GetTrackedState` throws if the root is not a `TopLevelScript` with that tracker type.
+- `GetTrackedState` returns a reference into the root's table. A write at or before that
+  frame (`AdvanceFrameWrite`, `Apply`, `Rollback`) invalidates it; copy the state
+  (`auto state = ...`) when it has to survive one.
 - `SlotManager` limits are per resource, so aggregate memory scales with thread count.
 - `BinaryStateBin` throws on out-of-range values; a state bin that can throw will abort a
   pellet inside an `ExecuteAdhoc`, which is treated as "invalid state", not as a crash.

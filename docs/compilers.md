@@ -115,6 +115,17 @@ Classes that mark some overriding functions `override` and not others warn on Cl
 scattershot script classes in `tasfw-scripts` and the bruteforcer do this. Fix is mechanical:
 mark every override.
 
+### MSVC: a hot accessor stops inlining when its slow path grows
+
+`LevelStack::operator[]` is called on every bookkeeping access in `Script`. When its body
+contained the growth loop (an `std::optional::emplace` and a `vector::push_back`), MSVC
+19.44 with LTO stopped inlining it and every access became a call: a depth-16 `LongLoad`
+went from 4.1 to 4.9 us and an empty `ExecuteAdhoc` from 262 to 295 ns, while clang-cl
+inlined it regardless and showed no change. Keeping the inline body to a compare and a
+pointer select, with the loop in a separate `Grow()`, restored inlining and gained 8 to 15%
+over the previous code on MSVC. For anything called per frame, keep the inline body tiny and
+move the rare path out; and measure on both compilers, because only one of them will tell you.
+
 ## What GCC found on first contact (2026-09-07)
 
 `-Wmissing-requires` on every concept in `ScriptCompareHelper.hpp` (`ScriptParamsGenerator`,

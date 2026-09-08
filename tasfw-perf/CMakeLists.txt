@@ -17,6 +17,7 @@ FetchContent_MakeAvailable(benchmark)
 
 add_executable(tasfw-perf
 	"src/main.cpp"
+	"src/alloc_counter.cpp"
 	"src/bench_statebin.cpp"
 	"src/bench_scattershot.cpp"
 	"src/bench_inputs.cpp"

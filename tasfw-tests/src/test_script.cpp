@@ -34,6 +34,7 @@ namespace
 		using Base::ModifyAdhoc;
 		using Base::Rollback;
 		using Base::Test;
+		using Base::TrackedStateExists;
 
 		// Overloaded with private variants in Script; forward instead of using-declaring.
 		void Save() { Base::Save(); }
@@ -129,6 +130,69 @@ namespace
 		}
 		bool assertion() override { return CustomStatus.initialized; }
 	};
+
+	// Writes two frames, saves, writes two more.
+	class SaveInTheMiddle : public Script<FakeResource>
+	{
+	public:
+		class CustomScriptStatus
+		{
+		public:
+			int64_t savedFrame = -1;
+		};
+		CustomScriptStatus CustomStatus {};
+
+		bool validation() override { return true; }
+		bool execution() override
+		{
+			AdvanceFrameWrite(In(1));
+			AdvanceFrameWrite(In(2));
+			Save();
+			CustomStatus.savedFrame = GetCurrentFrame();
+			AdvanceFrameWrite(In(3));
+			AdvanceFrameWrite(In(4));
+			return true;
+		}
+		bool assertion() override { return true; }
+	};
+
+	// A tracker type the test roots never install; used to check the type guard.
+	class OtherTracker : public Script<FakeResource>
+	{
+	public:
+		class CustomScriptStatus
+		{
+		public:
+			int value = 0;
+		};
+		CustomScriptStatus CustomStatus {};
+
+		bool validation() override { return true; }
+		bool execution() override { return true; }
+		bool assertion() override { return true; }
+	};
+
+	// Asserts only on even frames, so odd frames have no accepted state.
+	class EvenFramesTracker : public Script<FakeResource>
+	{
+	public:
+		class CustomScriptStatus
+		{
+		public:
+			bool initialized = false;
+			int64_t frame = -1;
+		};
+		CustomScriptStatus CustomStatus {};
+
+		bool validation() override { return true; }
+		bool execution() override
+		{
+			CustomStatus.frame = GetCurrentFrame();
+			CustomStatus.initialized = true;
+			return true;
+		}
+		bool assertion() override { return CustomStatus.frame % 2 == 0; }
+	};
 }
 
 TEST_CASE("AdvanceFrameWrite records the diff and applies inputs to the resource")
@@ -206,6 +270,29 @@ TEST_CASE("Execute reverts the child's frames; Modify keeps them")
 			CHECK(s.GetDiff().frames.size() == 5);
 			CHECK(s.GetInputs(4) == In(22));
 			CHECK(s.resource->checksum() != before);
+		});
+}
+
+TEST_CASE("Saves made by a child survive being handed to the parent on Modify")
+{
+	FakeResource resource;
+	M64 m64;
+	RunRoot(resource, m64, [&resource](auto& s)
+		{
+			s.AdvanceFrameWrite(In(0));
+			auto status = s.template Modify<SaveInTheMiddle>();
+			REQUIRE(status.asserted);
+			REQUIRE(status.savedFrame == 3);
+			CHECK(s.GetCurrentFrame() == 5);
+
+			// Loading the child's save frame from the parent is one load and no replay: the
+			// handle was moved, not copied and then released by the child's bank.
+			uint64_t loads = resource.nLoadStates;
+			uint64_t advances = resource.nFrameAdvances;
+			s.Load(3);
+			CHECK(s.GetCurrentFrame() == 3);
+			CHECK(resource.nLoadStates == loads + 1);
+			CHECK(resource.nFrameAdvances == advances);
 		});
 }
 
@@ -401,5 +488,73 @@ TEST_CASE("State trackers compute per-frame state, recursively, without moving t
 			for (int i = 7; i < 10; i++)
 				s.AdvanceFrameWrite(In(i));
 			CHECK(s.template GetTrackedState<RecursiveTracker>(10).sum == 55);
+		});
+}
+
+TEST_CASE("Asking for a tracker type the root does not install throws instead of miscasting")
+{
+	FakeResource resource;
+	M64 m64;
+	RunRoot<RecursiveTracker>(resource, m64, [](auto& s)
+		{
+			s.AdvanceFrameWrite(In(0));
+			CHECK_THROWS_AS(s.template GetTrackedState<OtherTracker>(1), std::runtime_error);
+			CHECK_THROWS_AS(s.template TrackedStateExists<OtherTracker>(1), std::runtime_error);
+			// The right type still works afterwards.
+			CHECK(s.template GetTrackedState<RecursiveTracker>(1).sum == 1);
+		});
+
+	// A root without a tracker rejects every tracker type.
+	RunRoot(resource, m64, [](auto& s)
+		{
+			CHECK_THROWS_AS(s.template GetTrackedState<OtherTracker>(0), std::runtime_error);
+		});
+}
+
+TEST_CASE("A tracker that does not assert leaves a default state that is not recomputed")
+{
+	FakeResource resource;
+	M64 m64;
+	RunRoot<EvenFramesTracker>(resource, m64, [&resource](auto& s)
+		{
+			for (int i = 0; i < 4; i++)
+				s.AdvanceFrameWrite(In(i));
+
+			CHECK(s.template GetTrackedState<EvenFramesTracker>(2).initialized);
+			CHECK(s.template GetTrackedState<EvenFramesTracker>(2).frame == 2);
+			CHECK_FALSE(s.template GetTrackedState<EvenFramesTracker>(3).initialized);
+			CHECK(s.template TrackedStateExists<EvenFramesTracker>(3)); // stored, as a default
+
+			uint64_t advances = resource.nFrameAdvances;
+			CHECK_FALSE(s.template GetTrackedState<EvenFramesTracker>(3).initialized);
+			CHECK(resource.nFrameAdvances == advances); // served from the table
+		});
+}
+
+TEST_CASE("Tracked states follow the diff: kept by Modify, dropped by Execute")
+{
+	FakeResource resource;
+	M64 m64;
+	RunRoot<RecursiveTracker>(resource, m64, [](auto& s)
+		{
+			for (int i = 0; i < 3; i++)
+				s.AdvanceFrameWrite(In(i));
+
+			// Execute: the child's frames are reverted, and so are their states.
+			s.template Execute<WriteFrames>(4, 10);
+			CHECK(s.GetCurrentFrame() == 3);
+			CHECK_FALSE(s.template TrackedStateExists<RecursiveTracker>(6));
+
+			// Modify: the frames persist and their states are handed to the parent.
+			s.template Modify<WriteFrames>(4, 20);
+			CHECK(s.GetCurrentFrame() == 7);
+			CHECK(s.template TrackedStateExists<RecursiveTracker>(6));
+			CHECK(s.template GetTrackedState<RecursiveTracker>(7).sum == 28); // 0 + ... + 7
+
+			// A reference into the table stays valid until a write invalidates that frame.
+			const auto& at5 = s.template GetTrackedState<RecursiveTracker>(5);
+			CHECK(at5.sum == 15);
+			CHECK(s.template GetTrackedState<RecursiveTracker>(7).sum == 28); // unrelated lookup
+			CHECK(at5.sum == 15);
 		});
 }

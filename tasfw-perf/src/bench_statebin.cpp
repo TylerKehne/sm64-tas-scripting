@@ -1,4 +1,5 @@
 #include <benchmark/benchmark.h>
+#include "alloc_counter.hpp"
 #include <BinaryStateBin.hpp>
 #include <cstdint>
 
@@ -7,6 +8,7 @@
 static void BM_BinaryStateBin_Pack(benchmark::State& state)
 {
 	uint32_t i = 0;
+	uint64_t allocs0 = tasfw_perf::AllocCount();
 	for (auto _ : state)
 	{
 		i++;
@@ -26,6 +28,7 @@ static void BM_BinaryStateBin_Pack(benchmark::State& state)
 		benchmark::DoNotOptimize(bin);
 	}
 	state.SetItemsProcessed(state.iterations());
+	tasfw_perf::ReportAllocs(state, allocs0);
 }
 BENCHMARK(BM_BinaryStateBin_Pack);
 
@@ -42,6 +45,7 @@ static void BM_BinaryStateBin_Equals64(benchmark::State& state)
 		bins[i].bytes[15] = uint8_t(i & 1);
 	}
 
+	uint64_t allocs0 = tasfw_perf::AllocCount();
 	for (auto _ : state)
 	{
 		int equal = 0;
@@ -50,5 +54,6 @@ static void BM_BinaryStateBin_Equals64(benchmark::State& state)
 		benchmark::DoNotOptimize(equal);
 	}
 	state.SetItemsProcessed(state.iterations() * (n - 1));
+	tasfw_perf::ReportAllocs(state, allocs0);
 }
 BENCHMARK(BM_BinaryStateBin_Equals64);

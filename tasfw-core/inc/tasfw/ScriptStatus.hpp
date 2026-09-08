@@ -2,6 +2,10 @@
 #include "tasfw/Resource.hpp"
 #include <tasfw/Inputs.hpp>
 
+#include <concepts>
+#include <type_traits>
+#include <utility>
+
 #ifndef SCRIPTSTATUS_H
 #define SCRIPTSTATUS_H
 
@@ -33,6 +37,18 @@ public:
 	M64Diff m64Diff = M64Diff();
 
 	BaseScriptStatus() = default;
+
+	// Back to the freshly constructed state without releasing the diff's storage. Script
+	// keeps one of these per ad-hoc level and LevelStack calls this when a level is popped,
+	// so the next push reuses the map instead of constructing a new one.
+	void Reset()
+	{
+		validated = executed = asserted = false;
+		validationDuration = executionDuration = assertionDuration = totalDuration = 0;
+		saveDuration = loadDuration = advanceFrameDuration = 0;
+		nLoads = nSaves = nFrameAdvances = 0;
+		m64Diff.frames.clear();
+	}
 };
 
 template <derived_from_specialization_of<Script> TScript>
@@ -41,8 +57,13 @@ class ScriptStatus : public BaseScriptStatus, public TScript::CustomScriptStatus
 public:
 	ScriptStatus() : BaseScriptStatus(), TScript::CustomScriptStatus() {}
 
-	ScriptStatus(BaseScriptStatus baseStatus, typename TScript::CustomScriptStatus customStatus)
-		: BaseScriptStatus(baseStatus), TScript::CustomScriptStatus(customStatus) { }
+	// Forwarding so that a finished script's status and CustomStatus are moved into the
+	// result rather than copied (CustomStatus holds vectors in the real trackers).
+	template <class TBase, class TCustom>
+		requires(std::derived_from<std::remove_cvref_t<TBase>, BaseScriptStatus>
+			&& std::same_as<std::remove_cvref_t<TCustom>, typename TScript::CustomScriptStatus>)
+	ScriptStatus(TBase&& baseStatus, TCustom&& customStatus)
+		: BaseScriptStatus(std::forward<TBase>(baseStatus)), TScript::CustomScriptStatus(std::forward<TCustom>(customStatus)) { }
 };
 
 class AdhocBaseScriptStatus
@@ -60,13 +81,16 @@ public:
 
 	AdhocBaseScriptStatus() = default;
 
-	AdhocBaseScriptStatus(BaseScriptStatus baseStatus)
+	// Forwarding: an rvalue BaseScriptStatus gives up its diff instead of copying it.
+	template <class TBase>
+		requires std::derived_from<std::remove_cvref_t<TBase>, BaseScriptStatus>
+	AdhocBaseScriptStatus(TBase&& baseStatus)
 	{
 		executed = baseStatus.executed;
 		nLoads = baseStatus.nLoads;
 		nSaves = baseStatus.nSaves;
 		nFrameAdvances = baseStatus.nFrameAdvances;
-		m64Diff = baseStatus.m64Diff;
+		m64Diff = std::forward<TBase>(baseStatus).m64Diff;
 		totalDuration = baseStatus.totalDuration;
 		saveDuration = baseStatus.saveDuration;
 		loadDuration = baseStatus.loadDuration;
@@ -80,8 +104,11 @@ class AdhocScriptStatus : public AdhocBaseScriptStatus, public TAdhocCustomScrip
 public:
 	AdhocScriptStatus() : AdhocBaseScriptStatus(), TAdhocCustomScriptStatus() {}
 
-	AdhocScriptStatus(AdhocBaseScriptStatus baseStatus, TAdhocCustomScriptStatus customStatus)
-		: AdhocBaseScriptStatus(baseStatus), TAdhocCustomScriptStatus(customStatus) { }
+	template <class TBase, class TCustom>
+		requires(std::constructible_from<AdhocBaseScriptStatus, TBase&&>
+			&& std::same_as<std::remove_cvref_t<TCustom>, TAdhocCustomScriptStatus>)
+	AdhocScriptStatus(TBase&& baseStatus, TCustom&& customStatus)
+		: AdhocBaseScriptStatus(std::forward<TBase>(baseStatus)), TAdhocCustomScriptStatus(std::forward<TCustom>(customStatus)) { }
 };
 
 template <derived_from_specialization_of<Script> TScript>

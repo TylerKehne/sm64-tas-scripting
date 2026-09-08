@@ -10,6 +10,12 @@ benchmarks cannot trip the gate on jitter). With repetitions, the fastest repeti
 compared by default (--stat min); external noise only adds time, so the minimum is the best
 estimate of intrinsic cost.
 
+Benchmarks also report "allocs", heap allocations per iteration (tasfw-perf counts every
+operator new). That number is deterministic, so it is gated separately and almost exactly:
+an increase of more than --alloc-tolerance allocations per iteration (default 0.1, which
+only absorbs one-time set-up amortised over the fixed iteration counts) is a regression
+regardless of timing.
+
 `merge` concatenates the benchmark rows of several result files (scripts/perf.ps1 runs each
 benchmark family in its own process so heap state from one family cannot skew another) and
 keeps the context of the first file.
@@ -106,15 +112,16 @@ def cmd_compare(args):
 
     unit_to_ns = {"ns": 1.0, "us": 1e3, "ms": 1e6, "s": 1e9}
     name_w = max([len(n) for n in list(base) + list(cur)] + [10])
-    header = "%-*s %14s %14s %9s  %s" % (name_w, "benchmark", "baseline", "current", "delta", "status")
+    header = "%-*s %14s %14s %9s %17s  %s" % (name_w, "benchmark", "baseline", "current", "delta", "allocs/iter", "status")
     print(header)
     print("-" * len(header))
 
     regressions = []
     improvements = []
+    alloc_regressions = []
     for name in base:
         if name not in cur:
-            print("%-*s %14s %14s %9s  %s" % (name_w, name, "", "", "", "MISSING"))
+            print("%-*s %14s %14s %9s %17s  %s" % (name_w, name, "", "", "", "", "MISSING"))
             continue
         b = base[name]
         c = cur[name]
@@ -133,16 +140,34 @@ def cmd_compare(args):
             improvements.append((name, delta))
         else:
             status = "ok"
-        print("%-*s %14s %14s %+8.1f%%  %s" % (name_w, name, fmt(bv, unit), fmt(cv, unit), delta, status))
+
+        allocs = alloc_cell(b, c)
+        ba, ca = b.get("allocs"), c.get("allocs")
+        if ba is not None and ca is not None and float(ca) - float(ba) > args.alloc_tolerance:
+            status = "ALLOC REGRESSION" if status != "REGRESSION" else "REGRESSION + ALLOCS"
+            alloc_regressions.append((name, float(ba), float(ca)))
+        print("%-*s %14s %14s %+8.1f%% %17s  %s" % (name_w, name, fmt(bv, unit), fmt(cv, unit), delta, allocs, status))
 
     for name in cur:
         if name not in base:
             c = cur[name]
-            print("%-*s %14s %14s %9s  %s" % (name_w, name, "", fmt(float(c[args.metric]), c.get("time_unit", "ns")), "", "NEW"))
+            print("%-*s %14s %14s %9s %17s  %s" % (name_w, name, "", fmt(float(c[args.metric]), c.get("time_unit", "ns")),
+                                                    "", alloc_cell(None, c), "NEW"))
 
     print()
-    print("%d regression(s) over %.0f%%, %d improvement(s)" % (len(regressions), args.threshold, len(improvements)))
-    return 1 if regressions else 0
+    print("%d regression(s) over %.0f%%, %d improvement(s), %d allocation regression(s) over %.2f/iter"
+          % (len(regressions), args.threshold, len(improvements), len(alloc_regressions), args.alloc_tolerance))
+    return 1 if regressions or alloc_regressions else 0
+
+
+def alloc_cell(base_row, cur_row):
+    """'baseline -> current' allocations per iteration, or what is known of them."""
+    def one(row):
+        if row is None or row.get("allocs") is None:
+            return "n/a"
+        v = float(row["allocs"])
+        return "%.0f" % v if abs(v - round(v)) < 0.005 else "%.2f" % v
+    return "%s -> %s" % (one(base_row), one(cur_row))
 
 
 def main(argv):
@@ -160,6 +185,8 @@ def main(argv):
     cp.add_argument("--min-abs-ns", type=float, default=1.0,
                     help="ignore deltas smaller than this many nanoseconds in absolute terms")
     cp.add_argument("--metric", default="real_time", choices=["real_time", "cpu_time"])
+    cp.add_argument("--alloc-tolerance", type=float, default=0.1,
+                    help="allowed increase in allocations per iteration before it counts as a regression")
     cp.add_argument("--stat", default="min", choices=["min", "median"],
                     help="which repetition to compare (default min)")
     cp.set_defaults(func=cmd_compare)

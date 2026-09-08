@@ -1,4 +1,5 @@
 #include <benchmark/benchmark.h>
+#include "alloc_counter.hpp"
 #include <tasfw/Script.hpp>
 
 #include <tasfw/testing/FakeResource.hpp>
@@ -38,7 +39,11 @@ public:
 	bool validation() override { return true; }
 	bool execution() override
 	{
+		// Allocations are counted around the whole body: the timed loop plus whatever the
+		// body sets up before it, which the fixed iteration counts amortise to nothing.
+		uint64_t allocs0 = tasfw_perf::AllocCount();
 		_body(*this, _state);
+		tasfw_perf::ReportAllocs(_state, allocs0);
 		return true;
 	}
 	bool assertion() override { return true; }

@@ -64,7 +64,8 @@ correctness and in speed.
       - [x] Tier A microbenchmarks (Google Benchmark, DLL-free): hashing, state bins, input
         mapping, m64 I/O, `SlotManager`, `Script` per-operation overhead, hierarchy depth,
         state trackers. `scripts\perf.ps1` runs and compares; first baseline committed
-        (2026-09-07). Still to do: run it in CI.
+        (2026-09-07). Heap allocations per iteration are counted on every benchmark and
+        gated at 0.1 (2026-09-07). Still to do: run it in CI.
       - Tier B resource benchmarks: frame advance latency, save/load full vs lightweight,
         thread scaling 1 to 16, memory per slot.
       - Tier C framework workloads with exact-count gates: fixed scripts, `PyramidUpdate`
@@ -152,9 +153,16 @@ Goal: the core's implicit invariants become explicit and enforced.
       pointers in `LibSm64` (measured within noise: `GetProcAddress` is 62 ns here); the six
       per-level `unordered_map`s in `Script` replaced by `LevelStack` (ad-hoc overhead -56%,
       child scripts -24 to -32%, tracked frames -22%, deep rewinds -46%; docs/performance.md).
-      Remaining: scripts resolving symbols per execution; the `dynamic_cast` in
-      `GetTrackedState`; tracker script construction cost (six `std::map` head allocations
-      per instantiation on MSVC, `CustomStatus` vectors copied per frame); virtual dispatch
+      Also done 2026-09-07: per-level containers constructed on first use and reset in place
+      on pop (no allocation per ad-hoc level, no save bank for scripts that never save);
+      tracked-state entries created on first insert; the `dynamic_cast` in `GetTrackedState`
+      replaced by a per-type tag compare; statuses moved rather than copied out of finished
+      scripts and `GetTrackedState` returning a reference; and a `SlotHandle` move that
+      copied the slot id, so every save a child handed to its parent on `Modify` was erased
+      by the child's bank and replayed later (now pinned by a test). Allocation counts and
+      timings are in the change log. Remaining: scripts resolving symbols per execution; the
+      `std::map` head node MSVC allocates for each container a script actually touches, and
+      one map node per cached frame (a flat or pooled container, measured); virtual dispatch
       on `Resource` per frame if measurement says it matters.
 - [ ] **3.8 Hotspot investigations.** Work through the "known hotspots" list in
       docs/performance.md, measurement first, one PR each, with the Tier C/D delta table.
