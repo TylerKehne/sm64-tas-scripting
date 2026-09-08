@@ -1,6 +1,6 @@
 # Roadmap
 
-Status as of 2026-09-07. Items are ordered; each phase makes the next one safe to do with
+Status as of 2026-09-08. Items are ordered; each phase makes the next one safe to do with
 an AI agent. Check boxes as work lands and keep "Done when" honest.
 
 **Cross-cutting rules:**
@@ -130,19 +130,16 @@ correctness and in speed.
       warning-free at their default levels, which is the caveat: MSVC builds at `/W1`
       because CMake stopped adding `/W3` in 3.15, and GCC/Clang run without `-Wall`.
       Raising the levels is 1.7.
-- [ ] **1.6 Build hygiene and compiler matrix.** Delete the stale `build/` artifacts, add
-      presets for MSVC and clang-cl matching `scripts/build.ps1`, and run a GitHub Actions
-      matrix (windows-msvc, windows-clang-cl, ubuntu-gcc, ubuntu-clang) building everything
-      and running the DLL-free tests and Tier A benchmarks. *Done when:* the matrix is green
-      on `master`. Status (2026-09-08): everything but the merge is in place on the `agent`
-      branch. `CMakePresets.json` has one `<compiler>-<config>` configure preset per compiler
-      and config (`msvc-release`, `clang-cl-debug`, `gcc-release`, `clang-relwithdebinfo`,
-      ...) with the build directories `build.ps1` always used, plus build and test presets of
-      the same names; `build.ps1` configures and builds through them; the CI matrix
-      configures from the four release presets with `TASFW_WARNINGS_AS_ERRORS=ON`, runs the
-      DLL-free tests and every Tier A family, and is green on windows-msvc,
-      windows-clang-cl, ubuntu-gcc (GCC 13) and ubuntu-clang (Clang 17). The Visual Studio
-      and Ninja Multi-Config leftovers in `build/` are gone. Getting the first matrix green
+- [x] **1.6 Build hygiene and compiler matrix.** Done 2026-09-08: the matrix is green on
+      `master` (the merge of PR #79) for windows-msvc, windows-clang-cl, ubuntu-gcc (GCC 13)
+      and ubuntu-clang (Clang 17), each configured from its `CMakePresets.json` release
+      preset with `TASFW_WARNINGS_AS_ERRORS=ON`, building everything and running the
+      DLL-free tests and every Tier A family. `CMakePresets.json` has one
+      `<compiler>-<config>` configure preset per compiler and config (`msvc-release`,
+      `clang-cl-debug`, `gcc-release`, `clang-relwithdebinfo`, ...) with the build
+      directories `build.ps1` always used, plus build and test presets of the same names,
+      and `build.ps1` configures and builds through them. The Visual Studio and Ninja
+      Multi-Config leftovers in `build/` are gone. Getting the first matrix green
       (2026-09-07) took three runs: CMake 4 rejecting nlohmann/json's minimum version, three
       missing `template` keywords MSVC had accepted, f-suffixed `std::` math functions, a
       missing `<cmath>` (docs/compilers.md). Also fixed there: the CMake compiler-ID bug that
