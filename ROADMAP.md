@@ -192,6 +192,15 @@ Goal: the core's implicit invariants become explicit and enforced.
       whether it holds, so they accept anything (GCC's `-Wmissing-requires`, docs/compilers.md).
       Rewrite as nested requirements, then fix whatever callers stop compiling. *Done when:*
       a comparator with the wrong signature fails at the call site on all three compilers.
+- [ ] **3.11 Pluggable savestate policy.** `shouldSave`/`shouldLoad` (replay-versus-load by
+      measured average cost) and the LRU slot manager are one policy for every resource, and
+      a naive one. The right policy depends on the resource: a full-game DLL with slow loads
+      wants something different from a custom state machine where a load costs about a frame.
+      Abstract the policy behind the resource (a policy type chosen per resource, resolved at
+      compile time like everything else) so alternatives can be measured against each other
+      on Tier B and C. *Done when:* the current policy is one implementation of the
+      abstraction with identical counts, and a second policy exists and is compared.
+
 ## Phase 4: the squish-cancel brute forcer
 
 Goal: finish the thing the framework was built for.
@@ -228,3 +237,8 @@ Not scheduled. Listed so decisions in earlier phases do not paint us into a corn
 - `Resource::getCurrentFrame` and the `gControllerPads` write in `Script::SetInputs` are SM64-specific; they belong in the resource.
 - `Inputs`/`M64` assume an N64 controller and the Mupen m64 format.
 - A second resource (another libsm64 build or an emulator core) is the real test of the abstraction.
+- **Hacks as a kind of input.** Today a direct write into game memory (`//! UNSAFE`) cannot
+  be replayed from a savestate, which is why hard rule 1 forbids it. The intent is to make
+  hacks a special input type the framework applies at a frame like any other input, so they
+  are part of the diff, replayed on decode and reverted with the sandbox. Design not yet
+  discussed; nothing should assume inputs are only controller states.

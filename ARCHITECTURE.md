@@ -25,6 +25,15 @@ below `tasfw-scripts` in CMake even though it is drawn below core here; the head
 
 ## Resource and savestates
 
+A resource is anything that fulfils the basic TASing contract: advance one frame with given
+inputs, save the state, load it back, read memory. It need not be the game. With the full
+game, rewinding (a load) is slow compared with advancing, and that ratio dictates which
+TASing algorithms are viable; a custom state machine that simulates only the part of the
+game a search cares about (`PyramidUpdate`) makes both advancing and rewinding much faster
+and so changes what is affordable. The savestate policy (`shouldSave`/`shouldLoad`, the slot
+manager) is currently one naive policy for every resource; making it pluggable per resource
+type is planned (ROADMAP 3.11).
+
 `Resource<TState>` (`tasfw-core/inc/tasfw/Resource.hpp`) is the abstract game: `save`, `load`,
 `advance`, `addr(symbol)`, `getCurrentFrame`. It also owns a `SlotManager` and timing counters.
 
