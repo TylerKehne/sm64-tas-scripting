@@ -75,7 +75,9 @@ correctness and in speed.
         mapping, m64 I/O, `SlotManager`, `Script` per-operation overhead, hierarchy depth,
         state trackers. `scripts\perf.ps1` runs and compares; first baseline committed
         (2026-09-07). Heap allocations per iteration are counted on every benchmark and
-        gated at 0.1 (2026-09-07). Still to do: run it in CI.
+        gated at 0.1 (2026-09-07). Runs in CI since 2026-09-08: every Tier A family once
+        per job with a short minimum time, to prove the binary executes; nothing is gated
+        there.
       - [ ] Tier B resource benchmarks. Done 2026-09-07: frame advance, save (recycled and
         fresh) and load, full and lightweight, in `bench_libsm64.cpp`; `perf.ps1` finds the
         DLL like `test.ps1` and the family is skipped without it. Still to do: thread
@@ -109,30 +111,51 @@ correctness and in speed.
       schema, solution files and argument helpers (`tasfw::bitfs_pipeline`). The
       single-threaded pyramid-oscillation experiment in the old `main.cpp` was not ported: it
       cannot link (4.1).
-- [ ] **1.5 Warnings and the bugs behind them.** Done 2026-09-07: C4715/-Wreturn-type in the
-      `TurnAround` lambda, the `printf("%d", uint64_t)` calls, the root `Segment` argument order
-      (RngHash was being truncated into `nScripts`), `Rotation::Negate`, the two empty-body
-      `if (...);` statements in the Approach/Recover stages (now `return false`), the
-      always-false `&&` in `TurnUphill_1f`, eight dropped `.executed` results, missing
-      `override`s, unhandled `switch` cases, `main` returning `false`, a bool/s32 compare in
-      `PyramidUpdate`, int16-to-int8 narrowing in `Inputs.cpp`. Remaining: three MSVC C4244
-      `_Ty`-to-`float` warnings from `std::vector<float>` initializer lists in
-      `TiltTargetShot.hpp`, clang-cl's `getenv` deprecation in `test_libsm64.cpp`, and Google
-      Benchmark's `/MP` under clang-cl (range-v3's deprecated `compressed_tuple` went with
-      range-v3 in 1.4). `TASFW_WARNINGS_AS_ERRORS` exists (off by default). *Done when:*
-      both builds are warning-free and the option is on in CI.
+- [x] **1.5 Warnings and the bugs behind them.** Done 2026-09-08. Fixed 2026-09-07:
+      C4715/-Wreturn-type in the `TurnAround` lambda, the `printf("%d", uint64_t)` calls, the
+      root `Segment` argument order (RngHash was being truncated into `nScripts`),
+      `Rotation::Negate`, the two empty-body `if (...);` statements in the Approach/Recover
+      stages (now `return false`), the always-false `&&` in `TurnUphill_1f`, eight dropped
+      `.executed` results, missing `override`s, unhandled `switch` cases, `main` returning
+      `false`, a bool/s32 compare in `PyramidUpdate`, int16-to-int8 narrowing in `Inputs.cpp`.
+      Fixed 2026-09-08: the three MSVC C4244s (an `int` literal for the float
+      `CrossingDto::speed` in `StateTracker_BitfsDr.cpp`; the `TiltTargetShot.hpp` initializer
+      lists first blamed were never the source), clang-cl's `getenv` deprecation (one
+      `tasfw::testing::Env` helper, `_CRT_SECURE_NO_WARNINGS` on its consumers) and Google
+      Benchmark's `/MP` under clang-cl (silenced on the two benchmark targets).
+      `TASFW_WARNINGS_AS_ERRORS` now covers every first-party target
+      (`cmake/WarningsAsErrors.cmake`) and every CI job passes it; on the way,
+      `tasfw-scripts-scattershot-bitfs-dr` got the `add_optimization_flags` call every
+      sibling had (LTO, and the GCC `-Wno-missing-requires`; docs/performance.md change log). All four compilers are
+      warning-free at their default levels, which is the caveat: MSVC builds at `/W1`
+      because CMake stopped adding `/W3` in 3.15, and GCC/Clang run without `-Wall`.
+      Raising the levels is 1.7.
 - [ ] **1.6 Build hygiene and compiler matrix.** Delete the stale `build/` artifacts, add
       presets for MSVC and clang-cl matching `scripts/build.ps1`, and run a GitHub Actions
       matrix (windows-msvc, windows-clang-cl, ubuntu-gcc, ubuntu-clang) building everything
       and running the DLL-free tests and Tier A benchmarks. *Done when:* the matrix is green
-      on `master`. Status (2026-09-07): the matrix is **green on `roadmap/1.1-1.5`** for
-      windows-msvc, windows-clang-cl, ubuntu-gcc (GCC 13) and ubuntu-clang (Clang 17), each
-      including the perf-binary smoke run. Getting there took three runs: CMake 4 rejecting
-      nlohmann/json's minimum version, three missing `template` keywords MSVC had accepted,
-      f-suffixed `std::` math functions, a missing `<cmath>` (docs/compilers.md). Still to do:
-      presets, deleting stale `build/` artifacts, DLL-free tests in CI. Also fixed here:
-      the CMake compiler-ID bug that left MSVC builds without any `/arch` flag, and FP
-      contraction is now off on every compiler (docs/compilers.md).
+      on `master`. Status (2026-09-08): everything but the merge is in place on the `agent`
+      branch. `CMakePresets.json` has one `<compiler>-<config>` configure preset per compiler
+      and config (`msvc-release`, `clang-cl-debug`, `gcc-release`, `clang-relwithdebinfo`,
+      ...) with the build directories `build.ps1` always used, plus build and test presets of
+      the same names; `build.ps1` configures and builds through them; the CI matrix
+      configures from the four release presets with `TASFW_WARNINGS_AS_ERRORS=ON`, runs the
+      DLL-free tests and every Tier A family, and is green on windows-msvc,
+      windows-clang-cl, ubuntu-gcc (GCC 13) and ubuntu-clang (Clang 17). The Visual Studio
+      and Ninja Multi-Config leftovers in `build/` are gone. Getting the first matrix green
+      (2026-09-07) took three runs: CMake 4 rejecting nlohmann/json's minimum version, three
+      missing `template` keywords MSVC had accepted, f-suffixed `std::` math functions, a
+      missing `<cmath>` (docs/compilers.md). Also fixed there: the CMake compiler-ID bug that
+      left MSVC builds without any `/arch` flag, and FP contraction is now off on every
+      compiler (docs/compilers.md).
+- [ ] **1.7 Raise the warning levels.** At `/W3` MSVC reports 292 warnings (2026-09-08):
+      249 C4244 (narrowing conversions), 18 C4018 (signed/unsigned compares), 14 C4267
+      (`size_t` narrowing), 8 C4996, 2 C4101, 1 C4065; by tree 162 `tasfw-core`, 67
+      `tasfw-scattershot`, 24 `tasfw-scripts`, 22 `tasfw-bruteforcers`, 11 `tasfw-resources`,
+      2 `tasfw-perf`, 1 `tasfw-tests`. GCC and Clang have not been tried with `-Wall -Wextra`.
+      Fix them tree by tree, each PR with the perf delta table, since most are in hot code
+      and a narrowing fix can change a type. *Done when:* `/W3` and `-Wall -Wextra` are on
+      for every first-party target and the 1.5 option still passes on all four compilers.
 
 ## Phase 2: loosen the grip of the pinned DLL
 

@@ -26,19 +26,24 @@ powershell -ExecutionPolicy Bypass -File scripts\build.ps1            # Debug
 powershell -ExecutionPolicy Bypass -File scripts\build.ps1 -Config Release
 ```
 
-The script finds Visual Studio 2022 with vswhere, imports the x64 developer environment and
-uses the cmake/ninja bundled with Visual Studio if none are on PATH. Output goes to
-`build\<Config>\out\bitfs-turn.exe`. Opening the folder in Visual Studio also works through
-its CMake integration and the presets in `CMakePresets.json`.
+The script finds Visual Studio 2022 with vswhere, imports the x64 developer environment,
+uses the cmake/ninja bundled with Visual Studio if none are on PATH, and configures from the
+`CMakePresets.json` preset for the compiler and config (`msvc-release`, or `clang-cl-release`
+with `-Compiler clang`). Output goes to `build\<Config>\out\bitfs-turn.exe`
+(`build\<Config>-clang` for clang-cl). Visual Studio and VS Code pick up the same presets
+when you open the folder, and `-CMakeArgs '-DTASFW_WARNINGS_AS_ERRORS=ON'` reproduces the
+CI build.
 
 Tests: `powershell -ExecutionPolicy Bypass -File scripts\test.ps1`. Benchmarks:
 `scripts\perf.ps1`. Both accept `-Compiler clang` for the clang-cl build.
 
-**Linux / macOS (untested recently)**
+**Linux** (builds and passes the DLL-free tests in CI with GCC 13 and Clang 17; the game
+DLL path has not been run there; there is no macOS preset)
 
 ```bash
-cmake -S . -B build/Release -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build/Release
+cmake --preset gcc-release          # or clang-release; build/Release-gcc, build/Release-clang
+cmake --build --preset gcc-release
+ctest --preset gcc-release
 ```
 
 # Runtime inputs

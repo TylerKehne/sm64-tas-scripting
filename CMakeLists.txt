@@ -65,15 +65,10 @@ if(TASFW_BUILD_PERF)
 	add_subdirectory(tasfw-perf)
 endif()
 
-# Warnings as errors for the framework libraries (ROADMAP 1.5). Off by default until the CI
-# matrix is green on every compiler; turn on locally with -DTASFW_WARNINGS_AS_ERRORS=ON.
-option(TASFW_WARNINGS_AS_ERRORS "Treat warnings as errors in tasfw-core and tasfw-scattershot" OFF)
+# Warnings as errors on every first-party target (ROADMAP 1.5). On in CI; off by default
+# locally (cmake/WarningsAsErrors.cmake). Locally: scripts\build.ps1 -CMakeArgs '-DTASFW_WARNINGS_AS_ERRORS=ON'.
+option(TASFW_WARNINGS_AS_ERRORS "Treat warnings as errors in every first-party target" OFF)
 if(TASFW_WARNINGS_AS_ERRORS)
-	if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-		target_compile_options(tasfw-core PRIVATE /WX)
-		target_compile_options(tasfw-scattershot INTERFACE /WX)
-	else()
-		target_compile_options(tasfw-core PRIVATE -Werror)
-		target_compile_options(tasfw-scattershot INTERFACE -Werror)
-	endif()
+	include(WarningsAsErrors)
+	tasfw_warnings_as_errors()
 endif()

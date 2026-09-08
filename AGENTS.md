@@ -66,6 +66,7 @@ its place with numbers, and "it is cleaner" is not a number.
 | `analysis/` | R script that plots scattershot CSV output; also the pipeline's default output directory (CSVs, `solutions/*.json`, `m64/`), all gitignored. |
 | `res/` | Gitignored runtime inputs: 24 copies of the libsm64 DLL, source .m64 files, and thousands of exported solution .m64 files. |
 | `scripts/` | `build.ps1`, the supported build entry point on Windows. |
+| `cmake/` | `AddOptimizationFlags` (arch flag, FP determinism, LTO, OpenMP; applied to every first-party target) and `WarningsAsErrors` (`TASFW_WARNINGS_AS_ERRORS`). |
 | `docs/` | Provenance of the DLL and other reference notes. |
 
 ## Build and run
@@ -73,8 +74,11 @@ its place with numbers, and "it is cleaner" is not a number.
 - Primary platform is Windows; both MSVC and clang-cl must build clean. Linux code paths
   exist but have not been built recently.
 - Build: `powershell -ExecutionPolicy Bypass -File scripts\build.ps1` (add `-Config Release`,
-  `-Clean`, `-Compiler clang`, `-KeepGoing`). It finds Visual Studio via vswhere, so cmake
-  and ninja do not need to be on PATH. clang-cl comes from the VS "C++ Clang tools" component.
+  `-Clean`, `-Compiler clang`, `-KeepGoing`, `-CMakeArgs '-D...'`). It finds Visual Studio via
+  vswhere, so cmake and ninja do not need to be on PATH, and configures from the
+  `CMakePresets.json` preset `<compiler>-<config>` (`msvc-release`, `clang-cl-debug`; on
+  Linux `gcc-release`, `clang-release`), the same presets the IDEs and CI use. clang-cl
+  comes from the VS "C++ Clang tools" component.
 - Output: `build\<Config>\out\bitfs-turn.exe` with `config.json` written next to it (the
   committed one plus a `baseDirectory`, so its relative paths resolve into the source tree).
 - The one dependency (nlohmann/json) is fetched by CMake. OpenMP is required.
@@ -149,8 +153,9 @@ its place with numbers, and "it is cleaner" is not a number.
 
 Verification means:
 
-1. `scripts\build.ps1` succeeds with **no new warnings** on MSVC **and** with
-   `-Compiler clang` (the remaining baseline warnings are listed in ROADMAP 1.5).
+1. `scripts\build.ps1` succeeds with **no warnings** on MSVC **and** with
+   `-Compiler clang`. CI builds every compiler with `TASFW_WARNINGS_AS_ERRORS=ON`;
+   `-CMakeArgs '-DTASFW_WARNINGS_AS_ERRORS=ON'` reproduces that locally.
 2. `scripts\test.ps1` passes, on both compilers. With the DLL and movie in `res\` it also
    runs the libsm64 smoke test, which pins Mario's exact state at frame 3330. Anything
    touching `tasfw-core` needs a test in `tasfw-tests` for the behavior it changes.
@@ -206,9 +211,6 @@ Agents without hooks follow the same procedure by hand at the end of every chang
   `PyramidUpdate` also has on its own surface type, and it is not covered by the drift test.
 - Warning C4715 in the `TurnAround` lambda of `Scattershot_BitfsDr.cpp` is a real bug (not
   all paths return a value).
-- `build/` may contain a stale mix of Visual Studio and Ninja Multi-Config artifacts from
-  2025. `scripts\build.ps1` uses `build\<Config>` and does not touch the old files; delete
-  them if they confuse tooling.
 - The pyramid object is found as `gObjectPool[84]`, a level-specific index.
 - One DLL copy per thread is required on Windows (a path loads once per process), so
   `Configuration::ResourcePaths` must have at least `TotalThreads` entries.

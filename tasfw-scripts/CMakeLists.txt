@@ -40,4 +40,5 @@ target_link_libraries(tasfw-scripts-scattershot-bitfs-dr PUBLIC tasfw-scripts-ge
 target_link_libraries(tasfw-scripts-scattershot-bitfs-dr PUBLIC tasfw-scripts-bitfs-pyramid-osc)
 
 add_optimization_flags(tasfw-scripts-bitfs-sc-setup)
+add_optimization_flags(tasfw-scripts-scattershot-bitfs-dr)
 add_library(tasfw::scripts_bitfs_sc_setup ALIAS tasfw-scripts-bitfs-sc-setup)

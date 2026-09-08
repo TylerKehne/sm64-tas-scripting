@@ -16,6 +16,18 @@ FetchContent_Declare(benchmark
 )
 FetchContent_MakeAvailable(benchmark)
 
+if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
+	# Google Benchmark appends /MP (MSVC's parallel-compile switch) to its own flags under any
+	# MSVC-style compiler. clang-cl has no use for it and its driver warns once per source
+	# (-Wunused-command-line-argument, 21 warnings). The flag lives in benchmark's directory
+	# scope, so its targets are the only clean place to silence it. docs/compilers.md.
+	foreach(bench_target IN ITEMS benchmark benchmark_main)
+		if(TARGET ${bench_target})
+			target_compile_options(${bench_target} PRIVATE -Wno-unused-command-line-argument)
+		endif()
+	endforeach()
+endif()
+
 add_executable(tasfw-perf
 	"src/main.cpp"
 	"src/alloc_counter.cpp"

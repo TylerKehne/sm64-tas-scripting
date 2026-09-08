@@ -6,70 +6,320 @@
 		"patch": 1
 	},
 	"configurePresets": [
-        {
-            "name": "base",
-            "displayName": "BASE PRESET (DO NOT USE)",
-            "hidden": true,
-            "binaryDir": "${sourceDir}/build"
-        },
 		{
-			"name": "ninja-multi",
-            "inherits": "base",
-			"displayName": "Ninja Multi-Config",
-			"generator": "Ninja Multi-Config",
-			"cacheVariables": {
-				"CMAKE_EXPORT_COMPILE_COMMANDS": true
+			"name": "ninja",
+			"hidden": true,
+			"generator": "Ninja"
+		},
+		{
+			"name": "windows",
+			"hidden": true,
+			"condition": {
+				"type": "equals",
+				"lhs": "${hostSystemName}",
+				"rhs": "Windows"
+			},
+			"architecture": {
+				"value": "x64",
+				"strategy": "external"
 			}
 		},
 		{
-			"name": "win32-vs2022-amd64",
-            "inherits": "base",
-            "condition": {
-                "type": "equals",
-                "lhs": "${hostSystemName}",
-                "rhs": "Windows"
-            },
-			"displayName": "Visual Studio 2022 (Windows-only)",
-			"generator": "Visual Studio 17 2022",
-			"architecture": "x64"
+			"name": "linux",
+			"hidden": true,
+			"condition": {
+				"type": "equals",
+				"lhs": "${hostSystemName}",
+				"rhs": "Linux"
+			}
+		},
+		{
+			"name": "msvc",
+			"hidden": true,
+			"inherits": [
+				"ninja",
+				"windows"
+			],
+			"cacheVariables": {
+				"CMAKE_CXX_COMPILER": "cl"
+			}
+		},
+		{
+			"name": "msvc-debug",
+			"displayName": "MSVC Debug",
+			"inherits": "msvc",
+			"binaryDir": "${sourceDir}/build/Debug",
+			"cacheVariables": {
+				"CMAKE_BUILD_TYPE": "Debug"
+			}
+		},
+		{
+			"name": "msvc-release",
+			"displayName": "MSVC Release",
+			"inherits": "msvc",
+			"binaryDir": "${sourceDir}/build/Release",
+			"cacheVariables": {
+				"CMAKE_BUILD_TYPE": "Release"
+			}
+		},
+		{
+			"name": "msvc-relwithdebinfo",
+			"displayName": "MSVC RelWithDebInfo",
+			"inherits": "msvc",
+			"binaryDir": "${sourceDir}/build/RelWithDebInfo",
+			"cacheVariables": {
+				"CMAKE_BUILD_TYPE": "RelWithDebInfo"
+			}
+		},
+		{
+			"name": "clang-cl",
+			"hidden": true,
+			"inherits": [
+				"ninja",
+				"windows"
+			],
+			"cacheVariables": {
+				"CMAKE_CXX_COMPILER": "clang-cl"
+			}
+		},
+		{
+			"name": "clang-cl-debug",
+			"displayName": "clang-cl Debug",
+			"inherits": "clang-cl",
+			"binaryDir": "${sourceDir}/build/Debug-clang",
+			"cacheVariables": {
+				"CMAKE_BUILD_TYPE": "Debug"
+			}
+		},
+		{
+			"name": "clang-cl-release",
+			"displayName": "clang-cl Release",
+			"inherits": "clang-cl",
+			"binaryDir": "${sourceDir}/build/Release-clang",
+			"cacheVariables": {
+				"CMAKE_BUILD_TYPE": "Release"
+			}
+		},
+		{
+			"name": "clang-cl-relwithdebinfo",
+			"displayName": "clang-cl RelWithDebInfo",
+			"inherits": "clang-cl",
+			"binaryDir": "${sourceDir}/build/RelWithDebInfo-clang",
+			"cacheVariables": {
+				"CMAKE_BUILD_TYPE": "RelWithDebInfo"
+			}
+		},
+		{
+			"name": "gcc",
+			"hidden": true,
+			"inherits": [
+				"ninja",
+				"linux"
+			],
+			"cacheVariables": {
+				"CMAKE_CXX_COMPILER": "g++"
+			}
+		},
+		{
+			"name": "gcc-debug",
+			"displayName": "GCC Debug",
+			"inherits": "gcc",
+			"binaryDir": "${sourceDir}/build/Debug-gcc",
+			"cacheVariables": {
+				"CMAKE_BUILD_TYPE": "Debug"
+			}
+		},
+		{
+			"name": "gcc-release",
+			"displayName": "GCC Release",
+			"inherits": "gcc",
+			"binaryDir": "${sourceDir}/build/Release-gcc",
+			"cacheVariables": {
+				"CMAKE_BUILD_TYPE": "Release"
+			}
+		},
+		{
+			"name": "gcc-relwithdebinfo",
+			"displayName": "GCC RelWithDebInfo",
+			"inherits": "gcc",
+			"binaryDir": "${sourceDir}/build/RelWithDebInfo-gcc",
+			"cacheVariables": {
+				"CMAKE_BUILD_TYPE": "RelWithDebInfo"
+			}
+		},
+		{
+			"name": "clang",
+			"hidden": true,
+			"inherits": [
+				"ninja",
+				"linux"
+			],
+			"cacheVariables": {
+				"CMAKE_CXX_COMPILER": "clang++"
+			}
+		},
+		{
+			"name": "clang-debug",
+			"displayName": "Clang Debug",
+			"inherits": "clang",
+			"binaryDir": "${sourceDir}/build/Debug-clang",
+			"cacheVariables": {
+				"CMAKE_BUILD_TYPE": "Debug"
+			}
+		},
+		{
+			"name": "clang-release",
+			"displayName": "Clang Release",
+			"inherits": "clang",
+			"binaryDir": "${sourceDir}/build/Release-clang",
+			"cacheVariables": {
+				"CMAKE_BUILD_TYPE": "Release"
+			}
+		},
+		{
+			"name": "clang-relwithdebinfo",
+			"displayName": "Clang RelWithDebInfo",
+			"inherits": "clang",
+			"binaryDir": "${sourceDir}/build/RelWithDebInfo-clang",
+			"cacheVariables": {
+				"CMAKE_BUILD_TYPE": "RelWithDebInfo"
+			}
 		}
 	],
 	"buildPresets": [
 		{
-			"name": "ninja-multi-debug",
-			"displayName": "Ninja (Debug)",
-			"configurePreset": "ninja-multi",
-			"configuration": "Debug"
+			"name": "msvc-debug",
+			"configurePreset": "msvc-debug"
 		},
 		{
-			"name": "ninja-multi-release",
-			"displayName": "Ninja (Release)",
-			"configurePreset": "ninja-multi",
-			"configuration": "Release"
+			"name": "msvc-release",
+			"configurePreset": "msvc-release"
 		},
 		{
-			"name": "ninja-multi-reldbg",
-			"displayName": "Ninja (Release w/ Debug Info)",
-			"configurePreset": "ninja-multi",
-			"configuration": "RelWithDebInfo"
+			"name": "msvc-relwithdebinfo",
+			"configurePreset": "msvc-relwithdebinfo"
 		},
 		{
-			"name": "win32-vs2022-amd64-debug",
-			"displayName": "Visual Studio 2022 (Debug)",
-			"configurePreset": "win32-vs2022-amd64",
-			"configuration": "Debug"
+			"name": "clang-cl-debug",
+			"configurePreset": "clang-cl-debug"
 		},
 		{
-			"name": "win32-vs2022-amd64-release",
-			"displayName": "Visual Studio 2022 (Release)",
-			"configurePreset": "win32-vs2022-amd64",
-			"configuration": "Release"
+			"name": "clang-cl-release",
+			"configurePreset": "clang-cl-release"
 		},
 		{
-			"name": "win32-vs2022-amd64-reldbg",
-			"displayName": "Visual Studio 2022 (Release w/ Debug Info)",
-			"configurePreset": "win32-vs2022-amd64",
-			"configuration": "RelWithDebInfo"
+			"name": "clang-cl-relwithdebinfo",
+			"configurePreset": "clang-cl-relwithdebinfo"
+		},
+		{
+			"name": "gcc-debug",
+			"configurePreset": "gcc-debug"
+		},
+		{
+			"name": "gcc-release",
+			"configurePreset": "gcc-release"
+		},
+		{
+			"name": "gcc-relwithdebinfo",
+			"configurePreset": "gcc-relwithdebinfo"
+		},
+		{
+			"name": "clang-debug",
+			"configurePreset": "clang-debug"
+		},
+		{
+			"name": "clang-release",
+			"configurePreset": "clang-release"
+		},
+		{
+			"name": "clang-relwithdebinfo",
+			"configurePreset": "clang-relwithdebinfo"
+		}
+	],
+	"testPresets": [
+		{
+			"name": "msvc-debug",
+			"configurePreset": "msvc-debug",
+			"output": {
+				"outputOnFailure": true
+			}
+		},
+		{
+			"name": "msvc-release",
+			"configurePreset": "msvc-release",
+			"output": {
+				"outputOnFailure": true
+			}
+		},
+		{
+			"name": "msvc-relwithdebinfo",
+			"configurePreset": "msvc-relwithdebinfo",
+			"output": {
+				"outputOnFailure": true
+			}
+		},
+		{
+			"name": "clang-cl-debug",
+			"configurePreset": "clang-cl-debug",
+			"output": {
+				"outputOnFailure": true
+			}
+		},
+		{
+			"name": "clang-cl-release",
+			"configurePreset": "clang-cl-release",
+			"output": {
+				"outputOnFailure": true
+			}
+		},
+		{
+			"name": "clang-cl-relwithdebinfo",
+			"configurePreset": "clang-cl-relwithdebinfo",
+			"output": {
+				"outputOnFailure": true
+			}
+		},
+		{
+			"name": "gcc-debug",
+			"configurePreset": "gcc-debug",
+			"output": {
+				"outputOnFailure": true
+			}
+		},
+		{
+			"name": "gcc-release",
+			"configurePreset": "gcc-release",
+			"output": {
+				"outputOnFailure": true
+			}
+		},
+		{
+			"name": "gcc-relwithdebinfo",
+			"configurePreset": "gcc-relwithdebinfo",
+			"output": {
+				"outputOnFailure": true
+			}
+		},
+		{
+			"name": "clang-debug",
+			"configurePreset": "clang-debug",
+			"output": {
+				"outputOnFailure": true
+			}
+		},
+		{
+			"name": "clang-release",
+			"configurePreset": "clang-release",
+			"output": {
+				"outputOnFailure": true
+			}
+		},
+		{
+			"name": "clang-relwithdebinfo",
+			"configurePreset": "clang-relwithdebinfo",
+			"output": {
+				"outputOnFailure": true
+			}
 		}
 	]
 }

@@ -6,6 +6,7 @@
 #include <sm64/Types.hpp>
 #include <tasfw/Inputs.hpp>
 #include <tasfw/Script.hpp>
+#include <tasfw/testing/Env.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -26,11 +27,7 @@
 
 namespace
 {
-	std::string Env(const char* name)
-	{
-		const char* v = std::getenv(name);
-		return v ? std::string(v) : std::string();
-	}
+	using tasfw::testing::Env;
 
 	bool HaveDll()
 	{

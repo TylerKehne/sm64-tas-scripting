@@ -3,6 +3,7 @@
 
 #include <LibSm64.hpp>
 #include <tasfw/Inputs.hpp>
+#include <tasfw/testing/Env.hpp>
 
 #include <cstdint>
 #include <cstdlib>
@@ -22,11 +23,7 @@
 
 namespace
 {
-	std::string Env(const char* name)
-	{
-		const char* value = std::getenv(name);
-		return value ? std::string(value) : std::string();
-	}
+	using tasfw::testing::Env;
 
 	struct Game
 	{

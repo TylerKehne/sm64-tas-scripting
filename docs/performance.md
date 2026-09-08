@@ -367,6 +367,33 @@ What the Tier A and B numbers say together:
 
 Every hot-path change records its delta table here, newest first.
 
+### 2026-09-08: `tasfw-scripts-scattershot-bitfs-dr` gets the shared optimization flags (ROADMAP 1.5)
+
+The library holding `Scattershot_BitfsDr.cpp` and `StateTracker_BitfsDr.cpp` was the one
+first-party target never passed to `add_optimization_flags`, so it built without LTO (and,
+on GCC, without the `-Wno-missing-requires` every sibling has, which is how the omission
+surfaced: the only warnings left in the GCC job). No source under measurement changed; the
+same change fixed the last MSVC warnings (an `int` literal for a float in
+`StateTracker_BitfsDr.cpp`) and moved the test helpers' `getenv` into `tasfw-testing`.
+
+Against the committed baselines (Tier A and B fastest of nine, Tier C exact counts, Tier D
+on the two `perf/tierd-*.json` workloads):
+
+| Compiler | Time rows over 10% | Allocation / count regressions | Tier C (oscillation, downhill, tracker sweep) | Tier D |
+|---|---|---|---|---|
+| MSVC | 3 on the first run, see below | 0 / 0 | +2.4%, -0.6%, +1.0% | deterministic 139.6 -> 140.7 s, 141.0 s on re-run, identical counts (55 solutions, 109,958 blocks, 520,052 scripts, 0 validation failures); throughput 74.9 -> 77.3 s, 73.5 s on re-run |
+| clang-cl | 1 (`LibSm64Light_SaveErase` +13%) | 0 / 0 | +0.7%, -1.1%, -0.5% | deterministic 145.0 -> 145.9 s, identical counts; throughput 73.2 -> 70.7 s |
+
+The MSVC rows over the gate: `Resource_SaveLoadState` read 217.9 ns, its known bimodal
+value, and 148.4 ns on a re-run of its family; `LibSm64Light_SaveErase` +15.6%, then +0.3%
+on re-run; both are the placement-sensitive rows described under noise control.
+`M64_Load_10k` stayed at 1.2 ms against 1.1 ms across three runs (+13.0%, +11.7%, +13.8%)
+and returned to 1.1 ms (+2.1%) when the `add_optimization_flags` line alone was removed and
+the perf binary relinked; clang-cl's row moved +3.6%. m64 loading calls nothing in that
+library, so this is link-time code layout on MSVC, and the `BM_M64` family rows in
+`perf/baselines/tyler-desktop.json` were re-saved from the run with the change; every other
+family keeps its baseline rows.
+
 ### 2026-09-08: Tier C and Tier D land (ROADMAP 1.3); first numbers
 
 No code under measurement changed; these are the first baselines for the new rows, on the

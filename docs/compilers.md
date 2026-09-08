@@ -9,22 +9,36 @@ that gives real confidence in C++20 code like this.
 
 ## Supported toolchains
 
-| Toolchain | Status (2026-09-07) | How to build |
+| Toolchain | Status (2026-09-08) | How to build |
 |---|---|---|
-| MSVC 19.44 (VS 2022), Ninja | primary; builds clean, 29 warnings | `scripts\build.ps1` |
-| clang-cl 19.1 (VS "C++ Clang tools for Windows"), Ninja | builds clean locally and in CI (windows-clang-cl job) | `scripts\build.ps1 -Compiler clang` |
-| GCC 13 on Linux, Ninja | builds clean in CI (ubuntu-gcc job); `LibSm64`'s `mprotect` save path compiles but is untested at run time | `cmake -G Ninja` (see the workflow) |
-| Clang 17 on Linux, Ninja | builds clean in CI (ubuntu-clang job) | same |
+| MSVC 19.44 (VS 2022), Ninja | primary; warning-free at its default level (`/W1`, see below) | `scripts\build.ps1` (preset `msvc-<config>`) |
+| clang-cl 19.1 (VS "C++ Clang tools for Windows"), Ninja | warning-free locally and in CI (windows-clang-cl job) | `scripts\build.ps1 -Compiler clang` (preset `clang-cl-<config>`) |
+| GCC 13 on Linux, Ninja | warning-free in CI (ubuntu-gcc job); `LibSm64`'s `mprotect` save path compiles but is untested at run time | `cmake --preset gcc-release`, then `cmake --build --preset gcc-release` |
+| Clang 17 on Linux, Ninja | warning-free in CI (ubuntu-clang job) | presets `clang-<config>` |
 
-Build directories are `build\<Config>` for MSVC and `build\<Config>-clang` for clang-cl,
-so both can coexist. `-KeepGoing` passes `-k 0` to ninja so every error in the tree is
-reported in one pass, which is what you want when checking a compiler for the first time.
+Every build goes through a `CMakePresets.json` preset named `<compiler>-<config>`
+(`msvc-release`, `clang-cl-debug`, `gcc-relwithdebinfo`, ...), with build and test presets
+of the same names. The build directory is `build\<Config>` for MSVC and
+`build\<Config>-<compiler>` otherwise (`build\Release-clang`, `build/Release-gcc`), so every
+compiler can coexist. `build.ps1` only adds the Visual Studio environment on top of the
+Windows presets, and its `-CMakeArgs` passes extra cache variables through. `-KeepGoing`
+passes `-k 0` to ninja so every error in the tree is reported in one pass, which is what
+you want when checking a compiler for the first time.
+
+Warning levels are the compilers' defaults. For MSVC that is `/W1`: CMake stopped adding
+`/W3` in 3.15 (policy CMP0092), and at `/W3` this tree has 292 warnings (ROADMAP 1.7). GCC
+and Clang run without `-Wall`. `TASFW_WARNINGS_AS_ERRORS` (`cmake/WarningsAsErrors.cmake`)
+puts `/WX` or `-Werror` on every first-party target, found by walking the directory tree so
+that the dependencies CMake fetches are left alone; every CI job passes it, and locally
+`build.ps1 -CMakeArgs '-DTASFW_WARNINGS_AS_ERRORS=ON'` reproduces the CI build. It is off
+by default so that a newer compiler's new warnings cannot block a fresh build.
 
 ## Policy
 
-1. A change is not done until it builds with MSVC, Clang and GCC with no new warnings. On
-   a Windows machine that means MSVC and clang-cl locally plus GCC through the Linux CI job
-   (or a container, see below); on Linux it means GCC and Clang locally.
+1. A change is not done until it builds with MSVC, Clang and GCC with no warnings; CI
+   builds all four with warnings as errors, so one warning anywhere fails the matrix. On a
+   Windows machine that means MSVC and clang-cl locally plus GCC through the Linux CI job;
+   on Linux it means GCC and Clang locally.
 2. When one compiler rejects or miscompiles something the standard allows, do not argue with
    the compiler in the code. Write the portable form, add a one-line comment naming the
    compiler and version and pointing here, and add the case to the pitfall list below.
@@ -112,6 +126,25 @@ clang-cl build while the CMake file said otherwise. Pass such flags as `/clang:<
 (handled in `AddOptimizationFlags.cmake` via `CMAKE_CXX_COMPILER_FRONTEND_VARIANT`). Treat
 `-Wunknown-argument` as an error in spirit: it means a flag you rely on is not applied.
 
+### clang-cl: Google Benchmark's `/MP`
+
+Google Benchmark's own `CMakeLists.txt` appends `/W4 /MP` to `CMAKE_CXX_FLAGS` under any
+MSVC-style compiler. clang-cl accepts `/MP` and ignores it, and its driver says so on every
+source (`-Wunused-command-line-argument`, 21 warnings: 20 in `benchmark`, one in
+`benchmark_main`). The flag sits in benchmark's directory scope, so
+`tasfw-perf/CMakeLists.txt` silences that one warning on those two targets after
+`FetchContent_MakeAvailable`. Nothing first-party is affected.
+
+### MSVC CRT: `getenv` is deprecated
+
+MSVC's CRT marks `std::getenv` deprecated in favour of `_dupenv_s`. cl only says so at
+`/W3` (C4996), clang-cl at its default level (`-Wdeprecated-declarations`), so under
+warnings as errors the clang-cl build is the one that fails. The tests and benchmarks read
+their optional inputs through one `tasfw::testing::Env`
+(`tasfw-testing/inc/tasfw/testing/Env.hpp`), and `tasfw-testing` defines
+`_CRT_SECURE_NO_WARNINGS` for its consumers. Do not fork to `_dupenv_s`, and do not put the
+define in a header: it has to precede the first CRT include of the translation unit.
+
 ### Clang: `-Winconsistent-missing-override`
 
 Classes that mark some overriding functions `override` and not others warn on Clang. The
@@ -145,11 +178,15 @@ anything, so the `Compare` family is effectively unconstrained and a wrong compa
 deep inside the instantiation instead of at the call. The fix is `requires
 std::same_as<...>` (a nested requirement) or dropping the `requires` block for a plain
 constraint expression. Not changed yet because callers may currently rely on the leniency;
-ROADMAP 3.10.
+ROADMAP 3.10. Until then `add_optimization_flags` passes `-Wno-missing-requires` to each
+target it is called on (GCC only; Clang and MSVC do not know the flag, and the probe fails
+there). `tasfw-scripts-scattershot-bitfs-dr` never had that call, which is why the GCC job
+kept annotating this warning, and why that library was built without LTO, until 2026-09-08.
 
 ## What Clang found on first contact (2026-09-07)
 
-Warnings MSVC did not emit, worth acting on (ROADMAP 1.5):
+Warnings MSVC did not emit, all fixed under ROADMAP 1.5 on 2026-09-07 and kept here as
+the record of what a second front end was worth:
 
 - `-Wempty-body`: `if (...);` with the body on the next line, in
   `Scattershot_BitfsDrApproach.hpp` (line 528) and `Scattershot_BitfsDrRecover.hpp` (line 592).
