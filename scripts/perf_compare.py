@@ -22,6 +22,15 @@ or report only what is deterministic, so any increase is a regression ("the fram
 does more work") and fails the compare; a decrease is printed and left for the reviewer to
 confirm and re-baseline.
 
+Multithreaded rows (name ending in "/threads:N", Google Benchmark's ThreadRange) report
+time and items_per_second per thread, so the aggregate rate is N times the row's. Their
+efficiency is the per-thread rate at N threads over the rate of the same benchmark at one
+thread, computed from each file's own rows; a drop of more than --efficiency-tolerance
+percentage points against the baseline is a regression (the Tier B thread-scaling gate) at
+up to EFFICIENCY_GATE_MAX_THREADS threads. Beyond that the rows share physical cores with
+each other and with whatever else runs, move a few points between runs of the same binary,
+and are reported only.
+
 `merge` concatenates the benchmark rows of several result files (scripts/perf.ps1 runs each
 benchmark family in its own process so heap state from one family cannot skew another) and
 keeps the context of the first file.
@@ -30,10 +39,31 @@ Standard library only.
 """
 import argparse
 import json
+import re
 import sys
 
 # Counters gated on exact equality (see the module docstring).
-EXACT_COUNTERS = ("frameAdvances", "saves", "loads", "shots", "scripts", "blocks", "solutions", "validationFailures")
+EXACT_COUNTERS = ("frameAdvances", "saves", "loads", "shots", "scripts", "blocks", "solutions", "validationFailures",
+                  "stateBytes")
+
+THREADS_RE = re.compile(r"^(.*)/threads:(\d+)$")
+EFFICIENCY_GATE_MAX_THREADS = 8
+
+
+def efficiencies(rows):
+    """{name: percent} for multithreaded rows: the per-thread rate at N threads over the rate
+    of the same benchmark at one thread, from this file's own rows."""
+    out = {}
+    for name, row in rows.items():
+        m = THREADS_RE.match(name)
+        if not m or not row.get("items_per_second"):
+            continue
+        n = int(m.group(2))
+        single = rows.get("%s/threads:1" % m.group(1))
+        if n <= 1 or single is None or not single.get("items_per_second"):
+            continue
+        out[name] = float(row["items_per_second"]) / float(single["items_per_second"]) * 100.0
+    return out
 
 
 def read(path):
@@ -132,6 +162,8 @@ def cmd_compare(args):
     cur_data = read(args.current)
     base = rows_of(base_data, args.stat, args.metric)
     cur = rows_of(cur_data, args.stat, args.metric)
+    base_eff = efficiencies(base)
+    cur_eff = efficiencies(cur)
     base_ctx = base_data.get("context", {})
     cur_ctx = cur_data.get("context", {})
 
@@ -153,6 +185,7 @@ def cmd_compare(args):
     improvements = []
     alloc_regressions = []
     count_regressions = []
+    efficiency_regressions = []
     for name in base:
         if name not in cur:
             print("%-*s %14s %14s %9s %17s  %s" % (name_w, name, "", "", "", "", "MISSING"))
@@ -194,6 +227,15 @@ def cmd_compare(args):
             status = "OVERHEAD REGRESSION" if "REGRESSION" not in status else status + " + OVERHEAD"
             count_regressions.append(name)
             changes = changes + [("overheadPct", float(bo), float(co))]
+
+        # Thread scaling: efficiency relative to one thread, gated in points (drops only).
+        be, ce = base_eff.get(name), cur_eff.get(name)
+        if be is not None and ce is not None:
+            changes = changes + [("efficiencyPct", be, ce)]
+            gated = int(THREADS_RE.match(name).group(2)) <= EFFICIENCY_GATE_MAX_THREADS
+            if gated and be - ce > args.efficiency_tolerance:
+                status = "EFFICIENCY REGRESSION" if "REGRESSION" not in status else status + " + EFFICIENCY"
+                efficiency_regressions.append(name)
         print("%-*s %14s %14s %+8.1f%% %17s  %s" % (name_w, name, fmt(bv, unit), fmt(cv, unit), delta, allocs, status))
         for key, base_v, cur_v in changes:
             print("%-*s   %s %s -> %s" % (name_w, "", key, fmt_count(base_v), fmt_count(cur_v)))
@@ -205,12 +247,14 @@ def cmd_compare(args):
                                                     "", alloc_cell(None, c), "NEW"))
             if counts_of(c):
                 print("%-*s   %s" % (name_w, "", counts_of(c)))
+            if name in cur_eff:
+                print("%-*s   efficiencyPct %s" % (name_w, "", fmt_count(cur_eff[name])))
 
     print()
-    print("%d regression(s) over %.0f%%, %d improvement(s), %d allocation regression(s) over %.2f/iter, %d count regression(s)"
+    print("%d regression(s) over %.0f%%, %d improvement(s), %d allocation regression(s) over %.2f/iter, %d count regression(s), %d efficiency regression(s) over %.0f points"
           % (len(regressions), args.threshold, len(improvements), len(alloc_regressions), args.alloc_tolerance,
-             len(count_regressions)))
-    return 1 if regressions or alloc_regressions or count_regressions else 0
+             len(count_regressions), len(efficiency_regressions), args.efficiency_tolerance))
+    return 1 if regressions or alloc_regressions or count_regressions or efficiency_regressions else 0
 
 
 def alloc_cell(base_row, cur_row):
@@ -244,6 +288,9 @@ def main(argv):
                     help="which repetition to compare (default min)")
     cp.add_argument("--overhead-tolerance", type=float, default=2.0,
                     help="allowed increase of the Tier C overheadPct counter, in percentage points")
+    cp.add_argument("--efficiency-tolerance", type=float, default=5.0,
+                    help="allowed drop of thread-scaling efficiency (per-thread rate at N threads over the "
+                         "single-thread rate), in percentage points")
     cp.set_defaults(func=cmd_compare)
 
     mp = sub.add_parser("merge", help="merge several result files into one")

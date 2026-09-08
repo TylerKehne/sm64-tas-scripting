@@ -73,7 +73,7 @@ Scattershot<TState, TResource, TStateTracker, TOutputState>::Scattershot(const C
     Blocks.reserve(config.MaxBlocks);
     BlockIndices.reserve(3 * config.MaxBlocks);
 
-    for (int i = 0; i < BlockIndices.capacity(); i++)
+    for (int i = 0; i < int(BlockIndices.capacity()); i++)
         BlockIndices.push_back(-1);
 }
 
@@ -94,10 +94,10 @@ bool Scattershot<TState, TResource, TStateTracker, TOutputState>::UpsertBlock(
         // Check for hash collision
         if (blockIndex == -1) 
         {
-            if (isSolution && Solutions.size() >= config.MaxSolutions)
+            if (isSolution && int64_t(Solutions.size()) >= config.MaxSolutions)
                 return false;
 
-            blockIndex = Blocks.size();
+            blockIndex = int(Blocks.size());
             Blocks.emplace_back(std::make_shared<Segment>(parentSegment, segmentSeed, nScripts, pipedDiff1Index), stateBin, fitness);
             BlockIndices[stateBinHash % BlockIndices.size()] = blockIndex;
 
@@ -117,7 +117,7 @@ bool Scattershot<TState, TResource, TStateTracker, TOutputState>::UpsertBlock(
             // Override fitness check if this block is a new solution
             if ((config.FitnessTieGoesToNewBlock && fitness == Blocks[blockIndex].fitness)
                 || fitness > Blocks[blockIndex].fitness
-                || isSolution && !Solutions.contains(blockIndex))
+                || (isSolution && !Solutions.contains(blockIndex)))
             {
                 // Reject improvements that are not considered solutions if the incumbent is a solution
                 if (Solutions.contains(blockIndex) && !isSolution)
@@ -126,7 +126,7 @@ bool Scattershot<TState, TResource, TStateTracker, TOutputState>::UpsertBlock(
                 Blocks[blockIndex].fitness = fitness;
                 Blocks[blockIndex].tailSegment = std::make_shared<Segment>(parentSegment, segmentSeed, nScripts, pipedDiff1Index);
 
-                if (isSolution && Solutions.size() < config.MaxSolutions)
+                if (isSolution && int64_t(Solutions.size()) < config.MaxSolutions)
                 {
                     #pragma omp critical (solutions)
                     {
@@ -156,9 +156,9 @@ void Scattershot<TState, TResource, TStateTracker, TOutputState>::PrintStatus()
     {
         #pragma omp critical (scriptcounters)
         {
-            int futility = double(FailedScripts) / double(ScriptCount) * 100;
-            int redundancy = double(RedundantScripts) / double(ScriptCount) * 100;
-            int discovery = double(NovelScripts) / double(ScriptCount) * 100;
+            int futility = int(double(FailedScripts) / double(ScriptCount) * 100);
+            int redundancy = int(double(RedundantScripts) / double(ScriptCount) * 100);
+            int discovery = int(double(NovelScripts) / double(ScriptCount) * 100);
 
             printf("Futility: %d%% Redundancy: %d%% Discovery: %d%%", futility, redundancy, discovery);
             if (ValidationFailures != 0)

@@ -28,18 +28,25 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(AddOptimizationFlags)
 include(SystemIncludes)
 
-# Download dependencies
+# Dependencies are fetched by CMake. Every tarball is pinned by hash and cached in
+# TASFW_DOWNLOAD_DIR (under build/, gitignored, shared by every build directory), so a build
+# with the cache is offline, and a version bump always downloads because the cached file no
+# longer matches its hash. Do not point FETCHCONTENT_SOURCE_DIR_* at another build tree's
+# <name>-src: that reuse is version-blind and once kept an old json here after a bump.
+set(TASFW_DOWNLOAD_DIR "${PROJECT_SOURCE_DIR}/build/downloads" CACHE PATH "Where FetchContent caches dependency tarballs")
 include(FetchContent)
 
-# CMake 4.x refuses projects whose cmake_minimum_required is below 3.5, and nlohmann/json
-# 3.11.2 declares 3.1. This tells CMake >= 3.31 to treat such dependencies as 3.5; older
-# CMake ignores the variable. Remove once the dependencies are bumped.
+# CMake 4.x refuses projects whose cmake_minimum_required is below 3.5; doctest 2.4.11
+# declares 3.0 (nlohmann/json did too until 3.12). This tells CMake >= 3.31 to treat such
+# dependencies as 3.5; older CMake ignores the variable. Remove once doctest is bumped.
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 
-FetchContent_Declare(json 
+FetchContent_Declare(json
 	DOWNLOAD_EXTRACT_TIMESTAMP ON
-	URL https://github.com/nlohmann/json/releases/download/v3.11.2/json.tar.xz
-	URL_HASH SHA256=8c4b26bf4b422252e13f332bc5e388ec0ab5c3443d24399acb675e68278d341f
+	DOWNLOAD_DIR "${TASFW_DOWNLOAD_DIR}"
+	DOWNLOAD_NAME json-3.12.0.tar.xz
+	URL https://github.com/nlohmann/json/releases/download/v3.12.0/json.tar.xz
+	URL_HASH SHA256=42f6e95cad6ec532fd372391373363b62a14af6d771056dbfc86160e6dfff7aa
 )
 FetchContent_MakeAvailable(json)
 tasfw_system_includes(nlohmann_json)
@@ -67,10 +74,12 @@ if(TASFW_BUILD_PERF)
 	add_subdirectory(tasfw-perf)
 endif()
 
-# Warnings as errors on every first-party target (ROADMAP 1.5). On in CI; off by default
-# locally (cmake/WarningsAsErrors.cmake). Locally: scripts\build.ps1 -CMakeArgs '-DTASFW_WARNINGS_AS_ERRORS=ON'.
+# Warning level (/W3, -Wall -Wextra; ROADMAP 1.7) on every first-party target, and warnings
+# as errors (ROADMAP 1.5): on in CI, off by default locally (cmake/Warnings.cmake). Locally:
+# scripts\build.ps1 -CMakeArgs '-DTASFW_WARNINGS_AS_ERRORS=ON'.
+include(Warnings)
+tasfw_warning_level()
 option(TASFW_WARNINGS_AS_ERRORS "Treat warnings as errors in every first-party target" OFF)
 if(TASFW_WARNINGS_AS_ERRORS)
-	include(WarningsAsErrors)
 	tasfw_warnings_as_errors()
 endif()

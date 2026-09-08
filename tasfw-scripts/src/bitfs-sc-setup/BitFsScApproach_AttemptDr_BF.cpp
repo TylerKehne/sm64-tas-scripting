@@ -57,13 +57,13 @@ bool BitFsScApproach_AttemptDr_BF::execution()
 	*/
 
 	auto status = DynamicModifyCompareAdhoc<BitFsScApproach_AttemptDr::CustomScriptStatus, std::tuple<>>(
-		[&](auto iteration, auto& params) { return true; }, //paramsGenerator
+		[&](auto /*iteration*/, auto& /*params*/) { return true; }, //paramsGenerator
 		[&](auto customStatus) //script
 		{
 			bool terminate = false;
 			bool marioIsFacingUphill = false;
 			*customStatus = DynamicModifyCompareAdhoc<BitFsScApproach_AttemptDr::CustomScriptStatus, std::tuple<>>(
-				[&](auto iteration, auto& params) { return !terminate; }, //paramsGenerator
+				[&](auto /*iteration*/, auto& /*params*/) { return !terminate; }, //paramsGenerator
 				[&](auto customStatus2) //script
 				{
 					*customStatus2 = Modify<BitFsScApproach_AttemptDr>();
@@ -112,7 +112,7 @@ bool BitFsScApproach_AttemptDr_BF::execution()
 		[&]() //mutator
 		{
 			AdvanceFrameRead();
-			return GetCurrentFrame() <= _maxFrame;
+			return int64_t(GetCurrentFrame()) <= _maxFrame;
 		},
 		[&](auto incumbent, auto challenger) //comparator
 		{

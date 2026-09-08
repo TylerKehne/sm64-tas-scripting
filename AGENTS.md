@@ -66,7 +66,7 @@ its place with numbers, and "it is cleaner" is not a number.
 | `analysis/` | R script that plots scattershot CSV output; also the pipeline's default output directory (CSVs, `solutions/*.json`, `m64/`), all gitignored. |
 | `res/` | Gitignored runtime inputs: 24 copies of the libsm64 DLL, source .m64 files, and thousands of exported solution .m64 files. |
 | `scripts/` | `build.ps1`, the supported build entry point on Windows. |
-| `cmake/` | `AddOptimizationFlags` (arch flag, FP determinism, LTO, OpenMP; applied to every first-party target), `WarningsAsErrors` (`TASFW_WARNINGS_AS_ERRORS`) and `SystemIncludes` (fetched dependencies as system headers, so their warnings never count). |
+| `cmake/` | `AddOptimizationFlags` (arch flag, FP determinism, LTO, OpenMP; applied to every first-party target), `Warnings` (`/W3`, `/W4`, `-Wall -Wextra` on every first-party target, and `TASFW_WARNINGS_AS_ERRORS`) and `SystemIncludes` (fetched dependencies as system headers, so their warnings never count). |
 | `docs/` | Provenance of the DLL and other reference notes. |
 
 ## Build and run
@@ -81,7 +81,8 @@ its place with numbers, and "it is cleaner" is not a number.
   comes from the VS "C++ Clang tools" component.
 - Output: `build\<Config>\out\bitfs-turn.exe` with `config.json` written next to it (the
   committed one plus a `baseDirectory`, so its relative paths resolve into the source tree).
-- The one dependency (nlohmann/json) is fetched by CMake. OpenMP is required.
+- Dependencies (nlohmann/json; doctest and Google Benchmark for tests and perf) are fetched
+  by CMake, hash-pinned and cached in `build\downloads` for offline builds. OpenMP is required.
 - Runtime inputs are not in git. You need `res\sm64_jp_0.dll` .. `res\sm64_jp_23.dll` and the
   .m64 files named in `config.json`. See [docs/libsm64.md](docs/libsm64.md).
 - `bitfs-turn.exe --list` and `--dry-run` are safe: no search runs. **Running it without
@@ -99,7 +100,8 @@ its place with numbers, and "it is cleaner" is not a number.
 - Perf suite: `powershell -ExecutionPolicy Bypass -File scripts\perf.ps1` builds Release,
   runs `tasfw-perf.exe`, and compares against `perf\baselines\<computername>.json`. Tier A
   needs nothing; the Tier B and C (libsm64) families run when `res\` has the DLL and movie,
-  or pass `-Dll`/`-M64`; Tier D runs `bitfs-turn` on `perf\tierd-*.json` when the 16 DLL
+  or pass `-Dll`/`-M64` (thread scaling also needs the copies `sm64_jp_1.dll` to
+  `sm64_jp_16.dll`); Tier D runs `bitfs-turn` on `perf\tierd-*.json` when the 16 DLL
   copies exist (about five minutes; `-NoTierD` skips it). Anything missing is skipped.
 
 ## Hard rules

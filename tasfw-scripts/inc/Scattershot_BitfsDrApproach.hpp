@@ -52,12 +52,11 @@ public:
         targetNormal = { targetNx, INFINITY, targetNz };
     }
 
-    bool validation() { return GetCurrentFrame() >= initialFrame; }
+    bool validation() { return int64_t(GetCurrentFrame()) >= initialFrame; }
 
     bool execution() 
     {
         MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-        const BehaviorScript* pyramidBehavior = (const BehaviorScript*)(resource->addr("bhvLllTiltingInvertedPyramid"));
         Object* objectPool = (Object*)(resource->addr("gObjectPool"));
         Object* pyramid = &objectPool[84];
 
@@ -180,7 +179,7 @@ private:
         CustomStatus.initialFrame = initialFrame;
     }
 
-    void CalculatePhase(CustomScriptStatus lastFrameState, MarioState* marioState, Object* pyramid)
+    void CalculatePhase(CustomScriptStatus lastFrameState, MarioState* marioState, Object* /*pyramid*/)
     {
         switch (lastFrameState.phase)
         {
@@ -285,7 +284,6 @@ public:
             case StateTracker_BitfsDrApproach::Phase::TURN_UPHILL:
             {
                 auto prevState = GetTrackedState<StateTracker_BitfsDrApproach>(GetCurrentFrame() - 1);
-                bool avoidDoubleTurnaround = prevState.marioAction == ACT_FINISH_TURNING_AROUND && state.marioAction == ACT_WALKING;
 
                 AddRandomMovementOption(
                     {
@@ -332,7 +330,6 @@ public:
     bool ApplyMovement() override
     {
         MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-        Camera* camera = *(Camera**)(resource->addr("gCamera"));
 
         // Scripts
         if (!CheckMovementOptions(MovementOption::NO_SCRIPT))
@@ -340,7 +337,7 @@ public:
             if (CheckMovementOptions(MovementOption::REWIND))
             {
                 int64_t currentFrame = GetCurrentFrame();
-                int maxRewind = (currentFrame - config.StartFrame) / 2;
+                int maxRewind = int((currentFrame - config.StartFrame) / 2);
                 int rewindFrames = (GetTempRng() % 100) * maxRewind / 100;
                 Load(currentFrame - rewindFrames);
             }
@@ -389,14 +386,8 @@ public:
     BinaryStateBin<16> GetStateBin() override
     {
         MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-        Camera* camera = *(Camera**)(resource->addr("gCamera"));
-        const BehaviorScript* pyramidmBehavior = (const BehaviorScript*)(resource->addr("bhvLllTiltingInvertedPyramid"));
-        Object* objectPool = (Object*)(resource->addr("gObjectPool"));
-        Object* pyramid = &objectPool[84];
 
         auto trackedState = GetTrackedState<StateTracker_BitfsDrApproach>(GetCurrentFrame());
-        float norm_regime_min = 0.69f;
-        int nRegions = trackedState.xzSum >= norm_regime_min ? 32 : 4;
 
         int actionValue;
         switch (marioState->action)
@@ -429,16 +420,11 @@ public:
         
         float xMin = -2430.0f;
         float xMax = -1450.0f;
-        float yMin = -3071.0f;
-        float yMax = -2760.0f;
         float zMin = -1190.0f;
         float zMax = -200.0f;
 
         float xPosValue = std::clamp(marioState->pos[0], xMin, xMax);
-        float yPosValue = std::clamp(marioState->pos[1], yMin, yMax);
         float zPosValue = std::clamp(marioState->pos[2], zMin, zMax);
-        float ySpeedValue = std::clamp(marioState->vel[1], 0.f, 32.0f);
-        float fSpeedValue = std::clamp(marioState->forwardVel, 0.f, 64.0f);
         
         uint8_t bitCursor = 0;
         BinaryStateBin<16> state;
@@ -475,8 +461,6 @@ public:
     bool ValidateState() override
     {
         MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-        Camera* camera = *(Camera**)(resource->addr("gCamera"));
-        const BehaviorScript* pyramidmBehavior = (const BehaviorScript*)(resource->addr("bhvLllTiltingInvertedPyramid"));
         Object* objectPool = (Object*)(resource->addr("gObjectPool"));
         Object* pyramid = &objectPool[84];
 
@@ -521,8 +505,6 @@ public:
             return false;
 
         // Check custom metrics
-        float xNorm = pyramid->oTiltingPyramidNormalX;
-        float zNorm = pyramid->oTiltingPyramidNormalZ;
         auto state = GetTrackedState<StateTracker_BitfsDrApproach>(GetCurrentFrame());
         auto lastFrameState = GetTrackedState<StateTracker_BitfsDrApproach>(GetCurrentFrame() - 1);
 
@@ -560,8 +542,6 @@ public:
     float GetStateFitness() override
     {
         MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-        Object* objectPool = (Object*)(resource->addr("gObjectPool"));
-        Object* pyramid = &objectPool[84];
 
         auto state = GetTrackedState<StateTracker_BitfsDrApproach>(GetCurrentFrame());
         if (state.initialized)
@@ -611,7 +591,7 @@ public:
         }
 
         char line[256];
-        sprintf(line, "%f,%f,%f,%d,%f,%d,%f,%f,%f,%d,%f",
+        snprintf(line, sizeof(line), "%f,%f,%f,%d,%f,%d,%f,%f,%f,%d,%f",
             marioState->pos[0],
             marioState->pos[1],
             marioState->pos[2],
@@ -668,7 +648,6 @@ public:
     }
 
 private:
-    int _targetOscillation = -1;
 
     bool Pbd()
     {

@@ -163,7 +163,7 @@ public:
 	};
 	CustomScriptStatus CustomStatus = CustomScriptStatus();
 
-	BitFsPyramidOscillation_Iteration(BitFsPyramidOscillation_ParamsDto oscillationParams, int32_t minFrame, int32_t maxFrame)
+	BitFsPyramidOscillation_Iteration(BitFsPyramidOscillation_ParamsDto oscillationParams, int64_t minFrame, int64_t maxFrame)
 		: _minFrame(minFrame), _maxFrame(maxFrame), _oscillationParams(oscillationParams) {}
 
 	bool validation();
@@ -171,8 +171,8 @@ public:
 	bool assertion();
 
 private:
-	int32_t _minFrame = -1;
-	int32_t _maxFrame = -1;
+	int64_t _minFrame = -1;
+	int64_t _maxFrame = -1;
 	BitFsPyramidOscillation_ParamsDto _oscillationParams;
 
 	bool CompareSpeed(

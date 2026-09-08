@@ -90,7 +90,6 @@ public:
 	ScriptStatus<TScript> Compare(const TTupleContainer& paramsList, F&& comparator, G terminator)
 	{
 		ScriptStatus<TScript> status1 = ScriptStatus<TScript>();
-		int64_t iteration = 0;
 
 		// return if container is empty
 		if (paramsList.begin() == paramsList.end())
@@ -110,7 +109,6 @@ public:
 				continue;
 			}
 
-			iteration++;
 			ScriptStatus<TScript> status2 = ExecuteFromTuple<TScript>(params);
 			if (status2.asserted && script->ExecuteAdhoc([&]() { return terminator(&status2); }).executed)
 				return status2;
@@ -163,7 +161,6 @@ public:
 	{
 		ScriptStatus<TScript> status1 = ScriptStatus<TScript>();
 		ScriptStatus<TScript> status2 = ScriptStatus<TScript>();
-		int64_t iteration = 0;
 
 		// return if container is empty
 		if (paramsList.begin() == paramsList.end())
@@ -195,7 +192,6 @@ public:
 			}
 
 			// We want to avoid reversion of successful script
-			iteration++;
 			bool newIncumbent = false;
 			terminate = script->ModifyAdhoc([&]()
 				{
@@ -302,7 +298,6 @@ public:
 	AdhocScriptStatus<Substatus<TScript>> DynamicCompare(const TTupleContainer& paramsList, F&& mutator, G&& comparator, H terminator)
 	{
 		ScriptStatus<TScript> status1 = ScriptStatus<TScript>();
-		int64_t iteration = 0;
 		int64_t nMutations = 0;
 		int64_t incumbentMutations = 0;
 		M64Diff incumbentDiff;
@@ -335,7 +330,6 @@ public:
 					return status1.asserted;
 				nMutations++;
 
-				iteration++;
 				ScriptStatus<TScript> status2 = ExecuteFromTuple<TScript>(params);
 				if (status2.asserted && script->ExecuteAdhoc([&]() { return terminator(&status2); }).executed)
 				{
@@ -428,7 +422,6 @@ public:
 	{
 		ScriptStatus<TScript> status1 = ScriptStatus<TScript>();
 		ScriptStatus<TScript> status2 = ScriptStatus<TScript>();
-		int64_t iteration = 0;
 		int64_t nMutations = 0;
 		int64_t incumbentMutations = 0;
 		M64Diff incumbentDiff;
@@ -473,7 +466,6 @@ public:
 					nMutations++;
 
 					// We want to avoid reversion of successful script
-					iteration++;
 					bool newIncumbent = false;
 					terminate = script->ModifyAdhoc([&]()
 						{
@@ -623,7 +615,6 @@ public:
 	AdhocScriptStatus<TCompareStatus> CompareAdhoc(const TTupleContainer& paramsList, F&& adhocScript, G&& comparator, H terminator)
 	{
 		AdhocScriptStatus<TCompareStatus> status1 = AdhocScriptStatus<TCompareStatus>();
-		int64_t iteration = 0;
 
 		// return if container is empty
 		if (paramsList.begin() == paramsList.end())
@@ -643,7 +634,6 @@ public:
 				continue;
 			}
 
-			iteration++;
 			AdhocScriptStatus<TCompareStatus> status2 = ExecuteFromTupleAdhoc<TCompareStatus>(std::forward<F>(adhocScript), params);
 			if (status2.executed && script->ExecuteAdhoc([&]() { return terminator(&status2); }).executed)
 				return status2;
@@ -696,7 +686,6 @@ public:
 	{
 		AdhocScriptStatus<TCompareStatus> status1 = AdhocScriptStatus<TCompareStatus>();
 		AdhocScriptStatus<TCompareStatus> status2 = AdhocScriptStatus<TCompareStatus>();
-		int64_t iteration = 0;
 
 		// return if container is empty
 		if (paramsList.begin() == paramsList.end())
@@ -727,7 +716,6 @@ public:
 			}
 
 			// We want to avoid reversion of successful script
-			iteration++;
 			bool newIncumbent = false;
 			terminate = script->ModifyAdhoc([&]()
 				{
@@ -832,7 +820,6 @@ public:
 	AdhocScriptStatus<AdhocSubstatus<TCompareStatus>> DynamicCompareAdhoc(const TTupleContainer& paramsList, F&& adhocScript, G&& mutator, H&& comparator, I terminator)
 	{
 		AdhocScriptStatus<TCompareStatus> status1 = AdhocScriptStatus<TCompareStatus>();
-		int64_t iteration = 0;
 		int64_t nMutations = 0;
 		int64_t incumbentMutations = 0;
 		M64Diff incumbentDiff;
@@ -865,7 +852,6 @@ public:
 						return status1.executed;
 					nMutations++;
 
-					iteration++;
 					AdhocScriptStatus<TCompareStatus> status2 = ExecuteFromTupleAdhoc<TCompareStatus>(std::forward<F>(adhocScript), params);
 					if (status2.executed && script->ExecuteAdhoc([&]() { return terminator(&status2); }).executed)
 					{
@@ -959,7 +945,6 @@ public:
 	{
 		AdhocScriptStatus<TCompareStatus> status1 = AdhocScriptStatus<TCompareStatus>();
 		AdhocScriptStatus<TCompareStatus> status2 = AdhocScriptStatus<TCompareStatus>();
-		int64_t iteration = 0;
 		int64_t nMutations = 0;
 		int64_t incumbentMutations = 0;
 		M64Diff incumbentDiff;
@@ -1004,7 +989,6 @@ public:
 					nMutations++;
 
 					// We want to avoid reversion of successful script
-					iteration++;
 					bool newIncumbent = false;
 					terminate = script->ModifyAdhoc([&]()
 						{

@@ -49,7 +49,7 @@ PyramidUpdateMem::PyramidUpdateMem(const LibSm64& resource, Object* pyramidLibSm
 	// Get mario's floor triangle
 	Vec3f marioPos = { marioState.posX, marioState.posY, marioState.posZ };
 	int64_t dynamicFloorId = -1;
-	float dynamicY = FindFloor(&marioPos, &(*pyramid.surfaces[1].begin()), pyramid.surfaces[1].size(), &dynamicFloorId);
+	FindFloor(&marioPos, &(*pyramid.surfaces[1].begin()), int(pyramid.surfaces[1].size()), &dynamicFloorId);
 	marioState.floorId = dynamicFloorId;
 
 	//Copy camera yaw
@@ -289,9 +289,9 @@ void PyramidUpdateMem::ReadSurfaceData(short* vertexData, short** vertexIndices,
 	z3 = *(vertexData + offset3 + 2);
 
 	// (v2 - v1) x (v3 - v2)
-	nx = (y2 - y1) * (z3 - z2) - (z2 - z1) * (y3 - y2);
-	ny = (z2 - z1) * (x3 - x2) - (x2 - x1) * (z3 - z2);
-	nz = (x2 - x1) * (y3 - y2) - (y2 - y1) * (x3 - x2);
+	nx = float((y2 - y1) * (z3 - z2) - (z2 - z1) * (y3 - y2));
+	ny = float((z2 - z1) * (x3 - x2) - (x2 - x1) * (z3 - z2));
+	nz = float((x2 - x1) * (y3 - y2) - (y2 - y1) * (x3 - x2));
 	mag = sqrtf(nx * nx + ny * ny + nz * nz);
 
 	// Could have used min_3 and max_3 for this...
@@ -447,7 +447,7 @@ std::size_t PyramidUpdate::getStateSize(const PyramidUpdateMem& state) const
 
 uint32_t PyramidUpdate::getCurrentFrame() const
 {
-	return _state.frame;
+	return uint32_t(_state.frame);
 }
 
 void PyramidUpdate::advance()
@@ -459,10 +459,10 @@ void PyramidUpdate::advance()
 
 	Vec3f marioPos = { _state.marioState.posX, _state.marioState.posY , _state.marioState.posZ };
 	int64_t dynamicFloorId = -1;
-	float dynamicY = PyramidUpdateMem::FindFloor(&marioPos, &(*_state.pyramid.surfaces[1].begin()), _state.pyramid.surfaces[1].size(), &dynamicFloorId);
+	float dynamicY = PyramidUpdateMem::FindFloor(&marioPos, &(*_state.pyramid.surfaces[1].begin()), int(_state.pyramid.surfaces[1].size()), &dynamicFloorId);
 
 	int64_t staticFloorId = -1;
-	float staticY = PyramidUpdateMem::FindFloor(&marioPos, &(*_state.staticFloors.begin()), _state.staticFloors.size(), &staticFloorId);
+	float staticY = PyramidUpdateMem::FindFloor(&marioPos, &(*_state.staticFloors.begin()), int(_state.staticFloors.size()), &staticFloorId);
 
 	if (dynamicY > staticY)
 	{
@@ -541,7 +541,7 @@ void PyramidUpdate::UpdatePyramid()
 		//! Always true since dy = 500, making d >= 500.
 		if (d != 0.0f) {
 			// Normalizing
-			d = 1.0 / d;
+			d = float(1.0 / d);
 			dx *= d;
 			dy *= d;
 			dz *= d;
@@ -650,18 +650,18 @@ void PyramidUpdateMem::TransformSurfaces(int surfaceIndex, Sm64Object* pyramid)
 		}
 
 		// (v2 - v1) x (v3 - v2)
-		nx = (surfaces->vertex2[1] - surfaces->vertex1[1]) *
+		nx = float((surfaces->vertex2[1] - surfaces->vertex1[1]) *
 			(surfaces->vertex3[2] - surfaces->vertex2[2]) -
 			(surfaces->vertex2[2] - surfaces->vertex1[2]) *
-			(surfaces->vertex3[1] - surfaces->vertex2[1]);
-		ny = (surfaces->vertex2[2] - surfaces->vertex1[2]) *
+			(surfaces->vertex3[1] - surfaces->vertex2[1]));
+		ny = float((surfaces->vertex2[2] - surfaces->vertex1[2]) *
 			(surfaces->vertex3[0] - surfaces->vertex2[0]) -
 			(surfaces->vertex2[0] - surfaces->vertex1[0]) *
-			(surfaces->vertex3[2] - surfaces->vertex2[2]);
-		nz = (surfaces->vertex2[0] - surfaces->vertex1[0]) *
+			(surfaces->vertex3[2] - surfaces->vertex2[2]));
+		nz = float((surfaces->vertex2[0] - surfaces->vertex1[0]) *
 			(surfaces->vertex3[1] - surfaces->vertex2[1]) -
 			(surfaces->vertex2[1] - surfaces->vertex1[1]) *
-			(surfaces->vertex3[0] - surfaces->vertex2[0]);
+			(surfaces->vertex3[0] - surfaces->vertex2[0]));
 		mag = sqrtf(nx * nx + ny * ny + nz * nz);
 
 		// Could have used min_3 and max_3 for this...

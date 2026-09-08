@@ -680,7 +680,7 @@ private:
 	friend class ScriptCompareHelper<TResource>;
 
 	int64_t _adhocLevel = 0;
-	int32_t _initialFrame = 0;
+	int64_t _initialFrame = 0;
 	// One entry per ad-hoc level (see LevelStack.hpp); level 0 is the script itself.
 	LevelStack<BaseScriptStatus> BaseStatus;
 	LevelStack<std::map<int64_t, SlotHandle<TResource>>> saveBank;// contains handles to savestates
@@ -775,11 +775,11 @@ private:
 
 	// Needed for state tracking. These do nothing, but TopLevelScript overrides them. Can't access explicitly because of lack of template information.
 	// Tracked-state containers are created on first use, so there is no "push"; "pop" drops them.
-	virtual void TrackState(Script<TResource>* currentScript, const InputsMetadata<TResource>& inputsMetadata) { return; }
-	virtual bool TrackedStateExistsInternal(Script<TResource>* currentScript, const InputsMetadata<TResource>& inputsMetadata) { return false; }
-	virtual void PopTrackedStatesContainer(Script<TResource>* currentScript, int adhocLevel) { return; }
-	virtual void MoveSyncedTrackedStates(Script<TResource>* sourceScript, int sourceAdhocLevel, Script<TResource>* destScript, int destAdhocLevel) { return; }
-	virtual void EraseTrackedStates(Script<TResource>* currentScript, int adhocLevel, int64_t firstFrame) { return; }
+	virtual void TrackState(Script<TResource>* /*currentScript*/, const InputsMetadata<TResource>& /*inputsMetadata*/) { return; }
+	virtual bool TrackedStateExistsInternal(Script<TResource>* /*currentScript*/, const InputsMetadata<TResource>& /*inputsMetadata*/) { return false; }
+	virtual void PopTrackedStatesContainer(Script<TResource>* /*currentScript*/, int64_t /*adhocLevel*/) { return; }
+	virtual void MoveSyncedTrackedStates(Script<TResource>* /*sourceScript*/, int64_t /*sourceAdhocLevel*/, Script<TResource>* /*destScript*/, int64_t /*destAdhocLevel*/) { return; }
+	virtual void EraseTrackedStates(Script<TResource>* /*currentScript*/, int64_t /*adhocLevel*/, int64_t /*firstFrame*/) { return; }
 };
 
 template <derived_from_specialization_of<Script> TStateTracker>
@@ -815,7 +815,7 @@ template <derived_from_specialization_of<Resource> TResource>
 class ScriptFriend
 {
 public:
-	static int GetAdhocLevel(Script<TResource>* script)
+	static int64_t GetAdhocLevel(Script<TResource>* script)
 	{
 		return script->_adhocLevel;
 	}
@@ -1003,9 +1003,9 @@ private:
 
 	void TrackState(Script<TResource>* currentScript, const InputsMetadata<TResource>& inputsMetadata) override;
 	bool TrackedStateExistsInternal(Script<TResource>* currentScript, const InputsMetadata<TResource>& inputsMetadata) override;
-	void PopTrackedStatesContainer(Script<TResource>* currentScript, int adhocLevel) override;
-	void MoveSyncedTrackedStates(Script<TResource>* sourceScript, int sourceAdhocLevel, Script<TResource>* destScript, int destAdhocLevel) override;
-	void EraseTrackedStates(Script<TResource>* currentScript, int adhocLevel, int64_t firstFrame) override;
+	void PopTrackedStatesContainer(Script<TResource>* currentScript, int64_t adhocLevel) override;
+	void MoveSyncedTrackedStates(Script<TResource>* sourceScript, int64_t sourceAdhocLevel, Script<TResource>* destScript, int64_t destAdhocLevel) override;
+	void EraseTrackedStates(Script<TResource>* currentScript, int64_t adhocLevel, int64_t firstFrame) override;
 	const typename TStateTracker::CustomScriptStatus& GetTrackedStateInternal(Script<TResource>* currentScript, const InputsMetadata<TResource>& inputsMetadata);
 
 	InputsMetadata<TResource> GetInputsMetadata(int64_t frame) override;

@@ -247,7 +247,7 @@ private:
         uint64_t hashValue = 0;
         for (std::size_t i = 0; i < sizeof(toHash); i++)
         {
-            if (ignoreFillerBytes || !FillerBytes.contains(i))
+            if (ignoreFillerBytes || !FillerBytes.contains(int(i)))
                 hashValue ^= static_cast<uint64_t>(byteHasher(data[i])) + 0x9e3779b97f4a7c15ull + (hashValue << 6) + (hashValue >> 2);
         }
 
@@ -273,7 +273,7 @@ private:
         scattershot.MultiThread(configuration.TotalThreads, [&]()
             {
                 int threadId = omp_get_thread_num();
-                if (threadId < configuration.ResourcePaths.size())
+                if (threadId < int(configuration.ResourcePaths.size()))
                 {
                     M64 m64 = M64(configuration.M64Path);
                     m64.load();
@@ -321,13 +321,13 @@ private:
         }
 
         auto finish = std::chrono::high_resolution_clock::now();
-        int totalSeconds = std::chrono::duration_cast<std::chrono::seconds>(finish - start).count();
+        int totalSeconds = int(std::chrono::duration_cast<std::chrono::seconds>(finish - start).count());
 
-        int loadPercent = double(loadDuration) / double(totalDuration) * 100;
-        int savePercent = double(saveDuration) / double(totalDuration) * 100;
-        int advancePercent = double(advanceFrameDuration) / double(totalDuration) * 100;
-        int otherPercent = double(scriptDuration - (loadDuration + saveDuration + advanceFrameDuration)) / double(totalDuration) * 100;
-        int overheadPercent = double(totalDuration - scriptDuration) / double(totalDuration) * 100;
+        int loadPercent = int(double(loadDuration) / double(totalDuration) * 100);
+        int savePercent = int(double(saveDuration) / double(totalDuration) * 100);
+        int advancePercent = int(double(advanceFrameDuration) / double(totalDuration) * 100);
+        int otherPercent = int(double(scriptDuration - (loadDuration + saveDuration + advanceFrameDuration)) / double(totalDuration) * 100);
+        int overheadPercent = int(double(totalDuration - scriptDuration) / double(totalDuration) * 100);
 
         printf("Total time (seconds): %d\n", totalSeconds);
         printf("Load: %d%% Save: %d%% Frame Advance: %d%% Overhead: %d%% Other: %d%%\n", loadPercent, savePercent, advancePercent, overheadPercent, otherPercent);
@@ -343,13 +343,13 @@ private:
         std::byte* binPtr = reinterpret_cast<std::byte*>(&stateBin);
 
         // initialize to specific garbage data compatible with all primitives;
-        for (int i = 0; i < sizeof(TState); i++)
+        for (int i = 0; i < int(sizeof(TState)); i++)
             binPtr[i] = (std::byte)0x3f;
 
         // Check which bytes identity depends on
         TState stateBinCopy = stateBin;
         std::byte* binCopyPtr = reinterpret_cast<std::byte*>(&stateBin);
-        for (int i = 0; i < sizeof(TState); i++)
+        for (int i = 0; i < int(sizeof(TState)); i++)
         {
             binCopyPtr[i] = (std::byte)0x00;
             if (stateBin == stateBinCopy)
@@ -392,7 +392,7 @@ public:
     */
 
     template <typename F>
-    static void ThreadLock(const char* section, F func)
+    static void ThreadLock(const char* /*section*/, F func)
     {
         OMP_CRITICAL(section)
         {

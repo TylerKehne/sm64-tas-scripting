@@ -83,8 +83,8 @@ bool BitFsPyramidOscillation::execution()
 	for (int i = 0; i < 15; i++)
 	{
 		CustomStatus.oscillationMinMaxFrames.emplace_back(minFrame, maxFrame);
-		float targetXzSum = _targetXzSum - 0.02 * (i & 1U);
-		float targetXzSumPrev = _targetXzSum - 0.02 * ((i & 1U) ^ 1U);
+		float targetXzSum = float(_targetXzSum - 0.02 * (i & 1U));
+		float targetXzSumPrev = float(_targetXzSum - 0.02 * ((i & 1U) ^ 1U));
 
 		// Start at the latest ppossible frame and work backwards. Stop when the
 		// max speed at the equilibrium point stops increasing.
@@ -134,9 +134,6 @@ bool BitFsPyramidOscillation::execution()
 			}
 		}
 
-		bool isFaster = turnRunStatus.passedEquilibriumSpeed > CustomStatus.maxPassedEquilibriumSpeed[i & 1];
-		if (abs(turnRunStatus.passedEquilibriumSpeed - CustomStatus.maxPassedEquilibriumSpeed[i & 1]) < 0.2f)
-			isFaster = turnRunStatus.passedEquilibriumXzDist > CustomStatus.maxPassedEquilibriumXzDist[i & 1];
 
 		// Terminate when path fails to increase speed and XZ sum target has
 		// been reached in both directions
@@ -166,8 +163,8 @@ bool BitFsPyramidOscillation::assertion()
 	if (IsDiffEmpty())
 		return false;
 
-	float targetXzSum1 = _targetXzSum - 0.02 * (lowerXzSumParity & 1U);
-	float targetXzSum0 = _targetXzSum - 0.02 * ((lowerXzSumParity & 1U) ^ 1U);
+	float targetXzSum1 = float(_targetXzSum - 0.02 * (lowerXzSumParity & 1U));
+	float targetXzSum0 = float(_targetXzSum - 0.02 * ((lowerXzSumParity & 1U) ^ 1U));
 
 	if (CustomStatus.finalXzSum[0] < targetXzSum0 ||
 		CustomStatus.finalXzSum[1] < targetXzSum1)

@@ -85,7 +85,7 @@ void bhv_tilting_inverted_pyramid_loop(
 		if (d != 0.0f)
 		{
 			// Normalizing
-			d = 1.0 / d;
+			d = float(1.0 / d);
 			dx *= d;
 			dy *= d;
 			dz *= d;

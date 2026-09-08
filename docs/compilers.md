@@ -11,10 +11,10 @@ that gives real confidence in C++20 code like this.
 
 | Toolchain | Status (2026-09-08) | How to build |
 |---|---|---|
-| MSVC 19.44 (VS 2022), Ninja | primary; warning-free at its default level (`/W1`, see below) | `scripts\build.ps1` (preset `msvc-<config>`) |
-| clang-cl 19.1 (VS "C++ Clang tools for Windows"), Ninja | warning-free locally and in CI (windows-clang-cl job) | `scripts\build.ps1 -Compiler clang` (preset `clang-cl-<config>`) |
-| GCC 13 on Linux, Ninja | warning-free in CI (ubuntu-gcc job); `LibSm64`'s `mprotect` save path compiles but is untested at run time | `cmake --preset gcc-release`, then `cmake --build --preset gcc-release` |
-| Clang 17 on Linux, Ninja | warning-free in CI (ubuntu-clang job) | presets `clang-<config>` |
+| MSVC 19.44 (VS 2022), Ninja | primary; warning-free at `/W3` | `scripts\build.ps1` (preset `msvc-<config>`) |
+| clang-cl 19.1 (VS "C++ Clang tools for Windows"), Ninja | warning-free at `/W4` locally and in CI (windows-clang-cl job) | `scripts\build.ps1 -Compiler clang` (preset `clang-cl-<config>`) |
+| GCC 13 on Linux, Ninja | warning-free at `-Wall -Wextra` in CI (ubuntu-gcc job) and in the container below; `LibSm64`'s `mprotect` save path compiles but is untested at run time | `cmake --preset gcc-release`, then `cmake --build --preset gcc-release` |
+| Clang 17 on Linux, Ninja | warning-free at `-Wall -Wextra` in CI (ubuntu-clang job) and in the container below | presets `clang-<config>` |
 
 Every build goes through a `CMakePresets.json` preset named `<compiler>-<config>`
 (`msvc-release`, `clang-cl-debug`, `gcc-relwithdebinfo`, ...), with build and test presets
@@ -25,13 +25,37 @@ Windows presets, and its `-CMakeArgs` passes extra cache variables through. `-Ke
 passes `-k 0` to ninja so every error in the tree is reported in one pass, which is what
 you want when checking a compiler for the first time.
 
-Warning levels are the compilers' defaults. For MSVC that is `/W1`: CMake stopped adding
-`/W3` in 3.15 (policy CMP0092), and at `/W3` this tree has 292 warnings (ROADMAP 1.7). GCC
-and Clang run without `-Wall`. `TASFW_WARNINGS_AS_ERRORS` (`cmake/WarningsAsErrors.cmake`)
-puts `/WX` or `-Werror` on every first-party target, found by walking the directory tree so
-that the dependencies CMake fetches are left alone; every CI job passes it, and locally
-`build.ps1 -CMakeArgs '-DTASFW_WARNINGS_AS_ERRORS=ON'` reproduces the CI build. It is off
-by default so that a newer compiler's new warnings cannot block a fresh build.
+Warning levels are set by `cmake/Warnings.cmake` on every first-party target, found by
+walking the directory tree so that the dependencies CMake fetches are left alone: `/W3` on
+MSVC, `/W4` on clang-cl and `-Wall -Wextra` on GCC and Clang (CMake itself adds no `/W`
+flag since 3.15, policy CMP0092). The same module puts `/WX` or `-Werror` behind
+`TASFW_WARNINGS_AS_ERRORS`; every CI job passes it, and locally
+`build.ps1 -CMakeArgs '-DTASFW_WARNINGS_AS_ERRORS=ON'` reproduces the CI build. It is off by
+default so that a newer compiler's new warnings cannot block a fresh build. The conventions
+the tree follows to stay clean at these levels: a narrowing conversion that is intended is
+written as an explicit cast of the same expression (`float(a * b - c * d)`, so the
+arithmetic and the result are unchanged), a parameter an override or a callback does not
+use is left unnamed (`Script<TResource>* /*currentScript*/`), and dead locals and fields
+are deleted rather than silenced.
+
+## GCC and Clang locally
+
+There is no Linux toolchain on the Windows machine, but Docker Desktop is installed. A
+container with the CI toolchain, the repository mounted read-write and the build tree
+inside the container (a build tree on the mount is slow):
+
+```bash
+docker run -d --name tasfw-linux -v "C:/repos/sm64-tas-scripting:/src" -w /src ubuntu:24.04 sleep infinity
+docker exec tasfw-linux bash -c "apt-get update -qq && apt-get install -y -qq ninja-build g++-13 clang-17 libomp-17-dev cmake python3"
+docker exec tasfw-linux cmake -S /src -B /tmp/build-gcc -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=g++-13 -DTASFW_WARNINGS_AS_ERRORS=ON
+docker exec tasfw-linux cmake --build /tmp/build-gcc -- -k 0
+docker exec -w /tmp/build-gcc tasfw-linux ./out/tasfw-tests
+```
+
+The same with `clang++-17` and `/tmp/build-clang`. The dependency tarballs come from the
+shared `build/downloads` cache, so nothing is downloaded twice. From Git Bash, prefix
+`docker` commands with `MSYS_NO_PATHCONV=1`, or the container paths in the arguments are
+rewritten into Windows paths. The container is throwaway: `docker rm -f tasfw-linux`.
 
 ## Policy
 
@@ -95,10 +119,11 @@ overloads, which select the same single-precision instruction, or the global `sq
 
 ### CMake 4 rejects dependencies with `cmake_minimum_required` below 3.5
 
-The GitHub runners ship CMake 4.4, which errors (not warns) on nlohmann/json 3.11.2's
-`cmake_minimum_required(VERSION 3.1)`. The root `CMakeLists.txt` sets
-`CMAKE_POLICY_VERSION_MINIMUM 3.5` before `FetchContent_MakeAvailable`; CMake 3.31 and
-newer honor it, older versions ignore it. Bumping the dependency removes the need.
+The GitHub runners ship CMake 4.x, which errors (not warns) on doctest 2.4.11's
+`cmake_minimum_required(VERSION 3.0)` (nlohmann/json did the same until 3.12, which declares
+`3.5...4.0`). The root `CMakeLists.txt` sets `CMAKE_POLICY_VERSION_MINIMUM 3.5` before the
+first `FetchContent_MakeAvailable`; CMake 3.31 and newer honor it, older versions ignore it.
+Bumping doctest past 3.5 removes the need.
 
 ### MSVC accepts using-declarations that name inaccessible overloads
 
@@ -158,6 +183,46 @@ interface include directories are re-declared as system directories, so its head
 `-isystem` on GCC and Clang, `-imsvc` on clang-cl and `-external:I` with `-external:W0` on
 MSVC, and warnings from them never reach `-Werror`. Apply `tasfw_system_includes` to any
 dependency added later.
+
+### clang-cl: a GNU-style `-Wall` is MSVC's `/Wall`
+
+clang-cl accepts most GNU-style flags, but `-Wall` collides with the CL option `/Wall`
+(the same option with the other prefix), which clang-cl maps to `-Weverything`: 117 unique
+warnings on this tree, from "`long long` is incompatible with C++98" to old-style casts.
+clang-cl's spelling of GNU `-Wall -Wextra` is `/W4` (`/W1` to `/W3` are `-Wall`). The
+`-Wextra` half has no CL homonym and would work on its own; `cmake/Warnings.cmake` uses
+`/W4`. Found 2026-09-08 (ROADMAP 1.7).
+
+### GCC 13: `-Wdangling-reference` on a reference returned past a temporary
+
+`const json& RequireObject(const json& parent, const char* key, const std::string& where)`
+returns a reference into `parent`, but a call with a string literal binds a temporary
+`std::string` to `where`, and GCC 13's heuristic assumes the returned reference might refer
+to that temporary. The warning is in `-Wall` and there was no real bug. The fix that keeps
+the function honest is to take `where` by value as a `std::string_view`, which the heuristic
+does not consider; GCC 14 narrowed the check, but 13 is the CI compiler.
+
+### `static` function declarations in a header
+
+`sm64/Surface.hpp` declared the decomp's file-local helpers (`get_floor_class`, ...) as
+`static` next to the public ones. A `static` declaration in a header is a separate unused
+function in every translation unit that includes it and does not define it, which clang
+reports (`-Wunused-function`) per translation unit. The declarations moved into
+`Surface.cpp`, the only place that defines and calls them. The struct layouts in that
+directory are untouched (AGENTS.md hard rule 2 is about layouts).
+
+### `-Wunused-parameter` at `-Wextra`
+
+The no-op default virtuals on `Script` (`TrackState`, `EraseTrackedStates`, ...), the
+generator, comparator and terminator lambdas passed to the compare helpers, and the
+decomp's `get_object_vertices` all have parameters they do not use. The convention is to
+leave the parameter unnamed with the name in a comment, `Type /*name*/`, never
+`(void)name` or a `[[maybe_unused]]` that hides a parameter that should be used.
+
+### `-Wtype-limits` on `uint8_t < 0`
+
+`BinaryStateBin` checked `bitCursor < 0 || bitCursor >= nBytes * 8` on a `uint8_t`; the
+first half is always false and GCC says so. The check is now only the upper bound.
 
 ### Clang: `-Winconsistent-missing-override`
 

@@ -22,7 +22,7 @@ public:
 	CustomScriptStatus CustomStatus = CustomScriptStatus();
 
 	BitFsScApproach(int16_t roughTargetAngle, int quadrant, float targetXzSum, const ScriptStatus<BitFsPyramidOscillation>& oscStatus)
-		: _oscStatus(oscStatus), _roughTargetAngle(roughTargetAngle), _targetXzSum(targetXzSum), _quadrant(quadrant) { }
+		: _oscStatus(oscStatus), _roughTargetAngle(roughTargetAngle), _quadrant(quadrant), _targetXzSum(targetXzSum) { }
 
 	bool validation();
 	bool execution();
@@ -40,7 +40,6 @@ private:
 	float _prevMaxSpeed = 0;
 	float _prevActualMaxSpeed = 0;
 	int16_t _lastOscAngle = 0;
-	float _xzSumIncrement = 0;
 };
 
 class BitFsScApproach_AttemptDr_BF : public Script<LibSm64>
@@ -56,18 +55,16 @@ public:
 	};
 	CustomScriptStatus CustomStatus = CustomScriptStatus();
 
-	BitFsScApproach_AttemptDr_BF(int16_t roughTargetAngle, int64_t minFrame, int64_t maxFrame)
-		: _roughTargetAngle(roughTargetAngle), _minFrame(minFrame), _maxFrame(maxFrame) { }
+	BitFsScApproach_AttemptDr_BF(int64_t minFrame, int64_t maxFrame)
+		: _minFrame(minFrame), _maxFrame(maxFrame) { }
 
 	bool validation();
 	bool execution();
 	bool assertion();
 
 private:
-	int16_t _roughTargetAngle = 0;
 	int64_t _minFrame = -1;
 	int64_t _maxFrame = -1;
-	float _initialXzSum = 0;
 };
 
 class BitFsScApproach_AttemptDr : public Script<LibSm64>

@@ -2,7 +2,7 @@
 
 bool StateTracker_BitfsDr::ValidateCrossingData(const StateTracker_BitfsDr::CustomScriptStatus& state, float componentThreshold)
 {
-    int crossings = state.crossingData.size();
+    int crossings = int(state.crossingData.size());
     if (crossings > 2)
     {
         auto lastCrossing0 = state.crossingData.rbegin();
@@ -17,12 +17,11 @@ bool StateTracker_BitfsDr::ValidateCrossingData(const StateTracker_BitfsDr::Cust
     return true;
 }
 
-bool StateTracker_BitfsDr::validation() { return GetCurrentFrame() >= initialFrame; }
+bool StateTracker_BitfsDr::validation() { return int64_t(GetCurrentFrame()) >= initialFrame; }
 
 bool StateTracker_BitfsDr::execution()
 {
     MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-    const BehaviorScript* pyramidBehavior = (const BehaviorScript*)(resource->addr("bhvLllTiltingInvertedPyramid"));
     Object* objectPool = (Object*)(resource->addr("gObjectPool"));
     Object* pyramid = &objectPool[84];
 
@@ -134,7 +133,7 @@ void StateTracker_BitfsDr::CalculateOscillations(CustomScriptStatus lastFrameSta
                         intendedYaw, 32, camera->yaw, status.downhillRotation);
                     AdvanceFrameWrite(Inputs(0, stick.first, stick.second));
 
-                    if (marioState->action != ACT_FINISH_TURNING_AROUND && marioState->action != ACT_WALKING || marioState->forwardVel <= maxDownhillSpeed)
+                    if ((marioState->action != ACT_FINISH_TURNING_AROUND && marioState->action != ACT_WALKING) || marioState->forwardVel <= maxDownhillSpeed)
                         return true;
                 }
 
@@ -150,7 +149,7 @@ void StateTracker_BitfsDr::CalculateOscillations(CustomScriptStatus lastFrameSta
             // Get number of frames since last crossing
             int64_t lastCrossing = lastFrameState.crossingData.rbegin()->frame;
 
-            if (GetCurrentFrame() - lastCrossing >= minOscillationFrames)
+            if (int64_t(GetCurrentFrame() - lastCrossing) >= minOscillationFrames)
                 CustomStatus.currentOscillation++;
         }
     }
@@ -158,7 +157,7 @@ void StateTracker_BitfsDr::CalculateOscillations(CustomScriptStatus lastFrameSta
         CustomStatus.crossingData.rbegin()->maxSpeed = marioState->forwardVel;
 }
 
-void StateTracker_BitfsDr::CalculatePhase(CustomScriptStatus lastFrameState, MarioState* marioState, Object* pyramid)
+void StateTracker_BitfsDr::CalculatePhase(CustomScriptStatus lastFrameState, MarioState* marioState, Object* /*pyramid*/)
 {
     int32_t targetAngleDiffA = abs(int16_t(roughTargetAngleA - marioState->faceAngle[1]));
     int32_t targetAngleDiffB = abs(int16_t(roughTargetAngleB - marioState->faceAngle[1]));

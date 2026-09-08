@@ -60,13 +60,12 @@ bool BitFsScApproach::validation()
 
 bool BitFsScApproach::execution()
 {
-	MarioState* marioState = (MarioState*)(resource->addr("gMarioStates"));
 
 	//First attempt with optimized equilibrium speed and increased xz sum
 	float prevMaxSpeed = _prevMaxSpeed;
 	bool terminate = false;
 	auto drStatus = ModifyCompareAdhoc<BitFsScApproach_AttemptDr_BF::CustomScriptStatus, std::tuple<>>(
-		[&](auto iteration, auto& params) //paramsGenerator
+		[&](auto /*iteration*/, auto& /*params*/) //paramsGenerator
 		{
 			return !terminate;
 		},
@@ -94,7 +93,7 @@ bool BitFsScApproach::execution()
 
 			prevMaxSpeed = nextafterf(turnRunStatus.maxSpeed, INFINITY);
 
-			*customStatus = Modify<BitFsScApproach_AttemptDr_BF>(_roughTargetAngle, turnRunStatus.framePassedEquilibriumPoint, turnRunStatus.m64Diff.frames.rbegin()->first);
+			*customStatus = Modify<BitFsScApproach_AttemptDr_BF>(turnRunStatus.framePassedEquilibriumPoint, turnRunStatus.m64Diff.frames.rbegin()->first);
 			return customStatus->drLanded;
 		},
 		[&](auto incumbent, auto challenger) //comparator

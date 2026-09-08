@@ -23,7 +23,7 @@ static void* align_pointer(void* ptr, intptr_t alignment) {
 
 std::vector<uint8_t*> regions_of_interest;
 
-static void handler(int sig, siginfo_t* si, void* unused)
+static void handler(int /*sig*/, siginfo_t* si, void* /*unused*/)
 {
 	mprotect(
 		align_pointer(si->si_addr, pagesize), pagesize,
@@ -33,7 +33,7 @@ static void handler(int sig, siginfo_t* si, void* unused)
 }
 
 #endif
-LibSm64::LibSm64(const LibSm64Config& config) : config(config), dll(config.dllPath)
+LibSm64::LibSm64(const LibSm64Config& config) : dll(config.dllPath), config(config)
 {
 	slotManager._saveMemLimit = int64_t(8000) * 1024 * 1024; //8 GB
 

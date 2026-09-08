@@ -16,8 +16,9 @@ These files are kept current by design: a Claude Code hook in [.claude/](.claude
 them after every change (see AGENTS.md, "Documentation must match the repository").
 
 # Building instructions
-CMake 3.22+ and a C++20 compiler with OpenMP. The one dependency (nlohmann/json) is
-downloaded by CMake's FetchContent; no vcpkg needed.
+CMake 3.22+ and a C++20 compiler with OpenMP. The dependencies (nlohmann/json; doctest and
+Google Benchmark for the tests and benchmarks) are downloaded by CMake, verified by hash and
+cached in `build\downloads`, so later builds work offline; no vcpkg needed.
 
 **Windows (supported path)**
 
