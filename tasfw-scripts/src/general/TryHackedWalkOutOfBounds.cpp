@@ -38,9 +38,9 @@ bool TryHackedWalkOutOfBounds::execution()
 
 bool TryHackedWalkOutOfBounds::assertion()
 {
-	float hDistMoved = sqrtf(
+	float hDistMoved = sqrtf(float(
 		pow(CustomStatus.endPos[0] - CustomStatus.startPos[0], 2) +
-		pow(CustomStatus.endPos[2] - CustomStatus.startPos[2], 2));
+		pow(CustomStatus.endPos[2] - CustomStatus.startPos[2], 2)));
 	if (hDistMoved >= std::abs(_speed * 0.01f))
 		return false;
 

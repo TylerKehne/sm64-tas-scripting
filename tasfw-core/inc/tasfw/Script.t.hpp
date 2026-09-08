@@ -44,7 +44,7 @@ void Script<TResource>::Initialize(Script<TResource>* parentScript)
 		_rootScript = this;
 
 	startSaveHandle = SlotHandle<TResource>(resource, -1);
-	_initialFrame = GetCurrentFrame();
+	_initialFrame = int64_t(GetCurrentFrame());
 }
 
 template <derived_from_specialization_of<Resource> TResource>
@@ -176,8 +176,8 @@ void Script<TResource>::ApplyChildDiff(const BaseScriptStatus& status, std::map<
 		return;
 	}	
 
-	uint64_t firstFrame;
-	uint64_t lastFrame;
+	uint64_t firstFrame = 0;
+	uint64_t lastFrame = 0;
 	if (!status.m64Diff.frames.empty())
 	{
 		firstFrame = status.m64Diff.frames.begin()->first;
@@ -205,7 +205,7 @@ void Script<TResource>::ApplyChildDiff(const BaseScriptStatus& status, std::map<
 	if (saveBank.contains(_adhocLevel + 1))
 		saveBank.erase(_adhocLevel + 1);
 
-	int childAdhocLevel = this == childScript ? _adhocLevel + 1 : 0; // Ad-hoc script vs. regular script
+	int64_t childAdhocLevel = this == childScript ? _adhocLevel + 1 : 0; // Ad-hoc script vs. regular script
 	_rootScript->MoveSyncedTrackedStates(childScript, childAdhocLevel, this, _adhocLevel);
 
 	if (!status.m64Diff.frames.empty())
@@ -631,7 +631,7 @@ void Script<TResource>::Revert(uint64_t frame, const M64Diff& m64, std::map<int6
 	if (saveBank.contains(_adhocLevel + 1))
 		saveBank.erase(_adhocLevel + 1);
 
-	int childAdhocLevel = this == childScript ? _adhocLevel + 1 : 0; // Ad-hoc script vs. regular script
+	int64_t childAdhocLevel = this == childScript ? _adhocLevel + 1 : 0; // Ad-hoc script vs. regular script
 	_rootScript->PopTrackedStatesContainer(childScript, childAdhocLevel);
 
 	LoadBase(frame, desync);
@@ -802,7 +802,7 @@ M64Diff Script<TResource>::GetTotalDiff()
 	M64Diff totalDiff;
 	for (Script<TResource>* script = this; script != nullptr; script = script->_parentScript)
 	{
-		for (int adhocLevel = script->_adhocLevel; adhocLevel >= 0; adhocLevel--)
+		for (int64_t adhocLevel = script->_adhocLevel; adhocLevel >= 0; adhocLevel--)
 		{
 			for (auto input : script->BaseStatus[adhocLevel].m64Diff.frames)
 			{
@@ -983,7 +983,7 @@ void TopLevelScript<TResource, TStateTracker>::TrackState(Script<TResource>* cur
 // anything (a tracker itself, a validation sandbox) never gets an entry.
 
 template <derived_from_specialization_of<Resource> TResource, std::derived_from<Script<TResource>> TStateTracker>
-bool TopLevelScript<TResource, TStateTracker>::TrackedStateExistsInternal(Script<TResource>* currentScript, const InputsMetadata<TResource>& inputsMetadata)
+bool TopLevelScript<TResource, TStateTracker>::TrackedStateExistsInternal(Script<TResource>* /*currentScript*/, const InputsMetadata<TResource>& inputsMetadata)
 {
 	auto owner = trackedStates.find(inputsMetadata.stateOwner);
 	if (owner == trackedStates.end() || !owner->second.contains(inputsMetadata.stateOwnerAdhocLevel))
@@ -1025,7 +1025,7 @@ const typename TStateTracker::CustomScriptStatus& TopLevelScript<TResource, TSta
 }
 
 template <derived_from_specialization_of<Resource> TResource, std::derived_from<Script<TResource>> TStateTracker>
-void TopLevelScript<TResource, TStateTracker>::PopTrackedStatesContainer(Script<TResource>* currentScript, int adhocLevel)
+void TopLevelScript<TResource, TStateTracker>::PopTrackedStatesContainer(Script<TResource>* currentScript, int64_t adhocLevel)
 {
 	if constexpr (std::is_same<TStateTracker, DefaultStateTracker<TResource>>::value)
 		return;
@@ -1041,7 +1041,7 @@ void TopLevelScript<TResource, TStateTracker>::PopTrackedStatesContainer(Script<
 }
 
 template <derived_from_specialization_of<Resource> TResource, std::derived_from<Script<TResource>> TStateTracker>
-void TopLevelScript<TResource, TStateTracker>::MoveSyncedTrackedStates(Script<TResource>* sourceScript, int sourceAdhocLevel, Script<TResource>* destScript, int destAdhocLevel)
+void TopLevelScript<TResource, TStateTracker>::MoveSyncedTrackedStates(Script<TResource>* sourceScript, int64_t sourceAdhocLevel, Script<TResource>* destScript, int64_t destAdhocLevel)
 {
 	if constexpr (std::is_same<TStateTracker, DefaultStateTracker<TResource>>::value)
 		return;
@@ -1066,7 +1066,7 @@ void TopLevelScript<TResource, TStateTracker>::MoveSyncedTrackedStates(Script<TR
 }
 
 template <derived_from_specialization_of<Resource> TResource, std::derived_from<Script<TResource>> TStateTracker>
-void TopLevelScript<TResource, TStateTracker>::EraseTrackedStates(Script<TResource>* currentScript, int adhocLevel, int64_t firstFrame)
+void TopLevelScript<TResource, TStateTracker>::EraseTrackedStates(Script<TResource>* currentScript, int64_t adhocLevel, int64_t firstFrame)
 {
 	if constexpr (std::is_same<TStateTracker, DefaultStateTracker<TResource>>::value)
 		return;

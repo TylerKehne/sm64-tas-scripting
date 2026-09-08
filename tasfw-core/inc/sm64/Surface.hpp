@@ -56,16 +56,8 @@ void find_floor(
 	Vec3f* marioPos, struct Surface* surfaces, int surfaceCount,
 	struct Surface** floor);
 bool floor_is_slope(struct Surface* floor);
-static short get_floor_class(struct Surface* floor);
 void transform_surfaces(
 	struct Surface* surfaces, int numSurfaces, Mat4* transform);
 int get_surfaces(struct Object* obj, struct Surface** surfaces);
-static void load_object_surfaces(
-	short** data, short* vertexData, struct Surface** surfaces);
-static short surface_has_force(short surfaceType);
-static void get_object_vertices(
-	struct Object* obj, short** data, short* vertexData);
-static void read_surface_data(
-	short* vertexData, short** vertexIndices, struct Surface* surface);
 
 #endif

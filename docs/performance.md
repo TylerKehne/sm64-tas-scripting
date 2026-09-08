@@ -392,6 +392,38 @@ What the Tier A and B numbers say together:
 
 Every hot-path change records its delta table here, newest first.
 
+### 2026-09-08: warning levels raised on every compiler (ROADMAP 1.7)
+
+About 300 edits across the tree so that MSVC at `/W3`, clang-cl at `/W4` and GCC and Clang
+at `-Wall -Wextra` build clean with warnings as errors: explicit casts of conversions that
+were already happening (`float(a * b - c * d)` keeps the integer arithmetic and the
+result), deleted dead locals and fields (several were `resource->addr()` lookups per call,
+so a little less work), unnamed unused parameters, `int64_t` for the tracked-state hooks'
+ad-hoc levels and `BitFsPyramidOscillation_Iteration`'s frames, a virtual destructor on
+`Resource`, `snprintf` for `sprintf`. Exact counts identical everywhere: the deterministic
+Tier D run gives 55 solutions, 109,958 blocks, 520,052 scripts and 0 validation failures on
+both compilers, and the drift test still matches the DLL bit for bit.
+
+Against the committed baselines (Tier A and B fastest of nine; Tier C exact; Tier D on the
+`perf/tierd-*.json` workloads):
+
+| Compiler | Tier A/B time rows over 10% | Allocation / count / efficiency regressions | Tier C (oscillation, downhill, sweep) | Tier D deterministic / throughput |
+|---|---|---|---|---|
+| MSVC | 0 (`M64_Load_10k` -11%, its layout flip back to 1.1 ms; re-saved) | 0 / 0 / 0 | +5.4%, -1.3%, +3.6% | 139.6 -> 140.8 s, 74.9 -> 73.3 s |
+| clang-cl | 3, `Script_GetInputs_Uncached_Depth/1`, `/4`, `/16` (+17%, +12%, +14%) | 0 / 0 / 0 | +4.2%, +4.3%, +2.5% | 145.0 -> 145.9 s, 73.2 -> 75.5 s |
+
+Two things were run down. The first full MSVC run read the deterministic Tier D at 156 s
+(+11.7%); Docker Desktop's VM, started for the Linux checks, was running at the time, and
+with it stopped the run reads 140.8 s. Do not measure with the VM up. Second, an A/B against
+the pre-change tree (stash, rebuild the perf binary, measure, restore) on the rows that
+moved: the MSVC oscillation row reads 772.8 ms before and 777.4 ms after (+0.6%; the rest of
+its +5% against the baseline is the day's drift, present before the change), and clang-cl's
+uncached `GetInputs` rows read 178 / 212 / 304 ns before and 201 / 226 / 334 ns after. That
+path changed only in that `GetAdhocLevel` returns `int64_t` (one sign extension fewer) and
+`Script::_initialFrame` widened into what was padding, and on MSVC the same rows moved the
+other way (-10%); it is the code-layout sensitivity of these rows that noise control
+already describes, so they were re-saved. The search itself did not move on either compiler.
+
 ### 2026-09-08: Tier B thread scaling and memory per slot (ROADMAP 1.3); json 3.12
 
 No framework code changed. The new Tier B rows on both compilers (per-thread times;

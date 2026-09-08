@@ -122,7 +122,7 @@ public:
         if (pyramid == nullptr || pyramid->behavior != pyramidBehavior)
             return false;
 
-        return GetCurrentFrame() >= _startFrame - 2;
+        return int64_t(GetCurrentFrame()) >= _startFrame - 2;
     }
 
     bool execution()
@@ -152,9 +152,7 @@ public:
         };
 
         float closestHundrethX = std::floor(pyramid->oTiltingPyramidNormalX * 100.0f) / 100.0f;
-        float closestHundrethZ = std::floor(pyramid->oTiltingPyramidNormalZ * 100.0f) / 100.0f;
         float remainderX = closestHundrethX - pyramid->oTiltingPyramidNormalX;
-        float remainderZ = closestHundrethZ - pyramid->oTiltingPyramidNormalZ;
         CustomStatus.remainderErrorRaw =
         {
             std::remainder(remainderX - _targetRemainderX + 0.5f, 1.0f) - 0.5f,
@@ -268,8 +266,6 @@ public:
 private:
     bool CheckEquilibrium()
     {
-        MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-        Object* pyramid = marioState->floor->object;
 
         auto prevState2 = GetTrackedState<TiltTargetShotMetrics>(GetCurrentFrame() - 2);
         auto prevState1 = GetTrackedState<TiltTargetShotMetrics>(GetCurrentFrame() - 1);
@@ -279,8 +275,8 @@ private:
         if (wasMoving2 || wasMoving1)
             return false;
 
-        if (_targetX && CustomStatus.error[0] > prevState1.error[0]
-            || !_targetX && CustomStatus.error[2] > prevState1.error[2])
+        if ((_targetX && CustomStatus.error[0] > prevState1.error[0])
+            || (!_targetX && CustomStatus.error[2] > prevState1.error[2]))
         {
             if (CustomStatus.minErrorFrame > 0
                 && GetTrackedState<TiltTargetShotMetrics>(CustomStatus.minErrorFrame - 1).isMoving == false
@@ -313,7 +309,7 @@ private:
         auto prevState = GetTrackedState<TiltTargetShotMetrics>(equilibriumFrame);
 
         TiltTargetShotMetrics::CustomScriptStatus eqState;
-        if (equilibriumFrame + 1 == GetCurrentFrame())
+        if (uint64_t(equilibriumFrame + 1) == GetCurrentFrame())
             eqState = CustomStatus;
         else
             eqState = GetTrackedState<TiltTargetShotMetrics>(equilibriumFrame + 1);
@@ -354,16 +350,14 @@ public:
     };
 
     TiltTargetShot(Alias_Scattershot_TiltTargetShot& scattershot, const TiltTargetShotArgs& args)
-        : Alias_ScattershotThread_TiltTargetShot(scattershot), _initialFrame(args.InitialFrame), _targetNX(args.TargetNx),
-        _targetNZ(args.TargetNz), _neighborhood(args.Neighborhood), _errorType((ErrorType)args.ErrorType), _targetARE(args.TargetARE),
+        : Alias_ScattershotThread_TiltTargetShot(scattershot), _initialFrame(args.InitialFrame),
+        _neighborhood(args.Neighborhood), _errorType((ErrorType)args.ErrorType), _targetARE(args.TargetARE),
         _minNx(args.minNx), _minNz(args.minNz), _maxNx(args.maxNx), _maxNz(args.maxNz) {}
 
     bool validation() override
     {
         MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-        Camera* camera = *(Camera**)(resource->addr("gCamera"));
         const BehaviorScript* pyramidBehavior = (const BehaviorScript*)(resource->addr("bhvBitfsTiltingInvertedPyramid"));
-        Object* objectPool = (Object*)(resource->addr("gObjectPool"));
 
         // TODO: add method in TopLevelScriptBuilder
         LongLoad(_initialFrame - 10);
@@ -390,15 +384,11 @@ public:
 
     void SelectMovementOptions() override
     {
-        MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-        Camera* camera = *(Camera**)(resource->addr("gCamera"));
         AddMovementOption(MovementOption::NO_SCRIPT);
     }
 
     bool ApplyMovement() override
     {
-        MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-        Camera* camera = *(Camera**)(resource->addr("gCamera"));
 
         int64_t initialFrame = _initialFrame;
         volatile int64_t currentFrame = GetCurrentFrame();
@@ -417,11 +407,11 @@ public:
 
         int odds = state.fixOtherAxis ? 2 : 2;
 
-        if (GetCurrentFrame() < initialFrame || GetTempRng() % odds == 0)
+        if (int64_t(GetCurrentFrame()) < initialFrame || GetTempRng() % odds == 0)
             Load(initialFrame);
-        else if (GetCurrentFrame() > initialFrame && GetTempRng() % odds != 0)
+        else if (int64_t(GetCurrentFrame()) > initialFrame && GetTempRng() % odds != 0)
         {
-            int framesToRewind = 1 + GetTempRng() % (GetCurrentFrame() - initialFrame);
+            int framesToRewind = int(1 + GetTempRng() % (GetCurrentFrame() - initialFrame));
             Load(GetCurrentFrame() - framesToRewind);
         }
         
@@ -441,7 +431,7 @@ public:
         {
             TiltTargetShotMetrics::CustomScriptStatus eqState;
             ExecuteAdhoc([&]() { eqState = GetEquilibriumTrackedState(); return true; });
-            while (GetCurrentFrame() < eqState.frame - 1) // GetEquilibriumTrackedState() is actually the eq frame + 1
+            while (int64_t(GetCurrentFrame()) < eqState.frame - 1) // GetEquilibriumTrackedState() is actually the eq frame + 1
                 AdvanceFrameWrite(GetInputs(GetCurrentFrame()));
         }
 
@@ -451,23 +441,14 @@ public:
     BinaryStateBin<16> GetStateBin() override
     {
         MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-        Camera* camera = *(Camera**)(resource->addr("gCamera"));
-        const BehaviorScript* pyramidBehavior = (const BehaviorScript*)(resource->addr("bhvBitfsTiltingInvertedPyramid"));
-        Object* objectPool = (Object*)(resource->addr("gObjectPool"));
-        Object* pyramid = &objectPool[84];
 
         float xMin = -2430.0f;
         float xMax = -1450.0f;
-        float yMin = -3071.0f;
-        float yMax = -2760.0f;
         float zMin = -1190.0f;
         float zMax = -200.0f;
 
         float xPosValue = std::clamp(marioState->pos[0], xMin, xMax);
-        float yPosValue = std::clamp(marioState->pos[1], yMin, yMax);
         float zPosValue = std::clamp(marioState->pos[2], zMin, zMax);
-        float ySpeedValue = std::clamp(marioState->vel[1], 0.f, 32.0f);
-        float fSpeedValue = std::clamp(marioState->forwardVel, 0.f, 64.0f);
 
         uint8_t bitCursor = 0;
         BinaryStateBin<16> state;
@@ -504,12 +485,12 @@ public:
             if (trackedState.targetX)
             {
                 state.AddValueBits(bitCursor, 1, 0);
-                state.AddValueBits(bitCursor, 16, solutionError[0] + _neighborhood);
+                state.AddValueBits(bitCursor, 16, uint64_t(solutionError[0] + _neighborhood));
             }
             else
             {
                 state.AddValueBits(bitCursor, 1, 1);
-                state.AddValueBits(bitCursor, 16, solutionError[2] + _neighborhood);
+                state.AddValueBits(bitCursor, 16, uint64_t(solutionError[2] + _neighborhood));
             }
 
             if (trackedState.fixOtherAxis)
@@ -518,12 +499,12 @@ public:
                 if (trackedState.targetX)
                 {
                     state.AddValueBits(bitCursor, 1, 0);
-                    state.AddValueBits(bitCursor, 16, solutionError[2] + _neighborhood);
+                    state.AddValueBits(bitCursor, 16, uint64_t(solutionError[2] + _neighborhood));
                 }
                 else
                 {
                     state.AddValueBits(bitCursor, 1, 1);
-                    state.AddValueBits(bitCursor, 16, solutionError[0] + _neighborhood);
+                    state.AddValueBits(bitCursor, 16, uint64_t(solutionError[0] + _neighborhood));
                 }
             }
             else
@@ -545,12 +526,12 @@ public:
             if (trackedState.targetX)
             {
                 state.AddValueBits(bitCursor, 1, 0);
-                state.AddValueBits(bitCursor, 16, nextState.adjustedRemainderError[2] + _neighborhood);
+                state.AddValueBits(bitCursor, 16, uint64_t(nextState.adjustedRemainderError[2] + _neighborhood));
             }
             else
             {
                 state.AddValueBits(bitCursor, 1, 1);
-                state.AddValueBits(bitCursor, 16, nextState.adjustedRemainderError[0] + _neighborhood);
+                state.AddValueBits(bitCursor, 16, uint64_t(nextState.adjustedRemainderError[0] + _neighborhood));
             }
         }
         else
@@ -575,10 +556,6 @@ public:
     bool ValidateState() override
     {
         MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-        Camera* camera = *(Camera**)(resource->addr("gCamera"));
-        const BehaviorScript* pyramidmBehavior = (const BehaviorScript*)(resource->addr("bhvLllTiltingInvertedPyramid"));
-        Object* objectPool = (Object*)(resource->addr("gObjectPool"));
-        Object* pyramid = &objectPool[84];
 
         // Position sanity check
         if (marioState->pos[0] < -2430 || marioState->pos[0] > -1450)
@@ -611,8 +588,6 @@ public:
             return false;
 
         // Check custom metrics
-        float xNorm = pyramid->oTiltingPyramidNormalX;
-        float zNorm = pyramid->oTiltingPyramidNormalZ;
         
         if (_errorType == ErrorType::ABSOLUTE_ERROR)
         {
@@ -703,7 +678,7 @@ public:
         Object* pyramid = &objectPool[84];
 
         char line[256];
-        sprintf(line, "%f,%f,%f,%d,%f,%d,%f,%f,%f,%f",
+        snprintf(line, sizeof(line), "%f,%f,%f,%d,%f,%d,%f,%f,%f,%f",
             marioState->pos[0],
             marioState->pos[1],
             marioState->pos[2],
@@ -775,9 +750,6 @@ public:
 
     TiltTargetShotSolution GetSolutionState() override
     {
-        MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-        Object* objectPool = (Object*)(resource->addr("gObjectPool"));
-        Object* pyramid = &objectPool[84];
 
         auto state = GetEquilibriumTrackedState();
 
@@ -796,10 +768,7 @@ public:
     }
 
 private:
-    bool _preserveOtherAxis = false;
     int64_t _initialFrame = 0;
-    float _targetNX = 0;
-    float _targetNZ = 0;
     Object* _pyramid = nullptr;
     int64_t _neighborhood = 0;
     float _initialNX = 0;
@@ -829,10 +798,8 @@ private:
         if (GetTempRng() % 16 == 0)
             return Inputs(0, 0, 0);
 
-        MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
         Camera* camera = *(Camera**)(resource->addr("gCamera"));
 
-        Inputs newInputs;
                 
         // new random input
         if (GetTempRng() % 2 == 0)
@@ -840,9 +807,9 @@ private:
             int16_t intendedYaw;
             auto state = GetTrackedState<TiltTargetShotMetrics>(GetCurrentFrame());
             if (_errorType == ErrorType::ABSOLUTE_ERROR && GetTempRng() % 4 != 0)
-                intendedYaw = GetTempRng();
+                intendedYaw = int16_t(GetTempRng());
             else if (GetTempRng() % 8 != 0)
-                intendedYaw = GetTempRng();
+                intendedYaw = int16_t(GetTempRng());
             else
                 intendedYaw = RandomCardinalYaw();
 
@@ -875,7 +842,6 @@ private:
 
     Inputs PerturbExistingInput()
     {
-        MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
         Camera* camera = *(Camera**)(resource->addr("gCamera"));
 
         auto currentInputs = GetInputs(GetCurrentFrame());
@@ -884,7 +850,7 @@ private:
         if (intendedInputs.second == 0)
         {
             if (_errorType == ErrorType::ABSOLUTE_ERROR || GetTempRng() % 2 != 0)
-                intendedInputs.first = GetTempRng();
+                intendedInputs.first = decltype(intendedInputs.first)(GetTempRng());
             else
                 intendedInputs.first = RandomCardinalYaw();
 
@@ -907,7 +873,7 @@ private:
         if (_errorType == ErrorType::ABSOLUTE_ERROR && GetTempRng() % 2 == 0)
             return 32.0f;
 
-        if (!lowMag || state.fixOtherAxis && GetTempRng() % 2 == 0)
+        if (!lowMag || (state.fixOtherAxis && GetTempRng() % 2 == 0))
             return (GetTempRng() % 1024) / 32.0f;
         else
             return (GetTempRng() % 1024) / 32.0f / 32.0f;
@@ -944,7 +910,6 @@ private:
     std::set<int64_t> SelectFrames()
     {
         std::set<int64_t> chosenFrames;
-        MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
 
         TiltTargetShotMetrics::CustomScriptStatus state;
         ExecuteAdhoc([&]() {
@@ -959,14 +924,14 @@ private:
         int64_t frame = GetTempRng() % totalFrames + _initialFrame;
         chosenFrames.insert(frame);
 
-        while (chosenFrames.size() < totalFrames)
+        while (int64_t(chosenFrames.size()) < totalFrames)
         {
             if (GetTempRng() % 4 == 0)
                 break;
 
             // Don't choose frames that have already been chosen
             frame = GetTempRng() % (totalFrames - chosenFrames.size()) + _initialFrame;
-            for (int i = _initialFrame; i <= lastFrame; i++)
+            for (int64_t i = _initialFrame; i <= lastFrame; i++)
             {
                 if (chosenFrames.contains(i))
                 {
@@ -1014,7 +979,7 @@ private:
                 // 50% chance of random input
                 if (false && GetTempRng() % 4 == 0)
                 {
-                    int16_t intendedYaw = GetTempRng();
+                    int16_t intendedYaw = int16_t(GetTempRng());
                     float intendedMag = 0;
                     if (GetTempRng() % 16 != 0)
                         intendedMag = (GetTempRng() % 1024) / 8.0f / 32.0f;

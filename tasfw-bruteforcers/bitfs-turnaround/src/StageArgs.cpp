@@ -34,13 +34,16 @@ void RejectUnknownKeys(const json& object, std::initializer_list<const char*> kn
 	}
 }
 
-const json& RequireObject(const json& parent, const char* key, const std::string& where)
+// `where` is a string_view rather than a const std::string&: a literal at the call site would
+// bind a temporary to the reference, and GCC 13 (-Wdangling-reference) assumes the returned
+// reference might point into it (docs/compilers.md).
+const json& RequireObject(const json& parent, const char* key, std::string_view where)
 {
 	if (!parent.contains(key))
-		ConfigError(std::string("missing \"") + key + "\" in " + where);
+		ConfigError(std::string("missing \"") + key + "\" in " + std::string(where));
 	const json& value = parent.at(key);
 	if (!value.is_object())
-		ConfigError(std::string("\"") + key + "\" in " + where + " must be an object");
+		ConfigError(std::string("\"") + key + "\" in " + std::string(where) + " must be an object");
 	return value;
 }
 

@@ -85,6 +85,10 @@ public:
 	bool useCostModel = true;
 
 	Resource() = default;
+	// Resources are polymorphic; a derived one deleted through std::unique_ptr<Derived> is fine,
+	// but clang (-Wdelete-non-abstract-non-virtual-dtor) is right that a base with virtual
+	// functions should own its destructor. Not a hot path.
+	virtual ~Resource() = default;
 
 	Resource(const Resource<TState>&) = delete;
 	Resource(Resource<TState>&&) = default;

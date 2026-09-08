@@ -70,6 +70,10 @@ void find_floor(
 	}
 }
 
+// Declared here, not in sm64/Surface.hpp: it is static, and a static declaration in a
+// header is an unused function in every other translation unit (clang -Wunused-function).
+static short get_floor_class(struct Surface* floor);
+
 bool floor_is_slope(struct Surface* floor)
 {
 	float normY;
@@ -165,18 +169,18 @@ void transform_surfaces(
 		}
 
 		// (v2 - v1) x (v3 - v2)
-		nx = (surfaces->vertex2[1] - surfaces->vertex1[1]) *
+		nx = float((surfaces->vertex2[1] - surfaces->vertex1[1]) *
 				(surfaces->vertex3[2] - surfaces->vertex2[2]) -
 			(surfaces->vertex2[2] - surfaces->vertex1[2]) *
-				(surfaces->vertex3[1] - surfaces->vertex2[1]);
-		ny = (surfaces->vertex2[2] - surfaces->vertex1[2]) *
+				(surfaces->vertex3[1] - surfaces->vertex2[1]));
+		ny = float((surfaces->vertex2[2] - surfaces->vertex1[2]) *
 				(surfaces->vertex3[0] - surfaces->vertex2[0]) -
 			(surfaces->vertex2[0] - surfaces->vertex1[0]) *
-				(surfaces->vertex3[2] - surfaces->vertex2[2]);
-		nz = (surfaces->vertex2[0] - surfaces->vertex1[0]) *
+				(surfaces->vertex3[2] - surfaces->vertex2[2]));
+		nz = float((surfaces->vertex2[0] - surfaces->vertex1[0]) *
 				(surfaces->vertex3[1] - surfaces->vertex2[1]) -
 			(surfaces->vertex2[1] - surfaces->vertex1[1]) *
-				(surfaces->vertex3[0] - surfaces->vertex2[0]);
+				(surfaces->vertex3[0] - surfaces->vertex2[0]));
 		mag = sqrtf(nx * nx + ny * ny + nz * nz);
 
 		// Could have used min_3 and max_3 for this...
@@ -254,9 +258,9 @@ static void read_surface_data(
 	z3 = *(vertexData + offset3 + 2);
 
 	// (v2 - v1) x (v3 - v2)
-	nx	= (y2 - y1) * (z3 - z2) - (z2 - z1) * (y3 - y2);
-	ny	= (z2 - z1) * (x3 - x2) - (x2 - x1) * (z3 - z2);
-	nz	= (x2 - x1) * (y3 - y2) - (y2 - y1) * (x3 - x2);
+	nx	= float((y2 - y1) * (z3 - z2) - (z2 - z1) * (y3 - y2));
+	ny	= float((z2 - z1) * (x3 - x2) - (x2 - x1) * (z3 - z2));
+	nz	= float((x2 - x1) * (y3 - y2) - (y2 - y1) * (x3 - x2));
 	mag = sqrtf(nx * nx + ny * ny + nz * nz);
 
 	// Could have used min_3 and max_3 for this...
@@ -311,7 +315,7 @@ static void read_surface_data(
  * Applies an object's transformation to the object's vertices.
  */
 static void get_object_vertices(
-	struct Object* obj, short** data, short* vertexData)
+	struct Object* /*obj*/, short** data, short* vertexData)
 {
 	short* vertices;
 	int numVertices;
@@ -396,7 +400,6 @@ int count_surfaces(short* data)
 	while (*data != TERRAIN_LOAD_CONTINUE)
 	{
 		int surfaceType;
-		int i;
 		int numSurfaces;
 		short hasForce;
 

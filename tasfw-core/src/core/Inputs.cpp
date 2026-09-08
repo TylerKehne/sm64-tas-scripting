@@ -41,14 +41,14 @@ PopulateInputMappings()
 			float adjustedStickY = 0;
 
 			if (stickX <= -8)
-				adjustedStickX = stickX + 6;
+				adjustedStickX = float(stickX + 6);
 			else if (stickX >= 8)
-				adjustedStickX = stickX - 6;
+				adjustedStickX = float(stickX - 6);
 
 			if (stickY <= -8)
-				adjustedStickY = stickY + 6;
+				adjustedStickY = float(stickY + 6);
 			else if (stickY >= 8)
-				adjustedStickY = stickY - 6;
+				adjustedStickY = float(stickY - 6);
 
 			float stickMag = sqrtf(
 				adjustedStickX * adjustedStickX + adjustedStickY * adjustedStickY);
@@ -77,7 +77,7 @@ PopulateInputMappings()
 					yawMagToInputs[baseIntendedYaw][intendedMag] = stick;
 			}
 
-			inputsToYawMag[stickX][stickY] = {baseIntendedYaw, intendedMag};
+			inputsToYawMag[int8_t(stickX)][int8_t(stickY)] = {baseIntendedYaw, intendedMag};
 		}
 	}
 	return {yawMagToInputs, inputsToYawMag};
@@ -332,7 +332,7 @@ int M64::load()
 	try
 	{
 		f.seekg(0, std::ios::end);
-		int length = f.tellg();
+		int length = int(f.tellg());
 		if (length == 0)
 		{
 			std::cerr << "empty M64\n";
@@ -423,7 +423,7 @@ int M64::save(long initFrame)
 
 			// number of inputs
 			f.seekp(0x18, std::ios_base::beg);
-			uint32_t samples = lastFrame + 1;
+			uint32_t samples = uint32_t(lastFrame + 1);
 			f.write(reinterpret_cast<char*>(&samples), sizeof(uint32_t));
 
 			// m64 type

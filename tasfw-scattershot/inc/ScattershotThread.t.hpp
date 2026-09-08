@@ -9,7 +9,7 @@ template <class TState, derived_from_specialization_of<Resource> TResource,
     std::derived_from<Script<TResource>> TStateTracker,
     class TOutputState>
 ScattershotThread<TState, TResource, TStateTracker, TOutputState>::ScattershotThread(Scattershot<TState, TResource, TStateTracker, TOutputState>& scattershot)
-    : scattershot(scattershot), config(scattershot.config)
+    : config(scattershot.config), scattershot(scattershot)
 {
     Id = omp_get_thread_num();
     SetRng((uint64_t)(Id + config.Seed + 173) * 5786766484692217813);
@@ -30,7 +30,7 @@ bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::executio
     Initialize();
 
     uint64_t totalShots = 0;
-    for (int shot = 0; totalShots <= config.MaxShots; shot++)
+    for (int shot = 0; totalShots <= uint64_t(config.MaxShots); shot++)
     {
         // Pick a block to "fire a shot" at
         #pragma omp critical (blocks)
@@ -121,7 +121,7 @@ bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::executio
             #pragma omp critical (totalshots)
             {
                 totalShots = ++scattershot.TotalShots;
-                if (totalShots + omp_get_num_threads() - 1 >= config.MaxShots)
+                if (totalShots + omp_get_num_threads() - 1 >= uint64_t(config.MaxShots))
                     maxShotsReached = true;
             }
 
@@ -132,7 +132,7 @@ bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::executio
 
         //printf("%d %d %d %d\n", status.nLoads, status.nSaves, status.nFrameAdvances, status.executionDuration);
 
-        if (maxShotsReached || config.MaxSolutions > 0 && nSolutions >= config.MaxSolutions)
+        if (maxShotsReached || (config.MaxSolutions > 0 && nSolutions >= size_t(config.MaxSolutions)))
             return true;
     }
 
@@ -267,13 +267,13 @@ void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::SelectBa
         if (scattershot.InputSolutions.empty())
             blockIndex = 0;
         else
-            blockIndex = GetRng() % scattershot.InputSolutions.size();
+            blockIndex = int(GetRng() % scattershot.InputSolutions.size());
     }
     else
     {
         while (true)
         {
-            blockIndex = GetRng() % scattershot.Blocks.size();
+            blockIndex = int(GetRng() % scattershot.Blocks.size());
 
             // Don't explore beyond known solutions
             bool isSolution;
@@ -363,8 +363,8 @@ void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::AddCsvRo
             row = GetCsvRow();
 
             // Validate column count is the same
-            int labelsColumns = std::count(labels.begin(), labels.end(), ',');
-            int rowColumns = std::count(row.begin(), row.end(), ',');
+            int labelsColumns = int(std::count(labels.begin(), labels.end(), ','));
+            int rowColumns = int(std::count(row.begin(), row.end(), ','));
 
             return labelsColumns == rowColumns;
         }).executed;
@@ -683,7 +683,7 @@ void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::AddRando
     if (totalWeight == 0)
         return;
 
-    double rng = GetTempRng() % (int)maxRng;
+    double rng = double(GetTempRng() % (int)maxRng);
     double rngRangeMin = 0;
     for (const auto& pair : weightedOptions)
     {
@@ -711,7 +711,7 @@ void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::AddMovem
     if (probability <= 0.0)
         return;
 
-    if (probability >= 1.0 || GetTempRng() % 65536 <= int(probability / 65535.0))
+    if (probability >= 1.0 || GetTempRng() % 65536 <= uint64_t(int(probability / 65535.0)))
         movementOptions.insert(movementOption);
 }
 
@@ -755,7 +755,7 @@ Inputs ScattershotThread<TState, TResource, TStateTracker, TOutputState>::Random
             else if (CheckMovementOptions(MovementOption::SAME_YAW))
                 intendedYaw = marioState->intendedYaw;
             else if (CheckMovementOptions(MovementOption::RANDOM_YAW))
-                intendedYaw = GetTempRng();
+                intendedYaw = int16_t(GetTempRng());
 
             // Buttons
             uint16_t buttons = 0;

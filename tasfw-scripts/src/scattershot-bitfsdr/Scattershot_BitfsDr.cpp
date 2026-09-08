@@ -96,7 +96,7 @@ bool Scattershot_BitfsDr::ApplyMovement()
         if (CheckMovementOptions(MovementOption::REWIND))
         {
             int64_t currentFrame = GetCurrentFrame();
-            int maxRewind = (currentFrame - config.StartFrame) / 2;
+            int maxRewind = int((currentFrame - config.StartFrame) / 2);
             int rewindFrames = (GetTempRng() % 100) * maxRewind / 100;
             Load(currentFrame - rewindFrames);
         }
@@ -120,7 +120,7 @@ bool Scattershot_BitfsDr::ApplyMovement()
             if (state.phase == StateTracker_BitfsDr::Phase::TURN_UPHILL && (GetTempRng() % 4) == 0)
             {
                 int64_t intendedYaw = marioState->faceAngle[1] + ((GetTempRng() % 2048) - 1024);
-                auto stick = Inputs::GetClosestInputByYawHau(intendedYaw, 32, camera->yaw);
+                auto stick = Inputs::GetClosestInputByYawHau(int16_t(intendedYaw), 32, camera->yaw);
                 AdvanceFrameWrite(Inputs(0, stick.first, stick.second));
             }
             else
@@ -166,15 +166,8 @@ bool Scattershot_BitfsDr::ApplyMovement()
 BinaryStateBin<16> Scattershot_BitfsDr::GetStateBin()
 {
     MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-    Camera* camera = *(Camera**)(resource->addr("gCamera"));
-    const BehaviorScript* pyramidmBehavior = (const BehaviorScript*)(resource->addr("bhvLllTiltingInvertedPyramid"));
-    Object* objectPool = (Object*)(resource->addr("gObjectPool"));
-    Object* pyramid = &objectPool[84];
 
     auto trackedState = GetTrackedState<StateTracker_BitfsDr>(GetCurrentFrame());
-    int nRegions = trackedState.xzSum >= _normalSpecsDto.minXzSum ? 32 : 4;
-    if (trackedState.xzSum >= _normalSpecsDto.minXzSum && trackedState.currentOscillation > 0)
-        nRegions *= trackedState.currentOscillation;
 
     int actionValue;
     switch (marioState->action)
@@ -209,16 +202,11 @@ BinaryStateBin<16> Scattershot_BitfsDr::GetStateBin()
         
     float xMin = -2430.0f;
     float xMax = -1450.0f;
-    float yMin = -3071.0f;
-    float yMax = -2760.0f;
     float zMin = -1190.0f;
     float zMax = -200.0f;
 
     float xPosValue = std::clamp(marioState->pos[0], xMin, xMax);
-    float yPosValue = std::clamp(marioState->pos[1], yMin, yMax);
     float zPosValue = std::clamp(marioState->pos[2], zMin, zMax);
-    float ySpeedValue = std::clamp(marioState->vel[1], 0.f, 32.0f);
-    float fSpeedValue = std::clamp(marioState->forwardVel, 0.f, 64.0f);
         
     uint8_t bitCursor = 0;
     BinaryStateBin<16> state;
@@ -255,8 +243,8 @@ BinaryStateBin<16> Scattershot_BitfsDr::GetStateBin()
                     nMinor = std::clamp(std::fabs(trackedState.crossingData.rbegin()->nZ), _normalSpecsDto.minMinor, _normalSpecsDto.maxMinor);
                 }
 
-                state.AddRegionBitsByNRegions(bitCursor, minimumBitsMajor, nMajor, _normalSpecsDto.minMajor, _normalSpecsDto.maxMajor, _normalSpecsDto.regionsMajor);
-                state.AddRegionBitsByNRegions(bitCursor, minimumBitsMinor, nMinor, _normalSpecsDto.minMinor, _normalSpecsDto.maxMinor, _normalSpecsDto.regionsMinor);
+                state.AddRegionBitsByNRegions(bitCursor, minimumBitsMajor, nMajor, _normalSpecsDto.minMajor, _normalSpecsDto.maxMajor, uint64_t(_normalSpecsDto.regionsMajor));
+                state.AddRegionBitsByNRegions(bitCursor, minimumBitsMinor, nMinor, _normalSpecsDto.minMinor, _normalSpecsDto.maxMinor, uint64_t(_normalSpecsDto.regionsMinor));
             }
             else
             {
@@ -288,8 +276,6 @@ BinaryStateBin<16> Scattershot_BitfsDr::GetStateBin()
 bool Scattershot_BitfsDr::ValidateState()
 {
     MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-    Camera* camera = *(Camera**)(resource->addr("gCamera"));
-    const BehaviorScript* pyramidmBehavior = (const BehaviorScript*)(resource->addr("bhvLllTiltingInvertedPyramid"));
     Object* objectPool = (Object*)(resource->addr("gObjectPool"));
     Object* pyramid = &objectPool[84];
 
@@ -426,8 +412,6 @@ bool Scattershot_BitfsDr::ValidateState()
 float Scattershot_BitfsDr::GetStateFitness()
 {
     MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-    Object* objectPool = (Object*)(resource->addr("gObjectPool"));
-    Object* pyramid = &objectPool[84];
 
     auto state = GetTrackedState<StateTracker_BitfsDr>(GetCurrentFrame());
     if (state.initialized)
@@ -498,7 +482,7 @@ std::string Scattershot_BitfsDr::GetCsvRow()
     }
 
     char line[256];
-    sprintf(line, "%f,%f,%f,%d,%f,%d,%f,%f,%f,%d,%d,%d",
+    snprintf(line, sizeof(line), "%f,%f,%f,%d,%f,%d,%f,%f,%f,%d,%d,%d",
         marioState->pos[0],
         marioState->pos[1],
         marioState->pos[2],
@@ -574,10 +558,6 @@ bool Scattershot_BitfsDr::TurnUphill()
 {
     return ModifyAdhoc([&]()
         {
-            MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-            Camera* camera = *(Camera**)(resource->addr("gCamera"));
-            Object* objectPool = (Object*)(resource->addr("gObjectPool"));
-            Object* pyramid = &objectPool[84];
 
             for (int i = 0; i < 10 && GetTempRng() % 4 < 3; i++)
             {
@@ -595,8 +575,6 @@ bool Scattershot_BitfsDr::RunForwardThenTurnAround()
         {
             MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
             Camera* camera = *(Camera**)(resource->addr("gCamera"));
-            Object* objectPool = (Object*)(resource->addr("gObjectPool"));
-            Object* pyramid = &objectPool[84];
 
             for (int i = 0; marioState->action == ACT_FINISH_TURNING_AROUND || (i < 15 && GetTempRng() % 10 < 9); i++)
             {

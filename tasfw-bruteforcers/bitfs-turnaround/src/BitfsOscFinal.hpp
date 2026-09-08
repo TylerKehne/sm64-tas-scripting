@@ -68,8 +68,6 @@ public:
 
     bool validation()
     {
-        MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-        const BehaviorScript* pyramidBehavior = (const BehaviorScript*)(resource->addr("bhvLllTiltingInvertedPyramid"));
         Object* objectPool = (Object*)(resource->addr("gObjectPool"));
         Object* pyramid = &objectPool[84];
 
@@ -84,7 +82,7 @@ public:
 
         SetRoughTargetAngle(_args.OscQuadrant, _args.TargetQuadrant);
 
-        return GetCurrentFrame() >= _args.InitialFrame;
+        return int64_t(GetCurrentFrame()) >= _args.InitialFrame;
     }
 
     bool execution()
@@ -388,8 +386,7 @@ public:
 
             if (GetTempRng() % 2 == 0)
             {
-                float intendedMag = (GetTempRng() % 1024) / 8.0f / 32.0f;
-                int16_t intendedYaw = GetTempRng();
+                int16_t intendedYaw = int16_t(GetTempRng());
                 auto stick = Inputs::GetClosestInputByYawHau(intendedYaw, 32, camera->yaw);
                 AdvanceFrameWrite(Inputs(0, stick.first, stick.second));
                 return true;
@@ -411,29 +408,18 @@ public:
     BinaryStateBin<16> GetStateBin() override
     {
         MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-        Camera* camera = *(Camera**)(resource->addr("gCamera"));
-        const BehaviorScript* pyramidBehavior = (const BehaviorScript*)(resource->addr("bhvBitfsTiltingInvertedPyramid"));
-        Object* objectPool = (Object*)(resource->addr("gObjectPool"));
-        Object* pyramid = &objectPool[84];
 
         float xMin = -2430.0f;
         float xMax = -1450.0f;
-        float yMin = -3071.0f;
-        float yMax = -2760.0f;
         float zMin = -1190.0f;
         float zMax = -200.0f;
 
         float xPosValue = std::clamp(marioState->pos[0], xMin, xMax);
-        float yPosValue = std::clamp(marioState->pos[1], yMin, yMax);
         float zPosValue = std::clamp(marioState->pos[2], zMin, zMax);
-        float ySpeedValue = std::clamp(marioState->vel[1], 0.f, 32.0f);
-        float fSpeedValue = std::clamp(marioState->forwardVel, 0.f, 64.0f);
 
         uint8_t bitCursor = 0;
         BinaryStateBin<16> state;
 
-        int16_t faceAngle = marioState->faceAngle[1];
-        auto currentFrame = GetCurrentFrame();
 
         int actionValue;
         switch (marioState->action)
@@ -454,7 +440,6 @@ public:
         default: actionValue = 13;
         }
 
-        int phaseValue;
         auto trackedState = GetTrackedState<BitfsOscFinalMetrics>(GetCurrentFrame());
         if (ExecuteAdhoc([&]() { return IsSolution(); }).executed)
         {
@@ -497,10 +482,6 @@ public:
     bool ValidateState() override
     {
         MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-        Camera* camera = *(Camera**)(resource->addr("gCamera"));
-        const BehaviorScript* pyramidmBehavior = (const BehaviorScript*)(resource->addr("bhvLllTiltingInvertedPyramid"));
-        Object* objectPool = (Object*)(resource->addr("gObjectPool"));
-        Object* pyramid = &objectPool[84];
 
         // Position sanity check
         if (marioState->pos[0] < -2430 || marioState->pos[0] > -1450)
@@ -600,7 +581,7 @@ public:
         auto state = GetTrackedState<BitfsOscFinalMetrics>(GetCurrentFrame());
 
         char line[256];
-        sprintf(line, "%f,%f,%f,%d,%f,%d,%f,%f,%f,%d,%f,%f",
+        snprintf(line, sizeof(line), "%f,%f,%f,%d,%f,%d,%f,%f,%f,%d,%f,%f",
             marioState->pos[0],
             marioState->pos[1],
             marioState->pos[2],
@@ -631,9 +612,6 @@ public:
 
     BitfsOscSolution GetSolutionState() override
     {
-        MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-        Object* objectPool = (Object*)(resource->addr("gObjectPool"));
-        Object* pyramid = &objectPool[84];
 
         auto solution = BitfsOscSolution();
 
@@ -768,7 +746,6 @@ private:
     bool StopInTime()
     {
         MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-        Camera* camera = *(Camera**)(resource->addr("gCamera"));
         auto initialState = GetTrackedState<BitfsOscFinalMetrics>(_args.InitialFrame);
         BitfsOscFinalMetrics::CustomScriptStatus state;
 

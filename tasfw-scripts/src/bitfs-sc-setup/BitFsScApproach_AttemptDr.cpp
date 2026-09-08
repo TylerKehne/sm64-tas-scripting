@@ -96,7 +96,7 @@ bool BitFsScApproach_AttemptDr::execution()
 			if (iteration >= 33)
 				return false;
 
-			int16_t intendedYaw = marioState->faceAngle[1] + 512 * iteration * rotation;
+			int16_t intendedYaw = int16_t(marioState->faceAngle[1] + 512 * iteration * rotation);
 			params = std::tuple(Inputs::GetClosestInputByYawHau(intendedYaw, 32, camera->yaw));
 
 			return true;
@@ -121,12 +121,12 @@ bool BitFsScApproach_AttemptDr::execution()
 							if (iteration >= 33)
 								return false;
 
-							int16_t intendedYaw = marioState->faceAngle[1] + 512 * iteration * rotation;
+							int16_t intendedYaw = int16_t(marioState->faceAngle[1] + 512 * iteration * rotation);
 							params = std::tuple(Inputs::GetClosestInputByYawHau(intendedYaw, 32, camera->yaw));
 
 							return true;
 						},
-						[&](auto customStatus, int8_t stick_x, int8_t stick_y) //script
+						[&](auto /*customStatus*/, int8_t stick_x, int8_t stick_y) //script
 						{
 							AdvanceFrameWrite(Inputs(0, stick_x, stick_y));
 							float relHeight = marioState->pos[1] - marioState->floorHeight;
@@ -139,8 +139,8 @@ bool BitFsScApproach_AttemptDr::execution()
 
 							return abs(relHeight) < 4.0f;
 						},
-						[&](auto incumbent, auto challenger) { return incumbent; }, //comparator
-						[&](auto status) { return true; } //terminator
+						[&](auto incumbent, auto /*challenger*/) { return incumbent; }, //comparator
+						[&](auto /*status*/) { return true; } //terminator
 					).executed;
 				}
 				else
@@ -173,7 +173,7 @@ bool BitFsScApproach_AttemptDr::execution()
 						return false;
 
 					//sweep right to left
-					int16_t intendedYaw = marioState->faceAngle[1] - 0x4000 + 512 * iteration * rotation;
+					int16_t intendedYaw = int16_t(marioState->faceAngle[1] - 0x4000 + 512 * iteration * rotation);
 					params = std::tuple(Inputs::GetClosestInputByYawHau(intendedYaw, 32, camera->yaw));
 
 					return true;

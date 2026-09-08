@@ -127,12 +127,11 @@ correctness and in speed.
       `tasfw::testing::Env` helper, `_CRT_SECURE_NO_WARNINGS` on its consumers) and Google
       Benchmark's `/MP` under clang-cl (silenced on the two benchmark targets).
       `TASFW_WARNINGS_AS_ERRORS` now covers every first-party target
-      (`cmake/WarningsAsErrors.cmake`) and every CI job passes it; on the way,
+      (`cmake/Warnings.cmake`) and every CI job passes it; on the way,
       `tasfw-scripts-scattershot-bitfs-dr` got the `add_optimization_flags` call every
-      sibling had (LTO, and the GCC `-Wno-missing-requires`; docs/performance.md change log). All four compilers are
-      warning-free at their default levels, which is the caveat: MSVC builds at `/W1`
-      because CMake stopped adding `/W3` in 3.15, and GCC/Clang run without `-Wall`.
-      Raising the levels is 1.7.
+      sibling had (LTO, and the GCC `-Wno-missing-requires`; docs/performance.md change log). This left all
+      four compilers warning-free at their default levels only (MSVC `/W1`, since CMake
+      stopped adding `/W3` in 3.15; GCC and Clang without `-Wall`); 1.7 raised them.
 - [x] **1.6 Build hygiene and compiler matrix.** Done 2026-09-08: the matrix is green on
       `master` (the merge of PR #79) for windows-msvc, windows-clang-cl, ubuntu-gcc (GCC 13)
       and ubuntu-clang (Clang 17), each configured from its `CMakePresets.json` release
@@ -148,14 +147,25 @@ correctness and in speed.
       missing `<cmath>` (docs/compilers.md). Also fixed there: the CMake compiler-ID bug that
       left MSVC builds without any `/arch` flag, and FP contraction is now off on every
       compiler (docs/compilers.md).
-- [ ] **1.7 Raise the warning levels.** At `/W3` MSVC reports 292 warnings (2026-09-08):
-      249 C4244 (narrowing conversions), 18 C4018 (signed/unsigned compares), 14 C4267
-      (`size_t` narrowing), 8 C4996, 2 C4101, 1 C4065; by tree 162 `tasfw-core`, 67
-      `tasfw-scattershot`, 24 `tasfw-scripts`, 22 `tasfw-bruteforcers`, 11 `tasfw-resources`,
-      2 `tasfw-perf`, 1 `tasfw-tests`. GCC and Clang have not been tried with `-Wall -Wextra`.
-      Fix them tree by tree, each PR with the perf delta table, since most are in hot code
-      and a narrowing fix can change a type. *Done when:* `/W3` and `-Wall -Wextra` are on
-      for every first-party target and the 1.5 option still passes on all four compilers.
+- [x] **1.7 Raise the warning levels.** Done 2026-09-08: `cmake/Warnings.cmake` puts `/W3`
+      on MSVC, `/W4` on clang-cl (its spelling of `-Wall -Wextra`; a GNU-style `-Wall` there
+      is MSVC's `/Wall`, which is `-Weverything`) and `-Wall -Wextra` on GCC and Clang, on
+      every first-party target, and the 1.5 option passes on all four. The inventory before
+      the fixes: 106 unique MSVC sites (80 C4244 narrowing conversions, 12 C4018
+      signed/unsigned compares, 6 C4267, 5 C4996 `sprintf`, 2 C4101, 1 C4065); 126 clang-cl
+      sites at `-Wall` (91 unused variables, 10 set-but-unused, 8 `&&` inside `||` without
+      parentheses, 7 unused private fields, 5 unused functions, 3 constructor-order, 2
+      deletes through a non-virtual destructor); 155 GCC and 166 Clang sites at `-Wall
+      -Wextra` (the same plus 22 sign compares, 18 unused parameters, 3 `-Wtype-limits`, one
+      `-Wdangling-reference`, one `-Wmaybe-uninitialized`). Nearly every fix is an explicit
+      cast of the conversion that was already happening, a deleted dead local or field, or
+      an unnamed parameter; the rest: `Resource` has a virtual destructor, `sprintf` is
+      `snprintf`, the tracked-state hooks and `BitFsPyramidOscillation_Iteration` take
+      `int64_t` levels and frames, `RequireObject` takes a `std::string_view`, and
+      `BitFsScApproach_AttemptDr_BF` lost an unused constructor argument. Done in one pass
+      rather than tree by tree because the casts are codegen-neutral; the perf delta table
+      is in docs/performance.md. GCC and Clang were checked in a Docker container before CI
+      saw the change (docs/compilers.md, "GCC and Clang locally").
 - [x] **1.8 Bump nlohmann/json to 3.12.** Done 2026-09-08: 3.12.0 writes `operator ""_json`,
       which newer clang wanted. The `CMAKE_POLICY_VERSION_MINIMUM` workaround stays, for
       doctest 2.4.11's `cmake_minimum_required(VERSION 3.0)`, not for json. On the way the

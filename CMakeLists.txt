@@ -74,10 +74,12 @@ if(TASFW_BUILD_PERF)
 	add_subdirectory(tasfw-perf)
 endif()
 
-# Warnings as errors on every first-party target (ROADMAP 1.5). On in CI; off by default
-# locally (cmake/WarningsAsErrors.cmake). Locally: scripts\build.ps1 -CMakeArgs '-DTASFW_WARNINGS_AS_ERRORS=ON'.
+# Warning level (/W3, -Wall -Wextra; ROADMAP 1.7) on every first-party target, and warnings
+# as errors (ROADMAP 1.5): on in CI, off by default locally (cmake/Warnings.cmake). Locally:
+# scripts\build.ps1 -CMakeArgs '-DTASFW_WARNINGS_AS_ERRORS=ON'.
+include(Warnings)
+tasfw_warning_level()
 option(TASFW_WARNINGS_AS_ERRORS "Treat warnings as errors in every first-party target" OFF)
 if(TASFW_WARNINGS_AS_ERRORS)
-	include(WarningsAsErrors)
 	tasfw_warnings_as_errors()
 endif()
