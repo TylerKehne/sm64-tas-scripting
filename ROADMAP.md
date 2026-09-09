@@ -195,7 +195,19 @@ Goal: the DLL becomes a reproducible, swappable artifact instead of a mystery bi
 - [ ] **2.3 Replace hardcoded lightweight-save offsets.** Derive the hot regions of `.data`/`.bss`
       from symbol addresses (Mario state, object pool, surfaces, camera, RNG, timers) or adopt the
       dirty-page tracking that the Linux branch already sketches. *Done when:* lightweight mode
-      works unchanged on a different DLL build and is no slower than today.
+      works unchanged on a different DLL build and is no slower than today. Decided by the
+      maintainer 2026-09-08, on the numbers in docs/performance.md "What the game writes":
+      write tracking, developed on a branch forked from `phase2`. Write-protect `.data` and
+      `.bss`, record the first write to each 4 KB page in a per-instance bitmap from a
+      vectored exception handler (Windows) or `SIGSEGV` handler (Linux), let the set
+      accumulate, and start a new epoch (fresh baseline copy, bitmap cleared, pages
+      re-protected) at a stage's start save; a save copies the epoch's written pages, a load
+      writes them back and restores pages written since the save from the epoch baseline.
+      Complete by construction, expected to copy about a third of today's bytes. Symbol-derived
+      slices were rejected (a missed name leaks silently; the Windows DLL has no symbol sizes)
+      and start-up calibration too (coverage is a sample). Measure: Tier B save/load rows,
+      Tier C, Tier D counts identical and wall no slower, `--leak-scan` reporting zero bytes
+      for tracked saves on the pinned DLL and bitfs-sbb's 2026 DLL.
 - [x] **2.4 Object indices: keep them, verify them.** Decided by the maintainer 2026-09-08 after
       `dllcheck --objects` showed the live pool: BitFS spawns two objects running
       `bhvBitfsTiltingInvertedPyramid` (slot 84 at home x = -1945, the one the setup happens

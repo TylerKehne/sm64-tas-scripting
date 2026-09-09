@@ -95,12 +95,15 @@ its place with numbers, and "it is cleaner" is not a number.
 - Tests: `powershell -ExecutionPolicy Bypass -File scripts\test.ps1` (add `-Config Release`,
   `-Compiler clang`, `-Filter '*Script*'`). Under a second without the DLL, a few seconds with it.
 - The DLL-level check is `build\Release\out\dllcheck.exe <dll> <m64> <frame> [--lightweight]
-  [--leak-scan [frames]] [--objects]` (docs/libsm64.md). It plays to a frame, verifies the
-  struct layouts against the game, and prints frame-advance and save/load cost. Takes under a
-  second. `--leak-scan` lists every byte range of `.data`/`.bss` that a load does not restore;
-  `--objects` lists every active object in `gObjectPool` with its behavior, params, position
-  and home; `python scripts\dll_symbols.py <dll> -` names the offsets in either output from
-  the DLL's exports.
+  [--leak-scan [frames]] [--objects] [--dirty-scan [frames]] [--dirty-replay]`
+  (docs/libsm64.md). It plays to a frame, verifies the struct layouts against the game, and
+  prints frame-advance and save/load cost. Takes under a second. `--leak-scan` lists every
+  byte range of `.data`/`.bss` that a load does not restore; `--objects` lists every active
+  object in `gObjectPool` with its behavior, params, position and home; `--dirty-scan` and
+  `--dirty-replay` count the 4 KB pages the game writes per frame (under pattern inputs from
+  the frame, or while replaying the movie to it) and which of them the lightweight slices
+  miss; `python scripts\dll_symbols.py <dll> -` names the offsets in any of these outputs
+  from the DLL's exports.
 - Performance numbers come from `Release` or `RelWithDebInfo` builds only. Debug uses `/Od`.
 - Perf suite: `powershell -ExecutionPolicy Bypass -File scripts\perf.ps1` builds Release,
   runs `tasfw-perf.exe`, and compares against `perf\baselines\<computername>.json`. Tier A

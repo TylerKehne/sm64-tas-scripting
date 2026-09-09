@@ -22,6 +22,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <exception>
 #include <filesystem>
 #include <iostream>
@@ -64,7 +65,128 @@ namespace
 		std::vector<LeakRange> leaksPass2; // differs after a different play + load
 		size_t leakBytesPass1 = 0;
 		size_t leakBytesPass2 = 0;
+		int dirtyScanFrames = 0;   // --dirty-scan: pages written per frame under pattern inputs from <frame>
+		bool dirtyReplay = false;  // --dirty-replay: pages written per frame while replaying the movie 0..<frame>
+		std::vector<std::string> dirtyReport;
 	};
+
+	// Which 4 KB pages of .data/.bss changed between two snapshots, and how many bytes in them.
+	struct DirtyStats
+	{
+		std::vector<uint8_t> unionPages[2]; // one flag per page of each segment
+		std::vector<size_t> pagesPerFrame;
+		std::vector<size_t> bytesPerFrame;
+		size_t unionBytes = 0;              // bytes seen to change at least once, exact
+		std::vector<std::pair<int, size_t>> checkpoints; // (frames, union pages) at 1, 10, 30, 60, 120, ...
+	};
+
+	void AccumulateDirty(DirtyStats& stats, int segment, const std::vector<uint8_t>& before, const std::vector<uint8_t>& after,
+		std::vector<uint8_t>& everChanged, size_t& framePages, size_t& frameBytes)
+	{
+		size_t n = std::min(before.size(), after.size());
+		size_t pages = (n + pagesize - 1) / pagesize;
+		if (stats.unionPages[segment].size() < pages)
+			stats.unionPages[segment].resize(pages, 0);
+		if (everChanged.size() < n)
+			everChanged.resize(n, 0);
+		for (size_t p = 0; p < pages; p++)
+		{
+			size_t begin = p * pagesize;
+			size_t end = std::min(n, begin + pagesize);
+			if (std::memcmp(before.data() + begin, after.data() + begin, end - begin) == 0)
+				continue;
+			framePages++;
+			stats.unionPages[segment][p] = 1;
+			for (size_t i = begin; i < end; i++)
+			{
+				if (before[i] != after[i])
+				{
+					frameBytes++;
+					if (!everChanged[i])
+					{
+						everChanged[i] = 1;
+						stats.unionBytes++;
+					}
+				}
+			}
+		}
+	}
+
+	size_t UnionPages(const DirtyStats& stats)
+	{
+		size_t total = 0;
+		for (const auto& seg : stats.unionPages)
+			for (uint8_t flag : seg)
+				total += flag;
+		return total;
+	}
+
+	// Human-readable summary of a dirty-page measurement plus how the union sits against the
+	// lightweight slices: pages the slices do not fully contain are state a lightweight load
+	// would not restore.
+	std::vector<std::string> DescribeDirty(const char* title, const DirtyStats& stats, const LibSm64& resource)
+	{
+		std::vector<std::string> lines;
+		char buf[256];
+		lines.push_back(title);
+		if (!stats.pagesPerFrame.empty())
+		{
+			std::vector<size_t> sorted = stats.pagesPerFrame;
+			std::sort(sorted.begin(), sorted.end());
+			std::vector<size_t> bytesSorted = stats.bytesPerFrame;
+			std::sort(bytesSorted.begin(), bytesSorted.end());
+			std::snprintf(buf, sizeof(buf), "  per frame: %zu / %zu / %zu pages (min / median / max), %zu / %zu / %zu bytes changed",
+				sorted.front(), sorted[sorted.size() / 2], sorted.back(),
+				bytesSorted.front(), bytesSorted[bytesSorted.size() / 2], bytesSorted.back());
+			lines.push_back(buf);
+		}
+		std::string growth = "  union after frames:";
+		for (const auto& [frames, pages] : stats.checkpoints)
+		{
+			std::snprintf(buf, sizeof(buf), " %d -> %zu pages", frames, pages);
+			growth += buf;
+		}
+		lines.push_back(growth);
+		size_t unionPages = UnionPages(stats);
+		std::snprintf(buf, sizeof(buf), "  union: %zu pages = %zu KB (%zu bytes actually changed); full .data+.bss = %zu KB; lightweight slices = %zu KB",
+			unionPages, unionPages * pagesize / 1024, stats.unionBytes,
+			(resource.segment[0].length + resource.segment[1].length) / 1024,
+			(LibSm64LightweightBuf1Size + LibSm64LightweightBuf2Size) / 1024);
+		lines.push_back(buf);
+
+		// Coverage by the current slices.
+		size_t covered = 0;
+		std::string outside;
+		int outsideCount = 0;
+		for (int seg = 0; seg < 2; seg++)
+		{
+			const char* name = seg == 0 ? ".data" : ".bss";
+			for (size_t p = 0; p < stats.unionPages[seg].size(); p++)
+			{
+				if (!stats.unionPages[seg][p])
+					continue;
+				size_t begin = p * pagesize;
+				bool inside = false;
+				for (const LibSm64LightweightSlice& slice : LibSm64LightweightSlices)
+					if (slice.segment == seg && begin >= slice.offset && begin + pagesize <= slice.offset + slice.length)
+						inside = true;
+				if (inside)
+					covered++;
+				else
+				{
+					if (outsideCount++ < 40)
+					{
+						std::snprintf(buf, sizeof(buf), " %s+%zu", name, begin);
+						outside += buf;
+					}
+				}
+			}
+		}
+		std::snprintf(buf, sizeof(buf), "  lightweight slices contain %zu of those pages; %d outside:%s%s", covered, outsideCount,
+			outside.c_str(), outsideCount > 40 ? " ..." : "");
+		lines.push_back(buf);
+		return lines;
+	}
 
 	Inputs PatternInputs(int i, int variant)
 	{
@@ -163,7 +285,72 @@ namespace
 				ListObjects();
 			if (_results.leakScanFrames > 0)
 				LeakScan();
+			if (_results.dirtyScanFrames > 0)
+				DirtyScan();
+			if (_results.dirtyReplay)
+				DirtyReplay();
 			return true;
+		}
+
+		// How much of .data/.bss the game writes per frame, and how fast the set of touched
+		// pages grows: the numbers behind any replacement of the hand-tuned lightweight slices
+		// (ROADMAP 2.3). --dirty-scan plays pattern inputs from <frame>; --dirty-replay walks the
+		// movie from power-on to <frame>. Both compare consecutive frames page by page.
+		void DirtyScan()
+		{
+			int frames = _results.dirtyScanFrames;
+			int64_t slot = resource->SaveState();
+			DirtyStats stats;
+			std::vector<uint8_t> ever[2];
+			std::vector<uint8_t> prev[2] = { Snapshot(*resource, 0), Snapshot(*resource, 1) };
+			for (int i = 0; i < frames; i++)
+			{
+				resource->setInputs(PatternInputs(i, 0));
+				resource->FrameAdvance();
+				Step(stats, ever, prev, i + 1, frames);
+			}
+			resource->LoadState(slot);
+			resource->slotManager.EraseSlot(slot);
+			char title[128];
+			std::snprintf(title, sizeof(title), "\nPages written, pattern inputs from frame %lld for %d frames:", (long long)_frame, frames);
+			for (const std::string& line : DescribeDirty(title, stats, *resource))
+				_results.dirtyReport.push_back(line);
+		}
+
+		void DirtyReplay()
+		{
+			DirtyStats stats;
+			std::vector<uint8_t> ever[2];
+			LongLoad(0);
+			std::vector<uint8_t> prev[2] = { Snapshot(*resource, 0), Snapshot(*resource, 1) };
+			for (int64_t f = 1; f <= _frame; f++)
+			{
+				LongLoad(f);
+				Step(stats, ever, prev, int(f), int(_frame));
+			}
+			char title[128];
+			std::snprintf(title, sizeof(title), "\nPages written while replaying the movie, frames 1..%lld:", (long long)_frame);
+			for (const std::string& line : DescribeDirty(title, stats, *resource))
+				_results.dirtyReport.push_back(line);
+		}
+
+		void Step(DirtyStats& stats, std::vector<uint8_t> (&ever)[2], std::vector<uint8_t> (&prev)[2], int frame, int total)
+		{
+			size_t framePages = 0;
+			size_t frameBytes = 0;
+			for (int seg = 0; seg < 2; seg++)
+			{
+				std::vector<uint8_t> cur = Snapshot(*resource, seg);
+				AccumulateDirty(stats, seg, prev[seg], cur, ever[seg], framePages, frameBytes);
+				prev[seg] = std::move(cur);
+			}
+			stats.pagesPerFrame.push_back(framePages);
+			stats.bytesPerFrame.push_back(frameBytes);
+			for (int mark : {1, 10, 30, 60, 120, 300, 1000, 2000})
+				if (frame == mark)
+					stats.checkpoints.emplace_back(frame, UnionPages(stats));
+			if (frame == total)
+				stats.checkpoints.emplace_back(frame, UnionPages(stats));
 		}
 
 		// Every active object in the pool: index, behavior as <section>+<offset> (so that
@@ -239,7 +426,7 @@ int main(int argc, char** argv)
 {
 	if (argc < 4)
 	{
-		std::fprintf(stderr, "usage: dllcheck <libsm64.dll> <movie.m64> <frame> [--lightweight] [--leak-scan [frames]] [--objects]\n");
+		std::fprintf(stderr, "usage: dllcheck <libsm64.dll> <movie.m64> <frame> [--lightweight] [--leak-scan [frames]] [--objects] [--dirty-scan [frames]] [--dirty-replay]\n");
 		return 2;
 	}
 
@@ -249,6 +436,8 @@ int main(int argc, char** argv)
 	bool lightweight = false;
 	bool listObjects = false;
 	int leakScanFrames = 0;
+	int dirtyScanFrames = 0;
+	bool dirtyReplay = false;
 	for (int i = 4; i < argc; i++)
 	{
 		std::string arg = argv[i];
@@ -262,6 +451,14 @@ int main(int argc, char** argv)
 			if (i + 1 < argc && std::isdigit((unsigned char)argv[i + 1][0]))
 				leakScanFrames = std::atoi(argv[++i]);
 		}
+		else if (arg == "--dirty-scan")
+		{
+			dirtyScanFrames = 120;
+			if (i + 1 < argc && std::isdigit((unsigned char)argv[i + 1][0]))
+				dirtyScanFrames = std::atoi(argv[++i]);
+		}
+		else if (arg == "--dirty-replay")
+			dirtyReplay = true;
 		else
 		{
 			std::fprintf(stderr, "unknown option %s\n", argv[i]);
@@ -296,6 +493,8 @@ int main(int argc, char** argv)
 		Results results;
 		results.leakScanFrames = leakScanFrames;
 		results.listObjects = listObjects;
+		results.dirtyScanFrames = dirtyScanFrames;
+		results.dirtyReplay = dirtyReplay;
 		TopLevelScriptBuilder<PlayToFrame>::Build(m64).ImportResource(&resource).Run(frame, results);
 
 		std::cout << "\nLayout checks at frame " << results.frameReached << ":\n";
@@ -344,6 +543,9 @@ int main(int argc, char** argv)
 			print("Leak scan, pass 1 (play, load)", results.leaksPass1, results.leakBytesPass1);
 			print("Leak scan, pass 2 (different play, load)", results.leaksPass2, results.leakBytesPass2);
 		}
+
+		for (const std::string& line : results.dirtyReport)
+			std::cout << line << "\n";
 
 		if (failures > 0)
 		{

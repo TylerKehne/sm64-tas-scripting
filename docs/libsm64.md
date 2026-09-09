@@ -103,7 +103,7 @@ here calls it.
 ## Checking a DLL: `dllcheck`
 
 ```
-build\Release\out\dllcheck.exe <libsm64.dll> <movie.m64> <frame> [--lightweight] [--leak-scan [frames]] [--objects]
+build\Release\out\dllcheck.exe <libsm64.dll> <movie.m64> <frame> [--lightweight] [--leak-scan [frames]] [--objects] [--dirty-scan [frames]] [--dirty-replay]
 ```
 
 Plays the movie to `<frame>` (pick one inside a level), runs `LibSm64::layoutCheckReport()`,
@@ -128,6 +128,14 @@ is set (the pipeline passes `BitFsExpectedObjects`; `dllcheck` does not), the in
 also verifies each hardcoded `gObjectPool` slot: active, running the declared behavior and,
 unless the declaration opts out, at the declared home. `bitfs-turn --dry-run` prints that
 report at the first stage's frame.
+
+`--dirty-scan [frames]` (default 120) and `--dirty-replay` measure what the game writes:
+consecutive frames are compared page by page (4 KB), under a fixed input pattern from
+`<frame>` or while replaying the movie from power-on to `<frame>`. They print pages and
+bytes changed per frame (min / median / max), how the set of touched pages grows at
+checkpoints, its total against the full sections and the lightweight slices, and every
+touched page the slices do not fully contain, as `<section>+<offset>` for `dll_symbols.py`.
+These are the numbers behind ROADMAP 2.3 (docs/performance.md, "What the game writes").
 
 `--objects` prints every active object in the pool at `<frame>`: slot, behavior as
 `<section>+<offset>`, `oBehParams`, position and home. Pipe it through

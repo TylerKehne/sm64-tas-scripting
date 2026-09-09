@@ -71,6 +71,28 @@ Ordered by how much they dominate a typical scattershot run:
    pyramid surface out of the DLL each time it is called, which is once per frame in
    `RunDownhill` and once per crossing in the trackers.
 
+### What the game writes per frame (2026-09-08)
+
+Measured on the pinned DLL with `dllcheck --dirty-scan 300 --dirty-replay` at frame 3330
+of `comissonPyra2-Fanart_x-Z.m64` (docs/libsm64.md). Consecutive frames compared page by
+page; `.data` + `.bss` is 7,108 KB, today's lightweight slices copy 1,464 KB in 41 us.
+
+| | Pattern inputs from 3330, 300 frames | Movie replay, frames 1..3330 |
+|---|---|---|
+| pages written per frame (min / median / max) | 6 / 57 / 83 | 4 / 49 / 147 |
+| bytes changed per frame (min / median / max) | 50 / 5,636 / 110,086 | 7 / 3,075 / 205,872 |
+| distinct pages touched after 1 / 30 / 60 / 120 / 300 frames | 58 / 64 / 64 / 74 / 122 | 94 / 105 / 105 / 263 / 286 (303 at 3330) |
+| total touched | 122 pages, 488 KB (140 KB of bytes ever changed) | 303 pages, 1,212 KB (482 KB ever changed) |
+| touched pages outside the lightweight slices | 7, all audio scratch (`gAudioHeap`, `gSoundDataADSR`) and the lava texture scroll | 55, adding level-load state (`gDemoInputs`, palettes, gfx buffers) |
+
+Three conclusions. The in-level write set is a third of what the slices copy, so a save
+that tracked writes could run about 3x faster. The set keeps growing slowly as Mario does
+new things (74 to 122 pages between frames 120 and 300), so any fixed set taken from a
+sample can miss a page a later pellet writes; only tracking writes as they happen is
+complete by construction. And a frame writes about 57 pages while changing about 5 KB of
+bytes, so per-save re-protection (a fault per page per save) would cost more than the
+copy it saves; tracking has to accumulate and reset at coarse points (a stage's start save).
+
 ## Existing instrumentation
 
 Use it and extend it rather than adding ad-hoc timers:
