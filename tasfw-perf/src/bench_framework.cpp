@@ -65,7 +65,7 @@ namespace
 			LibSm64Config config;
 			config.dllPath = Env("TASFW_LIBSM64");
 			config.countryCode = CountryCode::SUPER_MARIO_64_J;
-			config.lightweight = true;
+			config.saveMode = LibSm64SaveMode::Dirty;
 			loaded->frame = Env("TASFW_FRAME").empty() ? 3330 : std::stoll(Env("TASFW_FRAME"));
 			loaded->resource = std::make_unique<LibSm64>(config);
 			loaded->resource->useCostModel = false;

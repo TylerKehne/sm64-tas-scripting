@@ -74,6 +74,10 @@ public:
 
 	void* get(const char* symbol) const;
 
+	// Like get, but returns nullptr instead of throwing when the library does not export the
+	// symbol. For optional symbols and for LibSm64's renamed-symbol fallback.
+	void* tryGet(const char* symbol) const noexcept;
+
 	// Reads out a list of sections.
 	// Do cache the results, as this WILL re-read the file each time it's run.
 	std::unordered_map<std::string, SectionInfo> readSections();

@@ -12,7 +12,7 @@ add_library(tasfw-bitfs-pipeline STATIC
 	"src/StageArgs.hpp"
 )
 target_include_directories(tasfw-bitfs-pipeline PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
-target_link_libraries(tasfw-bitfs-pipeline PUBLIC tasfw::core tasfw::scattershot nlohmann_json::nlohmann_json)
+target_link_libraries(tasfw-bitfs-pipeline PUBLIC tasfw::core tasfw::resources tasfw::scattershot nlohmann_json::nlohmann_json)
 target_compile_features(tasfw-bitfs-pipeline PUBLIC cxx_std_20)
 add_library(tasfw::bitfs_pipeline ALIAS tasfw-bitfs-pipeline)
 add_optimization_flags(tasfw-bitfs-pipeline)

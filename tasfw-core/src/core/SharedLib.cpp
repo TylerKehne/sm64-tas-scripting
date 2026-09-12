@@ -54,6 +54,11 @@ void* SharedLib::get(const char* symbol) const
 	return reinterpret_cast<void*>(res);
 }
 
+void* SharedLib::tryGet(const char* symbol) const noexcept
+{
+	return reinterpret_cast<void*>(GetProcAddress(handle, symbol));
+}
+
 std::unordered_map<std::string, SectionInfo> SharedLib::readSections()
 {
 	using std::ios_base;
@@ -164,6 +169,12 @@ void* SharedLib::get(const char* symbol) const
 		throw std::runtime_error(err);
 	}
 	return res;
+}
+void* SharedLib::tryGet(const char* symbol) const noexcept
+{
+	dlerror();
+	void* res = dlsym(handle, symbol);
+	return dlerror() == nullptr ? res : nullptr;
 }
 std::unordered_map<std::string, SectionInfo> SharedLib::readSections()
 {

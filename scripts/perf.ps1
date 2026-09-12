@@ -182,7 +182,8 @@ $families = @(
     '^BM_SlotManager|^BM_Resource',
     '^BM_Script',
     '^BM_LibSm64Full',
-    '^BM_LibSm64Light',
+    '^BM_LibSm64Fixed',
+    '^BM_LibSm64Dirty',
     '^BM_LibSm64Scaling',
     '^BM_Framework'
 )

@@ -12,6 +12,7 @@
 #include <vector>
 
 #include <nlohmann/json.hpp>
+#include <LibSm64.hpp>
 #include <Scattershot.hpp>
 
 struct StageConfig
@@ -33,7 +34,7 @@ struct PipelineConfig
 	std::filesystem::path dllDirectory;
 	std::string dllPattern = "sm64_jp_{}.dll";
 	int threads = 1;
-	bool lightweight = true;
+	LibSm64SaveMode saveMode = LibSm64SaveMode::Dirty; // "saveMode": "full" | "fixed" | "dirty" (docs/libsm64.md)
 	bool costModel = true; // Resource::useCostModel; false makes runs timing-independent (diagnosis)
 	std::filesystem::path m64;
 	std::filesystem::path outputDirectory;

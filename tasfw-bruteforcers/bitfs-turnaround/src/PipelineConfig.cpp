@@ -114,11 +114,13 @@ PipelineConfig PipelineConfig::Parse(const json& root, const fs::path& configDir
 		: configDirectory;
 
 	const json& resources = RequireObject(root, "resources", "the top level");
-	RejectUnknownKeys(resources, { "dllDirectory", "dllPattern", "threads", "lightweight", "costModel" }, "resources");
+	RejectUnknownKeys(resources, { "dllDirectory", "dllPattern", "threads", "saveMode", "costModel" }, "resources");
 	pipeline.dllDirectory = pipeline.Resolve(Require<std::string>(resources, "dllDirectory", "resources"));
 	pipeline.dllPattern = Optional<std::string>(resources, "dllPattern", "sm64_jp_{}.dll", "resources");
 	pipeline.threads = Optional<int>(resources, "threads", 1, "resources");
-	pipeline.lightweight = Optional<bool>(resources, "lightweight", true, "resources");
+	std::string saveMode = Optional<std::string>(resources, "saveMode", LibSm64SaveModeName(LibSm64SaveMode::Dirty), "resources");
+	if (!ParseLibSm64SaveMode(saveMode, pipeline.saveMode))
+		ConfigError("\"saveMode\" in resources must be \"full\", \"fixed\" or \"dirty\", not \"" + saveMode + "\"");
 	pipeline.costModel = Optional<bool>(resources, "costModel", true, "resources");
 	if (pipeline.threads < 1)
 		ConfigError("\"threads\" in resources must be at least 1");

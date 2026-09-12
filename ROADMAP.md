@@ -38,13 +38,17 @@ correctness and in speed.
 
 - [x] **1.0 Onboarding docs.** AGENTS.md, ARCHITECTURE.md, ROADMAP.md, docs/libsm64.md,
       docs/performance.md, `scripts/build.ps1`.
-- [x] **1.1 DLL layout self-check.** `LibSm64::layoutCheckReport()` cross-checks the copied
-      structs against relationships the game guarantees (Mario's object sits in `gObjectPool` at a
-      multiple of `sizeof(Object)`, its behavior is `bhvMario`, `oPos` and `gfx.pos` mirror
-      `MarioState::pos`, the floor normal is unit length) and, in lightweight mode, that every hot
-      symbol lies inside the saved slices. `Resource::verifyLayout()` throws on failure and runs
-      once per scattershot thread after the start frame loads. `dllcheck.exe <dll> <m64> <frame>
-      [--lightweight]` runs it standalone and prints frame-advance and save/load cost. Result
+- [x] **1.1 DLL layout self-check.** The `VerifyLayout` script (`tasfw-scripts/inc/VerifyLayout.hpp`)
+      cross-checks the copied structs against relationships the game guarantees (Mario's object
+      is a whole slot of `gObjectPool`, its behavior is `bhvMario`, `oPos` and `gfx.pos` mirror
+      `MarioState::pos`, the floor normal is unit length), reading through `resource->addr()`
+      only. The pipeline runs it once on one resource before its first stage and stops with the
+      report on a failure. Until 2026-09-12 it was a `LibSm64` method called per scattershot
+      thread through a `Resource` virtual; the maintainer's review moved it out, since the
+      framework has no business knowing about layouts (AGENTS.md, hard rules 9 and 10).
+      `dllcheck.exe <dll> <m64> <frame> [--save-mode full|fixed|dirty]` prints the same report,
+      adds whether the `fixed` slices cover every hot symbol, and prints frame-advance and
+      save/load cost. Result
       (2026-09-07): the pinned 2022 DLL and wafel's 2023 DLL both pass every check, so the newer
       DLL is a drop-in replacement as far as layout goes.
 - [x] **1.2 Correctness test tier.** `tasfw-tests` (doctest), run by `scripts\test.ps1` or
@@ -62,7 +66,7 @@ correctness and in speed.
         schema and path resolution, scattershot override layering, rejected keys and
         references, solution-file round trip, selection, `input:<metric>` arguments).
       - libsm64 smoke test (skips unless `TASFW_LIBSM64`/`TASFW_M64` are set): loads the DLL,
-        passes the layout check at frame 3330, plays the movie twice with identical Mario and
+        passes `VerifyLayout` at frame 3330, plays the movie twice with identical Mario and
         pyramid state, and pins that state to exact golden values. Any one-frame change to the
         movie or the engine before frame 3330 fails it.
       Runs in CI (DLL-free part) on all four compilers. `PyramidUpdate` against the DLL is
@@ -79,7 +83,7 @@ correctness and in speed.
         per job with a short minimum time, to prove the binary executes; nothing is gated
         there.
       - [x] Tier B resource benchmarks. 2026-09-07: frame advance, save (recycled and
-        fresh) and load, full and lightweight, in `bench_libsm64.cpp`; `perf.ps1` finds the
+        fresh) and load, one family per save mode (`full`, `fixed`, `dirty`), in `bench_libsm64.cpp`; `perf.ps1` finds the
         DLL like `test.ps1` and the families are skipped without it. 2026-09-08: thread
         scaling 1 to 16 (`^BM_LibSm64Scaling`, one DLL copy per thread, unpinned;
         efficiency computed and gated by `perf_compare.py`) and resident set per live slot
@@ -181,18 +185,67 @@ Goal: the DLL becomes a reproducible, swappable artifact instead of a mystery bi
 - [ ] **2.1 Document and script DLL production.** Record which wafel release the 2022 DLL came from,
       how to unlock a `.dll.locked` against a JP ROM with `libsm64_lock`, and add a script that
       makes the N per-thread copies. *Done when:* a fresh machine can populate `res/` from a wafel
-      release plus a ROM by following the doc.
+      release plus a ROM by following the doc. Progress 2026-09-08: docs/libsm64.md now
+      documents a second, scripted source, bitfs-sbb's `fernet-lock.py` (wafel's key
+      derivation in Python), which unlocks both the Windows `.dll` and the Linux `.so` for JP
+      and US from a ROM; its 2026-06-30 JP builds pass every check against the pinned DLL's
+      golden state on both platforms. Still open: which wafel release the pinned DLL is, the
+      copies script, and the source revision and build command behind any of the builds.
+      Policy set by the maintainer the same day: ROMs and unlocked binaries never enter the
+      public repo; a CI job that needs them takes the key from a maintainer-only secret.
 - [ ] **2.2 Generate the sm64 headers.** Replace the hand-copied `tasfw-core/inc/sm64/*.hpp` with
       headers generated from the decomp source (or from wafel's `sm64_layout` DWARF dump) for the
       exact DLL build. *Done when:* regenerating for a new DLL is one command and 1.1 passes.
 - [ ] **2.3 Replace hardcoded lightweight-save offsets.** Derive the hot regions of `.data`/`.bss`
       from symbol addresses (Mario state, object pool, surfaces, camera, RNG, timers) or adopt the
       dirty-page tracking that the Linux branch already sketches. *Done when:* lightweight mode
-      works unchanged on a different DLL build and is no slower than today.
-- [ ] **2.4 Find objects by behavior, not index.** Replace `gObjectPool[84]` with a scan for
-      `bhvLllTiltingInvertedPyramid`. *Done when:* no numeric object indices remain in scripts.
+      works unchanged on a different DLL build and is no slower than today. Decided by the
+      maintainer 2026-09-12 after a first attempt was erased for putting the policy in the
+      wrong place (scripts called a `BeginEpoch` hook on the resource; "stage" and "epoch"
+      were pipeline words). The design that replaced it stays inside `LibSm64` and adds
+      nothing for a script author: `LibSm64SaveMode`, one of `full` (both sections), `fixed`
+      (the old hand-tuned slices, kept for their constant cost) and `dirty` (the default;
+      docs/libsm64.md, "Savestates"). `dirty` write-protects the sections, records the first
+      write to each page, copies the written pages per save and restores from a baseline
+      snapshot on load; the resource takes a new baseline by itself whenever it saves while
+      holding no live slots, which is the start save and the first slot of every run. A
+      build whose sections are smaller than the slices refuses `fixed` at construction with
+      the reason. Symbol-derived slices were rejected (a missed name leaks silently; the
+      Windows DLL has no symbol sizes) and start-up calibration too (coverage is a sample).
+      Verified 2026-09-12: `dirty` saves and loads exactly (`--leak-scan` zero bytes) on the
+      pinned DLL, wafel 2023, bitfs-sbb 2026 and the Linux `.so`, at about 7 us against 41 to
+      49 us for `fixed`, on MSVC, clang-cl, GCC 13, Clang 17, GCC 15 and Clang 21. Not done by
+      the letter of "no slower than today": on the BitFS search the dirty set grows to 525
+      pages (pellets die, the level reloads), so `dirty` runs the deterministic Tier D
+      workload 3.6% slower than `fixed` and the 16-thread throughput workload about 20%
+      slower (docs/performance.md change log). The maintainer's decision: the pipeline and
+      the Tier D workloads select `fixed`; `dirty` is the code default and the mode for any
+      other build and for Linux. What would close the gap, left for later: a re-baseline the
+      resource takes on its own when many loads have restored a large set (the per-shot
+      base-block save is the natural point; a shot loads it about 1,700 times), so loads
+      copy the pellet's pages instead of the run's. Measure it against these numbers. Two
+      smaller leftovers: the `BM_LibSm64Dirty` family anchors right after the first slot, so
+      its save and load rows copy nothing (0.1 us) and `dllcheck` 60 frames in is the number
+      to read; anchor it some frames into the run. And the committed baselines still hold the
+      old `Light` rows: re-save them (`perf.ps1 -SaveBaseline`) once this lands.
+- [x] **2.4 Object indices: keep them, verify them.** Decided by the maintainer 2026-09-08 after
+      `dllcheck --objects` showed the live pool: BitFS spawns two objects running
+      `bhvBitfsTiltingInvertedPyramid` (slot 84 at home x = -1945, the one the setup happens
+      on; slot 83 at x = -2866), so the behavior alone cannot name the pyramid and the slot
+      index stays the identifier. Home position happens to tell the two apart here, but that
+      is not a rule that holds for every object, so it was not made the lookup. Instead each
+      hardcoded slot is declared once, with the behavior and (optionally) the home the level
+      script gives it (`BitFsExpectedObjects` in `tasfw-scripts/inc/BitFsObjects.hpp`: slots 84,
+      83 and 85), and the `VerifyLayout` script verifies the declaration before the pipeline's
+      first stage, so a spawn-order change fails start-up with a message instead of feeding
+      scripts another object. `bitfs-turn --dry-run` runs the same script to the first
+      stage's frame and prints its report. Verified: the three slots report `ok` on
+      the pinned DLL and bitfs-sbb's 2026 DLL, and `test_libsm64.cpp` shows a wrong home, a
+      wrong behavior and an empty slot each produce a `FAIL`.
 - [ ] **2.5 US ROM support.** `CountryCode` already exists; make the m64 header check and DLL
-      choice follow it. *Done when:* the smoke test passes on both JP and US DLLs.
+      choice follow it. *Done when:* the smoke test passes on both JP and US DLLs. The US
+      `.dll` and `.so` unlock from bitfs-sbb (docs/libsm64.md); what is missing is a US movie
+      and the header check.
 
 ## Phase 3: framework hardening
 
@@ -208,17 +261,43 @@ Goal: the core's implicit invariants become explicit and enforced.
       MSVC accepts the friend template. Mark `resource` and `startSaveHandle` private. Note
       from the maintainer: MSVC and Visual Studio IntelliSense disagree about such
       declarations and one or the other kept failing, which is why `ScriptFriend` exists;
-      retiring it means checking both, not just the build.
+      retiring it means checking both, not just the build. The rule this enforces is already
+      in force by convention (AGENTS.md, hard rule 9, 2026-09-12): scripts touch the resource
+      only through `resource->addr()` until a better access contract exists, and that
+      contract is part of this item. Its shape is not settled (maintainer, 2026-09-12): it is
+      adjacent to hack support (Phase 5), will probably admit only certain kinds of symbols,
+      and will carry some guard against invalid memory access. Do not design it piecemeal.
+      Known remaining direct access to fold in: the drift
+      test (`test_libsm64.cpp`) drives a locally constructed `PyramidUpdate` from inside a
+      script instead of going through `ImportSave<PyramidUpdateMem>`, and `SlotHandle` holds a
+      public resource pointer.
 - [x] **3.3 PyramidUpdate drift test.** `test_libsm64.cpp` imports `PyramidUpdateMem` from
       the DLL before each of 240 frames (Mario walks to the pyramid's centre, then it settles;
       91 frames move the normal), advances both, and requires the normal to match
       bit-for-bit. Passes with max |diff| = 0 on MSVC and clang-cl (2026-09-07), which is also
-      the bit-exactness test for the FP flags in docs/compilers.md. GCC needs a Linux DLL
-      (3.4). Learned on the way: terrain objects update before the player, so the pyramid
-      reads Mario's previous-frame position (ARCHITECTURE.md).
+      the bit-exactness test for the FP flags in docs/compilers.md. 2026-09-08: also max
+      |diff| = 0 with GCC 15 and Clang 21 on Linux against bitfs-sbb's JP `.so`, and on
+      Windows against bitfs-sbb's 2026 JP DLL (3.4, docs/libsm64.md). Learned on the way:
+      terrain objects update before the player, so the pyramid reads Mario's previous-frame
+      position (ARCHITECTURE.md).
 - [ ] **3.4 Linux parity.** Build with GCC/Clang, confirm the `mprotect`/`SIGSEGV` save path works,
       and note any divergence from MSVC results. *Done when:* the DLL-free tests run on Linux CI
       and the Linux `LibSm64` path passes the smoke test against a Linux libsm64 build.
+      Progress 2026-09-08: both halves hold once, by hand. The DLL-free tests run on Linux CI
+      (1.6), and in an Ubuntu 26.04 container the whole libsm64 test group passes against
+      bitfs-sbb's JP `.so` with GCC 15 and Clang 21: every layout check, the identical
+      golden state at frame 3330, save/load determinism and the drift test at max |diff| = 0.
+      `dllcheck` there reads 21.0 us per frame advance and about 45 us per save or load
+      (docs/performance.md change log). What keeps this open: the `.so` needs glibc 2.43
+      (for `sqrtf`), which Ubuntu 24.04, CI's `ubuntu-latest`, does not have, so a CI run
+      needs a 26.04 runner as well as the maintainer-only secret for the unlock key. Closed
+      by 2.3 (2026-09-12): the Linux save path is the same `dirty` mode as on Windows, one
+      page set per instance with a handler that finds the owner of a faulting address, so
+      several `LibSm64` per process work; `fixed` is refused on the `.so` because its
+      sections are smaller than the slices, and the tests fall back to `dirty` there. Two
+      things had to change to get here, both in docs/libsm64.md: the decomp renamed the
+      pyramid behaviors, now bridged by `LibSm64SymbolAliases`, and doctest's `<ciso646>`
+      include is a `#warning` under Clang 21 (docs/compilers.md).
 - [ ] **3.5 Savestate memory budget.** The 8 GB cap is per resource, so 16 threads can address
       128 GB. Make it a global budget in `Configuration`.
 - [ ] **3.6 Unify timing instrumentation.** `ExecuteAdhocBase` records milliseconds via
@@ -306,7 +385,7 @@ Goal: finish the thing the framework was built for.
       failure counter and hex bins, the re-decode diagnostic that tells "decoding is not
       deterministic" from "the recording is wrong", `dllcheck --leak-scan`,
       `scripts/dll_symbols.py`, and the camera and controller coverage checks in
-      `layoutCheckReport`.
+      `dllcheck --save-mode fixed`.
 
 ### After the makeover: the three squish-cancel goals
 
@@ -324,12 +403,14 @@ goals are (status as stated by the maintainer, 2026-09-08):
       precise target values when given a sufficiently close starting m64 (the ARE machinery
       in `TiltTargetShot` is the seed of this). Progress exists.
 
-## Phase 5: toward a game-agnostic framework
+## Phase 5: toward a game- and console-agnostic framework
 
 Not scheduled. Listed so decisions in earlier phases do not paint us into a corner.
 
 - `Resource::getCurrentFrame` and the `gControllerPads` write in `Script::SetInputs` are SM64-specific; they belong in the resource.
-- `Inputs`/`M64` assume an N64 controller and the Mupen m64 format.
+- `Inputs`/`M64` assume an N64 controller and the Mupen m64 format; console-agnosticism
+  means the controller and movie format become properties of the resource or console, and
+  the frame stays as the resource's indexable step (ARCHITECTURE.md, "Resource and savestates").
 - A second resource (another libsm64 build or an emulator core) is the real test of the abstraction.
 - **Hacks as a kind of input.** Today a direct write into game memory (`//! UNSAFE`) cannot
   be replayed from a savestate, which is why hard rule 1 forbids it. The intent is to make

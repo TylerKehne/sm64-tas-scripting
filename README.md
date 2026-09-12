@@ -39,7 +39,8 @@ Tests: `powershell -ExecutionPolicy Bypass -File scripts\test.ps1`. Benchmarks:
 `scripts\perf.ps1`. Both accept `-Compiler clang` for the clang-cl build.
 
 **Linux** (builds and passes the DLL-free tests in CI with GCC 13 and Clang 17; the game
-DLL path has not been run there; there is no macOS preset)
+path passes the smoke test against a Linux libsm64 `.so` on Ubuntu 26.04, which the `.so`
+needs for its glibc, see [docs/libsm64.md](docs/libsm64.md); there is no macOS preset)
 
 ```bash
 cmake --preset gcc-release          # or clang-release; build/Release-gcc, build/Release-clang
@@ -50,7 +51,9 @@ ctest --preset gcc-release
 # Runtime inputs
 The executable needs files that are not in git (see [docs/libsm64.md](docs/libsm64.md)):
 
-- `res/sm64_jp_0.dll` through `res/sm64_jp_23.dll`, one copy of the libsm64 DLL per thread.
+- `res/sm64_jp_0.dll` through `res/sm64_jp_23.dll`, one copy of the libsm64 DLL per thread
+  (on Linux `.so` copies and `"dllPattern": "sm64_jp_{}.so"`). Unlock them from a ROM as
+  docs/libsm64.md describes; never commit a ROM or an unlocked binary.
 - The source `.m64` movies referenced by `config.json`.
 
 # Running the pipeline
@@ -64,8 +67,11 @@ stage in order, or one stage with `--stage <name>`. Without `--config` it reads 
 `config.json` next to the executable, which the build writes from
 [tasfw-bruteforcers/bitfs-turnaround/config.json](tasfw-bruteforcers/bitfs-turnaround/config.json).
 `--list` prints the stage types and the configured stages; `--dry-run` resolves every path,
-checks the files exist, loads one DLL and prints its layout report. Both are safe. A full
-run is not a smoke test: 16 threads, hours, and thousands of exported `.m64` files.
+checks the files exist, loads one DLL, runs the `VerifyLayout` script to the first stage's
+start frame and prints its report (struct layout, the hardcoded object slots), exiting 1 on
+any `FAIL`; a real run makes the same check before its first stage. Both are safe. A full
+run is not a smoke test: 16 threads, hours,
+and thousands of exported `.m64` files.
 
 Each stage writes its solutions to `<outputDirectory>/solutions/<stage>.json` (input diffs
 plus named metrics). A stage run alone reads its input from the file its input stage wrote
@@ -83,7 +89,7 @@ One JSON file. Relative paths resolve against the file's own directory, unless t
 
 ```json
 {
-	"resources": { "dllDirectory": "../../res", "dllPattern": "sm64_jp_{}.dll", "threads": 16, "lightweight": true },
+	"resources": { "dllDirectory": "../../res", "dllPattern": "sm64_jp_{}.dll", "threads": 16, "saveMode": "fixed" },
 	"m64": "../../res/source.m64",
 	"outputDirectory": "../../analysis",
 	"scattershot": { "maxShots": 3000, "maxSolutions": 100, "seed": 6, "deterministic": false, "...": "any Configuration field" },
@@ -105,7 +111,9 @@ One JSON file. Relative paths resolve against the file's own directory, unless t
 ```
 
 - `resources`: the DLL directory and file pattern (`{}` becomes the thread index; one copy
-  per thread), the thread count, whether saves are lightweight, and `costModel` (default
+  per thread), the thread count, the save mode (`saveMode`: `full`, `fixed` or `dirty`;
+  `dirty` when absent, `fixed` in the committed config because it measures faster for this
+  search; docs/libsm64.md, "Savestates"), and `costModel` (default
   true; false disables the replay-versus-load cost model so a run is timing-independent,
   for diagnosis).
 - `scattershot`: defaults for every stage, in the field names of `Configuration`

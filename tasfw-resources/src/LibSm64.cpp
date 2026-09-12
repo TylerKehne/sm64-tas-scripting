@@ -1,38 +1,237 @@
 #include "LibSm64.hpp"
+#include <algorithm>
+#include <atomic>
+#include <bit>
 #include <cstdio>
+#include <cstring>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 #include <sm64/Camera.hpp>
 #include <sm64/ObjectFields.hpp>
 #include <sm64/Types.hpp>
 
-#if !defined(_WIN32)
-#include <sys/mman.h>
+#if defined(_WIN32)
+#define NOMINMAX
+#include <windows.h>
+#else
 #include <signal.h>
+#include <sys/mman.h>
 #include <unistd.h>
-
-static void* align_pointer(void* ptr, intptr_t alignment) {
-	intptr_t x = reinterpret_cast<uintptr_t>(ptr);
-	if (x % alignment == 0) {
-		return ptr;
-	}
-	intptr_t mask = alignment-1;
-	x &= ~mask;
-	return reinterpret_cast<void*>(x);
-}
-
-std::vector<uint8_t*> regions_of_interest;
-
-static void handler(int /*sig*/, siginfo_t* si, void* /*unused*/)
-{
-	mprotect(
-		align_pointer(si->si_addr, pagesize), pagesize,
-		PROT_READ | PROT_EXEC | PROT_WRITE);
-	regions_of_interest.push_back((uint8_t*)align_pointer(si->si_addr, pagesize));
-	return;
-}
-
 #endif
+
+const char* LibSm64SaveModeName(LibSm64SaveMode mode)
+{
+	switch (mode)
+	{
+	case LibSm64SaveMode::Full: return "full";
+	case LibSm64SaveMode::Fixed: return "fixed";
+	case LibSm64SaveMode::Dirty: return "dirty";
+	}
+	return "?";
+}
+
+bool ParseLibSm64SaveMode(const std::string& name, LibSm64SaveMode& mode)
+{
+	for (LibSm64SaveMode candidate : {LibSm64SaveMode::Full, LibSm64SaveMode::Fixed, LibSm64SaveMode::Dirty})
+	{
+		if (name == LibSm64SaveModeName(candidate))
+		{
+			mode = candidate;
+			return true;
+		}
+	}
+	return false;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Dirty mode's fault handler (LibSm64DirtyPages in the header). The handler is process-wide
+// and must find the set that owns a faulting address without taking a lock, so the live sets
+// sit in a fixed table of atomics: registration writes an entry and then publishes the
+// count; destruction nulls the entry. Each LibSm64 is used by one thread and only that thread
+// writes to its DLL copy, so a set's bitmap is only ever touched from the thread that faulted
+// on it (or from that thread's own load()).
+
+namespace
+{
+	constexpr int kMaxDirtyPageSets = 64;
+	std::atomic<LibSm64DirtyPages*> gDirtyPageSets[kMaxDirtyPageSets];
+	std::atomic<int> gDirtyPageSetCount {0};
+	std::mutex gDirtyPageSetMutex;
+
+	// Called from the fault handler. Returns true if a set owned the address.
+	bool DispatchWrite(void* address)
+	{
+		int n = gDirtyPageSetCount.load(std::memory_order_acquire);
+		for (int i = 0; i < n; i++)
+		{
+			LibSm64DirtyPages* d = gDirtyPageSets[i].load(std::memory_order_acquire);
+			size_t index;
+			if (d != nullptr && d->Contains(address, index))
+			{
+				d->OnWrite(index);
+				return true;
+			}
+		}
+		return false;
+	}
+
+	// Platform API forks (AGENTS.md: forks are for platform APIs only).
+#if defined(_WIN32)
+	bool SetProtection(void* begin, size_t bytes, bool writable)
+	{
+		DWORD old;
+		return VirtualProtect(begin, bytes, writable ? PAGE_READWRITE : PAGE_READONLY, &old) != 0;
+	}
+
+	LONG CALLBACK WriteFaultHandler(PEXCEPTION_POINTERS info)
+	{
+		const EXCEPTION_RECORD* rec = info->ExceptionRecord;
+		if (rec->ExceptionCode != EXCEPTION_ACCESS_VIOLATION || rec->NumberParameters < 2 || rec->ExceptionInformation[0] != 1)
+			return EXCEPTION_CONTINUE_SEARCH;
+		return DispatchWrite(reinterpret_cast<void*>(rec->ExceptionInformation[1])) ? EXCEPTION_CONTINUE_EXECUTION : EXCEPTION_CONTINUE_SEARCH;
+	}
+
+	// Vectored handlers form a chain that nothing else replaces, so once is enough. A
+	// first-chance handler that continues execution never reaches a debugger's or doctest's
+	// unhandled-exception filter.
+	void EnsureHandlerInstalled()
+	{
+		static std::once_flag installed;
+		std::call_once(installed, []
+		{
+			if (AddVectoredExceptionHandler(1, WriteFaultHandler) == nullptr)
+				throw std::runtime_error("AddVectoredExceptionHandler failed; Dirty save mode needs it");
+		});
+	}
+#else
+	bool SetProtection(void* begin, size_t bytes, bool writable)
+	{
+		return mprotect(begin, bytes, writable ? (PROT_READ | PROT_WRITE) : PROT_READ) == 0;
+	}
+
+	struct sigaction gPreviousSegv {};
+
+	void WriteFaultHandler(int /*sig*/, siginfo_t* si, void* /*context*/)
+	{
+		if (DispatchWrite(si->si_addr))
+			return;
+		// Not ours: reinstate the previous disposition and return. The faulting instruction
+		// re-executes and the fault is delivered to that handler, or to the default action.
+		sigaction(SIGSEGV, &gPreviousSegv, nullptr);
+	}
+
+	// Checked at every construction, not once: doctest installs its own SIGSEGV handler
+	// around each test case and restores what it found afterwards, which silently removes a
+	// handler installed during a test case. Whatever is current when we are not becomes the
+	// handler we chain to.
+	void EnsureHandlerInstalled()
+	{
+		struct sigaction current {};
+		if (sigaction(SIGSEGV, nullptr, &current) != 0)
+			throw std::runtime_error("sigaction(SIGSEGV) query failed; Dirty save mode needs it");
+		if ((current.sa_flags & SA_SIGINFO) != 0 && current.sa_sigaction == WriteFaultHandler)
+			return;
+		struct sigaction sa {};
+		sa.sa_flags = SA_SIGINFO;
+		sigemptyset(&sa.sa_mask);
+		sa.sa_sigaction = WriteFaultHandler;
+		if (sigaction(SIGSEGV, &sa, &gPreviousSegv) != 0)
+			throw std::runtime_error("sigaction(SIGSEGV) failed; Dirty save mode needs it");
+	}
+#endif
+
+	void RegisterDirtyPages(LibSm64DirtyPages* d)
+	{
+		std::lock_guard<std::mutex> lock(gDirtyPageSetMutex);
+		EnsureHandlerInstalled();
+		int n = gDirtyPageSetCount.load(std::memory_order_relaxed);
+		for (int i = 0; i < n; i++)
+		{
+			if (gDirtyPageSets[i].load(std::memory_order_relaxed) == nullptr)
+			{
+				gDirtyPageSets[i].store(d, std::memory_order_release);
+				return;
+			}
+		}
+		if (n == kMaxDirtyPageSets)
+			throw std::runtime_error("too many LibSm64 instances in Dirty save mode in one process");
+		gDirtyPageSets[n].store(d, std::memory_order_release);
+		gDirtyPageSetCount.store(n + 1, std::memory_order_release);
+	}
+
+	void UnregisterDirtyPages(LibSm64DirtyPages* d)
+	{
+		std::lock_guard<std::mutex> lock(gDirtyPageSetMutex);
+		int n = gDirtyPageSetCount.load(std::memory_order_relaxed);
+		for (int i = 0; i < n; i++)
+			if (gDirtyPageSets[i].load(std::memory_order_relaxed) == d)
+				gDirtyPageSets[i].store(nullptr, std::memory_order_release);
+	}
+
+	std::vector<uint8_t> SnapshotPages(const LibSm64DirtyPages& d)
+	{
+		std::vector<uint8_t> copy(d.pageCount * pagesize);
+		uint8_t* dst = copy.data();
+		for (const LibSm64DirtyPages::Range& r : d.range)
+		{
+			std::memcpy(dst, r.begin, r.pages * pagesize);
+			dst += r.pages * pagesize;
+		}
+		return copy;
+	}
+}
+
+uint8_t* LibSm64DirtyPages::PageAddress(size_t index) const
+{
+	return index < range[0].pages ? range[0].begin + index * pagesize : range[1].begin + (index - range[0].pages) * pagesize;
+}
+
+bool LibSm64DirtyPages::Contains(const void* p, size_t& index) const
+{
+	const uint8_t* ptr = static_cast<const uint8_t*>(p);
+	size_t base = 0;
+	for (const Range& r : range)
+	{
+		if (ptr >= r.begin && ptr < r.begin + r.pages * pagesize)
+		{
+			index = base + size_t(ptr - r.begin) / pagesize;
+			return true;
+		}
+		base += r.pages;
+	}
+	return false;
+}
+
+void LibSm64DirtyPages::OnWrite(size_t index)
+{
+	written[index >> 6] |= uint64_t(1) << (index & 63);
+	faults++;
+	SetProtection(PageAddress(index), pagesize, true); // cannot throw from a fault handler; a failure re-faults and is fatal
+}
+
+void LibSm64DirtyPages::ProtectAll()
+{
+	for (const Range& r : range)
+		if (r.pages > 0 && !SetProtection(r.begin, r.pages * pagesize, false))
+			throw std::runtime_error("could not write-protect the game's data sections");
+}
+
+void LibSm64DirtyPages::UnprotectAll()
+{
+	for (const Range& r : range)
+		if (r.pages > 0)
+			SetProtection(r.begin, r.pages * pagesize, true);
+}
+
+size_t LibSm64DirtyPages::WrittenCount() const
+{
+	size_t count = 0;
+	for (uint64_t w : written)
+		count += size_t(std::popcount(w));
+	return count;
+}
+
 LibSm64::LibSm64(const LibSm64Config& config) : dll(config.dllPath), config(config)
 {
 	slotManager._saveMemLimit = int64_t(8000) * 1024 * 1024; //8 GB
@@ -58,98 +257,198 @@ LibSm64::LibSm64(const LibSm64Config& config) : dll(config.dllPath), config(conf
 		SegVal {".data", sections[".data"].address, sections[".data"].length},
 		SegVal {".bss", sections[".bss"].address, sections[".bss"].length},
 	};
-#if !defined(_WIN32)
 
-	original_buf1.resize(segment[0].length);
-	original_buf2.resize(segment[1].length);
+	if (config.saveMode == LibSm64SaveMode::Fixed)
+	{
+		// The slices were cut for the pinned build; on a build with smaller sections (the Linux
+		// .so's .data is 330 KB and its .bss 3.6 MB, against 2.4 MB and 4.9 MB in the DLL) a
+		// slice would read past the section and crash before anything could say why.
+		// Refuse with the reason instead.
+		for (const LibSm64FixedSlice& slice : LibSm64FixedSlices)
+		{
+			const SegVal& seg = segment[size_t(slice.segment)];
+			if (slice.offset + slice.length > seg.length)
+				throw std::runtime_error("fixed save mode: the slice at " + seg.name + "+" + std::to_string(slice.offset) + " ("
+					+ std::to_string(slice.length) + " bytes) lies beyond the end of " + seg.name + " (" + std::to_string(seg.length)
+					+ " bytes) in " + config.dllPath.string() + "; the slices fit the pinned build only, use the dirty or full save mode");
+		}
+	}
 
-	int64_t* temp = reinterpret_cast<int64_t*>(segment[0].address);
-	memcpy(original_buf1.data(), temp, segment[0].length);
+	if (config.saveMode == LibSm64SaveMode::Dirty)
+	{
+		// Whole pages covering each section. On Windows sections start on a page boundary; on
+		// Linux .data and .bss can start mid-page, so an edge page may also hold a neighbouring
+		// writable section (.got.plt, .data.rel), which is then saved and restored along with
+		// the game state. Harmless: with RTLD_NOW nothing writes there after loading. If the
+		// two spans share a page it belongs to the lower one.
+		_dirtyPages = std::make_unique<LibSm64DirtyPages>();
+		LibSm64DirtyPages& d = *_dirtyPages;
+		for (int i = 0; i < 2; i++)
+		{
+			uintptr_t begin = reinterpret_cast<uintptr_t>(segment[size_t(i)].address) & ~uintptr_t(pagesize - 1);
+			uintptr_t end = (reinterpret_cast<uintptr_t>(segment[size_t(i)].address) + segment[size_t(i)].length + pagesize - 1) & ~uintptr_t(pagesize - 1);
+			d.range[i].begin = reinterpret_cast<uint8_t*>(begin);
+			d.range[i].pages = (end - begin) / pagesize;
+		}
+		if (d.range[1].begin < d.range[0].begin)
+			std::swap(d.range[0], d.range[1]);
+		uint8_t* end0 = d.range[0].begin + d.range[0].pages * pagesize;
+		if (d.range[1].begin < end0)
+		{
+			size_t overlap = size_t(end0 - d.range[1].begin) / pagesize;
+			d.range[1].begin = end0;
+			d.range[1].pages = overlap < d.range[1].pages ? d.range[1].pages - overlap : 0;
+		}
+		d.pageCount = d.range[0].pages + d.range[1].pages;
+		d.written.assign((d.pageCount + 63) / 64, 0);
+		d.snapshots.push_back(SnapshotPages(d)); // baseline 0: the state right after sm64_init
+		RegisterDirtyPages(&d);
+		d.ProtectAll();
+	}
+}
 
-	temp = reinterpret_cast<int64_t*>(segment[1].address);
-	memcpy(original_buf2.data(), temp, segment[1].length);
+LibSm64::~LibSm64()
+{
+	if (_dirtyPages)
+	{
+		UnregisterDirtyPages(_dirtyPages.get());
+		_dirtyPages->UnprotectAll();
+	}
+}
 
-	struct sigaction sa;
-
-	sa.sa_flags = SA_SIGINFO;
-	sigemptyset(&sa.sa_mask);
-	sa.sa_sigaction = handler;
-	sigaction(SIGSEGV, &sa, NULL);
-
-	mprotect(
-		align_pointer(sections[".data"].address, pagesize),
-		(sections[".data"].length & (~(pagesize - 1))) + pagesize,
-		PROT_READ | PROT_EXEC);
-
-	mprotect(
-		align_pointer(sections[".bss"].address, pagesize),
-		(sections[".bss"].length & (~(pagesize - 1))) + pagesize,
-		PROT_READ | PROT_EXEC);
-#endif
+// Start a new baseline unless nothing was written since the current one began (then it is
+// as good as new: construction followed by the start save costs one snapshot, not two).
+// Snapshots that no live state can refer to are released: at this point the slot manager
+// is empty, so only the start save's baseline is still referenced, and when the start save
+// itself is being written, not even that.
+void LibSm64::TakeBaseline(bool forStartSave) const
+{
+	LibSm64DirtyPages& d = *_dirtyPages;
+	if (d.WrittenCount() == 0)
+		return;
+	if (d.writtenByBaseline.size() <= size_t(d.baseline))
+		d.writtenByBaseline.resize(size_t(d.baseline) + 1);
+	d.writtenByBaseline[size_t(d.baseline)] = d.written;
+	std::fill(d.written.begin(), d.written.end(), uint64_t(0));
+	d.baseline++;
+	d.snapshots.push_back(SnapshotPages(d));
+	for (size_t b = 0; b + 1 < d.snapshots.size(); b++)
+	{
+		bool keep = !forStartSave && int(b) == startSave.baseline;
+		if (!keep)
+		{
+			d.snapshots[b].clear();
+			d.snapshots[b].shrink_to_fit();
+		}
+	}
+	d.ProtectAll();
 }
 
 void LibSm64::save(LibSm64Mem& state) const
 {
-#if defined(_WIN32)
-	if (config.lightweight)
+	switch (config.saveMode)
 	{
-		state.buf1.resize(LibSm64LightweightBuf1Size);
-		state.buf2.resize(LibSm64LightweightBuf2Size);
-
-		for (const LibSm64LightweightSlice& slice : LibSm64LightweightSlices)
+	case LibSm64SaveMode::Dirty:
+	{
+		// "No live slots" seen from inside a save: SlotManager::CreateSlot emplaces the new
+		// slot before calling save, so the first slot of a run is the map's only entry and is
+		// the state being written; the start save is not in the map at all.
+		const auto& slots = slotManager.slotsById;
+		bool firstSlot = slots.empty() || (slots.size() == 1 && &slots.begin()->second == &state);
+		if (firstSlot)
+			TakeBaseline(&state == &startSave);
+		const LibSm64DirtyPages& d = *_dirtyPages;
+		state.baseline = d.baseline;
+		state.written.assign(d.written.begin(), d.written.end());
+		state.pages.resize(d.WrittenCount() * pagesize);
+		uint8_t* dst = state.pages.data();
+		for (size_t j = 0; j < d.written.size(); j++)
 		{
-			const uint8_t* src = reinterpret_cast<const uint8_t*>(segment[slice.segment].address) + slice.offset;
-			uint8_t* dst = (slice.segment == 0 ? state.buf1.data() : state.buf2.data()) + slice.bufOffset;
-			memcpy(dst, src, slice.length);
+			uint64_t w = d.written[j];
+			while (w != 0)
+			{
+				int b = std::countr_zero(w);
+				w &= w - 1;
+				std::memcpy(dst, d.PageAddress(j * 64 + size_t(b)), pagesize);
+				dst += pagesize;
+			}
 		}
-
 		return;
 	}
-
-	state.buf1.resize(segment[0].length);
-	state.buf2.resize(segment[1].length);
-
-	int64_t* temp = reinterpret_cast<int64_t*>(segment[0].address);
-	memcpy(state.buf1.data(), temp, segment[0].length);
-
-	temp = reinterpret_cast<int64_t*>(segment[1].address);
-	memcpy(state.buf2.data(), temp, segment[1].length);
-#else
-	state.changed_regions.reserve(regions_of_interest.size());
-	state.region_count_at_save_time = regions_of_interest.size();
-	for (const auto region : regions_of_interest) {
-		auto* data = state.changed_regions[region].data();
-		memcpy(data, region, pagesize);
+	case LibSm64SaveMode::Fixed:
+		state.buf1.resize(LibSm64FixedBuf1Size);
+		state.buf2.resize(LibSm64FixedBuf2Size);
+		for (const LibSm64FixedSlice& slice : LibSm64FixedSlices)
+		{
+			const uint8_t* src = reinterpret_cast<const uint8_t*>(segment[size_t(slice.segment)].address) + slice.offset;
+			uint8_t* dst = (slice.segment == 0 ? state.buf1.data() : state.buf2.data()) + slice.bufOffset;
+			std::memcpy(dst, src, slice.length);
+		}
+		return;
+	case LibSm64SaveMode::Full:
+		state.buf1.resize(segment[0].length);
+		state.buf2.resize(segment[1].length);
+		std::memcpy(state.buf1.data(), segment[0].address, segment[0].length);
+		std::memcpy(state.buf2.data(), segment[1].address, segment[1].length);
+		return;
 	}
-#endif
 }
 
 void LibSm64::load(const LibSm64Mem& state)
 {
-#if defined(_WIN32)
-	if (config.lightweight)
+	switch (config.saveMode)
 	{
-		for (const LibSm64LightweightSlice& slice : LibSm64LightweightSlices)
+	case LibSm64SaveMode::Dirty:
+	{
+		// Every page written since the state's baseline began is either in the state (written
+		// before the save) or still held the baseline's contents when the state was saved.
+		// Pages written in no baseline since then are untouched and equal to the baseline
+		// already. Writing into a page protected under the current baseline faults and gets
+		// recorded, which is right: it now differs from the current snapshot.
+		LibSm64DirtyPages& d = *_dirtyPages;
+		if (state.baseline > d.baseline || state.written.size() != d.written.size())
+			throw std::runtime_error("LibSm64::load: the state was not saved by this resource");
+		const std::vector<uint8_t>& snapshot = d.snapshots[size_t(state.baseline)];
+		if (snapshot.empty())
+			throw std::runtime_error("LibSm64::load: the state's baseline snapshot was released while the state was still loadable (LibSm64 bug)");
+		const uint8_t* src = state.pages.data();
+		for (size_t j = 0; j < d.written.size(); j++)
 		{
-			uint8_t* dst = reinterpret_cast<uint8_t*>(segment[slice.segment].address) + slice.offset;
-			const uint8_t* src = (slice.segment == 0 ? state.buf1.data() : state.buf2.data()) + slice.bufOffset;
-			memcpy(dst, src, slice.length);
+			uint64_t since = d.written[j];
+			for (int b = state.baseline; b < d.baseline; b++)
+				since |= d.writtenByBaseline[size_t(b)][j];
+			uint64_t saved = state.written[j];
+			uint64_t u = since | saved;
+			while (u != 0)
+			{
+				int bit = std::countr_zero(u);
+				u &= u - 1;
+				size_t index = j * 64 + size_t(bit);
+				uint8_t* page = d.PageAddress(index);
+				if ((saved >> bit) & 1)
+				{
+					std::memcpy(page, src, pagesize); // the state's pages are stored in index order
+					src += pagesize;
+				}
+				else
+					std::memcpy(page, snapshot.data() + index * pagesize, pagesize);
+			}
 		}
-
 		return;
 	}
-
-	memcpy(segment[0].address, state.buf1.data(), segment[0].length);
-	memcpy(segment[1].address, state.buf2.data(), segment[1].length);
-#else
-	if (regions_of_interest.size() != state.region_count_at_save_time) {
-		memcpy(segment[0].address, original_buf1.data(), segment[0].length);
-		memcpy(segment[1].address, original_buf2.data(), segment[1].length);
+	case LibSm64SaveMode::Fixed:
+		for (const LibSm64FixedSlice& slice : LibSm64FixedSlices)
+		{
+			uint8_t* dst = reinterpret_cast<uint8_t*>(segment[size_t(slice.segment)].address) + slice.offset;
+			const uint8_t* src = (slice.segment == 0 ? state.buf1.data() : state.buf2.data()) + slice.bufOffset;
+			std::memcpy(dst, src, slice.length);
+		}
+		return;
+	case LibSm64SaveMode::Full:
+		std::memcpy(segment[0].address, state.buf1.data(), segment[0].length);
+		std::memcpy(segment[1].address, state.buf2.data(), segment[1].length);
+		return;
 	}
-	for (const auto& pair : state.changed_regions) {
-		memcpy(pair.first, pair.second.data(), pagesize);
-	}
-#endif
 }
 
 void LibSm64::advance()
@@ -167,16 +466,29 @@ void LibSm64::setInputs(const Inputs& inputs)
 
 void* LibSm64::addr(const char* symbol) const
 {
-	return dll.get(symbol);
+	if (void* p = dll.tryGet(symbol))
+		return p;
+
+	// Not exported under that name. If it is one the decomp has renamed, try the other
+	// spelling so scripts written against the pinned DLL run on newer builds and vice versa.
+	for (const LibSm64SymbolAlias& alias : LibSm64SymbolAliases)
+	{
+		const char* other = std::strcmp(symbol, alias.pinned) == 0 ? alias.current
+			: std::strcmp(symbol, alias.current) == 0 ? alias.pinned
+			: nullptr;
+		if (other == nullptr)
+			continue;
+		if (void* p = dll.tryGet(other))
+			return p;
+		throw std::runtime_error(std::string("libsm64 exports neither ") + symbol + " nor " + other);
+	}
+
+	return dll.get(symbol); // throws with the loader's message
 }
 
 std::size_t LibSm64::getStateSize(const LibSm64Mem& state) const
 {
-#if defined(_WIN32)
-	return state.buf1.capacity() + state.buf2.capacity();
-#else
-	return state.changed_regions.size()*pagesize;
-#endif
+	return state.buf1.capacity() + state.buf2.capacity() + state.pages.capacity() + state.written.capacity() * sizeof(uint64_t);
 }
 
 uint32_t LibSm64::getCurrentFrame() const
@@ -184,233 +496,3 @@ uint32_t LibSm64::getCurrentFrame() const
 	return *_globalTimer - 1;
 }
 
-bool LibSm64::pointsIntoGameData(const void* p) const
-{
-	for (const SegVal& seg : segment)
-	{
-		const char* begin = static_cast<const char*>(seg.address);
-		const char* ptr = static_cast<const char*>(p);
-		if (ptr >= begin && ptr < begin + seg.length)
-			return true;
-	}
-	return false;
-}
-
-std::vector<std::string> LibSm64::layoutCheckReport() const
-{
-	// OBJECT_POOL_CAPACITY in the decomp. The pool is a static array in .bss.
-	constexpr std::ptrdiff_t objectPoolCapacity = 240;
-
-	std::vector<std::string> lines;
-	auto ok = [&](const std::string& what) { lines.push_back("ok: " + what); };
-	auto fail = [&](const std::string& what) { lines.push_back("FAIL: " + what); };
-	auto hex = [](const void* p)
-	{
-		char buf[32];
-		snprintf(buf, sizeof(buf), "%p", p);
-		return std::string(buf);
-	};
-
-	// --- Checks valid at any frame ------------------------------------------------------
-	MarioState* marioState = *(MarioState**)(addr("gMarioState"));
-	MarioState* marioStates = (MarioState*)(addr("gMarioStates"));
-	if (marioState == marioStates)
-		ok("gMarioState points at gMarioStates[0]");
-	else
-		fail("gMarioState (" + hex(marioState) + ") != &gMarioStates[0] (" + hex(marioStates) + "); pointer width or symbol resolution is wrong");
-
-	Object* objectPool = (Object*)(addr("gObjectPool"));
-	if (pointsIntoGameData(objectPool))
-		ok("gObjectPool lies in the DLL's data sections");
-	else
-		fail("gObjectPool (" + hex(objectPool) + ") is not inside .data/.bss");
-
-	uint32_t timer = *(uint32_t*)(addr("gGlobalTimer"));
-	ok("gGlobalTimer readable (" + std::to_string(timer) + ")");
-
-	// --- Checks that need Mario to exist (inside a level) --------------------------------
-	Object* marioObj = *(Object**)(addr("gMarioObject"));
-	if (marioObj == nullptr)
-	{
-		lines.push_back("note: gMarioObject is null (not in a level); in-level layout checks skipped");
-		return lines;
-	}
-
-	if (!pointsIntoGameData(marioObj))
-	{
-		fail("gMarioObject (" + hex(marioObj) + ") is not inside .data/.bss; refusing to dereference");
-		return lines;
-	}
-
-	std::ptrdiff_t byteOffset = reinterpret_cast<const char*>(marioObj) - reinterpret_cast<const char*>(objectPool);
-	if (byteOffset >= 0 && byteOffset % std::ptrdiff_t(sizeof(Object)) == 0 && byteOffset / std::ptrdiff_t(sizeof(Object)) < objectPoolCapacity)
-		ok("gMarioObject is gObjectPool[" + std::to_string(byteOffset / std::ptrdiff_t(sizeof(Object))) + "] (sizeof(Object) = " + std::to_string(sizeof(Object)) + " matches the pool stride)");
-	else
-		fail("gMarioObject is " + std::to_string(byteOffset) + " bytes into gObjectPool, not a multiple of sizeof(Object) = " + std::to_string(sizeof(Object)) + " within " + std::to_string(objectPoolCapacity) + " entries; struct Object layout is wrong");
-
-	const void* bhvMario = addr("bhvMario");
-	if (marioObj->behavior == bhvMario)
-		ok("gMarioObject->behavior == bhvMario (Object::behavior offset)");
-	else
-		fail("gMarioObject->behavior (" + hex(marioObj->behavior) + ") != bhvMario (" + hex(bhvMario) + "); Object::behavior offset is wrong");
-
-	if (marioState->marioObj == marioObj)
-		ok("gMarioState->marioObj == gMarioObject (MarioState::marioObj offset)");
-	else
-		fail("gMarioState->marioObj (" + hex(marioState->marioObj) + ") != gMarioObject (" + hex(marioObj) + "); MarioState layout is wrong");
-
-	// mario.c (update_mario_inputs / copy_mario_state_to_object) mirrors MarioState::pos into
-	// both oPosX/Y/Z and header.gfx.pos every frame Mario is updated.
-	bool posMatches = marioObj->oPosX == marioState->pos[0] && marioObj->oPosY == marioState->pos[1] && marioObj->oPosZ == marioState->pos[2];
-	if (posMatches)
-		ok("gMarioObject->oPos[XYZ] == gMarioState->pos (Object::rawData indexing and MarioState::pos offset)");
-	else
-		fail("gMarioObject->oPos (" + std::to_string(marioObj->oPosX) + ", " + std::to_string(marioObj->oPosY) + ", " + std::to_string(marioObj->oPosZ)
-			+ ") != gMarioState->pos (" + std::to_string(marioState->pos[0]) + ", " + std::to_string(marioState->pos[1]) + ", " + std::to_string(marioState->pos[2])
-			+ "); Object field indexing or MarioState::pos offset is wrong");
-
-	const f32* gfxPos = marioObj->header.gfx.pos;
-	if (gfxPos[0] == marioState->pos[0] && gfxPos[1] == marioState->pos[1] && gfxPos[2] == marioState->pos[2])
-		ok("gMarioObject->header.gfx.pos == gMarioState->pos (GraphNodeObject layout)");
-	else
-		fail("gMarioObject->header.gfx.pos (" + std::to_string(gfxPos[0]) + ", " + std::to_string(gfxPos[1]) + ", " + std::to_string(gfxPos[2])
-			+ ") != gMarioState->pos; GraphNode/GraphNodeObject layout is wrong");
-
-	Surface* floor = marioState->floor;
-	if (floor == nullptr)
-		lines.push_back("note: gMarioState->floor is null (Mario airborne or out of bounds); Surface checks skipped");
-	else if (!pointsIntoGameData(floor))
-		fail("gMarioState->floor (" + hex(floor) + ") is not inside .data/.bss; MarioState::floor offset is wrong");
-	else
-	{
-		float n = floor->normal.x * floor->normal.x + floor->normal.y * floor->normal.y + floor->normal.z * floor->normal.z;
-		if (n > 0.999f && n < 1.001f)
-			ok("gMarioState->floor->normal is unit length (Surface::normal offset)");
-		else
-			fail("gMarioState->floor->normal has squared length " + std::to_string(n) + "; Surface layout is wrong");
-
-		if (floor->object == nullptr || pointsIntoGameData(floor->object))
-			ok("gMarioState->floor->object is null or inside game data (Surface::object offset)");
-		else
-			fail("gMarioState->floor->object (" + hex(floor->object) + ") is not inside .data/.bss; Surface::object offset is wrong");
-	}
-
-	Camera* camera = *(Camera**)(addr("gCamera"));
-	if (camera != nullptr && pointsIntoGameData(camera))
-		ok("gCamera points into game data");
-	else
-		fail("gCamera (" + hex(camera) + ") is null or outside .data/.bss");
-
-	// --- Lightweight save coverage --------------------------------------------------------
-	// Lightweight mode only saves fixed slices of .data/.bss. Every piece of state the search
-	// depends on must lie inside a slice, or savestates silently stop restoring it. This is
-	// the check that a different DLL build is expected to fail.
-	if (config.lightweight)
-	{
-		auto covered = [&](const void* p, size_t size) -> bool
-		{
-			const char* ptr = static_cast<const char*>(p);
-			for (const LibSm64LightweightSlice& slice : LibSm64LightweightSlices)
-			{
-				const char* begin = static_cast<const char*>(segment[slice.segment].address) + slice.offset;
-				if (ptr >= begin && ptr + size <= begin + slice.length)
-					return true;
-			}
-			return false;
-		};
-		auto sectionOffset = [&](const void* p) -> std::string
-		{
-			for (const SegVal& seg : segment)
-			{
-				const char* begin = static_cast<const char*>(seg.address);
-				const char* ptr = static_cast<const char*>(p);
-				if (ptr >= begin && ptr < begin + seg.length)
-					return seg.name + "+" + std::to_string(ptr - begin);
-			}
-			return "outside sections";
-		};
-		auto checkCoverage = [&](const char* symbol, const void* p, size_t size)
-		{
-			if (covered(p, size))
-				ok(std::string("lightweight slices cover ") + symbol + " (" + sectionOffset(p) + ", " + std::to_string(size) + " bytes)");
-			else
-				fail(std::string("lightweight slices do NOT cover ") + symbol + " (" + sectionOffset(p) + ", " + std::to_string(size)
-					+ " bytes); lightweight savestates would not restore it. Use full saves or re-derive LibSm64LightweightSlices for this DLL");
-		};
-
-		checkCoverage("gMarioStates", marioStates, 2 * sizeof(MarioState));
-		checkCoverage("gObjectPool", objectPool, objectPoolCapacity * sizeof(Object));
-		checkCoverage("gGlobalTimer", addr("gGlobalTimer"), sizeof(uint32_t));
-		checkCoverage("gControllerPads", addr("gControllerPads"), 4 * 6);
-		checkCoverage("gMarioObject", addr("gMarioObject"), sizeof(void*));
-		checkCoverage("gCamera", addr("gCamera"), sizeof(void*));
-		checkCoverage("*gCamera", camera, sizeof(Camera));
-		if (floor != nullptr)
-			checkCoverage("gMarioState->floor (surface pool)", floor, sizeof(Surface));
-
-		// Symbols that may not exist in every build: check when present.
-		for (const char* symbol : {"gRandomSeed16", "gCurrentArea", "sSurfacePool", "gAreas"})
-		{
-			void* p = nullptr;
-			try { p = addr(symbol); }
-			catch (const std::exception&) { continue; }
-			checkCoverage(symbol, p, sizeof(void*));
-		}
-
-		// Camera state. The game turns a raw stick into Mario's intended yaw through the camera,
-		// so any of this that a load does not restore makes a replay diverge from the run that
-		// recorded it. These were not part of the original slice selection; they are reported
-		// as warnings rather than failures until ROADMAP 4.5 settles what the search needs.
-		// Sizes are the decomp's, generous where the x64 layout is unknown.
-		auto warnCoverage = [&](const char* symbol, size_t size)
-		{
-			void* p = nullptr;
-			try { p = addr(symbol); }
-			catch (const std::exception&) { return; }
-			if (covered(p, size))
-				ok(std::string("lightweight slices cover ") + symbol + " (" + sectionOffset(p) + ")");
-			else
-				lines.push_back(std::string("WARN: lightweight slices do NOT cover ") + symbol + " (" + sectionOffset(p) + ", "
-					+ std::to_string(size) + " bytes); a lightweight load does not restore it");
-		};
-		warnCoverage("gLakituState", 136);
-		warnCoverage("gPlayerCameraState", 2 * 72);
-		warnCoverage("gCameraMovementFlags", 2);
-		warnCoverage("sModeTransition", 64);
-		warnCoverage("sMarioCamState", sizeof(void*));
-		warnCoverage("sModeOffsetYaw", 2);
-		warnCoverage("sYawSpeed", 2);
-		warnCoverage("sCUpCameraPitch", 2);
-		warnCoverage("sFOVState", 16);
-		warnCoverage("sCameraStoreCUp", 32);
-		warnCoverage("sPanDistance", 4);
-		warnCoverage("sZeroZoomDist", 4);
-		warnCoverage("sSelectionFlags", 2);
-		warnCoverage("sCButtonsPressed", 2);
-
-		// Controller state: buttonPressed is an edge against the previous frame's buttonDown,
-		// so a load that leaves the old buttonDown behind changes whether the next frame's
-		// A is a press or a hold.
-		warnCoverage("gControllers", 3 * 40);
-		warnCoverage("gControllerBits", 2);
-		warnCoverage("gPlayer1Controller", sizeof(void*));
-	}
-
-	return lines;
-}
-
-void LibSm64::verifyLayout()
-{
-	std::vector<std::string> report = layoutCheckReport();
-	std::string failures;
-	for (const std::string& line : report)
-	{
-		if (line.rfind("FAIL: ", 0) == 0)
-			failures += "\n  " + line;
-	}
-	if (!failures.empty())
-	{
-		throw std::runtime_error("LibSm64 layout check failed for " + config.dllPath.string()
-			+ ". The struct headers in tasfw-core/inc/sm64 do not match this DLL build (see docs/libsm64.md):" + failures);
-	}
-}

@@ -7,15 +7,19 @@
 // Without --config the file is config.json next to the executable. Every stage writes its
 // solutions to <outputDirectory>/solutions/<stage>.json; a stage run alone reads its input
 // from the file its input stage wrote last time.
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <exception>
 #include <filesystem>
 #include <map>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
+#include <BitFsObjects.hpp>
 #include <LibSm64.hpp>
+#include <VerifyLayout.hpp>
 
 #include "PipelineConfig.hpp"
 #include "SelfPath.hpp"
@@ -109,10 +113,22 @@ namespace
 		unsigned long long frameAdvances = 0;
 		unsigned long long saves = 0;
 		unsigned long long loads = 0;
+		// Dirty save mode only (docs/libsm64.md, "Savestates"): first-write faults summed over
+		// threads, and the largest dirty set and baseline index any thread reached, which say
+		// what a save or load was copying by the end of the stage.
+		bool dirty = false;
+		unsigned long long faults = 0;
+		size_t dirtyPagesMax = 0;
+		int baselinesMax = 0;
 
 		ResourceCounters operator-(const ResourceCounters& other) const
 		{
-			return { frameAdvances - other.frameAdvances, saves - other.saves, loads - other.loads };
+			ResourceCounters d = *this;
+			d.frameAdvances -= other.frameAdvances;
+			d.saves -= other.saves;
+			d.loads -= other.loads;
+			d.faults -= other.faults;
+			return d;
 		}
 	};
 
@@ -124,6 +140,13 @@ namespace
 			total.frameAdvances += resource.nFrameAdvances;
 			total.saves += resource.nSaveStates;
 			total.loads += resource.nLoadStates;
+			if (const LibSm64DirtyPages* d = resource.dirtyPages())
+			{
+				total.dirty = true;
+				total.faults += d->faults;
+				total.dirtyPagesMax = std::max(total.dirtyPagesMax, d->WrittenCount());
+				total.baselinesMax = std::max(total.baselinesMax, d->baseline);
+			}
 		}
 		return total;
 	}
@@ -137,12 +160,36 @@ namespace
 		{
 			LibSm64Config config;
 			config.dllPath = paths[size_t(i)];
-			config.lightweight = pipeline.lightweight;
+			config.saveMode = pipeline.saveMode;
 			config.countryCode = CountryCode::SUPER_MARIO_64_J;
 			resources.emplace_back(config);
 			resources.back().useCostModel = pipeline.costModel;
 		}
 		return resources;
+	}
+
+	// The game the DLL runs must be what the copied structs and the scripts describe (ROADMAP
+	// 1.1, 2.4): VerifyLayout at the stage's start frame, on one resource, before any stage
+	// runs. Every DLL copy is the same file, so one check covers every thread. Prints the
+	// report; false on a failed check.
+	bool VerifyGame(LibSm64& resource, const PipelineConfig& pipeline, const StageConfig& stage)
+	{
+		fs::path moviePath = stage.m64.value_or(pipeline.m64);
+		M64 m64(moviePath);
+		if (m64.load() != 1)
+			throw std::runtime_error("could not load movie " + moviePath.string());
+		auto status = TopLevelScriptBuilder<VerifyLayout>::Build(m64).ImportResource(&resource).Run(stage.startFrame, BitFsExpectedObjects);
+		std::printf("layout checks at frame %lld (stage \"%s\", %s):\n", (long long)stage.startFrame, stage.name.c_str(),
+			pipeline.DllPaths()[0].filename().string().c_str());
+		for (const std::string& line : status.lines)
+			std::printf("  %s\n", line.c_str());
+		if (status.failures > 0)
+		{
+			std::fprintf(stderr, "error: %d layout check(s) failed: either the struct headers in tasfw-core/inc/sm64 do not match this DLL"
+				" build, or an object the scripts address by gObjectPool slot is not where they expect it (docs/libsm64.md)\n", status.failures);
+			return false;
+		}
+		return true;
 	}
 
 	void ListStages(const PipelineConfig& pipeline)
@@ -174,17 +221,20 @@ namespace
 
 		if (options.dryRun)
 		{
-			std::printf("config:  %s\nmovie:   %s\ndlls:    %s (%d threads)\noutput:  %s\n",
+			std::printf("config:  %s\nmovie:   %s\ndlls:    %s (%d threads, %s saves)\noutput:  %s\n",
 				options.config.string().c_str(), pipeline.m64.string().c_str(),
 				(pipeline.dllDirectory / pipeline.dllPattern).string().c_str(), pipeline.threads,
-				pipeline.outputDirectory.string().c_str());
+				LibSm64SaveModeName(pipeline.saveMode), pipeline.outputDirectory.string().c_str());
 			ListStages(pipeline);
 
+			if (pipeline.stages.empty())
+			{
+				std::printf("\nno stages configured; nothing to verify\n");
+				return 0;
+			}
 			std::vector<LibSm64> one = BuildResources(pipeline, 1);
-			std::printf("\nlayout checks at power-on (%s):\n", pipeline.DllPaths()[0].filename().string().c_str());
-			for (const std::string& line : one[0].layoutCheckReport())
-				std::printf("  %s\n", line.c_str());
-			return 0;
+			std::printf("\n");
+			return VerifyGame(one[0], pipeline, pipeline.stages.front()) ? 0 : 1;
 		}
 
 		// Scattershot writes CSVs and the error.m64 dump straight into the output directory from
@@ -193,6 +243,22 @@ namespace
 		fs::create_directories(pipeline.outputDirectory / "solutions");
 
 		std::vector<LibSm64> resources = BuildResources(pipeline, pipeline.threads);
+
+		// Before any stage runs: the stage about to run, or the first one, names the frame.
+		{
+			const StageConfig* first = nullptr;
+			if (!options.stage.empty())
+			{
+				first = pipeline.FindStage(options.stage);
+				if (!first)
+					ConfigError("no stage named \"" + options.stage + "\" (see --list)");
+			}
+			else if (!pipeline.stages.empty())
+				first = &pipeline.stages.front();
+			if (first && !VerifyGame(resources[0], pipeline, *first))
+				return 1;
+			std::printf("\n");
+		}
 		std::map<std::string, SolutionSet> produced;
 
 		auto runOne = [&](const StageConfig& stage) -> size_t
@@ -232,6 +298,9 @@ namespace
 				(unsigned long long)output.solutions.size(), seconds, pipeline.SolutionsFile(stage.name).string().c_str());
 			// The fixed-workload numbers hard rule 8 asks for (AGENTS.md), summed over threads.
 			std::printf("    frame advances %llu, saves %llu, loads %llu\n", work.frameAdvances, work.saves, work.loads);
+			if (work.dirty)
+				std::printf("    dirty pages: up to %zu per state (%zu KB), %llu first writes, %d baseline(s) per thread\n",
+					work.dirtyPagesMax, work.dirtyPagesMax * pagesize / 1024, work.faults, work.baselinesMax);
 
 			size_t count = output.solutions.size();
 			produced[stage.name] = std::move(output);

@@ -30,6 +30,8 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PROMPT_FILE = os.path.join(HERE, "doc-review-prompt.md")
+# The framework's public surface (AGENTS.md, hard rule 10): changes here are designed first.
+FRAMEWORK_PREFIXES = ("tasfw-core/inc/tasfw/", "tasfw-scattershot/inc/")
 DOC_SUFFIXES = (".md",)
 DOC_PREFIXES = ("docs/",)
 
@@ -116,6 +118,14 @@ def build_reason(current: dict[str, str], pending: dict[str, str]) -> str:
     earlier = sorted(p for p in pending if p not in current)
     if earlier:
         lines.append("  still unreviewed from an earlier, interrupted turn: " + ", ".join(earlier))
+    framework = sorted(p for p in set(current) | set(pending) if p.startswith(FRAMEWORK_PREFIXES))
+    if framework:
+        lines.append("")
+        lines.append("Framework surface changed: " + ", ".join(framework))
+        lines.append("AGENTS.md hard rule 10: a change to the shape of tasfw-core or tasfw-scattershot is "
+                     "designed and agreed with the maintainer before it is written. For each of these files, "
+                     "state where that happened; if it did not, say so and present the design (or revert) "
+                     "instead of documenting the change.")
     lines.append("")
     try:
         with open(PROMPT_FILE, encoding="utf-8") as f:

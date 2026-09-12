@@ -9,10 +9,13 @@ operational. Long-form material lives in [ARCHITECTURE.md](ARCHITECTURE.md),
 sm64-tas-scripting ("TASFW") is a C++20 framework for scripting and brute-forcing
 Super Mario 64 TAS inputs. The game itself runs inside a native x64 DLL (wafel's libsm64,
 built from the SM64 decompilation). Scripts drive it with savestates and frame advances,
-and a multithreaded "scattershot" search explores input space on top of that.
+and a multithreaded "scattershot" search explores input space on top of that. The purpose
+is to make TASing a game easier and more organized, without managing the overhead of state
+more than necessary; every design choice serves that.
 
 The concrete goal driving the code today is a brute forcer for the squish-cancel setup on
-the BitFS tilting pyramid. The framework is intended to become game-agnostic later.
+the BitFS tilting pyramid. The framework is intended to become game- and console-agnostic
+later.
 
 ## Performance is a correctness requirement
 
@@ -59,7 +62,7 @@ its place with numbers, and "it is cleaner" is not a number.
 | `tasfw-scripts/` | Reusable BitFS scripts (pyramid oscillation, downhill angle search, dive-recover attempts) and scattershot stages. |
 | `tasfw-bruteforcers/bitfs-turnaround/` | The only executable (`bitfs-turn.exe`): the BitFS pipeline as config-selected stages (`config.json`, `Stages.cpp`, `PipelineConfig`). `--list`, `--dry-run`, `--stage`. |
 | `tasfw-perf/` | Performance suite (Tier A microbenchmarks on an in-memory fake resource). Release only. |
-| `tasfw-tools/` | `dllcheck`: DLL layout self-check plus frame-advance and savestate cost measurement. |
+| `tasfw-tools/` | `dllcheck`: runs the `VerifyLayout` script against a DLL, reports fixed-slice coverage, and measures frame-advance and savestate cost. |
 | `tasfw-tests/` | Correctness tests (doctest). DLL-free tests always run; the libsm64 smoke test runs when `res\` has the DLL and movie. |
 | `tasfw-testing/` | Header-only test support shared by tests and benchmarks (`FakeResource`). |
 | `perf/` | Committed benchmark baselines per machine; `perf/results/` is gitignored. |
@@ -83,19 +86,28 @@ its place with numbers, and "it is cleaner" is not a number.
   committed one plus a `baseDirectory`, so its relative paths resolve into the source tree).
 - Dependencies (nlohmann/json; doctest and Google Benchmark for tests and perf) are fetched
   by CMake, hash-pinned and cached in `build\downloads` for offline builds. OpenMP is required.
-- Runtime inputs are not in git. You need `res\sm64_jp_0.dll` .. `res\sm64_jp_23.dll` and the
-  .m64 files named in `config.json`. See [docs/libsm64.md](docs/libsm64.md).
-- `bitfs-turn.exe --list` and `--dry-run` are safe: no search runs. **Running it without
+- Runtime inputs are not in git. You need `res\sm64_jp_0.dll` .. `res\sm64_jp_23.dll` (on
+  Linux, `.so` copies) and the .m64 files named in `config.json`.
+  [docs/libsm64.md](docs/libsm64.md) says where to get either and how to unlock them.
+- `bitfs-turn.exe --list` and `--dry-run` are safe: no search runs (`--dry-run` loads one
+  DLL, runs the `VerifyLayout` script to the first stage's frame and prints its report,
+  hardcoded object slots included; it exits 1 on a `FAIL`. A real run makes the same check
+  before its first stage). **Running it without
   arguments runs every configured stage**: 16 threads, hours, thousands of .m64 files under
   `analysis/m64/`. `--stage <name>` runs one stage from the previous stage's saved solutions
   (README.md, "Running the pipeline").
 - Tests: `powershell -ExecutionPolicy Bypass -File scripts\test.ps1` (add `-Config Release`,
   `-Compiler clang`, `-Filter '*Script*'`). Under a second without the DLL, a few seconds with it.
-- The DLL-level check is `build\Release\out\dllcheck.exe <dll> <m64> <frame> [--lightweight]
-  [--leak-scan [frames]]` (docs/libsm64.md). It plays to a frame, verifies the struct layouts
-  against the game, and prints frame-advance and save/load cost. Takes under a second.
-  `--leak-scan` lists every byte range of `.data`/`.bss` that a load does not restore;
-  `python scripts\dll_symbols.py <dll> -` names them from the DLL's exports.
+- The DLL-level check is `build\Release\out\dllcheck.exe <dll> <m64> <frame>
+  [--save-mode full|fixed|dirty] [--leak-scan [frames]] [--objects] [--dirty-scan [frames]]
+  [--dirty-replay]` (docs/libsm64.md). It plays to a frame, verifies the struct layouts
+  against the game, and prints frame-advance and save/load cost in the chosen save mode.
+  Takes under a second. `--leak-scan` lists every byte range of `.data`/`.bss` that a load
+  does not restore; `--objects` lists every active object in `gObjectPool` with its
+  behavior, params, position and home; `--dirty-scan` and `--dirty-replay` count the 4 KB
+  pages the game writes per frame (under pattern inputs from the frame, or while replaying
+  the movie to it) and which of them the fixed slices miss; `python scripts\dll_symbols.py
+  <dll> -` names the offsets in any of these outputs from the DLL's exports.
 - Performance numbers come from `Release` or `RelWithDebInfo` builds only. Debug uses `/Od`.
 - Perf suite: `powershell -ExecutionPolicy Bypass -File scripts\perf.ps1` builds Release,
   runs `tasfw-perf.exe`, and compares against `perf\baselines\<computername>.json`. Tier A
@@ -123,15 +135,43 @@ its place with numbers, and "it is cleaner" is not a number.
    diff can persist. Results leave a script through `CustomStatus`, not member side effects.
 5. **No absolute paths in source.** Route paths through `config.json` (`PipelineConfig`) or
    `Configuration`. There are none left; keep it that way.
-6. **Do not commit** anything under `res/`, `build/`, `out/`, or `analysis/*.csv`.
-7. Do not "simplify" the lightweight save offsets in `LibSm64.cpp` without measuring; they are
-   tuned to the pinned DLL build and are the main reason the search is fast.
+6. **Do not commit** anything under `res/`, `build/`, `out/`, or `analysis/*.csv`, and never
+   a ROM or an unlocked libsm64 binary (`.dll` or `.so`) anywhere; do not vendor the locked
+   ones either, link to wafel or bitfs-sbb (docs/libsm64.md). If CI ever needs the game,
+   the unlock key lives in a maintainer-only secret and the job skips without it, so forks
+   and outside pull requests never see it.
+7. Do not change what a `LibSm64` save mode copies, or when `dirty` takes a baseline, without
+   the Tier B and D numbers; the `fixed` slices (`LibSm64FixedSlices` in `LibSm64.hpp`) are
+   tuned to the pinned DLL build and are what the BitFS search runs on (docs/libsm64.md,
+   "Savestates").
 8. **Performance regressions are bugs.** Changes under `tasfw-core`, `tasfw-scattershot` or
    `tasfw-resources` must include the perf suite delta table (docs/performance.md) and, for
    anything the DLL workload exercises, before/after wall time and the frame-advance/save/load
    counts `bitfs-turn` prints per stage, on a stated fixed workload in a Release build. No
    per-frame heap allocation, no I/O under a critical section, and nothing that adds a frame
    advance without a measured reason.
+9. **Scripts do not touch the resource.** `Script` owns every interaction with it: frames
+   advance through `AdvanceFrameRead`/`AdvanceFrameWrite`, saves and loads through `Save`,
+   `Load`, `LongLoad` and the child-script and ad-hoc runners, the frame through
+   `GetCurrentFrame`. The one exception, until a better access contract exists (ROADMAP
+   3.2), is reading game memory with `resource->addr("symbol")`. Savestate management is
+   automatic in the normal case; the
+   manual methods are escape hatches, and a design that needs a script author to call or
+   know something new is the wrong design. This holds for user scripts, stage scripts and
+   the framework's own scripts (`ScattershotThread`) alike. A check on the game is a script
+   (`VerifyLayout`, which reads through `addr` like any other); only a tool or test whose
+   subject is the resource itself (savestate cost, the leak scan) drives it directly, outside
+   any script, with its own loop. Anything a resource needs (a baseline, a mode) it decides
+   for itself from what it already observes, in the framework's own terms, never through a
+   hook a script has to call or vocabulary borrowed from one pipeline.
+10. **Framework changes are designed first.** Anything that changes the shape of `tasfw-core`
+    or `tasfw-scattershot` (a method or virtual on `Script`, `TopLevelScript` or `Resource`,
+    a free function in their headers, a new concept or term) is proposed to the maintainer
+    and agreed before it is written, however small, and even when it fixes a violation of
+    another rule: say what the concept is in the framework's own terms, who calls it, what
+    it costs, and which alternatives leave the framework unchanged. Bug fixes and measured
+    optimizations behind an unchanged interface do not need this. The Stop hook names any
+    framework header a turn changed and asks where that discussion happened.
 
 ## Conventions
 
@@ -198,7 +238,9 @@ offered in chat as a follow-up.
 Claude Code enforces this with a Stop hook in `.claude/settings.json`. At every prompt
 `.claude/hooks/doc-review.py` fingerprints every tracked or untracked non-`.md` file outside
 `docs/`; when the turn ends with that fingerprint changed, the hook blocks the stop once and
-hands the agent the procedure in `.claude/hooks/doc-review-prompt.md`. Flagged changes whose
+hands the agent the procedure in `.claude/hooks/doc-review-prompt.md`; when the changed files
+include framework headers (`tasfw-core/inc/tasfw/`, `tasfw-scattershot/inc/`) it names them
+and asks where the design discussion hard rule 10 requires took place. Flagged changes whose
 review was interrupted stay pending until a review completes. State lives in the OS temp
 directory under `tasfw-doc-review/`, never in the repo. The hook needs `git` and `python`
 (or `python3`) on PATH and runs under bash (Git Bash on Windows); `TASFW_DOC_REVIEW=0`
@@ -213,9 +255,18 @@ Agents without hooks follow the same procedure by hand at the end of every chang
   `PyramidUpdate` also has on its own surface type, and it is not covered by the drift test.
 - Warning C4715 in the `TurnAround` lambda of `Scattershot_BitfsDr.cpp` is a real bug (not
   all paths return a value).
-- The pyramid object is found as `gObjectPool[84]`, a level-specific index.
-- One DLL copy per thread is required on Windows (a path loads once per process), so
-  `Configuration::ResourcePaths` must have at least `TotalThreads` entries.
+- The pyramid object is `gObjectPool[84]` and the track platform `gObjectPool[85]`,
+  level-specific indices that stay by decision (ROADMAP 2.4: two objects share the pyramid
+  behavior). They are declared with their behavior and home in `BitFsObjects.hpp` and
+  verified by the `VerifyLayout` script the pipeline runs before its first stage, so a
+  spawn-order change fails at start-up. Any new hardcoded slot goes into that list.
+- One DLL copy per thread is required on Windows and Linux (`LoadLibrary` and `dlopen` both
+  hand back the already-loaded image for a path), so `Configuration::ResourcePaths` must have
+  at least `TotalThreads` entries.
+- The `dirty` save mode works by deliberate first-write page faults. A debugger stops on
+  each unless told to ignore access violations; run with `"saveMode": "full"` when
+  debugging, and expect test harnesses that install their own `SIGSEGV` handler to need
+  the re-arming `LibSm64` already does (docs/libsm64.md, "Linux").
 
 ## Glossary
 

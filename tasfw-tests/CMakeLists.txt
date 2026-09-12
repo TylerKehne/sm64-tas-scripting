@@ -24,12 +24,21 @@ add_executable(tasfw-tests
 	"src/test_slots.cpp"
 	"src/test_levelstack.cpp"
 	"src/test_script.cpp"
+	"src/test_sharedlib.cpp"
 	"src/test_libsm64.cpp"
 	"src/test_pipeline.cpp"
 )
-target_link_libraries(tasfw-tests PRIVATE tasfw::core tasfw::resources tasfw::scattershot tasfw::testing tasfw::bitfs_pipeline doctest::doctest)
+target_link_libraries(tasfw-tests PRIVATE tasfw::core tasfw::resources tasfw::scattershot tasfw::testing tasfw::scripts_general tasfw::bitfs_pipeline doctest::doctest)
 target_compile_features(tasfw-tests PRIVATE cxx_std_20)
 set_target_properties(tasfw-tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/out")
 add_optimization_flags(tasfw-tests)
+
+# Clang 21 with libstdc++ 15: doctest's `#include <ciso646>` (its libc++ probe, still there in
+# 2.4.12) trips the library's "<ciso646> is not a standard header since C++20" #warning, which
+# Clang reports even from system headers and -Werror then rejects. Not a generator expression:
+# $<CXX_COMPILER_FRONTEND_VARIANT> needs CMake 3.30 and Ubuntu 24.04 has 3.28. docs/compilers.md.
+if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND NOT CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
+	target_compile_options(tasfw-tests PRIVATE "-Wno-#warnings")
+endif()
 
 add_test(NAME tasfw-tests COMMAND tasfw-tests)
