@@ -53,9 +53,11 @@ Ordered by how much they dominate a typical scattershot run:
 
 1. **Frame advance** (`sm64_update`). Fixed cost per frame, on the order of tens of
    microseconds. Everything else exists to advance fewer frames per useful frame of output.
-2. **Savestate save/load.** `memcpy` of about 1.5 MB in lightweight mode or about 7.3 MB for a
-   full `.data` + `.bss` copy. Memory-bandwidth bound, so it scales worse than frame advance
-   as thread count rises.
+2. **Savestate save/load.** Depends on the save mode (docs/libsm64.md, "Savestates"): about
+   122 pages (488 KB, 7 us) in `dirty` mode during BitFS play, 1.5 MB (41 to 49 us) for the
+   `fixed` slices, 7.3 MB (190 us) for a `full` copy. Memory-bandwidth bound, so it scales
+   worse than frame advance as thread count rises; `dirty` also grows with what the game
+   writes between baselines.
 3. **Block decoding.** Every scattershot shot replays the base block's segment chain from the
    root by re-running scripts. Cost grows with block depth over the run and shows up as
    "Overhead" in the end-of-run summary.
@@ -75,7 +77,7 @@ Ordered by how much they dominate a typical scattershot run:
 
 Measured on the pinned DLL with `dllcheck --dirty-scan 300 --dirty-replay` at frame 3330
 of `comissonPyra2-Fanart_x-Z.m64` (docs/libsm64.md). Consecutive frames compared page by
-page; `.data` + `.bss` is 7,108 KB, today's lightweight slices copy 1,464 KB in 41 us.
+page; `.data` + `.bss` is 7,108 KB, the `fixed` slices copy 1,464 KB in 41 us.
 
 | | Pattern inputs from 3330, 300 frames | Movie replay, frames 1..3330 |
 |---|---|---|
@@ -83,7 +85,7 @@ page; `.data` + `.bss` is 7,108 KB, today's lightweight slices copy 1,464 KB in 
 | bytes changed per frame (min / median / max) | 50 / 5,636 / 110,086 | 7 / 3,075 / 205,872 |
 | distinct pages touched after 1 / 30 / 60 / 120 / 300 frames | 58 / 64 / 64 / 74 / 122 | 94 / 105 / 105 / 263 / 286 (303 at 3330) |
 | total touched | 122 pages, 488 KB (140 KB of bytes ever changed) | 303 pages, 1,212 KB (482 KB ever changed) |
-| touched pages outside the lightweight slices | 7, all audio scratch (`gAudioHeap`, `gSoundDataADSR`) and the lava texture scroll | 55, adding level-load state (`gDemoInputs`, palettes, gfx buffers) |
+| touched pages outside the `fixed` slices | 7, all audio scratch (`gAudioHeap`, `gSoundDataADSR`) and the lava texture scroll | 55, adding level-load state (`gDemoInputs`, palettes, gfx buffers) |
 
 Three conclusions. The in-level write set is a third of what the slices copy, so a save
 that tracked writes could run about 3x faster. The set keeps growing slowly as Mario does
@@ -157,22 +159,24 @@ families play the movie to `TASFW_FRAME` (default 3330) once, then measure:
   (fixed few iterations; each keeps its buffers until the end).
 - `Load`: load the anchor slot.
 - `ResidentPerSlot/N`: N fresh saves with the process working set sampled before and
-  after (100 slots, and 1,000 in lightweight mode; 1,000 full saves would pass 4 GB and
-  skip). `stateBytes` is one state as the resource accounts it, exact and gated:
-  1,500,000 bytes lightweight, 7,279,456 full on the pinned DLL. `rssPerSlot` is what the
+  after (100 slots, and 1,000 in the `fixed` and `dirty` modes; 1,000 full saves would pass
+  4 GB and skip). `stateBytes` is one state as the resource accounts it, exact and gated:
+  7,279,456 bytes full, 1,500,000 fixed, and in `dirty` mode the pages written since the
+  baseline (about 500,000 at the anchor) on the pinned DLL. `rssPerSlot` is what the
   process grew by per slot, slot-map nodes included: within 0.2% of `stateBytes` at both
   counts, so a live slot costs its state and nothing else.
 
 `^BM_LibSm64Scaling` runs `FrameAdvance` and `SaveErase` on 1, 2, 4, 8 and 16 threads,
-each thread on its own DLL copy with lightweight saves, as the search runs (thread i loads
+each thread on its own DLL copy with `dirty` saves, as the search runs (thread i loads
 the copy whose trailing index is i + 1, `res\sm64_jp_1.dll` onward; the family skips
 without those copies). `perf.ps1` does not pin this family to one CPU. Google Benchmark
 reports these rows per thread, so the aggregate rate is n times the row's;
 `perf_compare.py` computes efficiency, the per-thread rate at n threads over the rate at
 one thread, from each run's own rows. First numbers (2026-09-08, 16 cores, 32 logical
 CPUs; MSVC and clang-cl within 3 points): frame advance 100 / 99 / 96 / 80% at 2 / 4 / 8 /
-16 threads, lightweight save and erase 98 / 99 / 93 / 65%. Frames scale until the 16
-threads start sharing physical cores; the 1.5 MB save is bandwidth-bound and drops sooner.
+16 threads, fixed-slice save and erase 98 / 99 / 93 / 65% (measured before the `dirty`
+mode existed; the family now runs `dirty`). Frames scale until the 16 threads start
+sharing physical cores; a bandwidth-bound save drops sooner.
 
 Gate: counts exact (`stateBytes` included); times within 10%; efficiency at 2, 4 and 8
 threads must not fall below the baseline by more than 5 points (`--efficiency-tolerance`).
@@ -231,6 +235,9 @@ post on the deterministic workload back to back. On 2026-09-08 this machine drif
 140 s to 160 s on that workload within one afternoon with no VM and nothing else running,
 and a single A/B in the middle pointed at a change that four interleaved runs then cleared
 (change log). Do not measure with Docker Desktop's VM up either; it alone adds about 11%.
+Do not start Tier D right after a large build or test pass: three times on 2026-09-12 the
+first run after one read 40 to 60% slow with the phase split unchanged, and a rerun a few
+minutes later was back at the baseline (change log).
 
 ### Reporting and gating
 
@@ -337,7 +344,7 @@ Noise control, learned the hard way while setting this up:
   unchanged; rebuilt without the new code, both read their baselines. To attribute a large
   shift on a row whose code did not change, rebuild the perf binary without the addition
   and measure the row; then re-save with the numbers in the change log.
-- The lightweight `SaveErase` and `Load` rows (a 1.5 MB copy that fits the 2 MB L2) have two
+- The `Fixed` `SaveErase` and `Load` rows (a 1.5 MB copy that fits the 2 MB L2) have two
   states, about 37 and about 42 us, on both compilers, hours apart, on unchanged code, while
   the full-save rows and the frame advance stay put. A run in the other state on unchanged
   code is re-saved with a note in the change log, not investigated again.
@@ -420,6 +427,57 @@ What the Tier A and B numbers say together:
 ## Change log (measured)
 
 Every hot-path change records its delta table here, newest first.
+
+### 2026-09-12: three save modes in `LibSm64`; `dirty` measured against `fixed` (ROADMAP 2.3)
+
+`LibSm64Config::saveMode` replaces the `lightweight` flag: `full` (both sections), `fixed`
+(the hand-tuned slices, unchanged) and `dirty` (write-protected pages, copy what the game
+wrote since a baseline the resource takes at the first save of a run; docs/libsm64.md,
+"Savestates"). The Tier B families are now `^BM_LibSm64Full`, `^BM_LibSm64Fixed` and
+`^BM_LibSm64Dirty`; the baselines still carry the old `Light` rows, which read `MISSING`,
+and the `Fixed` and `Dirty` rows read `NEW` until the baseline is re-saved after review.
+The scaling family and the Tier C and D workloads ran in `dirty`. MSVC Release, VM stopped.
+
+| Tier | Result |
+|---|---|
+| A time rows | 0 regressions; `Script_GetInputs_Uncached_Depth/1` and `/4` -15% (the layout-sensitive rows on record) |
+| B, `Fixed` family (new rows) | save and erase 43.0 us, load 43.5 us, fresh save 277 us, frame advance 14.3 us, 28.3 ms / 285 ms resident for 100 / 1,000 slots: the old `Light` numbers |
+| B, `Dirty` family (new rows) | as written, the benchmark anchors right after the first slot, so its saves and loads had nothing to copy (0.1 us); the meaningful number is `dllcheck`'s, measured 60 frames into the run: 7.3 us save, 7.0 us load for 122 pages |
+| B, `Full` family | unchanged (175 to 185 us) |
+| B, thread scaling | frame advance flat; save and erase 6.8 / 6.8 / 7.0 / 6.9 / 9.6 us at 1 / 2 / 4 / 8 / 16 threads against 40 to 62 us (-83%), with about 120 dirty pages per state |
+| allocations, exact counts | 0 / 0 regressions |
+| C (oscillation, downhill, sweep) | -6.7%, -5.1%, -2.7%, counts identical |
+| D deterministic, 8 threads, cost model off | counts identical (55 / 109,958 / 520,052 / 0). Paired runs of the same build: `fixed` 134.9 s, `dirty` 139.8 s (+3.6%); the suite read 141.5 s against the 139.6 s baseline (+1.4%). Each thread's dirty set reaches 525 pages (2.1 MB) because pellets die and the level reloads, so every load restores more than the 1.5 MB slices |
+| D throughput, 16 threads, cost model on | `dirty` 87.5 s against the 74.9 s baseline (+17%) and a paired `fixed` run at 71.9 s (+22%); the cost model, measuring dearer saves, made 30,568 automatic saves instead of 69,786 and replayed 3% more frames. Not count-gated (non-deterministic) |
+
+Conclusion for this workload: `dirty` wins by 5 to 6x per save or load while the set is
+small, loses once the search's set has grown to 2.1 MB, and the 16-thread run pays most.
+Decision (maintainer, 2026-09-12): the committed pipeline config and both Tier D workloads
+select `fixed`, the faster mode for the BitFS search as it stands, so the gated Tier D rows
+keep measuring what the pipeline runs; `dirty` stays the code default for tests, tools,
+other builds and Linux. With `fixed` in the committed configs the suite reads 135.1 s
+(-3.2%) and 74.2 s (-0.9%) against the baselines, counts identical, zero regressions. A
+resource-internal re-baseline when many loads have hit a large set would recover the gap
+(ROADMAP 2.3); it is not implemented.
+
+A first suite run read the deterministic row at 221.8 s (+59%); it did not reproduce in
+three later runs (139.8, 141.5 s) and is treated as interference, like the 156 s reading
+on 2026-09-08.
+
+Same day, after the maintainer's review of how scripts and the framework relate (AGENTS.md
+hard rules 9 and 10): the layout check left `LibSm64` and the framework. It is now the
+`VerifyLayout` script in tasfw-scripts, reading through `resource->addr()`; the pipeline
+runs it once on one resource before its first stage instead of once per thread through a
+`Resource` virtual, the dry run and `dllcheck` print its report, and the fixed-slice
+coverage report moved into `dllcheck`. `Resource::verifyLayout` is gone, and the
+`PlayMovie` helper that had briefly been added to `Resource.hpp` with it. Sixteen start-up
+checks became one; nothing on the search path changed. Re-measured in `fixed` after the
+machine had idled: deterministic 134.5 s (baseline 139.6 s, -3.7%), throughput 69.5 s
+(baseline 74.9 s, -7.2%), counts identical, zero regressions. An earlier suite run that
+started three minutes after a two-compiler build-and-test pass read 192.8 s and 89.1 s with
+the same phase split as the fast runs (load 6%, frame advance 25%, other 67%), so the whole
+process was slowed uniformly; reruns on the idle machine came back at the numbers above.
+Third such reading today: do not take Tier D right after a large build.
 
 ### 2026-09-08: hardcoded object slots verified at start-up (ROADMAP 2.4)
 

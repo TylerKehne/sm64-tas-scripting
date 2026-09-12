@@ -23,8 +23,8 @@
 // scripts/perf.ps1 sets these from res/ when present; without them every benchmark here is
 // skipped, so the suite still runs in CI.
 //
-// A DLL path loads once per process, so full and lightweight saves are two families
-// (^BM_LibSm64Full, ^BM_LibSm64Light) that perf.ps1 runs in separate processes; one
+// A DLL path loads once per process, so the three save modes are three families
+// (^BM_LibSm64Full, ^BM_LibSm64Fixed, ^BM_LibSm64Dirty) that perf.ps1 runs in separate processes; one
 // resource per process is played to the frame once and shared by the family. Each family
 // ends with a memory row (resident set per live slot), and a third family
 // (^BM_LibSm64Scaling) measures thread scaling on one DLL copy per thread.
@@ -36,12 +36,12 @@ namespace
 	struct Game
 	{
 		std::unique_ptr<LibSm64> resource;
-		bool lightweight = false;
+		LibSm64SaveMode mode = LibSm64SaveMode::Full;
 		int64_t frame = 0;
 		int64_t anchor = -1; // slot at `frame`, to return to after advancing
 	};
 
-	Game* LoadGame(bool lightweight, benchmark::State& state)
+	Game* LoadGame(LibSm64SaveMode mode, benchmark::State& state)
 	{
 		static std::unique_ptr<Game> game;
 		if (Env("TASFW_LIBSM64").empty() || Env("TASFW_M64").empty())
@@ -49,7 +49,7 @@ namespace
 			state.SkipWithMessage("TASFW_LIBSM64 / TASFW_M64 not set");
 			return nullptr;
 		}
-		if (game && game->lightweight != lightweight)
+		if (game && game->mode != mode)
 		{
 			state.SkipWithMessage("the DLL is already loaded in the other save mode; run this family in its own process");
 			return nullptr;
@@ -59,10 +59,10 @@ namespace
 			LibSm64Config config;
 			config.dllPath = Env("TASFW_LIBSM64");
 			config.countryCode = CountryCode::SUPER_MARIO_64_J;
-			config.lightweight = lightweight;
+			config.saveMode = mode;
 
 			auto loaded = std::make_unique<Game>();
-			loaded->lightweight = lightweight;
+			loaded->mode = mode;
 			loaded->frame = Env("TASFW_FRAME").empty() ? 3330 : std::stoll(Env("TASFW_FRAME"));
 			loaded->resource = std::make_unique<LibSm64>(config);
 
@@ -87,9 +87,9 @@ namespace
 
 	// Save into a recycled slot and release it: the steady-state cost of a save once the
 	// pool is warm, which is what a script pays per Save() during a search.
-	void SaveErase(benchmark::State& state, bool lightweight)
+	void SaveErase(benchmark::State& state, LibSm64SaveMode mode)
 	{
-		Game* game = LoadGame(lightweight, state);
+		Game* game = LoadGame(mode, state);
 		if (!game)
 			return;
 		LibSm64& resource = *game->resource;
@@ -105,9 +105,9 @@ namespace
 
 	// Save into fresh storage: what a save costs when nothing has been released yet. Kept to
 	// a fixed few iterations because every one of them keeps its buffers until the end.
-	void SaveFresh(benchmark::State& state, bool lightweight)
+	void SaveFresh(benchmark::State& state, LibSm64SaveMode mode)
 	{
-		Game* game = LoadGame(lightweight, state);
+		Game* game = LoadGame(mode, state);
 		if (!game)
 			return;
 		LibSm64& resource = *game->resource;
@@ -124,9 +124,9 @@ namespace
 			resource.slotManager.EraseSlot(id);
 	}
 
-	void Load(benchmark::State& state, bool lightweight)
+	void Load(benchmark::State& state, LibSm64SaveMode mode)
 	{
-		Game* game = LoadGame(lightweight, state);
+		Game* game = LoadGame(mode, state);
 		if (!game)
 			return;
 		LibSm64& resource = *game->resource;
@@ -139,9 +139,9 @@ namespace
 
 	// One game frame with neutral inputs, from the anchor frame; the anchor is reloaded at
 	// the end so the family's other benchmarks start from the same state.
-	void FrameAdvance(benchmark::State& state, bool lightweight)
+	void FrameAdvance(benchmark::State& state, LibSm64SaveMode mode)
 	{
-		Game* game = LoadGame(lightweight, state);
+		Game* game = LoadGame(mode, state);
 		if (!game)
 			return;
 		LibSm64& resource = *game->resource;
@@ -160,9 +160,9 @@ namespace
 	// only when the save layout does); rssPerSlot is what the process grew by per slot,
 	// slot-map nodes included, and is informational. Skipped when N states would pass 4 GB
 	// (full saves at 1,000 slots).
-	void ResidentPerSlot(benchmark::State& state, bool lightweight)
+	void ResidentPerSlot(benchmark::State& state, LibSm64SaveMode mode)
 	{
-		Game* game = LoadGame(lightweight, state);
+		Game* game = LoadGame(mode, state);
 		if (!game)
 			return;
 		LibSm64& resource = *game->resource;
@@ -195,7 +195,7 @@ namespace
 		resource.slotManager._pooledMem = 0;
 	}
 
-	// Thread scaling: n threads, each on its own DLL copy with lightweight saves, as the
+	// Thread scaling: n threads, each on its own DLL copy with dirty-page saves, as the
 	// search runs. Thread i loads the copy whose trailing index is i + 1, derived from
 	// TASFW_LIBSM64 (res/sm64_jp_0.dll -> sm64_jp_1.dll, ...), so the family can share a
 	// process with the single-resource families, which hold copy 0. A copy is loaded and
@@ -246,7 +246,7 @@ namespace
 		LibSm64Config config;
 		config.dllPath = DllCopyPath(index);
 		config.countryCode = CountryCode::SUPER_MARIO_64_J;
-		config.lightweight = true;
+		config.saveMode = LibSm64SaveMode::Dirty;
 		auto loaded = std::make_unique<ThreadGame>();
 		loaded->resource = std::make_unique<LibSm64>(config);
 
@@ -296,27 +296,38 @@ namespace
 	}
 }
 
-static void BM_LibSm64Full_SaveErase(benchmark::State& state) { SaveErase(state, false); }
-static void BM_LibSm64Full_SaveFresh(benchmark::State& state) { SaveFresh(state, false); }
-static void BM_LibSm64Full_Load(benchmark::State& state) { Load(state, false); }
-static void BM_LibSm64Full_FrameAdvance(benchmark::State& state) { FrameAdvance(state, false); }
+static void BM_LibSm64Full_SaveErase(benchmark::State& state) { SaveErase(state, LibSm64SaveMode::Full); }
+static void BM_LibSm64Full_SaveFresh(benchmark::State& state) { SaveFresh(state, LibSm64SaveMode::Full); }
+static void BM_LibSm64Full_Load(benchmark::State& state) { Load(state, LibSm64SaveMode::Full); }
+static void BM_LibSm64Full_FrameAdvance(benchmark::State& state) { FrameAdvance(state, LibSm64SaveMode::Full); }
 BENCHMARK(BM_LibSm64Full_SaveErase)->Unit(benchmark::kMicrosecond);
 BENCHMARK(BM_LibSm64Full_SaveFresh)->Unit(benchmark::kMicrosecond)->Iterations(40);
 BENCHMARK(BM_LibSm64Full_Load)->Unit(benchmark::kMicrosecond);
 BENCHMARK(BM_LibSm64Full_FrameAdvance)->Unit(benchmark::kMicrosecond)->Iterations(3000);
-static void BM_LibSm64Full_ResidentPerSlot(benchmark::State& state) { ResidentPerSlot(state, false); }
+static void BM_LibSm64Full_ResidentPerSlot(benchmark::State& state) { ResidentPerSlot(state, LibSm64SaveMode::Full); }
 BENCHMARK(BM_LibSm64Full_ResidentPerSlot)->Unit(benchmark::kMillisecond)->Arg(100)->Iterations(1);
 
-static void BM_LibSm64Light_SaveErase(benchmark::State& state) { SaveErase(state, true); }
-static void BM_LibSm64Light_SaveFresh(benchmark::State& state) { SaveFresh(state, true); }
-static void BM_LibSm64Light_Load(benchmark::State& state) { Load(state, true); }
-static void BM_LibSm64Light_FrameAdvance(benchmark::State& state) { FrameAdvance(state, true); }
-BENCHMARK(BM_LibSm64Light_SaveErase)->Unit(benchmark::kMicrosecond);
-BENCHMARK(BM_LibSm64Light_SaveFresh)->Unit(benchmark::kMicrosecond)->Iterations(200);
-BENCHMARK(BM_LibSm64Light_Load)->Unit(benchmark::kMicrosecond);
-BENCHMARK(BM_LibSm64Light_FrameAdvance)->Unit(benchmark::kMicrosecond)->Iterations(3000);
-static void BM_LibSm64Light_ResidentPerSlot(benchmark::State& state) { ResidentPerSlot(state, true); }
-BENCHMARK(BM_LibSm64Light_ResidentPerSlot)->Unit(benchmark::kMillisecond)->Arg(100)->Arg(1000)->Iterations(1);
+static void BM_LibSm64Fixed_SaveErase(benchmark::State& state) { SaveErase(state, LibSm64SaveMode::Fixed); }
+static void BM_LibSm64Fixed_SaveFresh(benchmark::State& state) { SaveFresh(state, LibSm64SaveMode::Fixed); }
+static void BM_LibSm64Fixed_Load(benchmark::State& state) { Load(state, LibSm64SaveMode::Fixed); }
+static void BM_LibSm64Fixed_FrameAdvance(benchmark::State& state) { FrameAdvance(state, LibSm64SaveMode::Fixed); }
+BENCHMARK(BM_LibSm64Fixed_SaveErase)->Unit(benchmark::kMicrosecond);
+BENCHMARK(BM_LibSm64Fixed_SaveFresh)->Unit(benchmark::kMicrosecond)->Iterations(200);
+BENCHMARK(BM_LibSm64Fixed_Load)->Unit(benchmark::kMicrosecond);
+BENCHMARK(BM_LibSm64Fixed_FrameAdvance)->Unit(benchmark::kMicrosecond)->Iterations(3000);
+static void BM_LibSm64Fixed_ResidentPerSlot(benchmark::State& state) { ResidentPerSlot(state, LibSm64SaveMode::Fixed); }
+BENCHMARK(BM_LibSm64Fixed_ResidentPerSlot)->Unit(benchmark::kMillisecond)->Arg(100)->Arg(1000)->Iterations(1);
+
+static void BM_LibSm64Dirty_SaveErase(benchmark::State& state) { SaveErase(state, LibSm64SaveMode::Dirty); }
+static void BM_LibSm64Dirty_SaveFresh(benchmark::State& state) { SaveFresh(state, LibSm64SaveMode::Dirty); }
+static void BM_LibSm64Dirty_Load(benchmark::State& state) { Load(state, LibSm64SaveMode::Dirty); }
+static void BM_LibSm64Dirty_FrameAdvance(benchmark::State& state) { FrameAdvance(state, LibSm64SaveMode::Dirty); }
+BENCHMARK(BM_LibSm64Dirty_SaveErase)->Unit(benchmark::kMicrosecond);
+BENCHMARK(BM_LibSm64Dirty_SaveFresh)->Unit(benchmark::kMicrosecond)->Iterations(200);
+BENCHMARK(BM_LibSm64Dirty_Load)->Unit(benchmark::kMicrosecond);
+BENCHMARK(BM_LibSm64Dirty_FrameAdvance)->Unit(benchmark::kMicrosecond)->Iterations(3000);
+static void BM_LibSm64Dirty_ResidentPerSlot(benchmark::State& state) { ResidentPerSlot(state, LibSm64SaveMode::Dirty); }
+BENCHMARK(BM_LibSm64Dirty_ResidentPerSlot)->Unit(benchmark::kMillisecond)->Arg(100)->Arg(1000)->Iterations(1);
 
 static void BM_LibSm64Scaling_FrameAdvance(benchmark::State& state) { ScalingFrameAdvance(state); }
 static void BM_LibSm64Scaling_SaveErase(benchmark::State& state) { ScalingSaveErase(state); }

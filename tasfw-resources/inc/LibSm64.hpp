@@ -1,9 +1,8 @@
 #pragma once
-#include <array>
 #include <cstdint>
 #include <filesystem>
+#include <memory>
 #include <string>
-#include <unordered_map>
 #include <vector>
 #include "tasfw/Resource.hpp"
 #include <tasfw/Inputs.hpp>
@@ -14,47 +13,35 @@
 // OBJECT_POOL_CAPACITY in the decomp: gObjectPool is a static array of this many Objects.
 inline constexpr int LibSm64ObjectPoolCapacity = 240;
 
-// What a script expects to find in a gObjectPool slot. Scripts address level objects by slot
-// (`objectPool[84]` is the BitFS pyramid), which is the maintainer's decision (ROADMAP 2.4):
-// several objects share a behavior, so the slot is the identifier. The slot is a side effect
-// of spawn order, though, so each expectation is verified once per thread by the layout check
-// (LibSm64::objectCheckReport): the slot must be active and run the named behavior, and, when
-// checkHome is set, sit at the home position the level script spawned it at. Home is what
-// tells the two BitFS pyramids apart (their behavior runs SET_HOME), but it is not a rule
-// that holds for every object: many never set it and moving objects may update it, so an
-// expectation can leave it unchecked. A mismatch fails start-up with a readable message
-// instead of letting scripts read another object. The BitFS list is
-// tasfw-scripts/inc/BitFsObjects.hpp.
-struct LibSm64ExpectedObject
+// How a savestate represents the DLL's .data and .bss (docs/libsm64.md, "Savestates"). The
+// choice is the resource's alone: scripts never see it, and savestate management stays
+// automatic whichever mode is set. Costs are for the pinned DLL on the reference machine.
+enum class LibSm64SaveMode
 {
-	int slot;
-	const char* behavior; // exported behavior symbol, pinned-DLL spelling (LibSm64SymbolAliases apply)
-	float homeX;
-	float homeY;
-	float homeZ;
-	bool checkHome = true;
+	Full,  // both sections whole: 7.3 MB, about 184 us per save or load. The reference, and
+	       // the mode to use under a debugger (no page faults).
+	Fixed, // five hand-tuned byte ranges: 1.5 MB, about 41 us, constant whatever the game
+	       // does. Tuned to the pinned 2022 build: construction refuses it on a build whose
+	       // sections are smaller, and `dllcheck --save-mode fixed` reports which of the
+	       // symbols the framework depends on the slices cover.
+	Dirty, // the pages the game has written since the current baseline: about 122 pages
+	       // (488 KB) and 7 us in BitFS play. Exact by construction on any build and on Linux;
+	       // the cost grows with what the game writes (level loads, deaths) until the next
+	       // baseline, which the resource takes on its own at the first save of a run.
 };
+
+const char* LibSm64SaveModeName(LibSm64SaveMode mode);                    // "full", "fixed", "dirty"
+bool ParseLibSm64SaveMode(const std::string& name, LibSm64SaveMode& mode); // the same words; false if unknown
 
 class LibSm64Config
 {
 public:
 	std::filesystem::path dllPath;
 	CountryCode countryCode;
-	bool lightweight; // true = faster, but accuracy not guaranteed in all situations.
-	                  // Windows only; see LibSm64LightweightSupported.
-	std::vector<LibSm64ExpectedObject> expectedObjects; // verified by layoutCheckReport once in a level
+	LibSm64SaveMode saveMode = LibSm64SaveMode::Dirty;
 };
 
 constexpr int pagesize = 4096;
-
-// Lightweight saves exist only on Windows. The Linux LibSm64 write-protects .data/.bss and
-// saves the pages the game dirtied instead (LibSm64.cpp), so LibSm64Config::lightweight is
-// ignored there and the slice coverage checks in layoutCheckReport do not apply.
-#if defined(_WIN32)
-inline constexpr bool LibSm64LightweightSupported = true;
-#else
-inline constexpr bool LibSm64LightweightSupported = false;
-#endif
 
 // Exported names the decomp has changed since the pinned 2022 build (docs/libsm64.md).
 // LibSm64::addr tries the name it was given first, so the pinned DLL never pays for this
@@ -72,11 +59,11 @@ inline constexpr LibSm64SymbolAlias LibSm64SymbolAliases[] = {
 	{"bhvLllTiltingInvertedPyramid", "bhvLLLTiltingInvertedPyramid"},
 };
 
-// Lightweight save mode copies only these byte ranges of the DLL's .data (segment 0) and
-// .bss (segment 1) instead of the whole sections. They were chosen empirically for the
-// pinned 2022 build (docs/libsm64.md); LibSm64::layoutCheckReport verifies that the game
-// state the framework depends on actually lies inside them for whatever DLL is loaded.
-struct LibSm64LightweightSlice
+// Fixed mode copies only these byte ranges of the DLL's .data (segment 0) and .bss
+// (segment 1) instead of the whole sections. They were chosen empirically for the pinned
+// 2022 build (docs/libsm64.md); `dllcheck --save-mode fixed` reports whether the game state
+// the framework depends on lies inside them for whatever DLL is loaded.
+struct LibSm64FixedSlice
 {
 	int segment;       // 0 = .data, 1 = .bss
 	size_t offset;     // byte offset into the section
@@ -84,26 +71,69 @@ struct LibSm64LightweightSlice
 	size_t bufOffset;  // byte offset into buf1 (.data) or buf2 (.bss)
 };
 
-inline constexpr LibSm64LightweightSlice LibSm64LightweightSlices[] = {
+inline constexpr LibSm64FixedSlice LibSm64FixedSlices[] = {
 	{0, 0,       100000,  0},
 	{0, 2000000, 100000,  100000},
 	{1, 0,       600000,  0},
 	{1, 1700000, 600000,  600000},
 	{1, 4700000, 100000,  1200000},
 };
-inline constexpr size_t LibSm64LightweightBuf1Size = 200000;
-inline constexpr size_t LibSm64LightweightBuf2Size = 1300000;
+inline constexpr size_t LibSm64FixedBuf1Size = 200000;
+inline constexpr size_t LibSm64FixedBuf2Size = 1300000;
 
+// A savestate. Full and Fixed fill buf1/buf2 (the whole sections, or the fixed slices
+// packed). Dirty records which baseline the state is relative to, which pages of the page
+// index space (.data's pages then .bss's) the game had written since that baseline began,
+// and those pages' contents in index order. SlotManager recycles these objects, so the
+// vectors keep their capacity and a save into a warm slot allocates nothing.
 class LibSm64Mem
 {
 public:
-#if defined(_WIN32)
 	std::vector<uint8_t> buf1;
 	std::vector<uint8_t> buf2;
-#else
-	std::unordered_map<void*, std::array<uint8_t, pagesize>> changed_regions;
-	uint64_t region_count_at_save_time=0;
-#endif
+	int baseline = 0;
+	std::vector<uint64_t> written;
+	std::vector<uint8_t> pages;
+};
+
+// The bookkeeping behind Dirty mode (ROADMAP 2.3). Whole pages covering .data and .bss (edge
+// pages included) form one index space and are all made read-only; the first write to a page
+// faults, a process-wide handler (vectored exception handler on Windows, SIGSEGV on Linux)
+// finds the set that owns the address, sets the page's bit in `written` and makes the page
+// writable again. Faults happen once per page per baseline, about 120 in a BitFS run, never
+// per frame. A save copies the written pages; a load writes them back and restores the pages
+// written since the save from the baseline's snapshot, so a load is exact by construction.
+//
+// A baseline is taken by LibSm64::save itself whenever it is asked to save while the slot
+// manager holds no live slots: the start save every top-level run begins with, and the first
+// slot of a run, which is the save LongLoad makes at the frame exploration starts from. It
+// freezes the bitmap, snapshots the sections, clears the bitmap and re-protects, so later
+// saves copy only what the run itself writes; nothing in the framework or in any script
+// takes part. Snapshots of baselines no live state can refer to are released then; the one
+// the start save refers to is kept, so re-entering a run stays exact. Heap-allocated and
+// owned through a unique_ptr so that moving a LibSm64 does not move what the handler
+// points at.
+struct LibSm64DirtyPages
+{
+	struct Range
+	{
+		uint8_t* begin = nullptr; // page-aligned
+		size_t pages = 0;
+	};
+	Range range[2];
+	size_t pageCount = 0;
+	int baseline = 0;                                     // index of the current baseline
+	std::vector<uint64_t> written;                        // pages written since it began, one bit per page
+	std::vector<std::vector<uint64_t>> writtenByBaseline; // frozen bitmaps of finished baselines, by index
+	std::vector<std::vector<uint8_t>> snapshots;          // section contents at each baseline's start; empty = released
+	uint64_t faults = 0;                                  // first writes recorded, all baselines
+
+	uint8_t* PageAddress(size_t index) const;
+	bool Contains(const void* p, size_t& index) const;
+	void OnWrite(size_t index); // handler path: record and make writable
+	void ProtectAll();
+	void UnprotectAll();
+	size_t WrittenCount() const;
 };
 
 class LibSm64 : public Resource<LibSm64Mem>
@@ -113,12 +143,10 @@ public:
 	std::vector<SegVal> segment;
 	const LibSm64Config config;
 
-#if !defined(_WIN32)
-	std::vector<uint8_t> original_buf1;
-	std::vector<uint8_t> original_buf2;
-#endif
-
 	LibSm64(const LibSm64Config& config);
+	~LibSm64() override;
+	LibSm64(LibSm64&&) = default;
+
 	void save(LibSm64Mem& state) const override;
 	void load(const LibSm64Mem& state) override;
 	void advance() override;
@@ -127,25 +155,9 @@ public:
 	std::size_t getStateSize(const LibSm64Mem& state) const override;
 	uint32_t getCurrentFrame() const override;
 
-	// Layout self-check (ROADMAP 1.1). Reads game state through the copied decomp structs
-	// and cross-checks it against relationships the game guarantees (Mario's object lives in
-	// the object pool at a multiple of sizeof(Object), its behavior is bhvMario, its
-	// position fields mirror MarioState, the floor normal is unit length, ...). Any mismatch
-	// means the headers in tasfw-core/inc/sm64 do not describe this DLL build.
-	// Returns one line per check, prefixed "ok: " or "FAIL: ". In-level checks are only
-	// possible once Mario exists (i.e. after loading to a frame inside a level).
-	std::vector<std::string> layoutCheckReport() const;
-	void verifyLayout() override;
-
-	// True if the pointer lies inside the DLL's .data or .bss section, i.e. it is plausibly
-	// a pointer into game memory rather than garbage read through a wrong layout.
-	bool pointsIntoGameData(const void* p) const;
-
-	// One "ok: "/"FAIL: " line per expectation: does gObjectPool[slot] hold an active object
-	// running `behavior` at home (homeX, homeY, homeZ)? Only meaningful inside a level.
-	// layoutCheckReport calls it with config.expectedObjects; exposed so a test can hand it a
-	// wrong expectation and see the FAIL.
-	std::vector<std::string> objectCheckReport(const std::vector<LibSm64ExpectedObject>& expected) const;
+	// The Dirty-mode bookkeeping, or nullptr in the other modes. Read-only, for dllcheck's
+	// report and the tests.
+	const LibSm64DirtyPages* dirtyPages() const { return _dirtyPages.get(); }
 
 private:
 	// Resolved once at construction. DLL symbol addresses never move. (GetProcAddress
@@ -155,6 +167,9 @@ private:
 	UpdateFn _sm64Update = nullptr;
 	uint8_t* _controllerPads = nullptr; // gControllerPads: u16 button, s8 stick_x, s8 stick_y
 	const uint32_t* _globalTimer = nullptr;
+
+	std::unique_ptr<LibSm64DirtyPages> _dirtyPages;
+	void TakeBaseline(bool forStartSave) const;
 };
 
 #endif

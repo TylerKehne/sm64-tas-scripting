@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 #include <BitFsObjects.hpp>
 #include <LibSm64.hpp>
+#include <VerifyLayout.hpp>
 #include <sm64/Camera.hpp>
 #include <sm64/ObjectFields.hpp>
 #include <sm64/Trig.hpp>
@@ -14,6 +15,8 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <memory>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -51,10 +54,6 @@ namespace
 	struct SmokeResults
 	{
 		MarioSnapshot snapshot {};
-		std::vector<std::string> report;
-		// objectCheckReport for deliberately wrong expectations, taken inside the level: the
-		// far pyramid's home on slot 84, the track platform's behavior on slot 83, an empty slot.
-		std::vector<std::string> wrongExpectations;
 	};
 
 	class PlayAndSnapshot : public TopLevelScript<LibSm64>
@@ -66,12 +65,6 @@ namespace
 		bool execution() override
 		{
 			LongLoad(_frame);
-			_results.report = resource->layoutCheckReport();
-			_results.wrongExpectations = resource->objectCheckReport({
-				{84, "bhvBitfsTiltingInvertedPyramid", -2866.0f, -3225.0f, -715.0f},
-				{83, "bhvPlatformOnTrack", -5744.0f, -3072.0f, 0.0f},
-				{239, "bhvBitfsTiltingInvertedPyramid", 0.0f, 0.0f, 0.0f, false},
-			});
 
 			MarioState* m = *(MarioState**)(resource->addr("gMarioState"));
 			Object* pyramid = &((Object*)(resource->addr("gObjectPool")))[84];
@@ -87,7 +80,7 @@ namespace
 			s.pyramidNormal[0] = pyramid->oTiltingPyramidNormalX;
 			s.pyramidNormal[1] = pyramid->oTiltingPyramidNormalY;
 			s.pyramidNormal[2] = pyramid->oTiltingPyramidNormalZ;
-			s.frame = resource->getCurrentFrame();
+			s.frame = uint32_t(GetCurrentFrame());
 			return true;
 		}
 		bool assertion() override { return true; }
@@ -111,42 +104,72 @@ TEST_CASE("libsm64: loads, passes the layout check, and plays the movie determin
 	LibSm64Config config;
 	config.dllPath = Env("TASFW_LIBSM64");
 	config.countryCode = CountryCode::SUPER_MARIO_64_J;
-	config.lightweight = true;
-	config.expectedObjects = BitFsExpectedObjects;
+	config.saveMode = LibSm64SaveMode::Fixed; // the golden values and the slice coverage checks live here
 	int64_t frame = Env("TASFW_FRAME").empty() ? 3330 : std::stoll(Env("TASFW_FRAME"));
 
-	LibSm64 resource(config);
+	// A build whose sections are smaller than the pinned DLL's (the Linux .so) refuses the
+	// fixed slices at construction; the smoke test then runs in the dirty mode instead.
+	std::unique_ptr<LibSm64> owned;
+	try
+	{
+		owned = std::make_unique<LibSm64>(config);
+	}
+	catch (const std::runtime_error& e)
+	{
+		MESSAGE("fixed save mode unavailable on this build, running the smoke test in dirty mode: " << std::string(e.what()));
+		config.saveMode = LibSm64SaveMode::Dirty;
+		owned = std::make_unique<LibSm64>(config);
+	}
+	LibSm64& resource = *owned;
 	M64 m64(Env("TASFW_M64"));
 	REQUIRE(m64.load() == 1);
 
 	SmokeResults first = Play(resource, m64, frame);
-	for (const std::string& line : first.report)
-	{
-		CAPTURE(line);
-		CHECK(line.rfind("FAIL: ", 0) != 0);
-	}
 	CHECK(first.snapshot.frame == uint32_t(frame));
-
-	// The slots the scripts hardcode hold what BitFsObjects.hpp says (ROADMAP 2.4), and the
-	// check does fail for a wrong home, a wrong behavior and an empty slot.
-	auto has = [&](const std::vector<std::string>& lines, const char* prefix)
-	{
-		return std::any_of(lines.begin(), lines.end(), [&](const std::string& l) { return l.rfind(prefix, 0) == 0; });
-	};
-	CHECK(has(first.report, "ok: gObjectPool[84] is bhvBitfsTiltingInvertedPyramid at home (-1945, -3225, -715)"));
-	CHECK(has(first.report, "ok: gObjectPool[83] is bhvBitfsTiltingInvertedPyramid at home (-2866, -3225, -715)"));
-	CHECK(has(first.report, "ok: gObjectPool[85] is bhvPlatformOnTrack at home (-5744, -3072, 0)"));
-	REQUIRE(first.wrongExpectations.size() == 3);
-	CHECK(first.wrongExpectations[0].find("FAIL: expected gObjectPool[84]") == 0);
-	CHECK(first.wrongExpectations[0].find("home is (-1945, -3225, -715)") != std::string::npos);
-	CHECK(first.wrongExpectations[1].find("FAIL: expected gObjectPool[83]") == 0);
-	CHECK(first.wrongExpectations[1].find("different behavior") != std::string::npos);
-	CHECK(first.wrongExpectations[2].find("FAIL: expected gObjectPool[239]") == 0);
-	CHECK(first.wrongExpectations[2].find("inactive") != std::string::npos);
 
 	// Second play: ImportResource resets to the start save and replays from power-on.
 	SmokeResults second = Play(resource, m64, frame);
 	CHECK(first.snapshot == second.snapshot);
+
+	// The layout and the slots the scripts hardcode (ROADMAP 1.1, 2.4), through the script the
+	// pipeline runs before its first stage: BitFsObjects.hpp must hold, and the script must fail
+	// for a wrong home (the far pyramid's on slot 84), a wrong behavior (the track platform's on
+	// slot 83) and an empty slot.
+	auto layout = TopLevelScriptBuilder<VerifyLayout>::Build(m64).ImportResource(&resource).Run(frame, BitFsExpectedObjects);
+	CHECK(layout.asserted);
+	CHECK(layout.failures == 0);
+	for (const std::string& line : layout.lines)
+	{
+		CAPTURE(line);
+		CHECK(line.rfind("FAIL: ", 0) != 0);
+	}
+	auto has = [&](const std::vector<std::string>& lines, const char* prefix)
+	{
+		return std::any_of(lines.begin(), lines.end(), [&](const std::string& l) { return l.rfind(prefix, 0) == 0; });
+	};
+	CHECK(has(layout.lines, "ok: gMarioObject is gObjectPool["));
+	CHECK(has(layout.lines, "ok: gObjectPool[84] is bhvBitfsTiltingInvertedPyramid at home (-1945, -3225, -715)"));
+	CHECK(has(layout.lines, "ok: gObjectPool[83] is bhvBitfsTiltingInvertedPyramid at home (-2866, -3225, -715)"));
+	CHECK(has(layout.lines, "ok: gObjectPool[85] is bhvPlatformOnTrack at home (-5744, -3072, 0)"));
+
+	auto wrong = TopLevelScriptBuilder<VerifyLayout>::Build(m64).ImportResource(&resource).Run(frame, std::vector<ExpectedObject> {
+		{84, "bhvBitfsTiltingInvertedPyramid", -2866.0f, -3225.0f, -715.0f},
+		{83, "bhvPlatformOnTrack", -5744.0f, -3072.0f, 0.0f},
+		{239, "bhvBitfsTiltingInvertedPyramid", 0.0f, 0.0f, 0.0f, false},
+	});
+	CHECK_FALSE(wrong.asserted);
+	CHECK(wrong.failures == 3);
+	std::vector<std::string> fails;
+	for (const std::string& line : wrong.lines)
+		if (line.rfind("FAIL: ", 0) == 0)
+			fails.push_back(line);
+	REQUIRE(fails.size() == 3);
+	CHECK(fails[0].find("FAIL: expected gObjectPool[84]") == 0);
+	CHECK(fails[0].find("home is (-1945, -3225, -715)") != std::string::npos);
+	CHECK(fails[1].find("FAIL: expected gObjectPool[83]") == 0);
+	CHECK(fails[1].find("different behavior") != std::string::npos);
+	CHECK(fails[2].find("FAIL: expected gObjectPool[239]") == 0);
+	CHECK(fails[2].find("inactive") != std::string::npos);
 
 	char line[512];
 	std::snprintf(line, sizeof(line),
@@ -287,13 +310,171 @@ namespace
 	};
 }
 
+namespace
+{
+	// Every save mode must bring the whole .data and .bss back byte for byte from a load, for
+	// states saved before and after other saves and for pages first written after the save. In
+	// Dirty mode this crosses the baseline the resource took at the first slot of the run and
+	// restores pages from the baseline snapshot.
+	struct SaveModeResults
+	{
+		size_t s0Diff = 0, s1Diff = 0, s2Diff = 0, replayDiff = 0; // bytes of .data+.bss that differ after the load
+		int baselineAtS1 = -1;
+		size_t pagesInS0 = 0, pagesInS1 = 0;
+		uint64_t faults = 0;
+	};
+
+	// The test's own loop to a frame: its subject is the resource's save modes, so it drives the
+	// resource directly instead of through a script (AGENTS.md, hard rule 9).
+	void PlayFrames(LibSm64& resource, const M64& m64, int64_t frames)
+	{
+		for (int64_t f = 0; f < frames; f++)
+		{
+			auto inputs = m64.frames.find(uint64_t(resource.getCurrentFrame()));
+			resource.setInputs(inputs != m64.frames.end() ? inputs->second : Inputs());
+			resource.FrameAdvance();
+		}
+	}
+
+	SaveModeResults SaveModeRoundTrip(LibSm64& resource, const M64& m64, int64_t frame)
+	{
+		SaveModeResults results;
+		PlayFrames(resource, m64, frame);
+
+		auto sections = [&]()
+		{
+			std::vector<uint8_t> all;
+			for (const SegVal& seg : resource.segment)
+			{
+				const uint8_t* begin = static_cast<const uint8_t*>(seg.address);
+				all.insert(all.end(), begin, begin + seg.length);
+			}
+			return all;
+		};
+		auto play = [&](int frames, int variant)
+		{
+			for (int i = 0; i < frames; i++)
+			{
+				double angle = i * (variant == 0 ? 0.37 : 0.61);
+				resource.setInputs(Inputs(uint16_t(i % 7 == 0 ? 0x8000 : 0), int8_t(60.0 * std::cos(angle)), int8_t(60.0 * std::sin(angle))));
+				resource.FrameAdvance();
+			}
+		};
+		auto differing = [](const std::vector<uint8_t>& a, const std::vector<uint8_t>& b)
+		{
+			size_t n = 0;
+			for (size_t i = 0; i < a.size() && i < b.size(); i++)
+				n += a[i] != b[i];
+			return n + (a.size() > b.size() ? a.size() - b.size() : b.size() - a.size());
+		};
+		auto pagesOf = [&](int64_t slot)
+		{
+			return resource.slotManager.slotsById.at(slot).pages.size() / size_t(pagesize);
+		};
+
+		// s0 is the first slot of this run, so in Dirty mode it is where the resource takes its
+		// baseline (as it would at LongLoad's slot in a script).
+		std::vector<uint8_t> snap0 = sections();
+		int64_t s0 = resource.SaveState();
+		play(60, 0);
+		std::vector<uint8_t> snap1 = sections();
+		int64_t s1 = resource.SaveState();
+		play(60, 1);
+		std::vector<uint8_t> snap2 = sections();
+		int64_t s2 = resource.SaveState();
+
+		if (const LibSm64DirtyPages* d = resource.dirtyPages())
+		{
+			results.baselineAtS1 = d->baseline;
+			results.faults = d->faults;
+			results.pagesInS0 = pagesOf(s0);
+			results.pagesInS1 = pagesOf(s1);
+		}
+
+		resource.LoadState(s0);
+		results.s0Diff = differing(sections(), snap0);
+		resource.LoadState(s2);
+		results.s2Diff = differing(sections(), snap2);
+		resource.LoadState(s1);
+		results.s1Diff = differing(sections(), snap1);
+		play(60, 1); // the same inputs from the same state reach the same memory
+		results.replayDiff = differing(sections(), snap2);
+
+		resource.slotManager.EraseSlot(s0);
+		resource.slotManager.EraseSlot(s1);
+		resource.slotManager.EraseSlot(s2);
+		return results;
+	}
+}
+
+TEST_CASE("libsm64: every save mode restores .data and .bss exactly, including pages written after the save"
+	* doctest::skip(!HaveDll()))
+{
+	// Dirty first, then the others in the same test case: on Linux that is where doctest's own
+	// SIGSEGV handler (installed per test case) and the resource's have to coexist.
+	for (LibSm64SaveMode mode : {LibSm64SaveMode::Dirty, LibSm64SaveMode::Fixed, LibSm64SaveMode::Full})
+	{
+		std::string modeName = LibSm64SaveModeName(mode);
+		CAPTURE(modeName);
+		LibSm64Config config;
+		config.dllPath = Env("TASFW_LIBSM64");
+		config.countryCode = CountryCode::SUPER_MARIO_64_J;
+		config.saveMode = mode;
+		int64_t frame = Env("TASFW_FRAME").empty() ? 3330 : std::stoll(Env("TASFW_FRAME"));
+
+		std::unique_ptr<LibSm64> owned;
+		try
+		{
+			owned = std::make_unique<LibSm64>(config);
+		}
+		catch (const std::runtime_error& e)
+		{
+			// The fixed slices fit the pinned build only; a build with smaller sections refuses
+			// them at construction, which is the intended answer, not a failure of this test.
+			REQUIRE(mode == LibSm64SaveMode::Fixed);
+			MESSAGE("fixed save mode unavailable on this build: " << std::string(e.what()));
+			continue;
+		}
+		LibSm64& resource = *owned;
+		M64 m64(Env("TASFW_M64"));
+		REQUIRE(m64.load() == 1);
+
+		SaveModeResults results = SaveModeRoundTrip(resource, m64, frame);
+		// Full and Dirty restore everything. Fixed misses a handful of bytes by design: the
+		// lava texture-scroll offsets outside its slices, which nothing in the physics reads
+		// (docs/libsm64.md, --leak-scan): 4 to 6 bytes after a load, about 20 after a replay
+		// through them, since they accumulate. That is the price of its constant cost.
+		size_t tolerance = mode == LibSm64SaveMode::Fixed ? 32 : 0;
+		CHECK(results.s0Diff <= tolerance);
+		CHECK(results.s1Diff <= tolerance);
+		CHECK(results.s2Diff <= tolerance);
+		CHECK(results.replayDiff <= tolerance);
+		if (mode == LibSm64SaveMode::Fixed)
+			MESSAGE("fixed slices: bytes not restored after loading s0 / s1 / s2 / replay: " << results.s0Diff << " / " << results.s1Diff
+				<< " / " << results.s2Diff << " / " << results.replayDiff);
+		if (mode == LibSm64SaveMode::Dirty)
+		{
+			// Baseline 0 is the start save's; LongLoad's slot at the frame moved it to 1, so the
+			// saves of this run copy only what the run wrote (docs/performance.md, "What the game
+			// writes"): well under the 1,464 KB the fixed slices copy.
+			CHECK(results.baselineAtS1 == 1);
+			CHECK(results.faults > 0);
+			CHECK(results.pagesInS1 > results.pagesInS0);
+			CHECK(results.pagesInS1 > 0);
+			CHECK(results.pagesInS1 < 200);
+			MESSAGE("dirty pages: " << results.pagesInS0 << " at the first save of the run, " << results.pagesInS1
+				<< " after 60 frames; " << results.faults << " first writes recorded in all baselines");
+		}
+	}
+}
+
 TEST_CASE("libsm64: PyramidUpdate reproduces the DLL's pyramid normal bit-for-bit"
 	* doctest::skip(!HaveDll()))
 {
 	LibSm64Config config;
 	config.dllPath = Env("TASFW_LIBSM64");
 	config.countryCode = CountryCode::SUPER_MARIO_64_J;
-	config.lightweight = true;
+	config.saveMode = LibSm64SaveMode::Dirty;
 	int64_t frame = Env("TASFW_FRAME").empty() ? 3330 : std::stoll(Env("TASFW_FRAME"));
 
 	LibSm64 resource(config);

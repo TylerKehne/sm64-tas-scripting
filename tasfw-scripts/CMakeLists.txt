@@ -2,6 +2,7 @@ add_library(tasfw-scripts-general STATIC
 	"src/general/GetMinimumDownhillWalkingAngle.cpp"
 	"src/general/BrakeToIdle.cpp"
 	"src/general/TryHackedWalkOutOfBounds.cpp"
+	"src/general/VerifyLayout.cpp"
 )
 target_include_directories(tasfw-scripts-general PUBLIC inc)
 target_link_libraries(tasfw-scripts-general PUBLIC tasfw::core tasfw::resources)

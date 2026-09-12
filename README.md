@@ -67,9 +67,10 @@ stage in order, or one stage with `--stage <name>`. Without `--config` it reads 
 `config.json` next to the executable, which the build writes from
 [tasfw-bruteforcers/bitfs-turnaround/config.json](tasfw-bruteforcers/bitfs-turnaround/config.json).
 `--list` prints the stage types and the configured stages; `--dry-run` resolves every path,
-checks the files exist, loads one DLL, plays to the first stage's start frame and prints the
-layout report there (struct layout, the hardcoded object slots, lightweight-save coverage),
-exiting 1 on any `FAIL`. Both are safe. A full run is not a smoke test: 16 threads, hours,
+checks the files exist, loads one DLL, runs the `VerifyLayout` script to the first stage's
+start frame and prints its report (struct layout, the hardcoded object slots), exiting 1 on
+any `FAIL`; a real run makes the same check before its first stage. Both are safe. A full
+run is not a smoke test: 16 threads, hours,
 and thousands of exported `.m64` files.
 
 Each stage writes its solutions to `<outputDirectory>/solutions/<stage>.json` (input diffs
@@ -88,7 +89,7 @@ One JSON file. Relative paths resolve against the file's own directory, unless t
 
 ```json
 {
-	"resources": { "dllDirectory": "../../res", "dllPattern": "sm64_jp_{}.dll", "threads": 16, "lightweight": true },
+	"resources": { "dllDirectory": "../../res", "dllPattern": "sm64_jp_{}.dll", "threads": 16, "saveMode": "fixed" },
 	"m64": "../../res/source.m64",
 	"outputDirectory": "../../analysis",
 	"scattershot": { "maxShots": 3000, "maxSolutions": 100, "seed": 6, "deterministic": false, "...": "any Configuration field" },
@@ -110,7 +111,9 @@ One JSON file. Relative paths resolve against the file's own directory, unless t
 ```
 
 - `resources`: the DLL directory and file pattern (`{}` becomes the thread index; one copy
-  per thread), the thread count, whether saves are lightweight, and `costModel` (default
+  per thread), the thread count, the save mode (`saveMode`: `full`, `fixed` or `dirty`;
+  `dirty` when absent, `fixed` in the committed config because it measures faster for this
+  search; docs/libsm64.md, "Savestates"), and `costModel` (default
   true; false disables the replay-versus-load cost model so a run is timing-independent,
   for diagnosis).
 - `scattershot`: defaults for every stage, in the field names of `Configuration`

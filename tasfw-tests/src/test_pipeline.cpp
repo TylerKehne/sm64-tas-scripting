@@ -51,7 +51,7 @@ TEST_CASE("Pipeline config resolves paths against its directory and expands the 
 	CHECK(p.m64.generic_string() == "base/res/movie.m64");
 	CHECK(p.outputDirectory.generic_string() == "base/analysis");
 	CHECK(p.threads == 3);
-	CHECK(p.lightweight);
+	CHECK(p.saveMode == LibSm64SaveMode::Dirty);
 
 	auto dlls = p.DllPaths();
 	REQUIRE(dlls.size() == 3);

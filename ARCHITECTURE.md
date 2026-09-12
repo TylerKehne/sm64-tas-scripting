@@ -3,6 +3,10 @@
 How the pieces fit, what the invariants are, and where the sharp edges live. Written from
 the code as of 2026-09-07; where behavior is inferred rather than documented it says so.
 
+The purpose of the framework, in the maintainer's words (2026-09-12): to make it easier and
+more organized to make TASes for a game, without having to manage the overhead of state more
+than necessary. Every design choice below is measured against that.
+
 ## Layers
 
 ```
@@ -26,7 +30,10 @@ below `tasfw-scripts` in CMake even though it is drawn below core here; the head
 ## Resource and savestates
 
 A resource is anything that fulfils the basic TASing contract: advance one frame with given
-inputs, save the state, load it back, read memory. It need not be the game. With the full
+inputs, save the state, load it back, read memory, and say which frame it is at. The frame
+is part of the contract: the state machine must have indexable steps (maintainer, 2026-09-12),
+so `getCurrentFrame` survives a change of game; only how a resource counts is its own. It
+need not be the game. With the full
 game, rewinding (a load) is slow compared with advancing, and that ratio dictates which
 TASing algorithms are viable; a custom state machine that simulates only the part of the
 game a search cares about (`PyramidUpdate`) makes both advancing and rewinding much faster
@@ -52,14 +59,15 @@ type is planned (ROADMAP 3.11).
 `LibSm64` (`tasfw-resources/src/LibSm64.cpp`) loads the DLL with `LoadLibrary`, calls
 `sm64_init`, and treats the `.data` and `.bss` sections as the whole game state:
 
-- Full save copies both sections (about 2.4 MB + 4.9 MB).
-- **Lightweight mode** copies five hardcoded 100 KB-granular slices (about 1.5 MB). The
-  offsets were found empirically for the pinned DLL build and are not derived from symbols.
-  The pipeline config's `resources.lightweight` (default true) selects it.
+- Three save modes, `LibSm64SaveMode`, chosen once at construction (`resources.saveMode` in
+  the pipeline config; docs/libsm64.md, "Savestates") and invisible to scripts: `full` copies
+  both sections (about 2.4 MB + 4.9 MB); `fixed` copies five hardcoded 100 KB-granular
+  slices (about 1.5 MB) found empirically for the pinned DLL build, not derived from
+  symbols; `dirty` (the default) write-protects the sections, records first writes per page
+  and copies the pages written since a baseline the resource takes on its own at the first
+  save of a run. Same code on Windows and Linux.
 - `advance` calls `sm64_update`. Inputs are written straight into `gControllerPads` by
   `Script::SetInputs` before each advance.
-- The Linux branch instead marks the sections read-only and records dirty pages in a
-  `SIGSEGV` handler. It has not been built recently.
 
 `PyramidUpdate` is a second `Resource` whose state is a small C++ struct: the pyramid
 object, Mario's position, static lava floors, and the pyramid's collision triangles pulled
@@ -101,7 +109,17 @@ Running children:
 | `Compare<T>` family | Run `T` for each parameter tuple, keep the best by a comparator, optionally stop early. Lives in `ScriptCompareHelper.hpp`. |
 
 Both forms manage savestates, reverts, the input diff and tracked-state coherence
-automatically; the author never touches a slot. The difference is weight and reuse: a
+automatically; the author never touches a slot, and never touches the resource: every
+interaction goes through `Script`'s methods, with `resource->addr("symbol")` for memory
+reads the one exception until a better access contract exists (AGENTS.md, hard rule 9;
+ROADMAP 3.2). The manual `Save`, `Load`, `LongLoad`, `OptionalSave` are escape hatches for
+the cases the automatic management does not cover, not the normal way to work. The same
+boundary shapes what a resource may ask of the framework: nothing. A resource decides its
+own representation and policy (`LibSm64`'s save modes and their baselines) from what it
+observes; a check on the game is a script (`VerifyLayout`), and only a tool or test whose
+subject is the resource itself drives it directly, outside any script, with its own loop.
+Changing the framework's own shape is designed with the maintainer first (hard rule 10).
+The difference is weight and reuse: a
 one-off attempt ("try these inputs, keep them if it worked") is better as an ad-hoc lambda,
 which captures whatever locals it needs instead of routing results through a status type;
 heavier or reusable logic warrants a named script class with its own `CustomScriptStatus`
@@ -173,7 +191,11 @@ one of:
 A script may depend on the game's state in the past or the future of its cursor, not only
 the present. The **state tracker** exists to make that state available automatically and
 cheaply: a script asks for the state at any frame and never manages the saves, loads,
-replays or caching behind the answer. A tracker is a `Script` whose `CustomScriptStatus`
+replays or caching behind the answer. Trackers are how game state gets decorated with
+derived information: whenever a decision rests on a metric more complicated than a raw
+memory variable, it belongs in a tracker rather than in the script, so the metric needs no
+management inside the script and is available at any frame (maintainer, 2026-09-12;
+`StateTracker_BitfsDr` is the model). A tracker is a `Script` whose `CustomScriptStatus`
 describes the game at one frame (e.g. `StateTracker_BitfsDr`: phase, oscillation count,
 crossing history, ARE). The top-level script caches
 `trackedStates[script][adhocLevel][frame]` and fills it lazily: after every frame advance or
@@ -248,8 +270,9 @@ statistics print load/save/advance/overhead percentages; "overhead" is mostly bl
 
 ## The BitFS pipeline (`config.json`)
 
-`bitfs-turn` reads a pipeline config (README.md, "Configuration"), constructs one lightweight
-`LibSm64` per thread, and runs the configured stages in order, or one of them. A stage is a
+`bitfs-turn` reads a pipeline config (README.md, "Configuration"), constructs one `LibSm64`
+per thread in the configured save mode, and runs the configured stages in order, or one of
+them. A stage is a
 named instance of a stage type from `Stages.cpp`, with its own scattershot overrides and
 typed arguments; its result is a `SolutionSet` (input diffs plus named metrics per
 solution) that is written to `<outputDirectory>/solutions/<stage>.json`, handed to the next
@@ -296,17 +319,20 @@ Everything below assumes the pinned DLL in `res/` (see `docs/libsm64.md`):
   other through `LibSm64SymbolAliases` (docs/libsm64.md, "Renamed symbols").
 - The pyramid is `gObjectPool[84]` in the BitFS area of the source m64 (the far pyramid is
   slot 83, the track platform slot 85). The slots are the identifier by decision (ROADMAP
-  2.4); `BitFsObjects.hpp` declares what each must hold and `LibSm64::objectCheckReport`
-  verifies it in the per-thread layout check.
+  2.4); `BitFsObjects.hpp` declares what each must hold and the `VerifyLayout` script
+  verifies it before the pipeline's first stage.
 - `tasfw-core/src/decomp/` reimplements `mtxf_align_terrain_normal`, object surface loading,
   `find_floor`, `floor_is_slope` and `simulate_platform_tilt` on the copied structs.
   `GetMinimumDownhillWalkingAngle` uses them to predict Mario's floor angle after the next
   tilt without advancing a frame. The DLL stays the reference; this code is the same physics
   `PyramidUpdate` implements on its own surface type, and only `PyramidUpdate` is drift-tested.
-- Lightweight save slices (`LibSm64LightweightSlices` in `LibSm64.hpp`).
-- `LibSm64::layoutCheckReport()` verifies all of the above relationships at run time; the
-  scattershot thread calls `Resource::verifyLayout()` once after loading the start frame,
-  and `dllcheck` runs it standalone (docs/libsm64.md).
+- The `fixed` save mode's slices (`LibSm64FixedSlices` in `LibSm64.hpp`); `dirty` and
+  `full` depend on nothing in the build.
+- The `VerifyLayout` script (`tasfw-scripts/inc/VerifyLayout.hpp`) verifies all of the above
+  relationships at run time, reading through `resource->addr()` only: the pipeline runs it
+  once on one resource before its first stage, `--dry-run` and `dllcheck` print its report,
+  and `dllcheck --save-mode fixed` adds the slice coverage (docs/libsm64.md). The framework
+  itself has no layout concept.
 - `PyramidUpdate` re-implements physics from the decomp.
 - The m64 header check expects the JP ROM CRC and country code in `Inputs.hpp`.
 
@@ -318,8 +344,9 @@ The full measurement plan is in [docs/performance.md](docs/performance.md); this
 mental model behind it.
 
 Cost hierarchy, most to least: frame advance (`sm64_update`, measured at about 10 us),
-savestate save/load (`memcpy` of 1.5 MB lightweight or 7.3 MB full: about 50/53 us
-lightweight, 190/220 us full, memory-bandwidth bound now that slot buffers are recycled),
+savestate save/load (about 7 us in `dirty` mode for the 122 pages BitFS play touches,
+41 to 49 us for the 1.5 MB `fixed` slices, 190 us for a 7.3 MB `full` copy; memory-bandwidth
+bound now that slot buffers are recycled),
 block decoding (replay from the root every shot), state trackers (run at every frame advance
 and load, and may advance frames themselves), `Script` bookkeeping (map operations per frame
 per hierarchy level), synchronization (named critical sections, barriers in deterministic

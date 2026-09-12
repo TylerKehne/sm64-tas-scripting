@@ -146,10 +146,6 @@ void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::Initiali
 {
     LongLoad(config.StartFrame);
 
-    // Fail loudly if the resource's struct layouts do not match the game (ROADMAP 1.1).
-    // Once per thread; not a hot path.
-    this->resource->verifyLayout();
-
     // Load piped-in diffs as root blocks
     if (!scattershot.InputSolutions.empty())
     {

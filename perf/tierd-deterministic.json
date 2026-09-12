@@ -1,6 +1,6 @@
-{
+﻿{
 	"_comment": "Tier D deterministic run (docs/performance.md): one tilt-target stage, 8 threads, cost model off so every count is exact. Run by scripts/perf.ps1; paths resolve against this file.",
-	"resources": { "dllDirectory": "../res", "dllPattern": "sm64_jp_{}.dll", "threads": 8, "lightweight": true, "costModel": false },
+	"resources": { "dllDirectory": "../res", "dllPattern": "sm64_jp_{}.dll", "threads": 8, "saveMode": "fixed", "costModel": false },
 	"m64": "../res/comissonPyra2-Fanart_x-Z.m64",
 	"outputDirectory": "results/tierd-deterministic",
 	"scattershot": {
