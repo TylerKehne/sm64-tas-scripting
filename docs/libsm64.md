@@ -123,7 +123,7 @@ here calls it.
 |---|---|
 | `sm64_jp_0.dll` .. `sm64_jp_23.dll` | 24 byte-identical copies of the pinned build. |
 | `sm64_jp_0.so`, `sm64_us_0.so` | bitfs-sbb's Linux builds, for the container runs in "Linux". |
-| `comissonPyra2-Fanart_XZ.m64`, `test3.m64` | Other source movies (JP). The one everything uses, formerly `comissonPyra2-Fanart_x-Z.m64`, is committed as `movies/bitfs-pyramid-jp.m64` (3,804 input frames, 16 KB; the tests, the perf suite, CI and `config.json` all name it). |
+| `comissonPyra2-Fanart_XZ.m64` | An unreferenced JP movie (3,382 frames). The two movies `config.json` names are committed under `movies/`: `bitfs-pyramid-jp.m64` (formerly `comissonPyra2-Fanart_x-Z.m64`; 3,804 frames, 16 KB; the tests, the perf suite and CI use it too) and `bitfs-osc-final-jp.m64` (formerly `test3.m64`; 3,726 frames; the `osc-final-test3` stage, which starts at frame 3604). |
 | `bitfs_nut_*.m64` (thousands) | Exported solutions from past runs (new runs export under `analysis/m64/<stage>/`). Safe to delete. |
 
 ## Savestates
