@@ -51,13 +51,13 @@ jobs:
             preset: clang-cl-release
             bindir: build/Release-clang
             baseline: perf/baselines/tyler-desktop-clang.json
-          - name: ubuntu-gcc
-            os: ubuntu-latest
+          - name: ubuntu-24.04-gcc
+            os: ubuntu-24.04
             preset: gcc-release
             bindir: build/Release-gcc
             cxx: g++-13
-          - name: ubuntu-clang
-            os: ubuntu-latest
+          - name: ubuntu-24.04-clang
+            os: ubuntu-24.04
             preset: clang-release
             bindir: build/Release-clang
             cxx: clang++-17
@@ -202,7 +202,7 @@ jobs:
   # locally"). They build and run the DLL-free tests unconditionally, so the newest
   # compilers see every change even without the key.
   ubuntu-26-libsm64:
-    name: ubuntu-26.04-${{ matrix.name }}-libsm64
+    name: ubuntu-26.04-${{ matrix.name }}
     runs-on: ubuntu-latest
     container: ubuntu:26.04
     timeout-minutes: 45
