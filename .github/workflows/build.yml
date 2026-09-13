@@ -277,9 +277,7 @@ jobs:
         run: |
           ${{ matrix.bindir }}/out/bitfs-turn --config perf/tierd-ci-linux.json | tee tierd-ci.log
           python3 scripts/perf_compare.py tierd tierd-ci.log -o tierd-ci.json --name TierD_CI --exact
-          # The .so is a newer decomp build than the Windows DLL and this search diverges on it
-          # after some frame, so Linux has its own expected counts (docs/libsm64.md, "Linux").
-          python3 scripts/perf_compare.py compare perf/baselines/tierd-ci-linux.json tierd-ci.json --counts-only
+          python3 scripts/perf_compare.py compare perf/baselines/tierd-ci.json tierd-ci.json --counts-only
 
       - name: Report failure details as annotations
         if: failure()

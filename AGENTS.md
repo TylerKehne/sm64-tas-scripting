@@ -143,7 +143,10 @@ its place with numbers, and "it is cleaner" is not a number.
 3. **Keep scattershot deterministic.** All randomness goes through `GetTempRng`/`GetRng`.
    `ApplyMovement` must be a deterministic function of game state plus that RNG, because
    blocks are re-created by replaying scripts from recorded seeds. Never use `rand`, time,
-   thread ids, or mutable state that survives across pellets.
+   thread ids, or mutable state that survives across pellets. The hash behind that RNG and
+   the block table is the framework's own (`HashByte`), so a seed replays the same search
+   on every platform; nothing that must reproduce goes through `std::hash` or the
+   iteration order of an unordered container (docs/compilers.md).
 4. **Respect the script lifecycle.** `validation()` and `assertion()` run in a reverted
    sandbox and must not rely on side effects; `execution()` is the only phase whose input
    diff can persist. Results leave a script through `CustomStatus`, not member side effects.

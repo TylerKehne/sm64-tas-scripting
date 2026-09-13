@@ -29,6 +29,18 @@
 #ifndef SCATTERSHOT_H
 #define SCATTERSHOT_H
 
+// The per-byte hash behind every hash the search takes: the block table's state-bin hash
+// and the RNG chain (GetRng / GetTempRng advance by hashing their previous value). It is
+// FNV-1a over the one byte, which is exactly what MSVC's std::hash<std::byte> computes, so
+// every search recorded on Windows and every committed count stays what it was. It is the
+// framework's own function because std::hash<std::byte> is not the same function in every
+// standard library (libstdc++ hashes a byte to itself), which made the same seed take a
+// different search path on Linux than on Windows (docs/compilers.md).
+constexpr uint64_t HashByte(std::byte b)
+{
+    return (14695981039346656037ull ^ uint64_t(b)) * 1099511628211ull;
+}
+
 class CriticalRegions
 {
 public:
@@ -162,7 +174,7 @@ class Scattershot
 public:
     const Configuration& config;
     friend class ScattershotThread<TState, TResource, TStateTracker, TOutputState>;
-    friend class PerfAccess; // tasfw-perf benchmarks; see docs/performance.md
+    friend class PerfAccess; // tasfw-perf benchmarks and tasfw-tests (tasfw/testing/PerfAccess.hpp); see docs/performance.md
 
     Scattershot(const Configuration& configuration, const std::vector<ScattershotSolution<TOutputState>>& inputSolutions);
 
@@ -242,13 +254,12 @@ private:
     template <typename T>
     uint64_t GetHash(const T& toHash, bool ignoreFillerBytes)
     {
-        std::hash<std::byte> byteHasher;
         const auto* data = reinterpret_cast<const std::byte*>(&toHash);
         uint64_t hashValue = 0;
         for (std::size_t i = 0; i < sizeof(toHash); i++)
         {
             if (ignoreFillerBytes || !FillerBytes.contains(int(i)))
-                hashValue ^= static_cast<uint64_t>(byteHasher(data[i])) + 0x9e3779b97f4a7c15ull + (hashValue << 6) + (hashValue >> 2);
+                hashValue ^= HashByte(data[i]) + 0x9e3779b97f4a7c15ull + (hashValue << 6) + (hashValue >> 2);
         }
 
         return hashValue;

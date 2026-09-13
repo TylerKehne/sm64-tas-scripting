@@ -290,6 +290,20 @@ pointer select, with the loop in a separate `Grow()`, restored inlining and gain
 over the previous code on MSVC. For anything called per frame, keep the inline body tiny and
 move the rare path out; and measure on both compilers, because only one of them will tell you.
 
+### `std::hash<std::byte>` is a different function in MSVC's STL and libstdc++
+
+Found 2026-09-13 by the first Tier D run in CI on Linux: the deterministic search took a
+different path on the `.so` than on the DLL from the very first pellet, with every game
+check identical. Both of scattershot's hashes (the block table's state-bin hash and the RNG
+chain behind `GetRng`/`GetTempRng`) mixed `std::hash<std::byte>` per byte, and the standard
+does not say what that function is: MSVC's STL computes FNV-1a over the byte (measured:
+`std::hash<std::byte>{}(std::byte{42})` is 12638128926439346813), libstdc++ returns the byte
+itself. The framework now owns the function, `HashByte` in `Scattershot.hpp`, defined as the
+FNV-1a step so that every Windows result stays valid; `test_scattershot_hash.cpp` pins the
+values. Rule: nothing whose result must be reproducible across platforms goes through
+`std::hash`, and the same goes for the iteration order of `std::unordered_*` containers and
+for `std::sort` on equal keys.
+
 ## What GCC found on first contact (2026-09-07)
 
 `-Wmissing-requires` on every concept in `ScriptCompareHelper.hpp` (`ScriptParamsGenerator`,

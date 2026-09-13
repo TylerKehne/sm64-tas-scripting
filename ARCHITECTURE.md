@@ -246,7 +246,9 @@ Vocabulary:
 - **Block**: one state bin plus the best fitness seen for it and the segment chain that reaches it.
 - **Segment**: (parent, RNG seed, number of scripts, optional piped-diff index). A block is
   reproduced by walking its segment chain from the root and re-running `ChooseScriptAndApply`
-  with `SetTempRng(seed)` for each script. Nothing but seeds is stored.
+  with `SetTempRng(seed)` for each script. Nothing but seeds is stored. The chain from a
+  seed is the framework's own hash (`HashByte`, FNV-1a per byte, in `Scattershot.hpp`)
+  applied to the previous value, the same on every platform.
 - **Shot**: pick a base block, decode it, verify the state bin matches (`ValidateBaseBlock`;
   a mismatch is counted in `ValidationFailures`, shown in the status line and the end-of-run
   summary, printed with both bins in hex, and dumped as `error.m64`), then fire pellets.
