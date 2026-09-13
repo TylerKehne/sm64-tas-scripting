@@ -58,6 +58,13 @@ TEST_CASE("Pipeline config resolves paths against its directory and expands the 
 	CHECK(dlls[0].generic_string() == "base/res/sm64_jp_0.dll");
 	CHECK(dlls[2].generic_string() == "base/res/sm64_jp_2.dll");
 
+	// {version} is the movie's game, which Load reads from the header (JP until it does).
+	p.countryCode = CountryCode::SUPER_MARIO_64_U;
+	CHECK(p.ResolvedDllPattern() == "sm64_us_{}.dll");
+	CHECK(p.DllPaths()[1].generic_string() == "base/res/sm64_us_1.dll");
+	p.dllPattern = "sm64_jp_{}.so";
+	CHECK(p.DllPaths()[0].generic_string() == "base/res/sm64_jp_0.so"); // a pattern without {version} is literal
+
 	REQUIRE(p.stages.size() == 2);
 	CHECK(p.stages[0].name == "first");
 	CHECK_FALSE(p.stages[0].input.has_value());

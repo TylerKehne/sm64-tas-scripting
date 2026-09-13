@@ -243,12 +243,19 @@ bool Script<TResource>::ExportM64(std::filesystem::path fileName, int64_t maxFra
 		return false;
 
 	M64 outM64 = M64(fileName);
+	outM64.metadata = GetM64Metadata(); // an export is a movie for the game the source movie is for
 	for (int64_t frame = 0; frame < maxFrame; frame++)
 	{
 		outM64.frames[frame] = GetInputsMetadata(frame).inputs;
 	}
 
 	return (bool)outM64.save();
+}
+
+template <derived_from_specialization_of<Resource> TResource>
+M64Metadata Script<TResource>::GetM64Metadata() const
+{
+	return _rootScript->GetM64Metadata(); // the root is a TopLevelScript, whose override answers from its movie
 }
 
 template <derived_from_specialization_of<Resource> TResource>
@@ -321,6 +328,12 @@ InputsMetadata<TResource> Script<TResource>::GetInputsMetadata(int64_t frame)
 	//This should be impossible
 	throw std::runtime_error("Failed to get inputs, possible error in recursion logic.");
 	return InputsMetadata<TResource>();
+}
+
+template <derived_from_specialization_of<Resource> TResource, std::derived_from<Script<TResource>> TStateTracker>
+M64Metadata TopLevelScript<TResource, TStateTracker>::GetM64Metadata() const
+{
+	return _m64->metadata;
 }
 
 template <derived_from_specialization_of<Resource> TResource, std::derived_from<Script<TResource>> TStateTracker>

@@ -20,7 +20,7 @@
 #include <unistd.h>
 #endif
 
-const char* LibSm64SaveModeName(LibSm64SaveMode mode)
+const char* LibSm64::SaveModeName(LibSm64SaveMode mode)
 {
 	switch (mode)
 	{
@@ -31,17 +31,59 @@ const char* LibSm64SaveModeName(LibSm64SaveMode mode)
 	return "?";
 }
 
-bool ParseLibSm64SaveMode(const std::string& name, LibSm64SaveMode& mode)
+bool LibSm64::ParseSaveMode(const std::string& name, LibSm64SaveMode& mode)
 {
 	for (LibSm64SaveMode candidate : {LibSm64SaveMode::Full, LibSm64SaveMode::Fixed, LibSm64SaveMode::Dirty})
 	{
-		if (name == LibSm64SaveModeName(candidate))
+		if (name == SaveModeName(candidate))
 		{
 			mode = candidate;
 			return true;
 		}
 	}
 	return false;
+}
+
+const char* LibSm64::VersionName(CountryCode code)
+{
+	switch (code)
+	{
+	case CountryCode::SUPER_MARIO_64_J: return "jp";
+	case CountryCode::SUPER_MARIO_64_U: return "us";
+	}
+	return "?";
+}
+
+bool LibSm64::VersionFromPath(const std::filesystem::path& path, CountryCode& code)
+{
+	std::string name = path.filename().string();
+	for (CountryCode candidate : {CountryCode::SUPER_MARIO_64_J, CountryCode::SUPER_MARIO_64_U})
+	{
+		if (name.find(std::string("sm64_") + VersionName(candidate)) != std::string::npos)
+		{
+			code = candidate;
+			return true;
+		}
+	}
+	return false;
+}
+
+Rom LibSm64::RomFor(CountryCode code)
+{
+	switch (code)
+	{
+	case CountryCode::SUPER_MARIO_64_J: return Rom::SUPER_MARIO_64_J;
+	case CountryCode::SUPER_MARIO_64_U: return Rom::SUPER_MARIO_64_U;
+	}
+	return Rom(0);
+}
+
+std::string LibSm64::CheckMovie(const M64& movie) const
+{
+	if (movie.metadata.countryCode == config.countryCode)
+		return std::string();
+	return "movie " + movie.fileName.string() + " is for the " + VersionName(movie.metadata.countryCode)
+		+ " game (its header's country code), " + config.dllPath.string() + " is the " + VersionName(config.countryCode) + " game";
 }
 
 // ---------------------------------------------------------------------------------------------

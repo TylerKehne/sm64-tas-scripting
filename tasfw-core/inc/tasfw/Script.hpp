@@ -780,6 +780,10 @@ private:
 	virtual void PopTrackedStatesContainer(Script<TResource>* /*currentScript*/, int64_t /*adhocLevel*/) { return; }
 	virtual void MoveSyncedTrackedStates(Script<TResource>* /*sourceScript*/, int64_t /*sourceAdhocLevel*/, Script<TResource>* /*destScript*/, int64_t /*destAdhocLevel*/) { return; }
 	virtual void EraseTrackedStates(Script<TResource>* /*currentScript*/, int64_t /*adhocLevel*/, int64_t /*firstFrame*/) { return; }
+	
+	// What the source movie's header says (its game), for ExportM64: a script asks the root,
+	// and the root, a TopLevelScript, answers from its movie. Once per export, never per frame.
+	virtual M64Metadata GetM64Metadata() const;
 };
 
 template <derived_from_specialization_of<Script> TStateTracker>
@@ -995,6 +999,7 @@ protected:
 
 private:
 	friend class Script<TResource>;
+	M64Metadata GetM64Metadata() const override;
 	// (No self-friend declaration: a class is always its own friend, and GCC warns about it.)
 
 	// Data: trackedStates[script][adhocLevel][frame] = state;

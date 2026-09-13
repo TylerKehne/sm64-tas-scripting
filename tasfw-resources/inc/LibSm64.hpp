@@ -31,9 +31,6 @@ enum class LibSm64SaveMode
 	       // baseline, which the resource takes on its own at the first save of a run.
 };
 
-const char* LibSm64SaveModeName(LibSm64SaveMode mode);                    // "full", "fixed", "dirty"
-bool ParseLibSm64SaveMode(const std::string& name, LibSm64SaveMode& mode); // the same words; false if unknown
-
 class LibSm64Config
 {
 public:
@@ -176,6 +173,24 @@ public:
 	void* addr(const char* symbol) const override;
 	std::size_t getStateSize(const LibSm64Mem& state) const override;
 	uint32_t getCurrentFrame() const override;
+
+	// Is the movie for the game this DLL was declared to be (config.countryCode)? Empty when
+	// it is; otherwise the mismatch in words, for the caller's error. A movie for the other
+	// version desyncs without a word (the intro and the text run different lengths), so
+	// every place a movie meets a resource asks first: the pipeline before its first stage,
+	// the tests, dllcheck. Resource itself knows nothing of games; this is libsm64's.
+	std::string CheckMovie(const M64& movie) const;
+
+	// The words the save modes and the game versions go by in config.json, on the command
+	// line and in file names (`sm64_jp_0.dll`, `sm64_us_0.dll`; `{version}` in the pipeline's
+	// dllPattern). A DLL carries no mark of its game inside, so what a DLL is comes from its
+	// name (or a flag) and is declared in LibSm64Config::countryCode; a movie carries its game
+	// in its header (M64Metadata).
+	static const char* SaveModeName(LibSm64SaveMode mode);                             // "full", "fixed", "dirty"
+	static bool ParseSaveMode(const std::string& name, LibSm64SaveMode& mode);         // the same words; false if unknown
+	static const char* VersionName(CountryCode code);                                  // "jp", "us"; "?" for anything else
+	static bool VersionFromPath(const std::filesystem::path& path, CountryCode& code); // from "sm64_jp" or "sm64_us" in the file name; false if neither
+	static Rom RomFor(CountryCode code);                                               // the vanilla ROM's CRC that goes with a code in a movie header
 
 	// The Dirty-mode bookkeeping, or nullptr in the other modes. Read-only, for dllcheck's
 	// report and the tests.

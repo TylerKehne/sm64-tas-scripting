@@ -110,7 +110,7 @@ TEST_CASE("libsm64: every save mode restores .data and .bss exactly, including p
 	// SIGSEGV handler (installed per test case) and the resource's have to coexist.
 	for (LibSm64SaveMode mode : {LibSm64SaveMode::Dirty, LibSm64SaveMode::Fixed, LibSm64SaveMode::Full})
 	{
-		std::string modeName = LibSm64SaveModeName(mode);
+		std::string modeName = LibSm64::SaveModeName(mode);
 		CAPTURE(modeName);
 		LibSm64Config config = DllConfig(mode);
 		int64_t frame = TestFrame();

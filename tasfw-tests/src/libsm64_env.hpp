@@ -9,7 +9,7 @@
 // Shared by the libsm64 tests (test_libsm64_*.cpp). They run against the real game DLL, and
 // only when the environment names a DLL and a movie (scripts/test.ps1 sets these from res/
 // when present):
-//   TASFW_LIBSM64 = path to sm64_jp_N.dll     TASFW_M64 = path to the source movie
+//   TASFW_LIBSM64 = path to sm64_jp_N.dll or sm64_us_N.dll     TASFW_M64 = path to the source movie
 //   TASFW_FRAME   = frame inside a level (default 3330)
 namespace tasfw::tests
 {
@@ -20,12 +20,15 @@ namespace tasfw::tests
 		return !Env("TASFW_LIBSM64").empty() && !Env("TASFW_M64").empty();
 	}
 
-	// The DLL the environment names, as the JP game in the given save mode.
+	// The DLL the environment names, in the given save mode, declared to be the game its file
+	// name says (res/sm64_jp_0.dll, res/sm64_us_0.dll; JP when the name says nothing). The
+	// smoke test checks the movie against it (LibSm64::CheckMovie).
 	inline LibSm64Config DllConfig(LibSm64SaveMode mode)
 	{
 		LibSm64Config config;
 		config.dllPath = Env("TASFW_LIBSM64");
-		config.countryCode = CountryCode::SUPER_MARIO_64_J;
+		if (!LibSm64::VersionFromPath(config.dllPath, config.countryCode))
+			config.countryCode = CountryCode::SUPER_MARIO_64_J;
 		config.saveMode = mode;
 		return config;
 	}

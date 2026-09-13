@@ -53,12 +53,15 @@ ctest --preset gcc-release
 The executable needs files that are not in git (see [docs/libsm64.md](docs/libsm64.md)):
 
 - `res/sm64_jp_0.dll` through `res/sm64_jp_23.dll`, one copy of the libsm64 DLL per thread
-  (on Linux `.so` copies and `"dllPattern": "sm64_jp_{}.so"`). One command makes them from
+  (on Linux `.so` copies and `"dllPattern": "sm64_{version}_{}.so"`). One command makes them from
   a ROM: `python scripts\unlock_libsm64.py --rom <sm64 jp>.z64 --out res --copies 24`
   (docs/libsm64.md); never commit a ROM or an unlocked binary.
 - The source movies `config.json` names are committed under `movies/` (`bitfs-pyramid-jp.m64`,
   which CI, the tests and the perf suite use too, and `bitfs-osc-final-jp.m64` for the
-  `osc-final-test3` stage).
+  `osc-final-test3` stage), with two US movies next to them: `1keyU.m64`, a whole 1-key run,
+  and `bitfs-pyramid-us.m64`, the JP movie's BitFS part on the US way there, which the tests
+  run on the US game (`unlock_libsm64.py --version us` makes `res/sm64_us_0.dll`) when it is
+  there (docs/libsm64.md, "A movie for the US game").
 
 # Running the pipeline
 
@@ -93,7 +96,7 @@ One JSON file. Relative paths resolve against the file's own directory, unless t
 
 ```json
 {
-	"resources": { "dllDirectory": "../../res", "dllPattern": "sm64_jp_{}.dll", "threads": 16, "saveMode": "fixed" },
+	"resources": { "dllDirectory": "../../res", "dllPattern": "sm64_{version}_{}.dll", "threads": 16, "saveMode": "fixed" },
 	"m64": "../../res/source.m64",
 	"outputDirectory": "../../analysis",
 	"scattershot": { "maxShots": 3000, "maxSolutions": 100, "seed": 6, "deterministic": false, "...": "any Configuration field" },
@@ -114,7 +117,8 @@ One JSON file. Relative paths resolve against the file's own directory, unless t
 }
 ```
 
-- `resources`: the DLL directory and file pattern (`{}` becomes the thread index; one copy
+- `resources`: the DLL directory and file pattern (`{version}` becomes the game the movie's
+  header names, `jp` or `us`, so the DLLs follow the movie; `{}` the thread index, one copy
   per thread), the thread count, the save mode (`saveMode`: `full`, `fixed` or `dirty`;
   `dirty` when absent, `fixed` in the committed config because it measures faster for this
   search; docs/libsm64.md, "Savestates"), and `costModel` (default

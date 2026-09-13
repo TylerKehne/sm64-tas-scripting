@@ -32,7 +32,8 @@ struct PipelineConfig
 {
 	std::filesystem::path baseDirectory;
 	std::filesystem::path dllDirectory;
-	std::string dllPattern = "sm64_jp_{}.dll";
+	std::string dllPattern = "sm64_{version}_{}.dll";       // {version}: the movie's game (jp, us); {}: the thread's copy
+	CountryCode countryCode = CountryCode::SUPER_MARIO_64_J; // the movie's game, from its header (Load): {version}, and what a DLL whose name says nothing is declared to be
 	int threads = 1;
 	LibSm64SaveMode saveMode = LibSm64SaveMode::Dirty; // "saveMode": "full" | "fixed" | "dirty" (docs/libsm64.md)
 	bool costModel = true; // Resource::useCostModel; false makes runs timing-independent (diagnosis)
@@ -45,6 +46,7 @@ struct PipelineConfig
 	static PipelineConfig Parse(const nlohmann::json& root, const std::filesystem::path& configDirectory);
 
 	std::filesystem::path Resolve(const std::filesystem::path& path) const;
+	std::string ResolvedDllPattern() const;              // dllPattern with {version} filled in
 	std::vector<std::filesystem::path> DllPaths() const; // one per thread
 	const StageConfig* FindStage(const std::string& name) const;
 	std::filesystem::path SolutionsFile(const std::string& stageName) const;

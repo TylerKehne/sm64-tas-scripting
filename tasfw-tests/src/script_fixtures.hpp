@@ -24,6 +24,7 @@ namespace tasfw::tests
 		using Base::AdvanceFrameWrite;
 		using Base::Execute;
 		using Base::ExecuteAdhoc;
+		using Base::ExportM64;
 		using Base::GetCurrentFrame;
 		using Base::GetDiff;
 		using Base::GetInputs;
