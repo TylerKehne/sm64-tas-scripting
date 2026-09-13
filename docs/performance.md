@@ -267,7 +267,10 @@ before believing it.
 
 ### Reporting and gating
 
-- Tier A runs in CI on every PR.
+- Tier A runs in CI on every PR. With the maintainer's `LIBSM64_KEY` secret the game jobs
+  also run Tier C there against the committed baselines with `perf_compare.py
+  --counts-only`: exact counts and allocations gate, timings are only printed
+  (docs/libsm64.md, "Continuous integration").
 - Tiers B, C and D run locally before merging anything under `tasfw-core`,
   `tasfw-scattershot` or `tasfw-resources`. Paste the delta table into the PR description.
 - Policy: any increase in a gated count, or more than 5% wall-time regression on B, C or D

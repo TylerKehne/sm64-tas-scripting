@@ -77,13 +77,16 @@ docker exec -w /tmp/build-gcc -e TASFW_LIBSM64=/src/res/sm64_jp_0.so -e TASFW_M6
 ```
 
 The same with `-DCMAKE_CXX_COMPILER=clang++` and `/tmp/build-clang`. Build with both
-containers before calling a change done: the 24.04 one is what CI runs, the 26.04 one is
-where the Linux game path is tested and where the newest compilers see the code first.
+containers before calling a change done: the 24.04 one is what the four matrix jobs run,
+the 26.04 one is what the `ubuntu-26.04-gcc-libsm64` job runs (its GCC only; Clang 21 is
+container-only), where the Linux game path is tested and where the newest compilers see
+the code first.
 
 ## Policy
 
 1. A change is not done until it builds with MSVC, Clang and GCC with no warnings; CI
-   builds all four with warnings as errors, so one warning anywhere fails the matrix. On a
+   builds all four, plus GCC 15 in the Ubuntu 26.04 job, with warnings as errors, so one
+   warning anywhere fails the matrix. On a
    Windows machine that means MSVC and clang-cl locally plus GCC through the Linux CI job;
    on Linux it means GCC and Clang locally.
 2. When one compiler rejects or miscompiles something the standard allows, do not argue with
