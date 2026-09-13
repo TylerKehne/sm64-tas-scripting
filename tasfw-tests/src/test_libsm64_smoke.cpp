@@ -167,8 +167,15 @@ TEST_CASE("libsm64: loads, passes the layout check, and plays the movie determin
 	// Golden values for the pinned DLL + movies/bitfs-pyramid-jp.m64 at frame 3330, captured
 	// 2026-09-07 (%.9g round-trips a float exactly); the bitfs-sbb builds CI unlocks reach
 	// the same state (docs/libsm64.md, "Known builds"). Any change to the movie, the DLL, or
-	// the engine's input/savestate plumbing before that frame shows up here.
-	if (frame == 3330 && Env("TASFW_M64").find("bitfs-pyramid-jp") != std::string::npos)
+	// the engine's input/savestate plumbing before that frame shows up here. The US DLL with
+	// movies/bitfs-pyramid-us.m64 reaches the very same state at frame 3397: that movie is the
+	// JP one from its BitFS entry spliced onto a US movie that enters the level 67 frames
+	// later, and the level plays the same on both versions (docs/libsm64.md, "A movie for
+	// the US game").
+	std::string movie = Env("TASFW_M64");
+	bool goldenJp = frame == 3330 && movie.find("bitfs-pyramid-jp") != std::string::npos;
+	bool goldenUs = frame == 3397 && movie.find("bitfs-pyramid-us") != std::string::npos;
+	if (goldenJp || goldenUs)
 	{
 		// Exact: the movie is deterministic and FP contraction is off on every compiler.
 		CHECK(first.snapshot.action == 0x0C400201u); // ACT_IDLE

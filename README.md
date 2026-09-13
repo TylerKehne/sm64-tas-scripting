@@ -58,7 +58,10 @@ The executable needs files that are not in git (see [docs/libsm64.md](docs/libsm
   (docs/libsm64.md); never commit a ROM or an unlocked binary.
 - The source movies `config.json` names are committed under `movies/` (`bitfs-pyramid-jp.m64`,
   which CI, the tests and the perf suite use too, and `bitfs-osc-final-jp.m64` for the
-  `osc-final-test3` stage).
+  `osc-final-test3` stage), with two US movies next to them: `1keyU.m64`, a whole 1-key run,
+  and `bitfs-pyramid-us.m64`, the JP movie's BitFS part on the US way there, which the tests
+  run on the US game (`unlock_libsm64.py --version us` makes `res/sm64_us_0.dll`) when it is
+  there (docs/libsm64.md, "A movie for the US game").
 
 # Running the pipeline
 

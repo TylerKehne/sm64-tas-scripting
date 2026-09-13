@@ -87,9 +87,9 @@ determinism, and the `PyramidUpdate` drift test (docs/performance.md, ROADMAP 3.
 | wafel v0.8.1's libsm64, built 2021-06-17 (**pinned**) | `res\sm64_jp_0.dll` .. `_23.dll` | 32,958,049 B, `463a5be6` | The reference: every offset, check and golden value in this repo was taken from it. Provenance established 2026-09-13 by unlocking every `sm64_jp.dll.locked` in wafel's history with wafel's own locker: byte-identical to the file committed 2021-06-20 (`c155b258`) and shipped in v0.8.1 (`19262ea4`); v0.8.0's file is in an older lock format the current locker refuses. The PE header's build time is 2021-06-17 02:39 UTC; the "2022-03-12" this table used to say was a file date. |
 | wafel's 2022-08-07 update (`e81ee16b`, after v0.8.5; never in a release), JP | `C:\repos\wafel\libsm64\sm64_jp.dll` | 31,872,634 B, `da7b3620` | Passes every layout check including fixed-slice coverage; identical golden state; drift test max diff 0 (MSVC). `dirty` mode: 125 pages per save, 7 us, leak scan zero bytes. Formerly listed as "wafel 2023-09-07", the checkout's date. |
 | bitfs-sbb, JP (= wafel v0.8.5's libsm64, built 2022-06-26, re-locked with Fernet; the "2026-06-30" is the lock date) | `C:\repos\bitfs-sbb\libsm64\lib\sm64_jp.dll` | 33,068,386 B, `625fd921` | Byte-identical to what wafel's `1fa9a832` (v0.8.5) unlocks to. Passes every layout check including fixed-slice coverage; identical golden state; drift test max diff 0 on MSVC and clang-cl. `dllcheck`: 8.5 us per frame; `dirty` mode 123 pages per save, 7 to 8 us, leak scan zero bytes. Tier C exact counts and allocations identical to the pinned build's baseline (2026-09-13), which is what lets CI gate them on this build; its `DownhillAngle_PyramidUpdate` workload reads about 85% slower and `PyramidOscillation` 7% slower, the build's own code. |
-| bitfs-sbb, US (= wafel v0.8.5's libsm64, re-locked) | `...\lib\sm64_us.dll` | 33,508,967 B, `e2efd078` | Byte-identical to what wafel's `1fa9a832` unlocks to with the US ROM. Unlocked only. There is no US movie to play and the m64 country check is JP (ROADMAP 2.5). |
+| bitfs-sbb, US (= wafel v0.8.5's libsm64, re-locked) | `res\sm64_us_0.dll` (copied from `...\lib\sm64_us.dll`) | 33,508,967 B, `e2efd078` | Byte-identical to what wafel's `1fa9a832` unlocks to with the US ROM. With `movies/bitfs-pyramid-us.m64` at frame 3397 ("A movie for the US game" below): every layout check and the fixed-slice coverage, the same golden state as the JP movie's frame 3330, and the whole libsm64 test group including the drift test with max diff 0 (2026-09-13). `dllcheck`: 7.8 us per frame, `fixed` save and load 49 us. Its `.data` is 2,819,248 B against the JP builds' 2,388,752 and its `.bss` 4,884,240; the hot symbols sit inside the slices. |
 | bitfs-sbb, 2026-06-30, JP, Linux | `res/sm64_jp_0.so` (copied from `...\lib\sm64_jp.so`) | 16,733,032 B, `06c58c69` | On Ubuntu 26.04: every layout check, identical golden state, drift test max diff 0 with GCC 15 and Clang 21 (see "Linux"). |
-| bitfs-sbb, 2026-06-30, US, Linux | `res/sm64_us_0.so` | 17,168,016 B, `61e27e4f` | Loads; no US movie. |
+| bitfs-sbb, 2026-06-30, US, Linux | `res/sm64_us_0.so` | 17,168,016 B, `61e27e4f` | Loads; not yet run on the US movie. |
 
 bitfs-sbb's Windows DLLs are wafel v0.8.5's libsm64, re-locked (both unlock to the same
 bytes as wafel's own files); only its Linux `.so` builds are jgcodes2020's own, built on
@@ -122,6 +122,7 @@ here calls it.
 | File | Notes |
 |---|---|
 | `sm64_jp_0.dll` .. `sm64_jp_23.dll` | 24 byte-identical copies of the pinned build. |
+| `sm64_us_0.dll` | The US build (bitfs-sbb's), one copy: the US run of the libsm64 tests (`scripts\test.ps1`) and `m64splice`. |
 | `sm64_jp_0.so`, `sm64_us_0.so` | bitfs-sbb's Linux builds, for the container runs in "Linux". |
 | `comissonPyra2-Fanart_XZ.m64` | An unreferenced JP movie (3,382 frames). The two movies `config.json` names are committed under `movies/`: `bitfs-pyramid-jp.m64` (formerly `comissonPyra2-Fanart_x-Z.m64`; 3,804 frames, 16 KB; the tests, the perf suite and CI use it too) and `bitfs-osc-final-jp.m64` (formerly `test3.m64`; 3,726 frames; the `osc-final-test3` stage, which starts at frame 3604). |
 | `bitfs_nut_*.m64` (thousands) | Exported solutions from past runs (new runs export under `analysis/m64/<stage>/`). Safe to delete. |
@@ -182,7 +183,7 @@ on the deliberate first-write faults unless told not to; use `full` there.
 ## Checking a DLL: `dllcheck`
 
 ```
-build\Release\out\dllcheck.exe <libsm64.dll> <movie.m64> <frame> [--save-mode full|fixed|dirty] [--leak-scan [frames]] [--objects] [--dirty-scan [frames]] [--dirty-replay]
+build\Release\out\dllcheck.exe <libsm64.dll> <movie.m64> <frame> [--save-mode full|fixed|dirty] [--leak-scan [frames]] [--objects] [--dirty-scan [frames]] [--dirty-replay] [--levels] [--trace [frames]]
 ```
 
 Runs the `VerifyLayout` script (`tasfw-scripts/inc/VerifyLayout.hpp`) to `<frame>` (pick
@@ -228,6 +229,22 @@ the slot declarations in `BitFsObjects.hpp` were established (2026-09-08: 89 act
 at frame 3330, two of them `bhvBitfsTiltingInvertedPyramid`, at homes x = -2866 in slot 83
 and x = -1945 in slot 84; `bhvPlatformOnTrack` in slot 85 at (-5744, -3072, 0)).
 
+`--levels` lists every frame up to `<frame>` at which the movie changes level or area (the
+`LevelTransitions` script, `tasfw-scripts/inc/LevelTransitions.hpp`): the frame, the level
+number with the decomp's name for it, the area and the course. The state at frame f is
+what inputs 0..f-1 produced, so the frame listed is the first one inside the new level.
+This is how the frame a movie enters a level is found: a stage's `startFrame`, the frame
+the tests play to, or the frame `m64splice` joins two movies at. `movies/bitfs-pyramid-jp.m64`
+enters BitFS at frame 3001 and `movies/1keyU.m64` at 3068, both through the castle grounds,
+the vanish cap course and the basement.
+
+`--trace [frames]` prints Mario, the camera and what a movie carries between levels for the
+`frames` (default 30) frames ending at `<frame>` (the `MarioTrace` script): position, speed,
+action, facing and intended yaw; the camera's mode and yaw, `gCameraMovementFlags`, the
+R-button camera selection, the 8-directions camera's base yaw and C-button offset; health,
+coins, lives, `MarioState::flags` and `gRandomSeed16`. What a movie is doing around a frame,
+and, when two movies that enter a level alike part inside it, why ("A movie for the US game").
+
 `--leak-scan` answers the other question about a save mode: not "are the symbols we know
 about inside the slices" but "does a load restore everything that changed". It saves a state
 at `<frame>`, snapshots `.data` and `.bss`, plays 120 frames (or the count given) of a fixed
@@ -238,6 +255,53 @@ names each range from the DLL's export table. On the pinned DLL a `full` or `dir
 restores both sections exactly (`dirty` also on the 2023 and 2026 builds and the Linux
 `.so`), and a `fixed` load misses only four to six bytes: the texture-scroll offsets of the
 BitFS lava animation (`bitfs_movtex_tris_lava_*`), which nothing in the physics reads.
+
+## A movie for the US game
+
+The US build runs the same BitFS as the JP one; the way there differs (the text and the
+intro run longer, so a movie for one version desyncs on the other before the castle:
+`1keyU.m64` on the JP DLL never gets past the castle grounds). So the US test movie was
+not TASed but joined from two movies: a US movie that reaches the level, and the JP
+movie's part inside it. `movies/1keyU.m64` is a whole US 1-key run (7,628 inputs; on the
+US DLL it goes castle grounds, vanish cap course, basement, BitFS at frame 3068, Bowser 2,
+then DDD, BitS and Bowser 3; its header carries the JP CRC and country code, which nothing
+here reads, and the DLL it syncs on is what says which game it is). `movies/bitfs-pyramid-jp.m64`
+takes the same route and enters BitFS at frame 3001. `m64splice` made
+`movies/bitfs-pyramid-us.m64` from the two (2026-09-13):
+
+```
+build\Release\out\m64splice.exe res\sm64_us_0.dll movies\1keyU.m64 res\sm64_jp_0.dll movies\bitfs-pyramid-jp.m64 bitfs movies\bitfs-pyramid-us.m64 --lead 10
+```
+
+`m64splice` (`tasfw-tools/m64splice`) plays each movie on its own DLL through the
+`LevelTransitions` script to find the first frame whose state is inside the level, cuts
+both there (`--lead 10`: ten frames earlier, see below), and runs the `SpliceMovie` script
+(`tasfw-scripts/inc/SpliceMovie.hpp`) on the US DLL: the US movie to its cut, then the JP
+movie's inputs from its cut as the script's own diff (`Apply`), exported with `ExportM64`,
+so every frame written was played by the game. It then traces the output on the US DLL and
+the JP movie on the JP DLL from their entry frames with the `MarioTrace` script and compares
+position, speed, action and facing frame by frame. The output plays all 803 in-level
+frames of the JP movie identically: JP frame f is US frame f + 67, the pipeline's frame
+3330 is 3397, and there Mario's position, action, facing and the pyramid normal equal the
+JP golden values (`test_libsm64_smoke.cpp`). Of the 89 objects in the pool only two moving
+ones far from the pyramid (slots 28 and 61) sit elsewhere; slots 83, 84 and 85 are as
+`BitFsObjects.hpp` declares.
+
+The lead is what the first attempt taught. Cut at the entry frames themselves, the output
+parted from the JP movie at the first frame the player controls, 41 frames in, because the
+US movie enters with the 8-directions camera turned one step: its author presses C-left
+during the pipe warp (frames 3065 and 3067) and keeps pressing after entry, and
+`s8DirModeYawOffset`, the camera static those presses step, persists across levels, so the
+same stick pointed 45 degrees elsewhere. `dllcheck --trace` shows it (the `8dir=` field);
+the 37 frames of warp before entry are otherwise identical in the two movies down to
+Mario's coordinates, so cutting ten frames earlier drops the presses and nothing else. The
+trace is also where to look when another pair of movies parts: health, coins, lives, cap
+flags, the R-button camera selection and the RNG seed are all in it.
+
+The output's header is what `M64::save` writes today, the JP CRC and country code
+(ROADMAP 2.5). `scripts\test.ps1` runs the libsm64 group on `res\sm64_us_0.dll` and this
+movie at frame 3397 whenever that DLL exists; the group passes there (2026-09-13): layout,
+slots, determinism, every save mode, the drift test with max diff 0.
 
 ## Why one copy per thread
 
@@ -317,7 +381,8 @@ making these derived instead of hardcoded.
    by decision (ROADMAP 2.4) and declared with behavior and home in
    `tasfw-scripts/inc/BitFsObjects.hpp`; the `VerifyLayout` script verifies them inside the
    level before the pipeline's first stage, so a shift fails start-up loudly.
-4. **ROM/country checks** in `Inputs.hpp` (`Rom::SUPER_MARIO_64`, `CountryCode::SUPER_MARIO_64_J`).
+4. **ROM/country codes** in `Inputs.hpp` (`Rom::SUPER_MARIO_64`, `CountryCode::SUPER_MARIO_64_J`):
+   what `M64::save` writes into every movie it creates; `M64::load` checks nothing (ROADMAP 2.5).
 5. **Exported names.** See "Renamed symbols"; new renames go into `LibSm64SymbolAliases`.
 
 ## Verifying a DLL by hand
@@ -364,7 +429,8 @@ skipped and the jobs are green on the DLL-free tests alone. The unlocked binarie
 uploaded as artifacts. Hosted runners' timings are not gated (they compare to nothing).
 The pinned DLL (wafel v0.8.1's) itself never enters CI: it is a local artifact, and the
 bitfs-sbb build (wafel v0.8.5's) reaches the same golden state and counts ("Known
-builds").
+builds"). The US game is not in CI either: its key derives from the US ROM, so it would be
+a second secret (ROADMAP 2.5).
 
 ## Reproducing the DLL from source (not yet done)
 

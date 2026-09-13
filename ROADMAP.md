@@ -291,8 +291,22 @@ Goal: the DLL becomes a reproducible, swappable artifact instead of a mystery bi
       wrong behavior and an empty slot each produce a `FAIL`.
 - [ ] **2.5 US ROM support.** `CountryCode` already exists; make the m64 header check and DLL
       choice follow it. *Done when:* the smoke test passes on both JP and US DLLs. The US
-      `.dll` and `.so` unlock from bitfs-sbb (docs/libsm64.md); what is missing is a US movie
-      and the header check.
+      `.dll` and `.so` unlock from bitfs-sbb (docs/libsm64.md). 2026-09-13: the US movie
+      exists and the libsm64 test group passes on the US DLL. `movies/1keyU.m64` (a whole US
+      1-key run) reaches BitFS at frame 3068 and the JP movie at 3001, by the same route;
+      `m64splice` (new, on the `LevelTransitions`, `SpliceMovie` and `MarioTrace` scripts,
+      with `dllcheck --levels` and `--trace` beside it) joined them into
+      `movies/bitfs-pyramid-us.m64`, which plays the JP movie's 803 in-level frames
+      identically on the US DLL once both are cut ten frames before entry: the US movie
+      turns the 8-directions camera during the warp, and that offset persists across levels
+      (docs/libsm64.md, "A movie for the US game"). Frame 3397 there is the JP movie's 3330,
+      the same golden state, and `scripts/test.ps1` runs the group on `res/sm64_us_0.dll`
+      whenever it exists. Left, and framework-shaped, so designed first (hard rule 10): the
+      US values of `CountryCode` and `Rom`, `M64` reading its header on load and writing the
+      movie's own on save (the US movie is marked JP today), where a movie is checked against
+      the game it is played on, the pipeline's DLL choice following the movie, and a CI
+      secret derived from the US ROM. A re-basing helper for diffs (what `SpliceMovie` does
+      by hand) was considered and not wanted.
 
 ## Phase 3: framework hardening
 

@@ -59,16 +59,16 @@ its place with numbers, and "it is cleaner" is not a number.
 | `tasfw-core/inc/sm64/` | Hand-copied decomp structs, enums and trig tables. Must match the DLL's x64 layout. |
 | `tasfw-resources/` | `LibSm64` (drives the game DLL) and `PyramidUpdate` (standalone reimplementation of pyramid tilt physics used as a fast stand-in). |
 | `tasfw-scattershot/` | Header-only OpenMP brute-force search (blocks, segments, solutions, CSV export). |
-| `tasfw-scripts/` | Reusable BitFS scripts (pyramid oscillation, downhill angle search, dive-recover attempts) and scattershot stages. |
+| `tasfw-scripts/` | Reusable BitFS scripts (pyramid oscillation, downhill angle search, dive-recover attempts), scattershot stages, and the scripts that look at the game rather than play it (`VerifyLayout`, `LevelTransitions`, `MarioTrace`, `SpliceMovie`), which the tools and tests run. |
 | `tasfw-bruteforcers/bitfs-turnaround/` | The only executable (`bitfs-turn.exe`): the BitFS pipeline as config-selected stages (`config.json`, `Stages.cpp`, `PipelineConfig`). `--list`, `--dry-run`, `--stage`. |
 | `tasfw-perf/` | Performance suite (Tier A microbenchmarks on an in-memory fake resource). Release only. |
-| `tasfw-tools/` | `dllcheck`: runs the `VerifyLayout` script against a DLL, reports fixed-slice coverage, and measures frame-advance and savestate cost. |
+| `tasfw-tools/` | `dllcheck`: runs the `VerifyLayout` script against a DLL, reports fixed-slice coverage, measures frame-advance and savestate cost, and lists a movie's level transitions (`--levels`) or Mario and the camera around a frame (`--trace`). `m64splice`: a movie for one game version out of two, the first up to the frame it enters a level, the second from its own, played and checked frame by frame (docs/libsm64.md, "A movie for the US game"). |
 | `tasfw-tests/` | Correctness tests (doctest), one file per subject; `script_fixtures.hpp` and `libsm64_env.hpp` hold what the `test_script_*` and `test_libsm64_*` files share. DLL-free tests always run; the libsm64 tests run when `res\` has the DLL and movie. |
 | `tasfw-testing/` | Header-only test support shared by tests and benchmarks (`FakeResource`). |
 | `perf/` | Committed benchmark baselines, one directory per machine and compiler (`tyler-desktop\`, `tyler-desktop-clang\`): a JSON file per benchmark family plus `context.json`, written by `scripts\perf.ps1 -SaveBaseline` and read through `perf_compare.py compare`, not by hand; `tierd-ci.json` is CI's Tier D baseline. `perf/results/` is gitignored. |
 | `analysis/` | R script that plots scattershot CSV output; also the pipeline's default output directory (CSVs, `solutions/*.json`, `m64/`), all gitignored. |
 | `res/` | Gitignored runtime inputs: 24 copies of the libsm64 DLL (made by `scripts/unlock_libsm64.py`), other source .m64 files, and thousands of exported solution .m64 files. |
-| `movies/` | The committed source movies: `bitfs-pyramid-jp.m64` (JP, 3,804 frames; the tests, the perf suite, CI and `config.json` use it) and `bitfs-osc-final-jp.m64` (JP, 3,726 frames; the `osc-final-test3` stage). |
+| `movies/` | The committed source movies: `bitfs-pyramid-jp.m64` (JP, 3,804 frames; the tests, the perf suite, CI and `config.json` use it), `bitfs-osc-final-jp.m64` (JP, 3,726 frames; the `osc-final-test3` stage), `1keyU.m64` (US, 7,628 frames; a whole 1-key run, the source of the US way into BitFS) and `bitfs-pyramid-us.m64` (US, 3,871 frames; `1keyU.m64` to its BitFS entry, then the JP movie from its own: its frame 3397 is the JP movie's 3330, the libsm64 tests run on it when `res\` has the US DLL). |
 | `scripts/` | `build.ps1` (the supported build entry point on Windows), `test.ps1`, `perf.ps1` and its compare script, `unlock_libsm64.py` (the game from a ROM or the CI key), `perf_scaling_hang.ps1`, `dll_symbols.py`. |
 | `cmake/` | `AddOptimizationFlags` (arch flag, FP determinism, LTO, OpenMP; applied to every first-party target), `Warnings` (`/W3`, `/W4`, `-Wall -Wextra` on every first-party target, and `TASFW_WARNINGS_AS_ERRORS`) and `SystemIncludes` (fetched dependencies as system headers, so their warnings never count). |
 | `docs/` | Provenance of the DLL and other reference notes. |
@@ -90,7 +90,9 @@ its place with numbers, and "it is cleaner" is not a number.
 - The game is not in git. You need `res\sm64_jp_0.dll` .. `res\sm64_jp_23.dll` (on Linux,
   `.so` copies): `python scripts\unlock_libsm64.py --rom <sm64 jp>.z64 --out res --copies 24`
   fetches the pinned bitfs-sbb build, unlocks it and writes the copies
-  ([docs/libsm64.md](docs/libsm64.md)). The source movies are committed under `movies\`.
+  ([docs/libsm64.md](docs/libsm64.md)); `--rom <sm64 us>.z64 --version us` writes
+  `res\sm64_us_0.dll`, the US game, which the tests run on too when it is there. The source
+  movies are committed under `movies\`.
   CI unlocks the same build from the maintainer-only
   `LIBSM64_KEY` secret and runs everything exact on it: the libsm64 tests, `dllcheck`'s
   layout checks and leak scan, the pipeline's dry run, and the Tier C and CI-sized Tier D
@@ -107,14 +109,22 @@ its place with numbers, and "it is cleaner" is not a number.
   `-Compiler clang`, `-Filter '*Script*'`). Under a second without the DLL, a few seconds with it.
 - The DLL-level check is `build\Release\out\dllcheck.exe <dll> <m64> <frame>
   [--save-mode full|fixed|dirty] [--leak-scan [frames]] [--objects] [--dirty-scan [frames]]
-  [--dirty-replay]` (docs/libsm64.md). It plays to a frame, verifies the struct layouts
+  [--dirty-replay] [--levels] [--trace [frames]]` (docs/libsm64.md). It plays to a frame,
+  verifies the struct layouts
   against the game, and prints frame-advance and save/load cost in the chosen save mode.
   Takes under a second. `--leak-scan` lists every byte range of `.data`/`.bss` that a load
   does not restore; `--objects` lists every active object in `gObjectPool` with its
   behavior, params, position and home; `--dirty-scan` and `--dirty-replay` count the 4 KB
   pages the game writes per frame (under pattern inputs from the frame, or while replaying
-  the movie to it) and which of them the fixed slices miss; `python scripts\dll_symbols.py
+  the movie to it) and which of them the fixed slices miss; `--levels` lists every frame at
+  which the movie changes level or area (how the frame a movie enters a level is found);
+  `--trace` prints Mario, the camera and what a movie carries between levels for the frames
+  before the frame; `python scripts\dll_symbols.py
   <dll> -` names the offsets in any of these outputs from the DLL's exports.
+- A movie for another game version is made with `build\Release\out\m64splice.exe <dll a>
+  <a.m64> <dll b> <b.m64> <level> <out.m64> [--lead frames]`: movie a to the frame it enters
+  the level, movie b from its own, played through the game and compared frame by frame with
+  movie b on its own DLL (docs/libsm64.md, "A movie for the US game").
 - Performance numbers come from `Release` or `RelWithDebInfo` builds only. Debug uses `/Od`.
 - Perf suite: `powershell -ExecutionPolicy Bypass -File scripts\perf.ps1` builds Release,
   runs `tasfw-perf.exe`, and compares against `perf\baselines\<computername>\`. Tier A
@@ -218,8 +228,9 @@ Verification means:
 2. `scripts\test.ps1` passes, on both compilers. With the DLL in `res\` it also runs the
    libsm64 tests (`test_libsm64_*.cpp`); the smoke test among them pins Mario's exact state
    at frame 3330 of the committed movie (CI runs the same group on the bitfs-sbb build when
-   it has the key). Anything touching `tasfw-core` needs a test in `tasfw-tests` for the
-   behavior it changes.
+   it has the key), and with `res\sm64_us_0.dll` there too the group runs again on the US
+   game at frame 3397 of `movies\bitfs-pyramid-us.m64`, the same state. Anything touching
+   `tasfw-core` needs a test in `tasfw-tests` for the behavior it changes.
 3. Reason explicitly about determinism and savestate purity for anything touching
    `Script.t.hpp`, `ScattershotThread.t.hpp` or `LibSm64.cpp`; the `test_script_*.cpp`
    files encode those invariants on the fake resource (fixtures in `script_fixtures.hpp`),

@@ -1,6 +1,6 @@
 // dllcheck: is this libsm64 DLL the one our headers describe, and what does a frame cost?
 //
-//   dllcheck <libsm64.dll> <movie.m64> <frame> [--save-mode full|fixed|dirty] [--leak-scan [frames]]
+//   dllcheck <libsm64.dll> <movie.m64> <frame> [--save-mode full|fixed|dirty] [--leak-scan [frames]] [--levels]
 //
 // Loads the DLL, runs the VerifyLayout script to <frame> (which should be inside a level)
 // and prints one line per check (ROADMAP 1.1); in the fixed save mode it also reports
@@ -15,6 +15,14 @@
 // can make a replay depend on history (ROADMAP 4.5). A second pass with a different input
 // pattern shows which of those ranges depend on what was played. Offsets are section-relative;
 // scripts/dll_symbols.py maps them to exported symbols.
+//
+// --levels: list every frame up to <frame> at which the movie changes level or area (the
+// LevelTransitions script), which is how the frame a movie enters a level is found, e.g. the
+// frame to splice a movie for another game version at (m64splice).
+//
+// --trace [frames]: print Mario, the camera and the carried-over state for the `frames`
+// (default 30) frames ending at <frame> (the MarioTrace script): what a movie is doing
+// around a frame, and what it carries into a level.
 
 #include <algorithm>
 #include <cctype>
@@ -30,7 +38,9 @@
 #include <string>
 #include <vector>
 
+#include <LevelTransitions.hpp>
 #include <LibSm64.hpp>
+#include <MarioTrace.hpp>
 #include <VerifyLayout.hpp>
 #include <sm64/Camera.hpp>
 #include <sm64/ObjectFields.hpp>
@@ -581,7 +591,7 @@ int main(int argc, char** argv)
 {
 	if (argc < 4)
 	{
-		std::fprintf(stderr, "usage: dllcheck <libsm64.dll> <movie.m64> <frame> [--save-mode full|fixed|dirty] [--leak-scan [frames]] [--objects] [--dirty-scan [frames]] [--dirty-replay]\n");
+		std::fprintf(stderr, "usage: dllcheck <libsm64.dll> <movie.m64> <frame> [--save-mode full|fixed|dirty] [--leak-scan [frames]] [--objects] [--dirty-scan [frames]] [--dirty-replay] [--levels] [--trace [frames]]\n");
 		return 2;
 	}
 
@@ -593,6 +603,8 @@ int main(int argc, char** argv)
 	int leakScanFrames = 0;
 	int dirtyScanFrames = 0;
 	bool dirtyReplay = false;
+	bool listLevels = false;
+	int traceFrames = 0;
 	for (int i = 4; i < argc; i++)
 	{
 		std::string arg = argv[i];
@@ -621,6 +633,14 @@ int main(int argc, char** argv)
 		}
 		else if (arg == "--dirty-replay")
 			dirtyReplay = true;
+		else if (arg == "--levels")
+			listLevels = true;
+		else if (arg == "--trace")
+		{
+			traceFrames = 30;
+			if (i + 1 < argc && std::isdigit((unsigned char)argv[i + 1][0]))
+				traceFrames = std::atoi(argv[++i]);
+		}
 		else
 		{
 			std::fprintf(stderr, "unknown option %s\n", argv[i]);
@@ -654,6 +674,23 @@ int main(int argc, char** argv)
 		int failures = layout.failures;
 		for (const std::string& line : layout.lines)
 			std::cout << "  " << line << "\n";
+
+		if (listLevels)
+		{
+			auto levels = TopLevelScriptBuilder<LevelTransitions>::Build(m64).ImportResource(&resource).Run(frame);
+			std::cout << "\nLevel transitions, frames 0.." << frame << " (LevelTransitions; the state at frame f is what inputs 0..f-1 produced):\n";
+			for (const LevelTransitions::Transition& t : levels.transitions)
+				std::printf("  frame %6lld: level %2d (%s), area %d, course %d\n", (long long)t.frame, int(t.level),
+					LevelTransitions::LevelName(t.level), int(t.area), int(t.course));
+		}
+		if (traceFrames > 0)
+		{
+			int64_t first = std::max<int64_t>(0, frame - traceFrames + 1);
+			auto trace = TopLevelScriptBuilder<MarioTrace>::Build(m64).ImportResource(&resource).Run(first, frame);
+			std::cout << "\nMario and camera, frames " << first << ".." << frame << " (MarioTrace):\n";
+			for (const MarioTrace::Sample& sample : trace.samples)
+				std::cout << "  " << sample.Describe() << "\n";
+		}
 		resource.LoadState(-1); // back to power-on: the measurements replay the movie on the resource itself
 
 		Results results;
