@@ -92,8 +92,10 @@ its place with numbers, and "it is cleaner" is not a number.
   fetches the pinned bitfs-sbb build, unlocks it and writes the copies
   ([docs/libsm64.md](docs/libsm64.md)). The source movie is committed as
   `movies\bitfs-pyramid-jp.m64`. CI unlocks the same build from the maintainer-only
-  `LIBSM64_KEY` secret and runs the libsm64 tests and the Tier C count gates on it; forks
-  and outside pull requests skip those steps.
+  `LIBSM64_KEY` secret and runs everything exact on it: the libsm64 tests, `dllcheck`'s
+  layout checks and leak scan, the pipeline's dry run, and the Tier C and CI-sized Tier D
+  count gates (docs/libsm64.md, "Continuous integration"); forks and outside pull requests
+  skip those steps.
 - `bitfs-turn.exe --list` and `--dry-run` are safe: no search runs (`--dry-run` loads one
   DLL, runs the `VerifyLayout` script to the first stage's frame and prints its report,
   hardcoded object slots included; it exits 1 on a `FAIL`. A real run makes the same check

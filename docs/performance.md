@@ -234,6 +234,14 @@ Run by `scripts/perf.ps1` through `bitfs-turn` on two configs under `perf/`, eac
   `frameAdvancesPerSecond`, `peakResidentMB` (reported) and `validationFailures` (exact, 0);
   wall within 10%.
 
+A third config, `tierd-ci.json` (and `tierd-ci-linux.json` with the `.so` pattern and
+`dirty` saves), is the deterministic workload cut to 100 shots on 4 threads for CI, where
+only its exact counts gate (`perf/baselines/tierd-ci.json`; docs/libsm64.md, "Continuous
+integration"). `perf.ps1` does not run it. Its counts are the same in `fixed` and `dirty`
+mode: 2,981,801 frame advances, 104 saves, 184,344 loads, 36,347 blocks, 93,774 scripts,
+10 solutions from 100 shots (2026-09-13). The stage log of any Tier D run becomes a
+benchmark row through `perf_compare.py tierd`, which both `perf.ps1` and CI use.
+
 Both run at High priority. The deterministic run is pinned to one logical CPU per
 performance core (`0x5555` on the desktop's 8P+16E i9-13900K: no SMT sibling sharing, no
 efficiency core); unpinned, Windows' hybrid scheduler handed each run a different mix of
@@ -268,9 +276,9 @@ before believing it.
 ### Reporting and gating
 
 - Tier A runs in CI on every PR. With the maintainer's `LIBSM64_KEY` secret the game jobs
-  also run Tier C there against the committed baselines with `perf_compare.py
-  --counts-only`: exact counts and allocations gate, timings are only printed
-  (docs/libsm64.md, "Continuous integration").
+  also run Tier C and the CI-sized Tier D workload there against the committed baselines
+  with `perf_compare.py --counts-only`: exact counts and allocations gate, timings are only
+  printed (docs/libsm64.md, "Continuous integration").
 - Tiers B, C and D run locally before merging anything under `tasfw-core`,
   `tasfw-scattershot` or `tasfw-resources`. Paste the delta table into the PR description.
 - Policy: any increase in a gated count, or more than 5% wall-time regression on B, C or D

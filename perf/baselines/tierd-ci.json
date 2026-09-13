@@ -1,0 +1,28 @@
+{
+  "context": {
+    "tier": "D"
+  },
+  "benchmarks": [
+    {
+      "name": "TierD_CI",
+      "run_name": "TierD_CI",
+      "run_type": "iteration",
+      "repetitions": 1,
+      "repetition_index": 0,
+      "threads": 1,
+      "iterations": 1,
+      "real_time": 36400.0,
+      "cpu_time": 36400.0,
+      "time_unit": "ms",
+      "validationFailures": 0.0,
+      "shots": 100.0,
+      "scripts": 93774.0,
+      "blocks": 36347.0,
+      "solutions": 10.0,
+      "frameAdvances": 2981801.0,
+      "saves": 104.0,
+      "loads": 184344.0,
+      "cycles": 432978614507.0
+    }
+  ]
+}

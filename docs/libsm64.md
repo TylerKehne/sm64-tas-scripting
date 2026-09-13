@@ -321,20 +321,38 @@ exports, `objdump -T | grep GLIBC` for the glibc versions it needs. With the fra
 ## Continuous integration
 
 `.github/workflows/build.yml` runs the game when the `LIBSM64_KEY` repository secret is
-set: the Windows jobs (MSVC and clang-cl) and a separate Ubuntu 26.04 container job (the
-`.so` needs its glibc, "Linux" above) call `scripts/unlock_libsm64.py --key-env
-LIBSM64_KEY` to fetch the pinned bitfs-sbb JP build and unlock it into the runner's temp
-directory, run the `libsm64*` test group on `movies/bitfs-pyramid-jp.m64` (layout checks,
-the golden state at frame 3330, save/load determinism, the drift test), and run Tier C with
-`perf_compare.py --counts-only` against the committed baseline, so an extra frame advance
-or allocation in the framework fails the pull request. The secret is the derived key, not
-the ROM (`--print-key`), set by the maintainer under Settings, Secrets; GitHub withholds
+set: the Windows jobs (MSVC and clang-cl) and two Ubuntu 26.04 container jobs (GCC 15 and
+Clang 21; the `.so` needs that release's glibc, "Linux" above) call
+`scripts/unlock_libsm64.py --key-env LIBSM64_KEY` to fetch the pinned bitfs-sbb JP build
+and unlock it into `res/` on the runner (16 copies on Windows, the real config's thread
+count; 4 on Linux), then run everything about the game that is exact:
+
+- the `libsm64*` test group on `movies/bitfs-pyramid-jp.m64` (layout checks, the golden
+  state at frame 3330, save/load determinism, the drift test);
+- `dllcheck` in `fixed` mode on Windows (the layout checks and the fixed-slice coverage
+  report, exit 1 on any `FAIL`) and in `dirty` mode with `--leak-scan` on both platforms,
+  where the workflow fails the step if either pass reports a byte a load did not restore;
+- the pipeline's dry run: `bitfs-turn --dry-run` on the real `config.json` on Windows, and
+  on `perf/tierd-ci-linux.json` on Linux (the `VerifyLayout` script to the first stage's
+  frame, the same check a real run makes before its first stage);
+- Tier C with `perf_compare.py --counts-only` against the committed baseline;
+- Tier D on a CI-sized workload, `perf/tierd-ci.json` (`tierd-ci-linux.json` with the
+  `.so` pattern and `dirty` saves): the deterministic tilt-target stage cut to 100 shots
+  on 4 threads, cost model off, about 40 s on the desktop, exact counts compared with
+  `perf/baselines/tierd-ci.json` through `perf_compare.py tierd` and `--counts-only`. The
+  counts are the same in `fixed` and `dirty` mode (verified 2026-09-13), so both platforms
+  share the one expected file; regenerate it with the same two commands when the framework
+  legitimately changes its work.
+
+So an extra frame advance, save, load or allocation anywhere in the framework, a struct
+that stopped matching the DLL, a slice that stopped covering a hot symbol, or a load that
+stopped restoring a byte fails the pull request. The secret is the derived key, not the
+ROM (`--print-key`), set by the maintainer under Settings, Secrets; GitHub withholds
 secrets from forks and from pull requests opened from them, so there those steps are
-skipped and the job is green on the DLL-free tests alone. The unlocked binary is never
-uploaded as an artifact. Hosted runners' timings are not gated (they compare to nothing);
-Tier D counts are not run there yet (eight copies, minutes on a four-core runner; ROADMAP
-2.1). The pinned DLL (wafel v0.8.1's) itself never enters CI: it is a local artifact, and
-the bitfs-sbb build (wafel v0.8.5's) reaches the same golden state and counts ("Known
+skipped and the jobs are green on the DLL-free tests alone. The unlocked binaries are never
+uploaded as artifacts. Hosted runners' timings are not gated (they compare to nothing).
+The pinned DLL (wafel v0.8.1's) itself never enters CI: it is a local artifact, and the
+bitfs-sbb build (wafel v0.8.5's) reaches the same golden state and counts ("Known
 builds").
 
 ## Reproducing the DLL from source (not yet done)

@@ -1,0 +1,16 @@
+{
+	"_comment": "Tier D exact-count gate for CI (docs/libsm64.md, Continuous integration): the deterministic tilt-target stage of tierd-deterministic.json cut to 100 shots on 4 threads so a hosted runner finishes it in minutes, cost model off so every count is exact. Its expected counts are perf/baselines/tierd-ci.json; regenerate them with the same command whenever the framework legitimately changes its work. Paths resolve against this file; tierd-ci-linux.json is the same with the .so pattern.",
+	"resources": { "dllDirectory": "../res", "dllPattern": "sm64_jp_{}.dll", "threads": 4, "saveMode": "fixed", "costModel": false },
+	"m64": "../movies/bitfs-pyramid-jp.m64",
+	"outputDirectory": "results/tierd-ci",
+	"scattershot": {
+		"maxShots": 100, "pelletsPerShot": 100, "shotsPerUpdate": 50, "maxSolutions": 100000,
+		"deterministic": true, "seed": 3, "csvSamplePeriod": 0
+	},
+	"stages": [
+		{
+			"name": "tierd-ci", "type": "tilt-target", "startFrame": 3330,
+			"args": { "targetNx": -0.17944, "targetNz": 0.3936, "neighborhood": 100, "targetDimension": "x" }
+		}
+	]
+}

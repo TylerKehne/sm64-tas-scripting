@@ -113,9 +113,11 @@ correctness and in speed.
         baseline, switches the power plan for the run and reports missing Defender
         exclusions (`-SetupDefender`); every row carries CPU cycles next to wall time
         (reported, not gated). docs/performance.md, "Running the suite".
-      - [ ] Tier D exact counts in CI (moved here from 2.1, 2026-09-13): the deterministic
-        workload needs eight DLL copies and takes minutes on a four-core hosted runner;
-        Tier C counts already gate there (docs/libsm64.md, "Continuous integration").
+      - [x] Tier D exact counts in CI. Done 2026-09-13 on a CI-sized workload
+        (`perf/tierd-ci.json`: 100 shots, 4 threads, about 40 s on the desktop) with its own
+        committed counts, alongside `dllcheck`'s layout checks and leak scan and the
+        pipeline's dry run (docs/libsm64.md, "Continuous integration"). The full
+        deterministic workload stays local (eight copies, minutes on a hosted runner).
       *Done when:* a deliberate extra frame advance in `LoadBase` fails Tier C, a deliberate
       10% slowdown in `GetHash` fails Tier A, and a PR template asks for the delta table.
       Verified 2026-09-08 against the first baselines: one extra save/advance/load per
