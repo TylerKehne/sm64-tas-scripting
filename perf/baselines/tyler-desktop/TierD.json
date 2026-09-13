@@ -1,0 +1,6 @@
+{
+  "benchmarks": [
+    {"name": "TierD_Deterministic", "run_name": "TierD_Deterministic", "run_type": "iteration", "repetitions": 1, "repetition_index": 0, "threads": 1, "iterations": 1, "real_time": 132700, "cpu_time": 132700, "time_unit": "ms", "validationFailures": 0, "shots": 600, "scripts": 520052, "blocks": 109958, "solutions": 55, "frameAdvances": 18014927, "saves": 608, "loads": 1038084, "cycles": 3135747189672, "peakResidentMB": 120.8},
+    {"name": "TierD_Throughput", "run_name": "TierD_Throughput", "run_type": "iteration", "repetitions": 1, "repetition_index": 0, "threads": 1, "iterations": 1, "real_time": 71800, "cpu_time": 71800, "time_unit": "ms", "validationFailures": 0, "shotsPerSecond": 16.71, "scriptsPerSecond": 14159.76, "frameAdvancesPerSecond": 496212.03, "cycles": 3396254275121, "peakResidentMB": 717.4}
+  ]
+}

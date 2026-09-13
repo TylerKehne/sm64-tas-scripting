@@ -45,12 +45,12 @@ jobs:
             os: windows-latest
             preset: msvc-release
             bindir: build/Release
-            baseline: perf/baselines/tyler-desktop.json
+            baseline: perf/baselines/tyler-desktop
           - name: windows-clang-cl
             os: windows-latest
             preset: clang-cl-release
             bindir: build/Release-clang
-            baseline: perf/baselines/tyler-desktop-clang.json
+            baseline: perf/baselines/tyler-desktop-clang
           - name: ubuntu-24.04-gcc
             os: ubuntu-24.04
             preset: gcc-release
@@ -269,7 +269,7 @@ jobs:
         shell: bash
         run: |
           ${{ matrix.bindir }}/out/tasfw-perf --benchmark_filter='^BM_Framework' --benchmark_repetitions=1 --benchmark_out=tierc.json --benchmark_out_format=json
-          python3 scripts/perf_compare.py compare perf/baselines/tyler-desktop.json tierc.json --counts-only | grep -v MISSING
+          python3 scripts/perf_compare.py compare perf/baselines/tyler-desktop tierc.json --counts-only | grep -v MISSING
 
       - name: Tier D exact counts (CI-sized workload) against the committed baseline
         if: env.LIBSM64_KEY != ''

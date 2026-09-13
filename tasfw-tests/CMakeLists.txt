@@ -1,6 +1,7 @@
-# Correctness tests (ROADMAP 1.2). doctest via FetchContent.
-# DLL-free tests always run. The libsm64 smoke test runs only when TASFW_LIBSM64 and
-# TASFW_M64 point at a DLL and a movie (scripts/test.ps1 sets them when res/ has them).
+# Correctness tests (ROADMAP 1.2). doctest via FetchContent. One file per subject; the
+# script engine tests share src/script_fixtures.hpp and the libsm64 tests src/libsm64_env.hpp.
+# DLL-free tests always run. The libsm64 tests run only when TASFW_LIBSM64 and TASFW_M64
+# point at a DLL and a movie (scripts/test.ps1 sets them when res/ has them).
 
 include(FetchContent)
 
@@ -24,9 +25,13 @@ add_executable(tasfw-tests
 	"src/test_scattershot_hash.cpp"
 	"src/test_slots.cpp"
 	"src/test_levelstack.cpp"
-	"src/test_script.cpp"
+	"src/test_script_lifecycle.cpp"
+	"src/test_script_saves.cpp"
+	"src/test_script_trackers.cpp"
 	"src/test_sharedlib.cpp"
-	"src/test_libsm64.cpp"
+	"src/test_libsm64_smoke.cpp"
+	"src/test_libsm64_savemodes.cpp"
+	"src/test_libsm64_pyramid.cpp"
 	"src/test_pipeline.cpp"
 )
 target_link_libraries(tasfw-tests PRIVATE tasfw::core tasfw::resources tasfw::scattershot tasfw::testing tasfw::scripts_general tasfw::bitfs_pipeline doctest::doctest)

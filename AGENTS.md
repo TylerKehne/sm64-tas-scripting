@@ -63,9 +63,9 @@ its place with numbers, and "it is cleaner" is not a number.
 | `tasfw-bruteforcers/bitfs-turnaround/` | The only executable (`bitfs-turn.exe`): the BitFS pipeline as config-selected stages (`config.json`, `Stages.cpp`, `PipelineConfig`). `--list`, `--dry-run`, `--stage`. |
 | `tasfw-perf/` | Performance suite (Tier A microbenchmarks on an in-memory fake resource). Release only. |
 | `tasfw-tools/` | `dllcheck`: runs the `VerifyLayout` script against a DLL, reports fixed-slice coverage, and measures frame-advance and savestate cost. |
-| `tasfw-tests/` | Correctness tests (doctest). DLL-free tests always run; the libsm64 smoke test runs when `res\` has the DLL and movie. |
+| `tasfw-tests/` | Correctness tests (doctest), one file per subject; `script_fixtures.hpp` and `libsm64_env.hpp` hold what the `test_script_*` and `test_libsm64_*` files share. DLL-free tests always run; the libsm64 tests run when `res\` has the DLL and movie. |
 | `tasfw-testing/` | Header-only test support shared by tests and benchmarks (`FakeResource`). |
-| `perf/` | Committed benchmark baselines per machine; `perf/results/` is gitignored. |
+| `perf/` | Committed benchmark baselines, one directory per machine and compiler (`tyler-desktop\`, `tyler-desktop-clang\`): a JSON file per benchmark family plus `context.json`, written by `scripts\perf.ps1 -SaveBaseline` and read through `perf_compare.py compare`, not by hand; `tierd-ci.json` is CI's Tier D baseline. `perf/results/` is gitignored. |
 | `analysis/` | R script that plots scattershot CSV output; also the pipeline's default output directory (CSVs, `solutions/*.json`, `m64/`), all gitignored. |
 | `res/` | Gitignored runtime inputs: 24 copies of the libsm64 DLL (made by `scripts/unlock_libsm64.py`), other source .m64 files, and thousands of exported solution .m64 files. |
 | `movies/` | The committed source movies: `bitfs-pyramid-jp.m64` (JP, 3,804 frames; the tests, the perf suite, CI and `config.json` use it) and `bitfs-osc-final-jp.m64` (JP, 3,726 frames; the `osc-final-test3` stage). |
@@ -117,7 +117,7 @@ its place with numbers, and "it is cleaner" is not a number.
   <dll> -` names the offsets in any of these outputs from the DLL's exports.
 - Performance numbers come from `Release` or `RelWithDebInfo` builds only. Debug uses `/Od`.
 - Perf suite: `powershell -ExecutionPolicy Bypass -File scripts\perf.ps1` builds Release,
-  runs `tasfw-perf.exe`, and compares against `perf\baselines\<computername>.json`. Tier A
+  runs `tasfw-perf.exe`, and compares against `perf\baselines\<computername>\`. Tier A
   needs nothing; the Tier B and C (libsm64) families run when `res\` has the DLL and movie,
   or pass `-Dll`/`-M64` (thread scaling also needs the copies `sm64_jp_1.dll` to
   `sm64_jp_16.dll`); Tier D runs `bitfs-turn` on `perf\tierd-*.json` when the 16 DLL
@@ -216,12 +216,14 @@ Verification means:
    `-Compiler clang`. CI builds every compiler with `TASFW_WARNINGS_AS_ERRORS=ON`;
    `-CMakeArgs '-DTASFW_WARNINGS_AS_ERRORS=ON'` reproduces that locally.
 2. `scripts\test.ps1` passes, on both compilers. With the DLL in `res\` it also runs the
-   libsm64 smoke test, which pins Mario's exact state at frame 3330 of the committed movie
-   (CI runs the same group on the bitfs-sbb build when it has the key). Anything
-   touching `tasfw-core` needs a test in `tasfw-tests` for the behavior it changes.
+   libsm64 tests (`test_libsm64_*.cpp`); the smoke test among them pins Mario's exact state
+   at frame 3330 of the committed movie (CI runs the same group on the bitfs-sbb build when
+   it has the key). Anything touching `tasfw-core` needs a test in `tasfw-tests` for the
+   behavior it changes.
 3. Reason explicitly about determinism and savestate purity for anything touching
-   `Script.t.hpp`, `ScattershotThread.t.hpp` or `LibSm64.cpp`; `test_script.cpp` encodes
-   those invariants on the fake resource, so extend it rather than arguing in prose.
+   `Script.t.hpp`, `ScattershotThread.t.hpp` or `LibSm64.cpp`; the `test_script_*.cpp`
+   files encode those invariants on the fake resource (fixtures in `script_fixtures.hpp`),
+   so extend them rather than arguing in prose.
 4. For anything on a hot path, measure. Run `scripts\perf.ps1` and paste its delta table;
    it exits non-zero on a time regression over 10% against the reference (the baseline
    commit's binaries run in the same session), an allocation increase, or any increase

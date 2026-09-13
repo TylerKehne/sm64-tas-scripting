@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Compare or merge Google Benchmark JSON result files.
 
-  perf_compare.py compare BASELINE.json CURRENT.json [--reference REFERENCE.json]
+  perf_compare.py compare BASELINE CURRENT.json [--reference REFERENCE.json]
                           [--threshold PCT] [--min-abs-ns NS]
   perf_compare.py merge -o OUT.json [--context KEY=VALUE ...] PART.json [PART.json ...]
+  perf_compare.py baseline -o DIR RESULT.json
 
 `compare` prints a delta table and exits 1 if any benchmark's real time regressed by more
 than the threshold (and by more than --min-abs-ns in absolute terms, so sub-nanosecond
@@ -54,6 +55,14 @@ move a few points between runs of the same binary, and are reported only.
 benchmark family in its own process so heap state from one family cannot skew another) and
 keeps the context of the first file, plus every --context KEY=VALUE given.
 
+`baseline` writes a result as a baseline directory (scripts/perf.ps1 -SaveBaseline): one
+file per benchmark family, named after it (Script.json, LibSm64Fixed.json, TierD.json, ...),
+holding that family's repetition rows one per line, and context.json with the run's context
+and the family order. Google Benchmark's aggregate rows (mean, median, stddev, cv) are
+dropped: the compare takes the fastest repetition, and --stat median the median of them, so
+nothing the compare reads is lost, and a family can be read or diffed on its own. Wherever a
+baseline is read, a directory in this layout and a single result file are both accepted.
+
 `tierd` turns one bitfs-turn stage log into a benchmark row the compare understands
 (scripts/perf.ps1 and CI both use it): wall time from the stage summary, the exact counts
 (shots, scripts, blocks, solutions, validationFailures, frameAdvances, saves, loads) with
@@ -66,6 +75,7 @@ Standard library only.
 """
 import argparse
 import json
+import os
 import re
 import statistics
 import sys
@@ -96,10 +106,39 @@ def efficiencies(rows):
     return out
 
 
-def read(path):
+CONTEXT_FILE = "context.json"
+
+
+def read_file(path):
     # utf-8-sig: PowerShell's Set-Content -Encoding utf8 writes a BOM (the Tier D part).
     with open(path, "r", encoding="utf-8-sig") as f:
         return json.load(f)
+
+
+def read(path):
+    """A result file, or a baseline directory as `baseline` writes it: the families in the
+    order context.json lists them, then any other file there by name."""
+    if not os.path.isdir(path):
+        return read_file(path)
+    manifest = {}
+    if os.path.exists(os.path.join(path, CONTEXT_FILE)):
+        manifest = read_file(os.path.join(path, CONTEXT_FILE))
+    names = [n for n in sorted(os.listdir(path)) if n.endswith(".json") and n != CONTEXT_FILE]
+    ordered = [n for n in ("%s.json" % family for family in manifest.get("families", [])) if n in names]
+    ordered += [n for n in names if n not in ordered]
+    data = {"context": manifest.get("context", {}), "benchmarks": []}
+    for name in ordered:
+        data["benchmarks"].extend(read_file(os.path.join(path, name)).get("benchmarks", []))
+    return data
+
+
+def family_of(name):
+    """The family a benchmark row belongs to, from its name: BM_<Family>_... for tasfw-perf
+    rows, <Family>_... otherwise (TierD_Deterministic and TierD_Throughput are TierD)."""
+    base = name.split("/", 1)[0]
+    if base.startswith("BM_"):
+        base = base[3:]
+    return base.split("_", 1)[0]
 
 
 def rows_of(data, stat="min", metric="real_time"):
@@ -213,6 +252,33 @@ def cmd_merge(args):
             merged["context"][key] = value
     with open(args.output, "w", encoding="utf-8") as f:
         json.dump(merged, f, indent=2)
+    return 0
+
+
+def cmd_baseline(args):
+    data = read(args.result)
+    families = {}
+    for row in data.get("benchmarks", []):
+        if row.get("run_type") == "aggregate":
+            continue
+        families.setdefault(family_of(row.get("run_name") or row["name"]), []).append(row)
+    if not families:
+        print("%s: no benchmark rows" % args.result, file=sys.stderr)
+        return 1
+    os.makedirs(args.output, exist_ok=True)
+    for old in os.listdir(args.output):
+        if old.endswith(".json"):
+            os.remove(os.path.join(args.output, old))
+    with open(os.path.join(args.output, CONTEXT_FILE), "w", encoding="utf-8") as f:
+        json.dump({"context": data.get("context", {}), "families": list(families)}, f, indent=2)
+        f.write("\n")
+    for family, rows in families.items():
+        with open(os.path.join(args.output, family + ".json"), "w", encoding="utf-8") as f:
+            f.write('{\n  "benchmarks": [\n')
+            f.write(",\n".join("    " + json.dumps(row) for row in rows))
+            f.write("\n  ]\n}\n")
+    print("%s: %d rows in %d families (%s)"
+          % (args.output, sum(len(rows) for rows in families.values()), len(families), ", ".join(families)))
     return 0
 
 
@@ -431,14 +497,14 @@ def cmd_tierd(args):
 
 def main(argv):
     # Backward-compatible form: perf_compare.py BASELINE CURRENT [...]
-    if argv and argv[0] not in ("compare", "merge", "tierd", "-h", "--help"):
+    if argv and argv[0] not in ("compare", "merge", "baseline", "tierd", "-h", "--help"):
         argv = ["compare"] + argv
 
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     cp = sub.add_parser("compare", help="compare a run against a baseline")
-    cp.add_argument("baseline")
+    cp.add_argument("baseline", help="a baseline directory (perf/baselines/<machine>) or a result file")
     cp.add_argument("current")
     cp.add_argument("--reference",
                     help="results of the baseline commit's binaries run interleaved with the current ones "
@@ -467,6 +533,11 @@ def main(argv):
                     help="add or overwrite a context entry of the merged file (numbers are stored as numbers)")
     mp.add_argument("parts", nargs="+")
     mp.set_defaults(func=cmd_merge)
+
+    bp = sub.add_parser("baseline", help="write a result as a baseline directory, one file per family")
+    bp.add_argument("result", help="a merged result file (or a baseline directory to rewrite)")
+    bp.add_argument("-o", "--output", required=True, help="the baseline directory; its .json files are replaced")
+    bp.set_defaults(func=cmd_baseline)
 
     tp = sub.add_parser("tierd", help="turn a bitfs-turn stage log into one benchmark row")
     tp.add_argument("log")

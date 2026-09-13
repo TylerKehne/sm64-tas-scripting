@@ -4,9 +4,11 @@
 
 .DESCRIPTION
     Builds the tasfw-perf target in Release (via build.ps1), runs it with JSON output into
-    perf\results\, and compares the result with perf\baselines\<computername>.json using
-    scripts\perf_compare.py. Exit code is non-zero when a benchmark regresses by more than
-    the threshold. See docs/performance.md for the policy.
+    perf\results\, and compares the result with the baseline under
+    perf\baselines\<computername>[-clang]\ (one JSON file per benchmark family plus
+    context.json, as -SaveBaseline writes it) using scripts\perf_compare.py. Exit code is
+    non-zero when a benchmark regresses by more than the threshold. See docs/performance.md
+    for the policy.
 
     Time is gated relative, not absolute. The baseline commit's binaries (the "reference",
     which -SaveBaseline keeps under perf\reference\<computername>[-clang]\) run interleaved
@@ -26,7 +28,8 @@
     Google Benchmark regex, e.g. 'Script' or 'BM_Scattershot.*'.
 
 .PARAMETER Baseline
-    Baseline JSON to compare against (default: perf\baselines\<computername>.json).
+    Baseline to compare against: a directory as -SaveBaseline writes it, or a single result
+    file (default: perf\baselines\<computername>[-clang]\).
 
 .PARAMETER SaveBaseline
     Store this run as the baseline instead of comparing, and the current binaries as the
@@ -59,7 +62,7 @@
 
 .PARAMETER Compiler
     msvc (default) or clang. Uses build\<Config>-clang and the baseline
-    perf\baselines\<computername>-clang.json, so the two compilers are tracked separately.
+    perf\baselines\<computername>-clang\, so the two compilers are tracked separately.
 
 .PARAMETER Dll, M64, Frame
     Inputs for the Tier B and C (libsm64) families. Default to res\sm64_jp_0.dll,
@@ -265,13 +268,21 @@ function Invoke-Bench([string]$Exe, [string]$Family, [string]$Part, [uint64]$Mas
     }
 }
 
-# Fastest repetition of one benchmark in a result file, with its unit; $null when absent.
+# Fastest repetition of one benchmark in a result file or a baseline directory (one file per
+# family, context.json aside), with its unit; $null when absent.
 function Get-MinRealTime([string]$Path, [string]$Name) {
-    $data = Get-Content $Path -Raw | ConvertFrom-Json
-    $rows = @($data.benchmarks | Where-Object {
-        (-not $_.error_occurred) -and ($_.run_type -ne 'aggregate') -and
-        (($_.run_name -eq $Name) -or ($_.name -eq $Name))
-    })
+    $files = @($Path)
+    if (Test-Path $Path -PathType Container) {
+        $files = @(Get-ChildItem $Path -Filter '*.json' | Where-Object { $_.Name -ne 'context.json' } | ForEach-Object { $_.FullName })
+    }
+    $rows = @()
+    foreach ($file in $files) {
+        $data = Get-Content $file -Raw | ConvertFrom-Json
+        $rows += @($data.benchmarks | Where-Object {
+            (-not $_.error_occurred) -and ($_.run_type -ne 'aggregate') -and
+            (($_.run_name -eq $Name) -or ($_.name -eq $Name))
+        })
+    }
     if ($rows.Count -eq 0) { return $null }
     $min = ($rows | ForEach-Object { [double]$_.real_time } | Measure-Object -Minimum).Minimum
     return @{ Min = $min; Unit = $rows[0].time_unit }
@@ -343,7 +354,7 @@ $suffix = ''
 if ($Compiler -eq 'clang') { $suffix = '-clang' }
 $machine = $env:COMPUTERNAME.ToLower()
 $baselineDir = Join-Path $root 'perf\baselines'
-if (-not $Baseline) { $Baseline = Join-Path $baselineDir ("{0}{1}.json" -f $machine, $suffix) }
+if (-not $Baseline) { $Baseline = Join-Path $baselineDir ("{0}{1}" -f $machine, $suffix) }
 if (-not $Reference) { $Reference = Join-Path $root ("perf\reference\{0}{1}" -f $machine, $suffix) }
 
 # The reference: the baseline commit's binaries, run interleaved with the current ones.
@@ -693,8 +704,10 @@ if ($refParts.Count -gt 0) {
 }
 
 if ($SaveBaseline) {
-    New-Item -ItemType Directory -Force $baselineDir | Out-Null
-    Copy-Item $out $Baseline -Force
+    # One file per family plus context.json (perf_compare.py baseline), so a family can be
+    # read or diffed on its own.
+    & $python.Source $compareScript baseline -o $Baseline $out
+    if ($LASTEXITCODE -ne 0) { throw "writing the baseline failed" }
     Write-Host "Saved baseline to $Baseline"
     New-Item -ItemType Directory -Force $Reference | Out-Null
     Copy-Item $exe $Reference -Force

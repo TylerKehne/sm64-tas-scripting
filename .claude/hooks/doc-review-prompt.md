@@ -19,7 +19,7 @@ Procedure:
      found compiler pitfall, a renamed or moved file). Update the documentation yourself,
      now, without asking: tick or annotate roadmap items, add the new thing where similar
      things are listed, refresh numbers and paths, extend the change log in
-     docs/performance.md. Minimal, factual edits in the existing style. Clarifications the
+     docs/performance-changelog.md. Minimal, factual edits in the existing style. Clarifications the
      conversation settled (what something is for, how it behaves) are extensions too: write
      them into the doc that should have said so. Work you identify but leave for later (a
      missing test, a cleanup, a measurement) becomes a ROADMAP.md item, never an offer in chat.
@@ -41,4 +41,4 @@ Procedure:
 
 Never silently change a rule, requirement, goal or number. Never mark a roadmap item done
 unless this turn verified its "Done when". Documentation describes the current state, not
-the history; the change log in docs/performance.md is the only place for history.
+the history; the change log in docs/performance-changelog.md is the only place for history.
