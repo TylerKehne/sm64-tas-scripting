@@ -99,20 +99,31 @@ public:
 // The bookkeeping behind Dirty mode (ROADMAP 2.3). Whole pages covering .data and .bss (edge
 // pages included) form one index space and are all made read-only; the first write to a page
 // faults, a process-wide handler (vectored exception handler on Windows, SIGSEGV on Linux)
-// finds the set that owns the address, sets the page's bit in `written` and makes the page
-// writable again. Faults happen once per page per baseline, about 120 in a BitFS run, never
-// per frame. A save copies the written pages; a load writes them back and restores the pages
-// written since the save from the baseline's snapshot, so a load is exact by construction.
+// finds the set that owns the address, records the page and makes it writable again. Faults
+// happen once per page per baseline, about 120 in BitFS play and about 500 per scattershot
+// shot, never per frame. A save copies the pages written since the current baseline began; a
+// load writes them back and restores every other page written since the state's baseline
+// began from that baseline's copy of it, so a load is exact by construction.
 //
-// A baseline is taken by LibSm64::save itself whenever it is asked to save while the slot
-// manager holds no live slots: the start save every top-level run begins with, and the first
-// slot of a run, which is the save LongLoad makes at the frame exploration starts from. It
-// freezes the bitmap, snapshots the sections, clears the bitmap and re-protects, so later
-// saves copy only what the run itself writes; nothing in the framework or in any script
-// takes part. Snapshots of baselines no live state can refer to are released then; the one
-// the start save refers to is kept, so re-entering a run stays exact. Heap-allocated and
-// owned through a unique_ptr so that moving a LibSm64 does not move what the handler
-// points at.
+// A baseline holds, for every page written since it began, the page's content as it was
+// when it began: the fault handler copies the page into every live baseline that lacks it
+// before the first write (copy-on-write, at most a few 4 KB copies per fault). Taking a
+// baseline therefore copies nothing; it costs re-protecting the pages and the first-write
+// faults that follow. Storage is one lazily touched buffer per live baseline, resident only
+// where pages were written.
+//
+// A baseline is taken by LibSm64::save itself, from what the resource observes and nothing
+// else: when it is asked to save while the slot manager holds no live slots, which is the
+// start save every top-level run begins with and the first slot of a run, the save LongLoad
+// makes at the frame exploration starts from. Taking one opens a new, empty baseline and
+// re-protects every page, so later saves copy only what the run itself writes; loads of
+// older states stay exact because the baseline a live slot's state names keeps its pages
+// until no live slot names it (released at the next baseline; the start save's is always
+// kept). Re-baselining again during a run, once its loads had paid for one, was measured
+// and dropped (ROADMAP 2.3): the set regrows within a scattershot shot whatever the
+// baseline. Nothing in the framework or in any script takes part, and no result depends on
+// when a baseline is taken. Heap-allocated and owned through a unique_ptr so that moving a
+// LibSm64 does not move what the handler points at.
 struct LibSm64DirtyPages
 {
 	struct Range
@@ -122,18 +133,28 @@ struct LibSm64DirtyPages
 	};
 	Range range[2];
 	size_t pageCount = 0;
-	int baseline = 0;                                     // index of the current baseline
-	std::vector<uint64_t> written;                        // pages written since it began, one bit per page
-	std::vector<std::vector<uint64_t>> writtenByBaseline; // frozen bitmaps of finished baselines, by index
-	std::vector<std::vector<uint8_t>> snapshots;          // section contents at each baseline's start; empty = released
-	uint64_t faults = 0;                                  // first writes recorded, all baselines
+	int baseline = 0; // index of the current baseline
 
+	// One entry per baseline taken, by index. A live one holds every page written since it
+	// began (`present`, one bit per page) with the content the page had when it began; a
+	// released one (no live state names it) has no storage.
+	struct Baseline
+	{
+		std::vector<uint64_t> present;
+		std::unique_ptr<uint8_t[]> pages; // pageCount * pagesize bytes, touched only where present
+	};
+	std::vector<Baseline> baselines;
+	std::vector<int> live;              // indices of the baselines with storage, for the handler
+	uint64_t faults = 0;                // first writes recorded, all baselines
+
+	const std::vector<uint64_t>& Written() const { return baselines[size_t(baseline)].present; } // since the current baseline began
 	uint8_t* PageAddress(size_t index) const;
 	bool Contains(const void* p, size_t& index) const;
-	void OnWrite(size_t index); // handler path: record and make writable
+	void OnWrite(size_t index); // handler path: copy into the baselines that lack the page, record, make writable
 	void ProtectAll();
 	void UnprotectAll();
 	size_t WrittenCount() const;
+	void AddBaseline();         // a new, empty current baseline
 };
 
 class LibSm64 : public Resource<LibSm64Mem>
@@ -169,7 +190,7 @@ private:
 	const uint32_t* _globalTimer = nullptr;
 
 	std::unique_ptr<LibSm64DirtyPages> _dirtyPages;
-	void TakeBaseline(bool forStartSave) const;
+	void TakeBaseline(const LibSm64Mem& saving) const; // `saving`: the state about to be written
 };
 
 #endif

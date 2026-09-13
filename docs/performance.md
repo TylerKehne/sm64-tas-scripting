@@ -57,7 +57,8 @@ Ordered by how much they dominate a typical scattershot run:
    122 pages (488 KB, 7 us) in `dirty` mode during BitFS play, 1.5 MB (41 to 49 us) for the
    `fixed` slices, 7.3 MB (190 us) for a `full` copy. Memory-bandwidth bound, so it scales
    worse than frame advance as thread count rises; `dirty` also grows with what the game
-   writes between baselines.
+   writes since the run's first slot (docs/libsm64.md, "Savestates"), and its scattered
+   pages leave the cache sooner than `fixed`'s contiguous ranges.
 3. **Block decoding.** Every scattershot shot replays the base block's segment chain from the
    root by re-running scripts. Cost grows with block depth over the run and shows up as
    "Overhead" in the end-of-run summary.
@@ -427,6 +428,60 @@ What the Tier A and B numbers say together:
 ## Change log (measured)
 
 Every hot-path change records its delta table here, newest first.
+
+### 2026-09-12: `dirty` re-baseline measured and dropped; copy-on-write baselines; benchmark rows re-anchored; baselines re-saved (ROADMAP 2.3)
+
+The ROADMAP 2.3 follow-up, tried and measured: `LibSm64` in `dirty` mode took a new
+baseline at a save once the loads under the current one had written back four times the
+size of both sections, which in the scattershot is the base save opening each shot after
+the previous shot's ~1,700 loads. To make baselines cheap enough for that, a baseline now
+holds copy-on-write pages the fault handler fills in before a page's first write instead
+of a whole-section snapshot (no copy when a baseline is taken, memory only for the pages
+written since it began, kept while a live slot's state names it); that part stays. The
+re-baseline rule does not: interleaved runs of the pre-change build (A), the build with the
+rule (B) and the same build in `fixed` (F), each triple back to back on the idle machine,
+MSVC Release, VM stopped:
+
+| Workload | A `dirty` before | B `dirty` with the rule | F `fixed` |
+|---|---|---|---|
+| Tier D deterministic, 8 threads, cost model off | 152.6 s | 149.7 s (79 baselines per thread) | 133.8 s |
+| Tier D throughput, 16 threads, cost model on | 86.4 s | 87.3 s (977 baselines per thread) | 72.6 s |
+
+Counts identical on the deterministic workload. The set regrows to 526 pages within a shot
+whatever the baseline (pellets die, the level reloads), so a shot's loads restore as much
+as before; with the cost model saving every ~100 loads the rule fired at nearly every save,
+7.8 million first-write faults in the run, and the baseline's cost inside `save` made the
+cost model save less. Final code (copy-on-write baselines, taken at the first save of a
+run only), the same triple:
+
+| Workload | A `dirty` before | C `dirty` final | F `fixed` |
+|---|---|---|---|
+| Tier D deterministic, 8 threads, cost model off | 173.0 s | 161.7 s | 147.2 s |
+| Tier D throughput, 16 threads, cost model on | 105.7 s | 106.0 s | 84.8 s |
+
+Counts identical on the deterministic workload (55 / 18,014,927 / 608 / 1,038,084). The
+copy-on-write baselines change no per-save or per-load work: `dllcheck` on the pinned DLL
+reads 7.2 us per dirty save and 7.0 us per load 60 frames into the run, leak scan zero
+bytes, as before. The machine drifted between triples with nothing else running (`fixed`
+133.8 s in one triple, 147.2 s in the next), so only the columns of one triple compare
+with each other; across the four triples `dirty` came out 10 to 12% behind `fixed` on the
+deterministic workload and 19 to 25% behind on the 16-thread one.
+
+The `BM_LibSm64*` families now anchor 60 frames after the run's first slot (the `dirty`
+save and load rows read 7.1 and 7.0 us instead of the 0.1 us of an empty set) with the
+frame-advance row registered last in each family, so the save and load rows measure the
+warm-up set (3,000 idle frames from a moving Mario can end in a death, which reloads the
+level and quadruples the set). Both committed baselines (`perf/baselines/tyler-desktop.json`
+and `-clang.json`) were re-saved from the final code, so the `Light` rows are gone and the
+`Fixed` and `Dirty` rows are gated from here on: `dirty` save and erase 7.1 us, load 7.0 us
+(clang 7.2 / 7.1), thread scaling 7.2 us at one thread to 9.8 us at sixteen (clang 7.6 to
+10.3), Tier D 149.1 s and 83.5 s (clang 151.5 s and 85.7 s) as the machine ran that hour,
+about 10% slower than its fast readings earlier in the day.
+
+Measurement note: the same workloads launched from a detached, hidden PowerShell host read
+20 to 45% slower (deterministic `fixed` 162 s, `dirty` 203 s) than when launched from the
+agent's tool or a console, with nothing else running and the CPU at full clock. Launch
+measurements from a console.
 
 ### 2026-09-12: three save modes in `LibSm64`; `dirty` measured against `fixed` (ROADMAP 2.3)
 

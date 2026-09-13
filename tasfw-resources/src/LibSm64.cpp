@@ -168,18 +168,6 @@ namespace
 			if (gDirtyPageSets[i].load(std::memory_order_relaxed) == d)
 				gDirtyPageSets[i].store(nullptr, std::memory_order_release);
 	}
-
-	std::vector<uint8_t> SnapshotPages(const LibSm64DirtyPages& d)
-	{
-		std::vector<uint8_t> copy(d.pageCount * pagesize);
-		uint8_t* dst = copy.data();
-		for (const LibSm64DirtyPages::Range& r : d.range)
-		{
-			std::memcpy(dst, r.begin, r.pages * pagesize);
-			dst += r.pages * pagesize;
-		}
-		return copy;
-	}
 }
 
 uint8_t* LibSm64DirtyPages::PageAddress(size_t index) const
@@ -205,9 +193,27 @@ bool LibSm64DirtyPages::Contains(const void* p, size_t& index) const
 
 void LibSm64DirtyPages::OnWrite(size_t index)
 {
-	written[index >> 6] |= uint64_t(1) << (index & 63);
+	const uint64_t bit = uint64_t(1) << (index & 63);
+	for (int b : live)
+	{
+		Baseline& base = baselines[size_t(b)];
+		if (base.present[index >> 6] & bit)
+			continue;
+		std::memcpy(base.pages.get() + index * pagesize, PageAddress(index), pagesize); // its content as of that baseline's start
+		base.present[index >> 6] |= bit;
+	}
 	faults++;
 	SetProtection(PageAddress(index), pagesize, true); // cannot throw from a fault handler; a failure re-faults and is fatal
+}
+
+void LibSm64DirtyPages::AddBaseline()
+{
+	Baseline base;
+	base.present.assign((pageCount + 63) / 64, 0);
+	base.pages.reset(new uint8_t[pageCount * pagesize]); // not touched: resident only where a page gets copied
+	baselines.push_back(std::move(base));
+	baseline = int(baselines.size()) - 1;
+	live.push_back(baseline);
 }
 
 void LibSm64DirtyPages::ProtectAll()
@@ -227,7 +233,7 @@ void LibSm64DirtyPages::UnprotectAll()
 size_t LibSm64DirtyPages::WrittenCount() const
 {
 	size_t count = 0;
-	for (uint64_t w : written)
+	for (uint64_t w : Written())
 		count += size_t(std::popcount(w));
 	return count;
 }
@@ -300,8 +306,7 @@ LibSm64::LibSm64(const LibSm64Config& config) : dll(config.dllPath), config(conf
 			d.range[1].pages = overlap < d.range[1].pages ? d.range[1].pages - overlap : 0;
 		}
 		d.pageCount = d.range[0].pages + d.range[1].pages;
-		d.written.assign((d.pageCount + 63) / 64, 0);
-		d.snapshots.push_back(SnapshotPages(d)); // baseline 0: the state right after sm64_init
+		d.AddBaseline(); // baseline 0: the state right after sm64_init
 		RegisterDirtyPages(&d);
 		d.ProtectAll();
 	}
@@ -317,29 +322,38 @@ LibSm64::~LibSm64()
 }
 
 // Start a new baseline unless nothing was written since the current one began (then it is
-// as good as new: construction followed by the start save costs one snapshot, not two).
-// Snapshots that no live state can refer to are released: at this point the slot manager
-// is empty, so only the start save's baseline is still referenced, and when the start save
-// itself is being written, not even that.
-void LibSm64::TakeBaseline(bool forStartSave) const
+// as good as new: construction followed by the start save costs nothing). Baselines no live
+// state can refer to are released: a state refers to the baseline it was saved under, so
+// every baseline a live slot's state names is kept, and the start save's unless the start
+// save itself is what is being written. The state being written is skipped (a recycled state
+// carries the baseline of a save long gone), so at the first slot of a run only the start
+// save's baseline survives. Nothing is copied here: the new baseline fills in from the fault
+// handler as pages get written.
+void LibSm64::TakeBaseline(const LibSm64Mem& saving) const
 {
 	LibSm64DirtyPages& d = *_dirtyPages;
 	if (d.WrittenCount() == 0)
 		return;
-	if (d.writtenByBaseline.size() <= size_t(d.baseline))
-		d.writtenByBaseline.resize(size_t(d.baseline) + 1);
-	d.writtenByBaseline[size_t(d.baseline)] = d.written;
-	std::fill(d.written.begin(), d.written.end(), uint64_t(0));
-	d.baseline++;
-	d.snapshots.push_back(SnapshotPages(d));
-	for (size_t b = 0; b + 1 < d.snapshots.size(); b++)
+	d.AddBaseline();
+
+	std::vector<bool> referenced(d.baselines.size(), false);
+	referenced.back() = true;
+	if (&saving != &startSave)
+		referenced[size_t(startSave.baseline)] = true;
+	for (const auto& [id, state] : slotManager.slotsById)
+		if (&state != &saving)
+			referenced[size_t(state.baseline)] = true;
+	d.live.clear();
+	for (size_t b = 0; b < d.baselines.size(); b++)
 	{
-		bool keep = !forStartSave && int(b) == startSave.baseline;
-		if (!keep)
+		if (!referenced[b])
 		{
-			d.snapshots[b].clear();
-			d.snapshots[b].shrink_to_fit();
+			d.baselines[b].pages.reset();
+			d.baselines[b].present.clear();
+			d.baselines[b].present.shrink_to_fit();
 		}
+		if (d.baselines[b].pages)
+			d.live.push_back(int(b));
 	}
 	d.ProtectAll();
 }
@@ -356,15 +370,16 @@ void LibSm64::save(LibSm64Mem& state) const
 		const auto& slots = slotManager.slotsById;
 		bool firstSlot = slots.empty() || (slots.size() == 1 && &slots.begin()->second == &state);
 		if (firstSlot)
-			TakeBaseline(&state == &startSave);
+			TakeBaseline(state);
 		const LibSm64DirtyPages& d = *_dirtyPages;
+		const std::vector<uint64_t>& written = d.Written();
 		state.baseline = d.baseline;
-		state.written.assign(d.written.begin(), d.written.end());
+		state.written.assign(written.begin(), written.end());
 		state.pages.resize(d.WrittenCount() * pagesize);
 		uint8_t* dst = state.pages.data();
-		for (size_t j = 0; j < d.written.size(); j++)
+		for (size_t j = 0; j < written.size(); j++)
 		{
-			uint64_t w = d.written[j];
+			uint64_t w = written[j];
 			while (w != 0)
 			{
 				int b = std::countr_zero(w);
@@ -401,22 +416,20 @@ void LibSm64::load(const LibSm64Mem& state)
 	case LibSm64SaveMode::Dirty:
 	{
 		// Every page written since the state's baseline began is either in the state (written
-		// before the save) or still held the baseline's contents when the state was saved.
-		// Pages written in no baseline since then are untouched and equal to the baseline
-		// already. Writing into a page protected under the current baseline faults and gets
-		// recorded, which is right: it now differs from the current snapshot.
+		// before the save) or still had the content it had when that baseline began, which the
+		// baseline holds. Pages written since by nobody are untouched and equal already. Writing
+		// into a page protected under the current baseline faults and gets recorded, which is
+		// right: it now differs from what the current baseline began with.
 		LibSm64DirtyPages& d = *_dirtyPages;
-		if (state.baseline > d.baseline || state.written.size() != d.written.size())
+		if (state.baseline > d.baseline || state.written.size() != d.Written().size())
 			throw std::runtime_error("LibSm64::load: the state was not saved by this resource");
-		const std::vector<uint8_t>& snapshot = d.snapshots[size_t(state.baseline)];
-		if (snapshot.empty())
-			throw std::runtime_error("LibSm64::load: the state's baseline snapshot was released while the state was still loadable (LibSm64 bug)");
+		const LibSm64DirtyPages::Baseline& base = d.baselines[size_t(state.baseline)];
+		if (!base.pages)
+			throw std::runtime_error("LibSm64::load: the state's baseline was released while the state was still loadable (LibSm64 bug)");
 		const uint8_t* src = state.pages.data();
-		for (size_t j = 0; j < d.written.size(); j++)
+		for (size_t j = 0; j < base.present.size(); j++)
 		{
-			uint64_t since = d.written[j];
-			for (int b = state.baseline; b < d.baseline; b++)
-				since |= d.writtenByBaseline[size_t(b)][j];
+			uint64_t since = base.present[j];
 			uint64_t saved = state.written[j];
 			uint64_t u = since | saved;
 			while (u != 0)
@@ -431,7 +444,7 @@ void LibSm64::load(const LibSm64Mem& state)
 					src += pagesize;
 				}
 				else
-					std::memcpy(page, snapshot.data() + index * pagesize, pagesize);
+					std::memcpy(page, base.pages.get() + index * pagesize, pagesize);
 			}
 		}
 		return;

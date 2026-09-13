@@ -113,7 +113,7 @@ workloads select `fixed`, which measures faster for the BitFS search (below).
 |---|---|---|---|
 | `full` | both sections whole, 7.3 MB | about 190 us per save or load | the reference; under a debugger (no page faults) |
 | `fixed` | five hand-tuned byte ranges (`LibSm64FixedSlices`), 1.5 MB | about 41 to 49 us, constant | when a constant cost matters more than speed; the pinned build only |
-| `dirty` (default) | the pages the game wrote since the current baseline: about 122 pages (488 KB) after 60 frames of play, 525 pages (2.1 MB) by the end of a scattershot stage | about 7 us at 122 pages; the search's 525-page states make its loads about 40% dearer than `fixed`'s, 3.6% on the stage's wall | any build, Linux, exploration that stays near a settled state |
+| `dirty` (default) | the pages the game wrote since the current baseline: about 122 pages (488 KB) after 60 frames of play, up to 526 pages (2.1 MB) within a scattershot shot | about 7 us at 122 pages; the search's loads restore up to 2.1 MB from scattered pages, so the deterministic Tier D workload runs about 10% slower than in `fixed` and the 16-thread one about 25% slower | any build, Linux, exploration that stays near a settled state |
 
 **Fixed** was found empirically for the pinned 2022 build. Construction refuses it, with the
 reason, on a build whose sections are smaller than the slices (the Linux `.so`'s `.data` is
@@ -123,26 +123,35 @@ hot symbol lies inside a range, and `--leak-scan` measures what a load misses; r
 before trusting `fixed` on a new build. On the pinned DLL `--leak-scan` shows a
 Fixed load misses 4 to 6 bytes of lava texture scroll that nothing in the physics reads.
 
-**Dirty** write-protects the pages of both sections and records the first write to each
-page in a fault handler (a vectored exception handler on Windows, `SIGSEGV` on Linux); a
-save copies the written pages, a load writes them back and restores every other page
-written since the save from the baseline's snapshot, so a load is exact by construction on
-any build. The resource takes a fresh baseline on its own whenever it is asked to save
-while it holds no live slots: the start save every top-level run begins with, and the
-first slot of a run, which is the save `LongLoad` makes at the frame exploration starts
-from. From then on a save copies only what the run itself writes. Faults happen once per
-page per baseline (about 120 in a BitFS run, 525 during the replay to frame 3330), a
-baseline costs one 7 MB snapshot, and the cost of a save grows with what the game writes
-until the next baseline: level loads, deaths and warps make Dirty saves bigger, and a run
-that spans them ends up slower than Fixed. The BitFS scattershot stage is such a run: its
-pellets die and the level reloads, so each thread's set reaches 525 pages (2.1 MB, the same
-pages the replay from power-on touches), every load restores that much, and the stage
-takes 3.6% longer than in `fixed` mode (139.8 s against 134.9 s, deterministic Tier D
-workload, identical counts; `bitfs-turn` prints the set size per stage). Older states stay
-loadable: the snapshot the start save refers to is kept,
-and others are released only when no slot can refer to them. Two snapshots per resource
-(14 MB) is the steady state. Debuggers stop on the deliberate first-write faults unless
-told not to; use `full` there.
+**Dirty** write-protects the pages of both sections and catches the first write to each
+page in a fault handler (a vectored exception handler on Windows, `SIGSEGV` on Linux). A
+baseline holds, for every page written since it began, the page's content as it was when
+it began: the handler copies the page into every live baseline that lacks it before the
+first write (copy-on-write; storage is one lazily touched buffer per live baseline). A save
+copies the pages written since the current baseline began; a load writes them back and
+restores every other page written since the state's baseline began from that baseline's
+copy, so a load is exact by construction on any build, and taking a baseline copies
+nothing. The resource takes a fresh baseline on its own, from what it observes and nothing
+else, whenever it is asked to save while it holds no live slots: the start save every
+top-level run begins with, and the first slot of a run, which is the save `LongLoad` makes
+at the frame exploration starts from. From then on a save copies only what the run itself
+writes. A baseline costs a first-write fault, and a page copy per live baseline, for every
+page the game touches afterwards (about 120 in BitFS play, 525 during the replay to frame
+3330), and the set grows with what the game writes until the next baseline: level loads,
+deaths and warps make saves and loads bigger. The BitFS scattershot stage is such a run:
+its pellets die and the level reloads, so each thread's set reaches 526 pages (2.1 MB)
+within a shot and every load of the shot's base state restores that much from scattered
+pages, against the 1.5 MB `fixed` copies from five contiguous ranges that stay
+cache-resident; the stage runs about 10% slower than in `fixed` mode on the
+deterministic Tier D workload and about 25% slower on the 16-thread one, identical
+counts (docs/performance.md change log; `bitfs-turn` prints the set size and the number of
+baselines per stage). Re-baselining again during a run, at a save once its loads had paid
+for one, was measured and dropped: the set regrows within a shot whatever the baseline, and
+with the cost model saving often the rule fired about a thousand times per thread. No
+result depends on when a baseline is taken. Older states stay loadable: a state names the
+baseline it was saved under, every baseline a live slot's state names keeps its pages, the
+start save's is always kept, and the rest are released at the next baseline. Debuggers stop
+on the deliberate first-write faults unless told not to; use `full` there.
 
 ## Checking a DLL: `dllcheck`
 

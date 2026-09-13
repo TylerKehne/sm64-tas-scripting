@@ -7,6 +7,7 @@
 #include <tasfw/testing/Env.hpp>
 
 #include <cctype>
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
@@ -25,7 +26,11 @@
 //
 // A DLL path loads once per process, so the three save modes are three families
 // (^BM_LibSm64Full, ^BM_LibSm64Fixed, ^BM_LibSm64Dirty) that perf.ps1 runs in separate processes; one
-// resource per process is played to the frame once and shared by the family. Each family
+// resource per process is played to the frame once, saved (the first slot of the run), played
+// 60 more frames and saved again (the anchor every row measures from) and shared by the
+// family. In every family the frame-advance row is registered last, so the rows that save or
+// load measure the warm-up set: 3,000 idle frames from a moving Mario can end in a death,
+// which reloads the level and dirties four times as many pages. Each family
 // ends with a memory row (resident set per live slot), and a third family
 // (^BM_LibSm64Scaling) measures thread scaling on one DLL copy per thread.
 
@@ -38,8 +43,37 @@ namespace
 		std::unique_ptr<LibSm64> resource;
 		LibSm64SaveMode mode = LibSm64SaveMode::Full;
 		int64_t frame = 0;
-		int64_t anchor = -1; // slot at `frame`, to return to after advancing
+		int64_t first = -1;  // the run's first slot, at `frame`: where the dirty mode takes its baseline
+		int64_t anchor = -1; // slot WarmupFrames later, to measure from and return to after advancing
 	};
+
+	// The same input pattern dllcheck plays for its warm-up. Saves and loads are measured
+	// WarmupFrames after the run's first slot, so that a dirty save has the pages a pellet
+	// dirties to copy and a load has them to restore; at the first slot itself the dirty set is
+	// empty and both would measure nothing (the 0.1 us rows of 2026-09-12).
+	constexpr int WarmupFrames = 60;
+	Inputs PatternInputs(int i)
+	{
+		double angle = i * 0.37;
+		uint16_t buttons = 0;
+		if (i % 7 == 0)
+			buttons |= 0x8000; // A
+		if (i % 13 == 0)
+			buttons |= 0x4000; // B
+		return Inputs(buttons, int8_t(60.0 * std::cos(angle)), int8_t(60.0 * std::sin(angle)));
+	}
+
+	template <class TResource>
+	int64_t AnchorAfterWarmup(TResource& resource, int64_t& first)
+	{
+		first = resource.SaveState();
+		for (int i = 0; i < WarmupFrames; i++)
+		{
+			resource.setInputs(PatternInputs(i));
+			resource.FrameAdvance();
+		}
+		return resource.SaveState();
+	}
 
 	Game* LoadGame(LibSm64SaveMode mode, benchmark::State& state)
 	{
@@ -79,7 +113,7 @@ namespace
 				resource.setInputs(inputs != m64.frames.end() ? inputs->second : Inputs());
 				resource.FrameAdvance();
 			}
-			loaded->anchor = resource.SaveState();
+			loaded->anchor = AnchorAfterWarmup(resource, loaded->first);
 			game = std::move(loaded);
 		}
 		return game.get();
@@ -207,6 +241,7 @@ namespace
 	struct ThreadGame
 	{
 		std::unique_ptr<LibSm64> resource;
+		int64_t first = -1;
 		int64_t anchor = -1;
 	};
 
@@ -264,7 +299,7 @@ namespace
 			resource.setInputs(inputs != m64.frames.end() ? inputs->second : Inputs());
 			resource.FrameAdvance();
 		}
-		loaded->anchor = resource.SaveState();
+		loaded->anchor = AnchorAfterWarmup(resource, loaded->first);
 		return (games[index] = std::move(loaded)).get();
 	}
 
@@ -303,9 +338,9 @@ static void BM_LibSm64Full_FrameAdvance(benchmark::State& state) { FrameAdvance(
 BENCHMARK(BM_LibSm64Full_SaveErase)->Unit(benchmark::kMicrosecond);
 BENCHMARK(BM_LibSm64Full_SaveFresh)->Unit(benchmark::kMicrosecond)->Iterations(40);
 BENCHMARK(BM_LibSm64Full_Load)->Unit(benchmark::kMicrosecond);
-BENCHMARK(BM_LibSm64Full_FrameAdvance)->Unit(benchmark::kMicrosecond)->Iterations(3000);
 static void BM_LibSm64Full_ResidentPerSlot(benchmark::State& state) { ResidentPerSlot(state, LibSm64SaveMode::Full); }
 BENCHMARK(BM_LibSm64Full_ResidentPerSlot)->Unit(benchmark::kMillisecond)->Arg(100)->Iterations(1);
+BENCHMARK(BM_LibSm64Full_FrameAdvance)->Unit(benchmark::kMicrosecond)->Iterations(3000);
 
 static void BM_LibSm64Fixed_SaveErase(benchmark::State& state) { SaveErase(state, LibSm64SaveMode::Fixed); }
 static void BM_LibSm64Fixed_SaveFresh(benchmark::State& state) { SaveFresh(state, LibSm64SaveMode::Fixed); }
@@ -314,9 +349,9 @@ static void BM_LibSm64Fixed_FrameAdvance(benchmark::State& state) { FrameAdvance
 BENCHMARK(BM_LibSm64Fixed_SaveErase)->Unit(benchmark::kMicrosecond);
 BENCHMARK(BM_LibSm64Fixed_SaveFresh)->Unit(benchmark::kMicrosecond)->Iterations(200);
 BENCHMARK(BM_LibSm64Fixed_Load)->Unit(benchmark::kMicrosecond);
-BENCHMARK(BM_LibSm64Fixed_FrameAdvance)->Unit(benchmark::kMicrosecond)->Iterations(3000);
 static void BM_LibSm64Fixed_ResidentPerSlot(benchmark::State& state) { ResidentPerSlot(state, LibSm64SaveMode::Fixed); }
 BENCHMARK(BM_LibSm64Fixed_ResidentPerSlot)->Unit(benchmark::kMillisecond)->Arg(100)->Arg(1000)->Iterations(1);
+BENCHMARK(BM_LibSm64Fixed_FrameAdvance)->Unit(benchmark::kMicrosecond)->Iterations(3000);
 
 static void BM_LibSm64Dirty_SaveErase(benchmark::State& state) { SaveErase(state, LibSm64SaveMode::Dirty); }
 static void BM_LibSm64Dirty_SaveFresh(benchmark::State& state) { SaveFresh(state, LibSm64SaveMode::Dirty); }
@@ -325,11 +360,11 @@ static void BM_LibSm64Dirty_FrameAdvance(benchmark::State& state) { FrameAdvance
 BENCHMARK(BM_LibSm64Dirty_SaveErase)->Unit(benchmark::kMicrosecond);
 BENCHMARK(BM_LibSm64Dirty_SaveFresh)->Unit(benchmark::kMicrosecond)->Iterations(200);
 BENCHMARK(BM_LibSm64Dirty_Load)->Unit(benchmark::kMicrosecond);
-BENCHMARK(BM_LibSm64Dirty_FrameAdvance)->Unit(benchmark::kMicrosecond)->Iterations(3000);
 static void BM_LibSm64Dirty_ResidentPerSlot(benchmark::State& state) { ResidentPerSlot(state, LibSm64SaveMode::Dirty); }
 BENCHMARK(BM_LibSm64Dirty_ResidentPerSlot)->Unit(benchmark::kMillisecond)->Arg(100)->Arg(1000)->Iterations(1);
+BENCHMARK(BM_LibSm64Dirty_FrameAdvance)->Unit(benchmark::kMicrosecond)->Iterations(3000);
 
 static void BM_LibSm64Scaling_FrameAdvance(benchmark::State& state) { ScalingFrameAdvance(state); }
 static void BM_LibSm64Scaling_SaveErase(benchmark::State& state) { ScalingSaveErase(state); }
-BENCHMARK(BM_LibSm64Scaling_FrameAdvance)->Unit(benchmark::kMicrosecond)->Iterations(3000)->UseRealTime()->ThreadRange(1, 16);
 BENCHMARK(BM_LibSm64Scaling_SaveErase)->Unit(benchmark::kMicrosecond)->Iterations(2000)->UseRealTime()->ThreadRange(1, 16);
+BENCHMARK(BM_LibSm64Scaling_FrameAdvance)->Unit(benchmark::kMicrosecond)->Iterations(3000)->UseRealTime()->ThreadRange(1, 16);
