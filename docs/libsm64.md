@@ -380,9 +380,11 @@ Changing the DLL build silently invalidates all of the following. ROADMAP Phase 
 making these derived instead of hardcoded.
 
 1. **Struct headers** in `tasfw-core/inc/sm64/`. They are hand-copied from the decomp with
-   64-bit pointer handling (`IS_64_BIT` in `ObjectFields.hpp`). A field added or reordered in
-   the decomp version wafel built from shifts every access. (Unchanged between the 2022 and
-   2026 builds, as the checks above show.)
+   64-bit pointer handling (`IS_64_BIT` in `ObjectFields.hpp`); [docs/decomp.md](decomp.md)
+   records the upstream commit each file came from. A field added or reordered in the decomp
+   version wafel built from shifts every access, which is what "Struct layouts" below checks
+   on every run of the tests: the seven structs the code reads through, field for field,
+   against the pinned DLL's DWARF. (The v0.8.5 build lays them out identically.)
 2. **The `fixed` save mode's slices** (`LibSm64FixedSlices` in `LibSm64.hpp`): byte offsets
    into `.data` and `.bss` chosen for this build. The `dirty` and `full` modes depend on
    nothing in the build.
@@ -396,6 +398,46 @@ making these derived instead of hardcoded.
    a movie's with the game a DLL was declared to be (its file name, `--version`, or the
    movie itself in the pipeline). A build of another version is a new pair of values.
 5. **Exported names.** See "Renamed symbols"; new renames go into `LibSm64SymbolAliases`.
+
+## Struct layouts
+
+The Windows DLLs carry their full DWARF debug info, which is how wafel reads the game: the
+PE sections named `/4`, `/19`, ... are `.debug_info` (12.7 MB), `.debug_abbrev`,
+`.debug_line`, `.debug_str` and the rest. The pinned build's is DWARF 4 from GCC 10.3.0, the
+v0.8.5 build's DWARF 5 from GCC 12.1.0. The Linux `.so` builds have none, only a symbol
+table. wafel's `sm64_layout` reads the DWARF into JSON (`tools/sm64_layout.exe` in every
+wafel release, or `cargo build --release -p sm64_layout` in a wafel checkout): 702 types
+with every field's offset, 24,680 globals with their addresses, 5,216 constants. Two things
+in that JSON are not from the DLL: the constants and the Object struct's `o*` field names
+(`oPosX`, ...), which wafel injects from its own table of the decomp's `object_fields.h`
+macros (`wafel_layout/sm64_macro_defns.json`).
+
+`scripts/dll_layout.py` turns the JSON into `tasfw-tests/src/sm64_layout.inc`: one line per
+struct with its size and one per field with its offset, for the seven structs the code
+reads through (`MarioState`, `Object` with its 686 `o*` fields, `ObjectNode`, `GraphNode`,
+`GraphNodeObject`, `Surface`, `Camera`; the other structs in `Types.hpp` are unused). The
+sizes are the strides of the DWARF's pointers to and arrays of each struct.
+`test_sm64_layout.cpp` compiles the table against `tasfw-core/inc/sm64/` with `sizeof` and
+`offsetof` on every run of the tests, with or without the game. A field the DLL has and the
+headers do not (the newer decomp's names) is counted and tolerated up to a tenth of the
+fields; a field at another offset, or a struct of another size, fails and prints both
+numbers. The committed table is the pinned DLL's: 7 structs, 818 fields, 0 mismatches,
+42 names absent (`oUpVel`, `oBhvParams`, Bowser and coin fields, `animList`, all added to
+the decomp after the copies' revision; docs/decomp.md).
+
+To check a new build:
+
+    python scripts\dll_layout.py --dll <new>.dll --sm64-layout <wafel>\sm64_layout.exe --out <new>.inc
+    git diff --no-index tasfw-tests\src\sm64_layout.inc <new>.inc
+
+The diff names every field that moved. For the v0.8.5 build it is the header line and
+`Camera`'s two filler names, nothing else: the headers fit it as they are. Otherwise,
+replacing the committed table and running the tests says whether the headers still
+describe the build, and deliberately moving to it means editing the headers until they do
+(AGENTS.md, hard rule 2) and moving the decomp pin. `--json` takes a JSON `sm64_layout`
+already wrote instead of running it. `dllcheck` and the `VerifyLayout` script remain the
+checks on the running game (relationships between live values, the object slots); this one
+is the binary's own description of itself against the headers, and it costs no DLL.
 
 ## Verifying a DLL by hand
 
@@ -459,3 +501,16 @@ would be its own item if ever wanted (jgcodes2020 built the Linux `.so` from the
 decomp, so it can be done; start from https://github.com/branpk/wafel/issues/23, which
 discusses libsm64 as an external dependency, and from jgcodes2020). Treat the pinned DLL as
 an opaque artifact and keep a backup of it; the v0.8.5 build is the tested fallback.
+
+What the DLLs say about their own source (read from their DWARF, 2026-09-13): every
+compile unit's path starts with `D:\a\libsm64-build\libsm64-build`, a GitHub Actions
+runner's checkout of a repository named `libsm64-build`, which is not among branpk's public
+repositories and which GitHub search does not find, so the recipe is private. The tree is
+a decomp fork with a `src/pc_headless/` target (`main.c`, `ultra_reimplementation.c`) beside
+`src/pc/gfx/gfx_pc.c`, `src/pc/mixer.c` and `src/rwlock.c`; the producer is mingw-w64 GCC
+10.3.0 for the pinned build and 12.1.0 for v0.8.5's. The fork follows the decomp's
+development line, not upstream master: the v0.8.5 build (June 2022) already exports
+`bhvBitFSTiltingInvertedPyramid`, a rename upstream master only received in Refresh 16
+(August 2023). So no commit of n64decomp/sm64 is the source of any build; the nearest
+public revision is a bracket, and for the pinned build that bracket is Refresh 13 to 14
+(docs/decomp.md).

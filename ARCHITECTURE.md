@@ -312,6 +312,9 @@ Everything below assumes the pinned DLL in `res/` (see `docs/libsm64.md`):
 
 - Struct layouts in `tasfw-core/inc/sm64/Types.hpp`, `ObjectFields.hpp`, `Camera.hpp`,
   `Surface.hpp`; constants in `Sm64.hpp`, `SurfaceTerrains.hpp`; trig tables in `Trig.hpp`.
+  Each is a copy of an n64decomp/sm64 file at a pinned commit (docs/decomp.md), and the
+  seven structs the code reads through are checked against the pinned DLL's DWARF by
+  `test_sm64_layout.cpp` on every run of the tests (docs/libsm64.md, "Struct layouts").
 - Symbols resolved by name through `GetProcAddress` (`dlsym` on Linux): `gMarioState`,
   `gMarioStates`, `gMarioObject`, `gObjectPool`, `gCamera`, `gControllerPads`,
   `gGlobalTimer`, `gCurrCourseNum`, `gCurrAreaIndex`, `bhvLllTiltingInvertedPyramid`,
@@ -343,7 +346,9 @@ Everything below assumes the pinned DLL in `res/` (see `docs/libsm64.md`):
   tests and `dllcheck`); the pipeline's `dllPattern` picks the DLLs by the movie's game
   (`{version}`).
 
-The decomp checkout at `C:\repos\sm64` is not part of the build; it is reference material.
+The decomp checkout at `C:\repos\sm64` is not part of the build; it is reference material,
+and `scripts/decomp_diff.py --checkout` reads the pinned upstream files from it instead of
+GitHub (docs/decomp.md).
 
 ## Performance model
 

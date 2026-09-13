@@ -1,8 +1,11 @@
 # Compiler matrix (ROADMAP 1.6, docs/compilers.md). Each job configures from the matching
 # CMakePresets.json preset (the same ones scripts/build.ps1 and the IDEs use) with warnings
 # as errors (ROADMAP 1.5), builds every target with MSVC, clang-cl, GCC and Clang, runs the
-# DLL-free correctness tests, and runs every Tier A benchmark briefly to prove the perf
-# binary executes. Benchmark timings from CI runners are not gated; the gate is the local
+# DLL-free correctness tests (among them the copied sm64 headers against the pinned DLL's
+# DWARF table), checks the copied decomp files against their pinned upstream revision on
+# one Linux job (scripts/decomp_diff.py, docs/decomp.md), and runs every Tier A benchmark
+# briefly to prove the perf binary executes. Benchmark timings from CI runners are not
+# gated; the gate is the local
 # perf.ps1 comparison against a committed baseline.
 #
 # The game (ROADMAP 2.1, docs/libsm64.md "Continuous integration"): when the LIBSM64_KEY
@@ -123,6 +126,11 @@ jobs:
       - name: Correctness tests (DLL-free)
         shell: bash
         run: ${{ matrix.bindir }}/out/tasfw-tests
+
+      - name: Decomp pin (the copied sm64 headers against n64decomp/sm64 at their pinned commits)
+        if: matrix.name == 'ubuntu-24.04-gcc'
+        shell: bash
+        run: python3 scripts/decomp_diff.py
 
       - name: Tier A benchmarks (every family once, not gated)
         shell: bash

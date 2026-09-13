@@ -10,6 +10,7 @@ Still very much a work in progress. Start with:
 - [ARCHITECTURE.md](ARCHITECTURE.md): how scripts, savestates and scattershot fit together.
 - [ROADMAP.md](ROADMAP.md): what is planned and in what order.
 - [docs/libsm64.md](docs/libsm64.md): where the game DLL comes from and what depends on it.
+- [docs/decomp.md](docs/decomp.md): what was copied from the decompilation, at which revision, and how the copies and the DLL are checked against each other.
 - [docs/performance.md](docs/performance.md): performance is a correctness requirement; how it is measured and gated.
 - [docs/performance-changelog.md](docs/performance-changelog.md): the measured history, one delta table per hot-path change.
 

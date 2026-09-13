@@ -1,0 +1,125 @@
+{
+  "upstream": "n64decomp/sm64",
+  "copies": [
+    {
+      "file": "tasfw-core/inc/sm64/Types.hpp",
+      "path": "include/types.h",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13 (2020-12-03). IS_64_BIT resolved to 1 (the ptrData union), #pragma once, the decomp's includes replaced by sm64/UltraTypes.hpp.",
+      "residual": "c3d3abd566a46b295b5dc45376e4bb731b4059b7cb0e9e9f779ddf7689997a51"
+    },
+    {
+      "file": "tasfw-core/inc/sm64/ObjectFields.hpp",
+      "path": "include/object_fields.h",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13. #pragma once and the include; the rest is clang-format's wrapping.",
+      "residual": "47251abb985f0d0c93cd9a2bf83a33e3496625c44c08e7c9d2a579b78716cba9"
+    },
+    {
+      "file": "tasfw-core/inc/sm64/Sm64.hpp",
+      "path": "include/sm64.h",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13. #pragma once and the includes; clang-format's wrapping.",
+      "residual": "a27330baf0a6d3670330ab8139ca8ae4a90dbbed7c7012e2e0ae6371d4dad07c"
+    },
+    {
+      "file": "tasfw-core/inc/sm64/SurfaceTerrains.hpp",
+      "path": "include/surface_terrains.h",
+      "commit": "1372ae1bb7cbedc03df366393188f4f05dcfc422",
+      "note": "Refresh 15 (2021-10-14), later than the other copies. #pragma once.",
+      "residual": "40df6979f4950161b430e6cddab6ede7bcb642985edafdaab160cfe325ad7665"
+    },
+    {
+      "file": "tasfw-core/inc/sm64/Camera.hpp",
+      "path": "src/game/camera.h",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13. struct Camera only, out of a 600-line header.",
+      "residual": "7e7529cbed4be23f5edc5b0f9271de1737a42d42fba7c2cf1b8b13d423e2c0e3"
+    },
+    {
+      "file": "tasfw-core/inc/sm64/UltraTypes.hpp",
+      "path": "include/PR/ultratypes.h",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13. The typedefs only, on <stdint.h>.",
+      "residual": "971c3da7e8390fc47aef336c0073b46cdf8c93e38d2a4cc2f99e8f7b6ce9f203"
+    },
+    {
+      "file": "tasfw-core/inc/sm64/Trig.hpp",
+      "path": "include/trig_tables.inc.c",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13. The three tables as constexpr std::array, gCosineTable written out.",
+      "residual": "6f4536299ea238dc501953bd7767938f16d844556d3ca5be680451c9182fb7a5"
+    },
+    {
+      "file": "tasfw-core/inc/sm64/Surface.hpp",
+      "path": "include/surface_terrains.h",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13. A selection of the surface types, SURFACE_CLASS_*, and the declarations of the reimplemented surface functions; mostly the framework's own.",
+      "residual": "c7ed4f767467af111e6c050cccfd1bf170bd37b98a1c086ad6d4869584f39efb"
+    }
+  ],
+  "derived": [
+    {
+      "file": "tasfw-core/src/decomp/Math.cpp",
+      "paths": [
+        "src/engine/math_util.c",
+        "src/game/object_helpers.c"
+      ],
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "functions": [
+        "mtxf_align_terrain_normal",
+        "vec3f_cross",
+        "vec3f_normalize",
+        "linear_mtxf_mul_vec3f"
+      ]
+    },
+    {
+      "file": "tasfw-core/src/decomp/Surface.cpp",
+      "paths": [
+        "src/engine/surface_collision.c",
+        "src/engine/surface_load.c",
+        "src/game/mario.c"
+      ],
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "functions": [
+        "find_floor",
+        "load_object_surfaces",
+        "read_surface_data",
+        "get_object_vertices",
+        "surface_has_force",
+        "transform_object_vertices (as transform_surfaces)",
+        "mario_floor_is_slope (as floor_is_slope)",
+        "mario_get_floor_class (as get_floor_class)"
+      ]
+    },
+    {
+      "file": "tasfw-core/src/decomp/Pyramid.cpp",
+      "paths": [
+        "src/game/behaviors/tilting_inverted_pyramid.inc.c"
+      ],
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "functions": [
+        "bhv_tilting_inverted_pyramid_loop",
+        "create_transform_from_normals",
+        "approach_by_increment"
+      ]
+    },
+    {
+      "file": "tasfw-resources/src/PyramidUpdate.cpp",
+      "paths": [
+        "src/game/behaviors/tilting_inverted_pyramid.inc.c",
+        "src/engine/surface_load.c",
+        "src/engine/surface_collision.c",
+        "src/game/mario.c"
+      ],
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "functions": [
+        "bhv_tilting_inverted_pyramid_loop",
+        "load_object_surfaces",
+        "find_floor",
+        "mario_floor_is_slope",
+        "mario_get_floor_class"
+      ]
+    }
+  ]
+}
