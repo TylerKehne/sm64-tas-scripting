@@ -446,7 +446,7 @@ Goal: the core's implicit invariants become explicit and enforced.
       implementation of the abstraction with identical counts, and a second policy exists and
       is compared.
 
-- [ ] **3.12 Sixteen-thread hang under CPU pinning.** Found 2026-09-12 while pinning the
+- [x] **3.12 Sixteen-thread hang under CPU pinning.** Found 2026-09-12 while pinning the
       perf suite to the performance cores: with the `^BM_LibSm64Scaling` family (16 threads,
       one DLL copy each, `dirty` saves) pinned to the i9-13900K's 16 performance-core logical
       CPUs at High priority, 1 launch in 10 hung at the 16-thread `FrameAdvance` row, for the
@@ -454,16 +454,43 @@ Goal: the core's implicit invariants become explicit and enforced.
       Error Reporting logged one thread dying with `0xC0000264` (`STATUS_RESOURCE_NOT_OWNED`,
       a lock released by a thread that does not hold it) in `ntdll.dll`; the other threads
       then wait at Google Benchmark's end barrier for a thread that no longer exists, and the
-      process lives on with 5 s of CPU. The fault handler and the dirty-page registry in
-      `LibSm64.cpp` were read and are lock-free where the faults land (`DispatchWrite`); the
-      `gDirtyPageSetMutex` is only taken at construction and destruction. The crash dump
-      Windows wrote (`%LOCALAPPDATA%\CrashDumps\tasfw-perf.exe.<pid>.dmp`, full memory) is the
-      lead; the Release preset emits no PDB, so build with symbols first to name the frames
-      below ntdll. `scripts\perf_scaling_hang.ps1` reproduces it. Until it is understood
-      nothing packs 16 threads onto the 8 performance cores: the scaling family runs unpinned
-      as before and only the 8-thread deterministic Tier D run is pinned (one thread per
-      core). *Done when:* the owner of the released lock is named, the fix is in, and 100
-      pinned launches of the family pass.
+      process lives on with 5 s of CPU. Named 2026-09-13 from the three crash dumps of the
+      12th (ntdll's public symbols and the DLL's own COFF symbols were enough; no PDB needed):
+      the thread died in `RtlLeaveCriticalSection`, called from the game DLL's mingw-w64 TLS
+      callback (`__dyn_tls_dtor` -> `__mingw_TLScallback` -> `__mingwthr_run_key_dtors`,
+      `tlsthrd.c`), which the loader runs on **every** exiting thread for **every** loaded
+      DLL. The critical section it had entered, `__mingwthr_cs`, lives in the last page of
+      the DLL's `.bss`, and at the moment of the leave it read as pristine: unlocked, owner
+      0. The lock was not released by the wrong thread; it was reset under the right one.
+      The benchmark keeps one `LibSm64` per thread alive for the process and every thread
+      ends its `FrameAdvance` measurement with a load before it exits, so one thread's final
+      `dirty` load restored the last `.bss` page of *its* DLL (dirtied by the exiting
+      thread's own first write to that critical section) while the exiting thread was
+      between the enter and the leave in *that* DLL's callback. Pinning spread the threads'
+      finishing times enough for the two to overlap. Nothing in the fault handler or the
+      registry was at fault; the framework's own locks were never involved. Fixed in
+      `LibSm64` by leaving the C runtime's bytes out of every savestate: `LibSm64KnownGameBytes`
+      bounds the game's bytes of each section per known build (derived from the DLL's COFF
+      symbol table by `scripts/dll_game_bytes.py`, verified at construction against that
+      critical section), `full` copies the two ranges, `fixed` cuts its slices to them, and
+      `dirty` copies and restores each page but for the part outside them; unknown builds
+      (the Linux `.so`) stay whole (docs/libsm64.md, "The game's bytes"). The test in
+      `test_libsm64_savemodes.cpp` sets that critical section's spin count and requires a
+      load to leave it; on the build without the bounds a `dirty` or `full` load put the old
+      count back, on both the JP and the US DLL. `fixed`, the pipeline's mode, never reached
+      the tail and was never exposed; `dirty` (the default, the scaling family, the Linux
+      CI) and `full` were. Gate (2026-09-13): 100 pinned launches of the family on the
+      fixed Release binary, 100 ok, 0 hung (`scripts\perf_scaling_hang.ps1 -Binaries current
+      -Placement pinned -Runs 100`). The control is weaker than hoped: the reference binary,
+      built before the fix, also passed its 30 pinned launches that day, and 60 more earlier
+      the same day, where on the 12th it hung 1 in 10, so the day's machine never produced
+      the race on either binary; what shows the fix works is the crash dump (the reset
+      section) and the test (the load that puts the old spin count back without the
+      bounds), not the count. Tier B and D numbers in docs/performance-changelog.md: every
+      row within noise of the reference, counts identical. `perf.ps1` keeps the scaling
+      family and the throughput run unpinned, now by choice rather than necessity: 16
+      threads on the 8 performance cores' SMT siblings is not the pipeline's shape
+      (docs/performance.md).
 
 ## Phase 4: the squish-cancel brute forcer
 

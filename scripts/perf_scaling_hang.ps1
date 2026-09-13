@@ -10,7 +10,12 @@
     2026-09-12: pinned, 1 launch in 10 of either binary hung at the 16-thread FrameAdvance
     row after one thread died with STATUS_RESOURCE_NOT_OWNED (0xC0000264, a lock released by
     a thread that did not hold it; Windows Error Reporting logs it under Application Error);
-    unpinned, 0 in 20. docs/performance.md (Tier B) and ROADMAP.md carry the details. Needs
+    unpinned, 0 in 20. Named and fixed 2026-09-13: a savestate restored the C runtime's
+    critical section in the DLL's .bss under an exiting thread (LibSm64KnownGameBytes,
+    docs/libsm64.md "The game's bytes"); the fixed binary passed 100 pinned launches. The
+    race is timing-dependent (the unfixed binary passed 90 pinned launches the same day), so
+    the test in test_libsm64_savemodes.cpp, not this script, is what pins the fix.
+    docs/performance.md (Tier B) and ROADMAP.md carry the details. Needs
     res\sm64_jp_0.dll .. sm64_jp_16.dll and the movie, like the family itself.
 
 .PARAMETER Runs
@@ -22,6 +27,15 @@
 .PARAMETER Mask
     Affinity mask for the pinned configurations (default 0xFFFF).
 
+.PARAMETER Binaries
+    Which binaries to launch: both (default), current or reference.
+
+.PARAMETER Placement
+    Which placements: both (default), pinned or unpinned. The gate ROADMAP 3.12 asks for is
+    `-Binaries current -Placement pinned -Runs 100`; the reference binary, built before the
+    fix, is the control (it hung 1 in 10 on 2026-09-12 and 0 in 90 on the 13th: the race
+    depends on the day's timing).
+
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File scripts\perf_scaling_hang.ps1 -Runs 20
 #>
@@ -32,7 +46,11 @@ param(
     [ValidateSet('Release', 'RelWithDebInfo')]
     [string]$Config = 'Release',
     [ValidateSet('msvc', 'clang')]
-    [string]$Compiler = 'msvc'
+    [string]$Compiler = 'msvc',
+    [ValidateSet('both', 'current', 'reference')]
+    [string]$Binaries = 'both',
+    [ValidateSet('both', 'pinned', 'unpinned')]
+    [string]$Placement = 'both'
 )
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
@@ -51,9 +69,10 @@ New-Item -ItemType Directory -Force $tmp | Out-Null
 
 $configs = @()
 foreach ($binary in @(@{ Tag = 'current'; Exe = $current }, @{ Tag = 'reference'; Exe = $reference })) {
+    if ($Binaries -ne 'both' -and $binary.Tag -ne $Binaries) { continue }
     if (-not (Test-Path $binary.Exe)) { Write-Host "skipping $($binary.Tag): $($binary.Exe) not found"; continue }
-    $configs += @{ Tag = "$($binary.Tag)-pinned"; Exe = $binary.Exe; Mask = $Mask }
-    $configs += @{ Tag = "$($binary.Tag)-unpinned"; Exe = $binary.Exe; Mask = [uint64]0 }
+    if ($Placement -ne 'unpinned') { $configs += @{ Tag = "$($binary.Tag)-pinned"; Exe = $binary.Exe; Mask = $Mask } }
+    if ($Placement -ne 'pinned') { $configs += @{ Tag = "$($binary.Tag)-unpinned"; Exe = $binary.Exe; Mask = [uint64]0 } }
 }
 foreach ($c in $configs) {
     $hangs = 0; $crashes = 0; $ok = 0; $times = @()

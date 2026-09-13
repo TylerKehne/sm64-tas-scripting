@@ -4,6 +4,49 @@ Every hot-path change records its delta table here, newest first; the policy, th
 how to run it are in [performance.md](performance.md). The first measurements (2026-09-07),
 which everything since is compared against, are at the bottom.
 
+## 2026-09-13: a savestate is the game's bytes only (ROADMAP 3.12, hard rule 7)
+
+The DLL's `.data` and `.bss` end in the mingw-w64 runtime's own state, which the Windows
+loader writes from every thread of the process (the DLL's TLS callback at each thread's
+exit takes a critical section in the last page of `.bss`). A `dirty` or `full` load that
+restored that page under an exiting thread was the sixteen-thread hang of the scaling
+family (ROADMAP 3.12; docs/libsm64.md, "The game's bytes"). `LibSm64` now copies and
+restores only the game's bytes of each section: `full` two ranges instead of two whole
+sections (3 KB less), `fixed` its slices cut to the ranges (32 bytes less), `dirty` each
+page whole except the four edge pages, which it copies in part. The per-page cost is one
+span lookup and a branch on its length (the whole-page case keeps the constant-size
+`memcpy`); the fault handler is untouched. Interface unchanged; `LibSm64::gameBytes()` is
+read-only, for `dllcheck` and the tests.
+
+Measured, MSVC Release, `scripts\perf.ps1` with Tiers A to D against the reference (the
+baseline commit's binaries, interleaved; machine factor 1.02 against the committed
+baseline), fastest of the repetitions. The Tier B rows, the `dirty` ones being what the
+scaling family and the Linux CI run, and the Tier D workloads:
+
+| row | reference | current | delta |
+|---|---|---|---|
+| `LibSm64Full_SaveErase` | 178.8 us | 181.0 us | +1.2% |
+| `LibSm64Full_Load` | 174.0 us | 180.3 us | +3.6% |
+| `LibSm64Full_SaveFresh` | 1.18 ms | 1.19 ms | +0.7% |
+| `LibSm64Full_ResidentPerSlot/100`, stateBytes | 7,279,456 | 7,276,192 | -3,264 B |
+| `LibSm64Fixed_SaveErase` | 41.4 us | 41.4 us | +0.0% |
+| `LibSm64Fixed_Load` | 41.8 us | 42.0 us | +0.5% |
+| `LibSm64Fixed_SaveFresh` | 282.7 us | 284.1 us | +0.5% |
+| `LibSm64Dirty_SaveErase` | 7.1 us | 7.1 us | -0.4% |
+| `LibSm64Dirty_Load` | 7.0 us | 7.0 us | +0.1% |
+| `LibSm64Dirty_SaveFresh` | 90.3 us | 91.6 us | +1.5% |
+| `LibSm64Scaling_SaveErase`, 16 threads | 7.7 us | 7.7 us | +0.4% (efficiency 92 -> 93%) |
+| `LibSm64Scaling_FrameAdvance`, 16 threads | 18.2 us | 18.0 us | -1.3% (efficiency 81 -> 84%) |
+| `TierD_Deterministic` | 139.9 s | 139.5 s | -0.3% |
+| `TierD_Throughput` | 74.1 s | 75.1 s | +1.3% |
+
+Frame advances unchanged on every row; allocations identical; every exact count (Tier C
+and D) identical; no efficiency row moved by more than 5 points. The only row past the
+gate's threshold anywhere in the run is an improvement unrelated to this change
+(`Script_AdvanceFrameWrite`, -19.6%, the day's reading of a Tier A row). The `full` load's
++3.6% is two `memcpy` calls of ranges 3 KB shorter than before; the reference itself read
++7.3% against the committed baseline on that row, so it is the day, not the change.
+
 ## 2026-09-13: scattershot's byte hash becomes the framework's own (ROADMAP 3.4, hard rule 3)
 
 `Scattershot::GetHash` (the block table's state-bin hash) and `ScattershotThread::GetHash`

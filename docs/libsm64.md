@@ -99,7 +99,10 @@ pinned DLL, which shows in two ways:
 the renamed exports below, and `.data`/`.bss` layouts that differ from the pinned build by
 tens of bytes on Windows (the hot symbols still fall inside the fixed slices) and by
 hundreds of kilobytes on Linux (where the fixed slices do not fit and `dirty` is the mode; the `.so`'s
-`.bss` is 3.6 MB against the DLL's 4.9 MB).
+`.bss` is 3.6 MB against the DLL's 4.9 MB). Each of the four Windows builds has its
+`LibSm64KnownGameBytes` entry, so a savestate on any of them leaves the runtime's bytes at
+the sections' edges alone ("Savestates", "The game's bytes"); the `.so` builds have none and
+need none.
 
 ### Renamed symbols
 
@@ -129,7 +132,9 @@ here calls it.
 
 ## Savestates
 
-`LibSm64` treats the DLL's `.data` and `.bss` sections as the whole game state. How a save
+`LibSm64` treats the game's bytes of the DLL's `.data` and `.bss` sections as the whole game
+state: the sections minus the C runtime's own state at their edges ("The game's bytes"
+below). How a save
 represents them is `LibSm64Config::saveMode`, set once at construction (`"saveMode"` under
 `"resources"` in `config.json`, `--save-mode` for `dllcheck`, `LibSm64SaveMode` in code) and
 invisible to scripts: savestate management stays automatic whichever mode is set. `dirty`
@@ -138,9 +143,50 @@ workloads select `fixed`, which measures faster for the BitFS search (below).
 
 | Mode | A save copies | Pinned DLL, MSVC | When |
 |---|---|---|---|
-| `full` | both sections whole, 7.3 MB | about 190 us per save or load | the reference; under a debugger (no page faults) |
+| `full` | the game's bytes of both sections, 7.3 MB | about 190 us per save or load | the reference; under a debugger (no page faults) |
 | `fixed` | five hand-tuned byte ranges (`LibSm64FixedSlices`), 1.5 MB | about 41 to 49 us, constant | when a constant cost matters more than speed; the pinned build only |
 | `dirty` (default) | the pages the game wrote since the current baseline: about 122 pages (488 KB) after 60 frames of play, up to 526 pages (2.1 MB) within a scattershot shot | about 7 us at 122 pages; the search's loads restore up to 2.1 MB from scattered pages, so the deterministic Tier D workload runs about 10% slower than in `fixed` and the 16-thread one about 25% slower | any build, Linux, exploration that stays near a settled state |
+
+**The game's bytes.** Both sections hold, besides the game's state, the state of the C
+runtime the DLL was built with (mingw-w64), at their edges: `crtdll.c`'s atexit table and
+attach count in the first 32 bytes of each, and at the tail the startup lock and state, the
+TLS index, the pseudo-relocation table, the thread-key list with its critical section
+(`__mingwthr_cs`), gdtoa's memory and its own critical section, and the math-error and
+exception handlers (about 3 KB at the end of `.bss`, 200 bytes at the end of `.data`). The
+loader runs the runtime's code on every thread of the process, not just on the one that
+owns the instance: at every thread's exit it calls the DLL's TLS callback
+(`__dyn_tls_dtor`), which enters and leaves `__mingwthr_cs`, and at every thread's attach
+and detach `DllMainCRTStartup`. So those bytes change on threads the resource never sees,
+at times it cannot control, and a savestate that included them raced with the loader: a
+`dirty` or `full` load that restored the last `.bss` page while another thread was inside
+that critical section reset it under that thread, which then died in
+`RtlLeaveCriticalSection` with `STATUS_RESOURCE_NOT_OWNED` and left the process hanging on
+its join. That was the sixteen-thread hang of the thread-scaling benchmark family (ROADMAP
+3.12, found 2026-09-12, named from its crash dump 2026-09-13: every benchmark thread ends
+its measurement with a load and then exits, and under CPU pinning the two overlapped often
+enough to fire once in ten launches). A save with the section's tail held by an exiting
+thread would have been the other half: a state carrying a locked critical section, which a
+later load would have left locked by a thread long gone.
+
+Since then a savestate is the game's bytes only: `LibSm64KnownGameBytes` (`LibSm64.hpp`)
+names, per known build, where the game's bytes of `.data` and `.bss` begin and end, and
+every mode copies and restores inside those bounds (`full` the two ranges, `fixed` its
+slices cut to them, `dirty` each page but for the part outside them; the fault handler's
+baseline copies stay whole pages, a read). The bounds are a property of the build, read
+from the DLL's COFF symbol table, which names for every object file linked where its part
+of each section starts: the runtime's objects (`crtdll` first, `gccmain`, `natstart`,
+`tlssup`, `tlsthrd`, `pseudo-reloc`, gdtoa, ... after the game's) form a run at each edge.
+`python scripts\dll_game_bytes.py <dll>` prints the entry for a DLL with the objects at
+each boundary; the table has the pinned build, wafel v0.8.5's JP and US builds
+(bitfs-sbb's) and wafel's 2022-08-07 JP update. A build is recognised by its sections'
+sizes, and construction then checks that `__mingwthr_cs` reads as an initialised, unlocked
+critical section at the offset the entry gives; a mismatch refuses the DLL with the
+script's name, since a wrong entry would leave the race in place silently. A build no
+entry knows (the Linux `.so`, whose loader runs nothing in the library at a thread's exit)
+is saved and restored whole, as before; `dllcheck` prints which applies on its `bytes:`
+line. The test in `test_libsm64_savemodes.cpp` sets the spin count of `__mingwthr_cs`
+through the Windows API for that and requires a load in every mode to leave it; without
+the bounds a `dirty` or `full` load puts the saved count back.
 
 **Fixed** was found empirically for the pinned build. Construction refuses it, with the
 reason, on a build whose sections are smaller than the slices (the Linux `.so`'s `.data` is
@@ -217,7 +263,10 @@ prints it before its first stage and stops on a failure.
 Before the layout checks `dllcheck` prints which game the DLL is declared to be
 (`--version jp|us`, or its file name: `sm64_jp`, `sm64_us`; JP when neither says) and which
 game the movie's header names, with a `FAIL:` when they differ: a movie for the other
-version desyncs without a word, so nothing below it would mean anything.
+version desyncs without a word, so nothing below it would mean anything. Its `bytes:` line
+says what a savestate holds of the sections: the game's bytes, with their bounds, when the
+build has a `LibSm64KnownGameBytes` entry, or the whole sections when none has its section
+sizes ("Savestates", "The game's bytes").
 
 `--dirty-scan [frames]` (default 120) and `--dirty-replay` measure what the game writes:
 consecutive frames are compared page by page (4 KB), under a fixed input pattern from
@@ -258,7 +307,8 @@ state the load did not restore. A second pass with a different pattern shows whi
 depend on what was played. `python scripts\dll_symbols.py <dll> -` reads that output and
 names each range from the DLL's export table. On the pinned DLL a `full` or `dirty` load
 restores both sections exactly (`dirty` also on the 2023 and 2026 builds and the Linux
-`.so`), and a `fixed` load misses only four to six bytes: the texture-scroll offsets of the
+`.so`; the runtime's bytes at the sections' edges, which no load restores, do not change
+while the scan plays, so they never appear in it), and a `fixed` load misses only four to six bytes: the texture-scroll offsets of the
 BitFS lava animation (`bitfs_movtex_tris_lava_*`), which nothing in the physics reads.
 
 ## A movie for the US game
