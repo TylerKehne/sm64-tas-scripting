@@ -149,7 +149,7 @@ correctness and in speed.
       `TASFW_WARNINGS_AS_ERRORS` now covers every first-party target
       (`cmake/Warnings.cmake`) and every CI job passes it; on the way,
       `tasfw-scripts-scattershot-bitfs-dr` got the `add_optimization_flags` call every
-      sibling had (LTO, and the GCC `-Wno-missing-requires`; docs/performance.md change log). This left all
+      sibling had (LTO, and the GCC `-Wno-missing-requires`; docs/performance-changelog.md). This left all
       four compilers warning-free at their default levels only (MSVC `/W1`, since CMake
       stopped adding `/W3` in 3.15; GCC and Clang without `-Wall`); 1.7 raised them.
 - [x] **1.6 Build hygiene and compiler matrix.** Done 2026-09-08: the matrix is green on
@@ -256,7 +256,7 @@ Goal: the DLL becomes a reproducible, swappable artifact instead of a mystery bi
       itself is slower than `fixed` on the BitFS search: the dirty set grows to 525 pages
       (pellets die, the level reloads), so `dirty` first ran the deterministic Tier D
       workload 3.6% slower than `fixed` and the 16-thread throughput workload about 20%
-      slower (docs/performance.md change log). The maintainer's decision: the pipeline and
+      slower (docs/performance-changelog.md). The maintainer's decision: the pipeline and
       the Tier D workloads select `fixed`; `dirty` is the code default and the mode for any
       other build and for Linux. Follow-up, same day, on the re-baseline idea: implemented
       as a baseline the resource takes at a save once the loads under the current one had
@@ -266,7 +266,7 @@ Goal: the DLL becomes a reproducible, swappable artifact instead of a mystery bi
       about a thousand times per thread: the dirty set regrows to about 500 pages within a
       shot whatever the baseline, because pellets die and the level reloads, and `fixed`'s
       five contiguous ranges stay cache-resident while `dirty`'s scattered pages do not
-      (docs/performance.md change log). What stayed from the attempt: baselines hold
+      (docs/performance-changelog.md). What stayed from the attempt: baselines hold
       copy-on-write pages filled in by the fault handler instead of a whole-section
       snapshot, so taking one copies nothing and memory is only the pages written since
       each began, and a baseline's pages are kept while any live slot's state names it.
@@ -287,7 +287,7 @@ Goal: the DLL becomes a reproducible, swappable artifact instead of a mystery bi
       first stage, so a spawn-order change fails start-up with a message instead of feeding
       scripts another object. `bitfs-turn --dry-run` runs the same script to the first
       stage's frame and prints its report. Verified: the three slots report `ok` on
-      the pinned DLL and bitfs-sbb's 2026 DLL, and `test_libsm64.cpp` shows a wrong home, a
+      the pinned DLL and bitfs-sbb's 2026 DLL, and `test_libsm64_smoke.cpp` shows a wrong home, a
       wrong behavior and an empty slot each produce a `FAIL`.
 - [ ] **2.5 US ROM support.** `CountryCode` already exists; make the m64 header check and DLL
       choice follow it. *Done when:* the smoke test passes on both JP and US DLLs. The US
@@ -315,10 +315,10 @@ Goal: the core's implicit invariants become explicit and enforced.
       adjacent to hack support (Phase 5), will probably admit only certain kinds of symbols,
       and will carry some guard against invalid memory access. Do not design it piecemeal.
       Known remaining direct access to fold in: the drift
-      test (`test_libsm64.cpp`) drives a locally constructed `PyramidUpdate` from inside a
+      test (`test_libsm64_pyramid.cpp`) drives a locally constructed `PyramidUpdate` from inside a
       script instead of going through `ImportSave<PyramidUpdateMem>`, and `SlotHandle` holds a
       public resource pointer.
-- [x] **3.3 PyramidUpdate drift test.** `test_libsm64.cpp` imports `PyramidUpdateMem` from
+- [x] **3.3 PyramidUpdate drift test.** `test_libsm64_pyramid.cpp` imports `PyramidUpdateMem` from
       the DLL before each of 240 frames (Mario walks to the pyramid's centre, then it settles;
       91 frames move the normal), advances both, and requires the normal to match
       bit-for-bit. Passes with max |diff| = 0 on MSVC and clang-cl (2026-09-07), which is also
@@ -348,7 +348,7 @@ Goal: the core's implicit invariants become explicit and enforced.
       bitfs-sbb's JP `.so` with GCC 15 and Clang 21: every layout check, the identical
       golden state at frame 3330, save/load determinism and the drift test at max |diff| = 0.
       `dllcheck` there reads 21.0 us per frame advance and about 45 us per save or load
-      (docs/performance.md change log). What keeps this open: the `.so` needs glibc 2.43
+      (docs/performance-changelog.md). What keeps this open: the `.so` needs glibc 2.43
       (for `sqrtf`), which Ubuntu 24.04, CI's `ubuntu-latest`, does not have, so a CI run
       needs a 26.04 runner as well as the maintainer-only secret for the unlock key. Closed
       by 2.3 (2026-09-12): the Linux save path is the same `dirty` mode as on Windows, one
@@ -375,7 +375,7 @@ Goal: the core's implicit invariants become explicit and enforced.
       scripts and `GetTrackedState` returning a reference; and a `SlotHandle` move that
       copied the slot id, so every save a child handed to its parent on `Modify` was erased
       by the child's bank and replayed later (now pinned by a test). Allocation counts and
-      timings are in the change log. Remaining: scripts resolving symbols per execution; the
+      timings are in docs/performance-changelog.md. Remaining: scripts resolving symbols per execution; the
       `std::map` head node MSVC allocates for each container a script actually touches, and
       one map node per cached frame (a flat or pooled container, measured); virtual dispatch
       on `Resource` per frame if measurement says it matters.
@@ -385,7 +385,7 @@ Goal: the core's implicit invariants become explicit and enforced.
       states in a bounded pool (32) that the next `CreateSlot` reuses, so a save into a
       recycled state is one copy. `dllcheck`: full save 1561 -> 191 us against a 222 us load,
       lightweight 285 -> 50 us against 53 us. Pooled memory counts toward the slot budget.
-      Gated by the Tier B `SaveErase`/`Load` benchmarks (docs/performance.md change log).
+      Gated by the Tier B `SaveErase`/`Load` benchmarks (docs/performance-changelog.md).
 
 - [ ] **3.10 Make the compare concepts actually constrain.** The concepts in
       `ScriptCompareHelper.hpp` test whether `std::same_as<...>` is a valid *expression*, not

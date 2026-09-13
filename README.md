@@ -11,6 +11,7 @@ Still very much a work in progress. Start with:
 - [ROADMAP.md](ROADMAP.md): what is planned and in what order.
 - [docs/libsm64.md](docs/libsm64.md): where the game DLL comes from and what depends on it.
 - [docs/performance.md](docs/performance.md): performance is a correctness requirement; how it is measured and gated.
+- [docs/performance-changelog.md](docs/performance-changelog.md): the measured history, one delta table per hot-path change.
 
 These files are kept current by design: a Claude Code hook in [.claude/](.claude/) reviews
 them after every change (see AGENTS.md, "Documentation must match the repository").

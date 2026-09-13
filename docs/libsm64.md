@@ -170,7 +170,7 @@ within a shot and every load of the shot's base state restores that much from sc
 pages, against the 1.5 MB `fixed` copies from five contiguous ranges that stay
 cache-resident; the stage runs about 10% slower than in `fixed` mode on the
 deterministic Tier D workload and about 25% slower on the 16-thread one, identical
-counts (docs/performance.md change log; `bitfs-turn` prints the set size and the number of
+counts (docs/performance-changelog.md; `bitfs-turn` prints the set size and the number of
 baselines per stage). Re-baselining again during a run, at a save once its loads had paid
 for one, was measured and dropped: the set regrows within a shot whatever the baseline, and
 with the cost model saving often the rule fired about a thousand times per thread. No

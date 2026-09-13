@@ -160,7 +160,7 @@ before the first frame the child wrote (in practice none) and drops the rest wit
 then loads the original frame, forcing a load if the child changed any frame before the
 cursor. Until 2026-09-08 it moved *every* child save into the parent when none was synced;
 a later backwards load from a level whose diff started after such a save then restored a
-state made with reverted inputs. That was ROADMAP 4.5, and `test_script.cpp` pins it.
+state made with reverted inputs. That was ROADMAP 4.5, and `test_script_saves.cpp` pins it.
 `ApplyChildDiff` (after `Modify`) merges the diff and moves saves, then `Load(lastFrame + 1)`.
 The cursor ending after the child's diff rather than where the child stopped is by design:
 the common case is to keep going from there. A caller that needs the frame the child stopped
