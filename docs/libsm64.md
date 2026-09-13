@@ -29,6 +29,14 @@ by PBKDF2-SHA256) and unlock them on the user's machine:
   libsm64_lock --unlock -i sm64_jp.dll.locked -o sm64_jp.dll -r "<path to JP ROM>.z64"
   ```
 
+  Wafel's locked files since 2021-06-15 are libsodium password boxes (`pwbox`, JSON with
+  their own salt) that only this locker opens; a built copy is at
+  `C:\repos\wafel\target\release\libsm64_lock.exe`, and wafel's git history holds every
+  locked file it ever shipped, which is how the builds below were identified. Wafel 0.7.x
+  locked with Fernet and a key derived from `wafel-<version>` plus the ROM; bitfs-sbb's
+  script reproduces that derivation minus the version prefix, so the two families of
+  locked files are not interchangeable.
+
 - **bitfs-sbb** (https://github.com/jgcodes2020/bitfs-sbb, checkout at `C:\repos\bitfs-sbb`)
   ships `libsm64/data/win32/sm64_<version>.dll.locked` **and**
   `libsm64/data/linux/sm64_<version>.so.locked` for `jp`, `us`, `eu` and `sh`, plus
@@ -76,16 +84,18 @@ determinism, and the `PyramidUpdate` drift test (docs/performance.md, ROADMAP 3.
 
 | Build | File | Size, MD5 | Status (2026-09-08) |
 |---|---|---|---|
-| wafel, 2022-03-12 (**pinned**) | `res\sm64_jp_0.dll` .. `_23.dll` | 32,958,049 B, `463a5be6` | The reference: every offset, check and golden value in this repo was taken from it. |
-| wafel, 2023-09-07, JP | `C:\repos\wafel\libsm64\sm64_jp.dll` | 31,872,634 B, `da7b3620` | Passes every layout check including fixed-slice coverage; identical golden state; drift test max diff 0 (MSVC). `dirty` mode: 125 pages per save, 7 us, leak scan zero bytes. |
-| bitfs-sbb, 2026-06-30, JP | `C:\repos\bitfs-sbb\libsm64\lib\sm64_jp.dll` | 33,068,386 B, `625fd921` | Passes every layout check including fixed-slice coverage; identical golden state; drift test max diff 0 on MSVC and clang-cl. `dllcheck`: 8.5 us per frame; `dirty` mode 123 pages per save, 7 to 8 us, leak scan zero bytes. Tier C exact counts and allocations identical to the pinned build's baseline (2026-09-13), which is what lets CI gate them on this build; its `DownhillAngle_PyramidUpdate` workload reads about 85% slower and `PyramidOscillation` 7% slower, the build's own code. |
-| bitfs-sbb, 2026-06-30, US | `...\lib\sm64_us.dll` | 33,508,967 B, `e2efd078` | Unlocked only. There is no US movie to play and the m64 country check is JP (ROADMAP 2.5). |
+| wafel v0.8.1's libsm64, built 2021-06-17 (**pinned**) | `res\sm64_jp_0.dll` .. `_23.dll` | 32,958,049 B, `463a5be6` | The reference: every offset, check and golden value in this repo was taken from it. Provenance established 2026-09-13 by unlocking every `sm64_jp.dll.locked` in wafel's history with wafel's own locker: byte-identical to the file committed 2021-06-20 (`c155b258`) and shipped in v0.8.1 (`19262ea4`); v0.8.0's file is in an older lock format the current locker refuses. The PE header's build time is 2021-06-17 02:39 UTC; the "2022-03-12" this table used to say was a file date. |
+| wafel's 2022-08-07 update (`e81ee16b`, after v0.8.5; never in a release), JP | `C:\repos\wafel\libsm64\sm64_jp.dll` | 31,872,634 B, `da7b3620` | Passes every layout check including fixed-slice coverage; identical golden state; drift test max diff 0 (MSVC). `dirty` mode: 125 pages per save, 7 us, leak scan zero bytes. Formerly listed as "wafel 2023-09-07", the checkout's date. |
+| bitfs-sbb, JP (= wafel v0.8.5's libsm64, built 2022-06-26, re-locked with Fernet; the "2026-06-30" is the lock date) | `C:\repos\bitfs-sbb\libsm64\lib\sm64_jp.dll` | 33,068,386 B, `625fd921` | Byte-identical to what wafel's `1fa9a832` (v0.8.5) unlocks to. Passes every layout check including fixed-slice coverage; identical golden state; drift test max diff 0 on MSVC and clang-cl. `dllcheck`: 8.5 us per frame; `dirty` mode 123 pages per save, 7 to 8 us, leak scan zero bytes. Tier C exact counts and allocations identical to the pinned build's baseline (2026-09-13), which is what lets CI gate them on this build; its `DownhillAngle_PyramidUpdate` workload reads about 85% slower and `PyramidOscillation` 7% slower, the build's own code. |
+| bitfs-sbb, US (= wafel v0.8.5's libsm64, re-locked) | `...\lib\sm64_us.dll` | 33,508,967 B, `e2efd078` | Byte-identical to what wafel's `1fa9a832` unlocks to with the US ROM. Unlocked only. There is no US movie to play and the m64 country check is JP (ROADMAP 2.5). |
 | bitfs-sbb, 2026-06-30, JP, Linux | `res/sm64_jp_0.so` (copied from `...\lib\sm64_jp.so`) | 16,733,032 B, `06c58c69` | On Ubuntu 26.04: every layout check, identical golden state, drift test max diff 0 with GCC 15 and Clang 21 (see "Linux"). |
 | bitfs-sbb, 2026-06-30, US, Linux | `res/sm64_us_0.so` | 17,168,016 B, `61e27e4f` | Loads; no US movie. |
 
-The bitfs-sbb binaries were built by jgcodes2020 on EndeavourOS with GCC 16.1.1 (the
-`.so`'s `.comment` section says so), the Windows ones from the same decomp revision. Every
-2023 and 2026 build comes from a newer decomp than the pinned DLL, which shows in two ways:
+bitfs-sbb's Windows DLLs are wafel v0.8.5's libsm64, re-locked (both unlock to the same
+bytes as wafel's own files); only its Linux `.so` builds are jgcodes2020's own, built on
+EndeavourOS with GCC 16.1.1 (the `.so`'s `.comment` section says so) from a decomp
+revision he did not record. Every build after v0.8.1 comes from a newer decomp than the
+pinned DLL, which shows in two ways:
 the renamed exports below, and `.data`/`.bss` layouts that differ from the pinned build by
 tens of bytes on Windows (the hot symbols still fall inside the fixed slices) and by
 hundreds of kilobytes on Linux (where the fixed slices do not fit and `dirty` is the mode; the `.so`'s
@@ -103,7 +113,8 @@ when that lookup fails consults `LibSm64SymbolAliases` (`LibSm64.hpp`) for the o
 spelling, in either direction. The pinned DLL therefore pays nothing; a newer build pays one
 extra failed lookup per `addr()` call, which is never per frame (`Resource::addr`). Add a
 pair there when the decomp renames something else the framework uses.
-`sm64_update_and_render` exists in the 2022 and 2026 builds but not in wafel 2023; nothing
+`sm64_update_and_render` exists in the pinned and the v0.8.5 builds but not in wafel's
+2022-08-07 one; nothing
 here calls it.
 
 ## What is in `res/` today
@@ -112,7 +123,7 @@ here calls it.
 |---|---|
 | `sm64_jp_0.dll` .. `sm64_jp_23.dll` | 24 byte-identical copies of the pinned build. |
 | `sm64_jp_0.so`, `sm64_us_0.so` | bitfs-sbb's Linux builds, for the container runs in "Linux". |
-| `comissonPyra2-Fanart_XZ.m64`, `test3.m64` | Other source movies (JP). The one everything uses, formerly `comissonPyra2-Fanart_x-Z.m64`, is committed as `movies/bitfs-pyramid-jp.m64` (3,804 input frames, 16 KB; the tests, the perf suite, CI and `config.json` all name it). |
+| `comissonPyra2-Fanart_XZ.m64` | An unreferenced JP movie (3,382 frames). The two movies `config.json` names are committed under `movies/`: `bitfs-pyramid-jp.m64` (formerly `comissonPyra2-Fanart_x-Z.m64`; 3,804 frames, 16 KB; the tests, the perf suite and CI use it too) and `bitfs-osc-final-jp.m64` (formerly `test3.m64`; 3,726 frames; the `osc-final-test3` stage, which starts at frame 3604). |
 | `bitfs_nut_*.m64` (thousands) | Exported solutions from past runs (new runs export under `analysis/m64/<stage>/`). Safe to delete. |
 
 ## Savestates
@@ -130,7 +141,7 @@ workloads select `fixed`, which measures faster for the BitFS search (below).
 | `fixed` | five hand-tuned byte ranges (`LibSm64FixedSlices`), 1.5 MB | about 41 to 49 us, constant | when a constant cost matters more than speed; the pinned build only |
 | `dirty` (default) | the pages the game wrote since the current baseline: about 122 pages (488 KB) after 60 frames of play, up to 526 pages (2.1 MB) within a scattershot shot | about 7 us at 122 pages; the search's loads restore up to 2.1 MB from scattered pages, so the deterministic Tier D workload runs about 10% slower than in `fixed` and the 16-thread one about 25% slower | any build, Linux, exploration that stays near a settled state |
 
-**Fixed** was found empirically for the pinned 2022 build. Construction refuses it, with the
+**Fixed** was found empirically for the pinned build. Construction refuses it, with the
 reason, on a build whose sections are smaller than the slices (the Linux `.so`'s `.data` is
 330 KB and its `.bss` 3.6 MB, against 2.4 MB and 4.9 MB in the DLL); on a build where they
 fit, nothing at run time checks coverage: `dllcheck --save-mode fixed` reports whether every
@@ -277,6 +288,16 @@ locally"); the repository is mounted at `/src`, so `res/sm64_jp_0.so` is
 
   Both pass with GCC 15 and Clang 21 (2026-09-08): identical golden state to the pinned
   Windows DLL, save/load determinism, drift test max |diff| = 0 over 240 frames.
+- **The search diverges from the Windows builds.** The `.so` is jgcodes2020's build of a
+  newer decomp than the DLLs (2026 against 2022), and while every check above and the
+  Tier C workloads read identically, the CI-sized Tier D search (`perf/tierd-ci-linux.json`,
+  100 shots, seed 3) takes a different path on it: 2,867,262 frame advances, 183,657 loads,
+  93,648 scripts, 36,123 blocks and 11 solutions against the DLL's 2,981,801, 184,344,
+  93,774, 36,347 and 10 (2026-09-13). It is the game, not the framework: the Linux counts
+  are identical in `dirty` and `full` save mode and with GCC 15 and Clang 21, and the
+  Windows counts are identical on the pinned v0.8.1 DLL and the v0.8.5 one. So Linux has
+  its own expected counts, `perf/baselines/tierd-ci-linux.json`, and which decomp change
+  the search hits first is not yet located (ROADMAP 3.4).
 
 ## What depends on the exact build
 
@@ -310,27 +331,54 @@ exports, `objdump -T | grep GLIBC` for the glibc versions it needs. With the fra
 ## Continuous integration
 
 `.github/workflows/build.yml` runs the game when the `LIBSM64_KEY` repository secret is
-set: the Windows jobs (MSVC and clang-cl) and a separate Ubuntu 26.04 container job (the
-`.so` needs its glibc, "Linux" above) call `scripts/unlock_libsm64.py --key-env
-LIBSM64_KEY` to fetch the pinned bitfs-sbb JP build and unlock it into the runner's temp
-directory, run the `libsm64*` test group on `movies/bitfs-pyramid-jp.m64` (layout checks,
-the golden state at frame 3330, save/load determinism, the drift test), and run Tier C with
-`perf_compare.py --counts-only` against the committed baseline, so an extra frame advance
-or allocation in the framework fails the pull request. The secret is the derived key, not
-the ROM (`--print-key`), set by the maintainer under Settings, Secrets; GitHub withholds
+set: the Windows jobs (MSVC and clang-cl) and two Ubuntu 26.04 container jobs (GCC 15 and
+Clang 21; the `.so` needs that release's glibc, "Linux" above) call
+`scripts/unlock_libsm64.py --key-env LIBSM64_KEY` to fetch the pinned bitfs-sbb JP build
+and unlock it into `res/` on the runner (16 copies on Windows, the real config's thread
+count; 4 on Linux), then run everything about the game that is exact:
+
+- the `libsm64*` test group on `movies/bitfs-pyramid-jp.m64` (layout checks, the golden
+  state at frame 3330, save/load determinism, the drift test);
+- `dllcheck` in `fixed` mode on Windows (the layout checks and the fixed-slice coverage
+  report, exit 1 on any `FAIL`) and in `dirty` mode with `--leak-scan` on both platforms,
+  where the workflow fails the step if either pass reports a byte a load did not restore;
+- the pipeline's dry run: `bitfs-turn --dry-run` on the real `config.json` on Windows, and
+  on `perf/tierd-ci-linux.json` on Linux (the `VerifyLayout` script to the first stage's
+  frame, the same check a real run makes before its first stage);
+- Tier C with `perf_compare.py --counts-only` against the committed baseline;
+- Tier D on a CI-sized workload, `perf/tierd-ci.json` (`tierd-ci-linux.json` with the
+  `.so` pattern and `dirty` saves): the deterministic tilt-target stage cut to 100 shots
+  on 4 threads, cost model off, about 40 s on the desktop, exact counts compared with
+  `perf/baselines/tierd-ci.json` on Windows and `perf/baselines/tierd-ci-linux.json` on
+  Linux, through `perf_compare.py tierd` and `--counts-only`. The counts are the same in
+  `fixed` and `dirty` mode and on every compiler, but not across the two game builds: the
+  `.so` is a newer decomp than the DLL and this search takes a different path on it
+  ("Linux" above), hence the two expected files. Regenerate them with the same two
+  commands when the framework legitimately changes its work.
+
+So an extra frame advance, save, load or allocation anywhere in the framework, a struct
+that stopped matching the DLL, a slice that stopped covering a hot symbol, or a load that
+stopped restoring a byte fails the pull request. The secret is the derived key, not the
+ROM (`--print-key`), set by the maintainer under Settings, Secrets; GitHub withholds
 secrets from forks and from pull requests opened from them, so there those steps are
-skipped and the job is green on the DLL-free tests alone. The unlocked binary is never
-uploaded as an artifact. Hosted runners' timings are not gated (they compare to nothing);
-Tier D counts are not run there yet (eight copies, minutes on a four-core runner; ROADMAP
-2.1). The pinned 2022 wafel DLL itself never enters CI: it is a local artifact, and the
-bitfs-sbb build reaches the same golden state and counts ("Known builds").
+skipped and the jobs are green on the DLL-free tests alone. The unlocked binaries are never
+uploaded as artifacts. Hosted runners' timings are not gated (they compare to nothing).
+The pinned DLL (wafel v0.8.1's) itself never enters CI: it is a local artifact, and the
+bitfs-sbb build (wafel v0.8.5's) reaches the same golden state and counts ("Known
+builds").
 
 ## Reproducing the DLL from source (not yet done)
 
 Wafel's DLLs are compiled from a decomp fork maintained by branpk that builds the game for
-the host and exports the two entry points; bitfs-sbb's 2026 builds follow the same recipe
-on a newer decomp. Neither the fork, the commit, nor the build command is recorded in this
-repo, in the wafel checkout at `C:\repos\wafel`, or in bitfs-sbb; finding and pinning them
-is ROADMAP 2.1 (start from https://github.com/branpk/wafel/issues/23, which discusses
-libsm64 as an external dependency, and from jgcodes2020). Until then, treat the 2022 DLL as
-an opaque, pinned artifact and keep a backup of it; the 2026 builds are the tested fallback.
+the host and exports the two entry points; bitfs-sbb's Linux `.so` builds follow the same
+recipe on a newer decomp. Which wafel commit each Windows build belongs to is now known
+("Known builds": the pinned DLL is v0.8.1's, bitfs-sbb's are v0.8.5's), so a copy of the
+exact bytes can always be recovered from wafel's git history with wafel's locker and a
+ROM. What is still not recorded anywhere, in this repo, in the wafel checkout at
+`C:\repos\wafel`, or in bitfs-sbb, is the decomp fork, the commit and the build command
+that produced them. ROADMAP 2.1 was closed without them on 2026-09-13: nothing depends on
+rebuilding, the bytes are recoverable, and a build from source with a recorded recipe
+would be its own item if ever wanted (jgcodes2020 built the Linux `.so` from the current
+decomp, so it can be done; start from https://github.com/branpk/wafel/issues/23, which
+discusses libsm64 as an external dependency, and from jgcodes2020). Treat the pinned DLL as
+an opaque artifact and keep a backup of it; the v0.8.5 build is the tested fallback.

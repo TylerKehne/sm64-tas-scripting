@@ -1,0 +1,16 @@
+{
+	"_comment": "tierd-ci.json for the Linux .so: the .so pattern and dirty saves (the .so refuses fixed, docs/libsm64.md). Same workload, same expected counts (perf/baselines/tierd-ci.json).",
+	"resources": { "dllDirectory": "../res", "dllPattern": "sm64_jp_{}.so", "threads": 4, "saveMode": "dirty", "costModel": false },
+	"m64": "../movies/bitfs-pyramid-jp.m64",
+	"outputDirectory": "results/tierd-ci-linux",
+	"scattershot": {
+		"maxShots": 100, "pelletsPerShot": 100, "shotsPerUpdate": 50, "maxSolutions": 100000,
+		"deterministic": true, "seed": 3, "csvSamplePeriod": 0
+	},
+	"stages": [
+		{
+			"name": "tierd-ci", "type": "tilt-target", "startFrame": 3330,
+			"args": { "targetNx": -0.17944, "targetNz": 0.3936, "neighborhood": 100, "targetDimension": "x" }
+		}
+	]
+}

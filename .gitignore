@@ -63,3 +63,6 @@ local/
 # baseline commit's binaries per machine, which perf.ps1 runs interleaved with the current ones
 perf/results/
 perf/reference/
+
+# Python bytecode from the scripts and the hooks
+__pycache__/

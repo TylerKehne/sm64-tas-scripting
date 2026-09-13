@@ -55,8 +55,9 @@ The executable needs files that are not in git (see [docs/libsm64.md](docs/libsm
   (on Linux `.so` copies and `"dllPattern": "sm64_jp_{}.so"`). One command makes them from
   a ROM: `python scripts\unlock_libsm64.py --rom <sm64 jp>.z64 --out res --copies 24`
   (docs/libsm64.md); never commit a ROM or an unlocked binary.
-- The source movie, `movies/bitfs-pyramid-jp.m64`, is committed; CI, the tests and the perf
-  suite use it too. Other movies a stage names go under `res/`.
+- The source movies `config.json` names are committed under `movies/` (`bitfs-pyramid-jp.m64`,
+  which CI, the tests and the perf suite use too, and `bitfs-osc-final-jp.m64` for the
+  `osc-final-test3` stage).
 
 # Running the pipeline
 

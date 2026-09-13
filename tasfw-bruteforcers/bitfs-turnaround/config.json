@@ -23,11 +23,11 @@
 	},
 	"stages": [
 		{
-			"_comment": "Experiment in progress: the final oscillation straight from frame 3604 of test3.m64.",
+			"_comment": "Experiment in progress: the final oscillation straight from frame 3604 of movies/bitfs-osc-final-jp.m64 (formerly test3.m64).",
 			"name": "osc-final-test3",
 			"type": "osc-final",
 			"startFrame": 3604,
-			"m64": "../../res/test3.m64",
+			"m64": "../../movies/bitfs-osc-final-jp.m64",
 			"scattershot": { "csvSamplePeriod": 10, "shotsPerUpdate": 300, "maxShots": 1000000, "maxSolutions": 1000 },
 			"args": { "initialFrame": 3604, "oscQuadrant": 4, "targetQuadrant": 1, "targetNx": -0.17944, "targetNz": 0.3936 },
 			"export": true

@@ -54,6 +54,14 @@ move a few points between runs of the same binary, and are reported only.
 benchmark family in its own process so heap state from one family cannot skew another) and
 keeps the context of the first file, plus every --context KEY=VALUE given.
 
+`tierd` turns one bitfs-turn stage log into a benchmark row the compare understands
+(scripts/perf.ps1 and CI both use it): wall time from the stage summary, the exact counts
+(shots, scripts, blocks, solutions, validationFailures, frameAdvances, saves, loads) with
+--exact, else the rates the throughput workload reports, and the process cycles where the
+platform printed them.
+
+  perf_compare.py tierd STAGE.log -o ROW.json --name TierD_Deterministic [--exact] [--peak-mb N]
+
 Standard library only.
 """
 import argparse
@@ -362,9 +370,68 @@ def cmd_compare(args):
     return 1 if regressions or alloc_regressions or count_regressions or efficiency_regressions else 0
 
 
+TIERD_FOUND_RE = re.compile(r"^Found (\d+) solutions in (\d+) shots, (\d+) blocks, (\d+) scripts \((\d+) base-block validation failures\)")
+TIERD_STAGE_RE = re.compile(r"^=== stage \S+: \d+ solution\(s\) in ([\d.]+) s")
+TIERD_WORK_RE = re.compile(r"frame advances (\d+), saves (\d+), loads (\d+)")
+TIERD_CYCLES_RE = re.compile(r"^\s*process cycles (\d+)")
+
+
+def tierd_row(lines, name, exact, peak_mb=None):
+    """One benchmark row from a bitfs-turn stage log (the last stage in it)."""
+    found = stage = work = cycles = None
+    for line in lines:
+        m = TIERD_FOUND_RE.match(line)
+        if m:
+            found = m
+        m = TIERD_STAGE_RE.match(line)
+        if m:
+            stage = m
+        m = TIERD_WORK_RE.search(line)
+        if m:
+            work = m
+        m = TIERD_CYCLES_RE.match(line)
+        if m:
+            cycles = m
+    if found is None:
+        raise SystemExit("%s: no 'Found ... solutions' summary in the log" % name)
+    if stage is None:
+        raise SystemExit("%s: no stage summary in the log" % name)
+    if work is None:
+        raise SystemExit("%s: no resource counters in the log" % name)
+    solutions, shots, blocks, scripts, failures = (float(v) for v in found.groups())
+    seconds = float(stage.group(1))
+    advances, saves, loads = (float(v) for v in work.groups())
+    row = {
+        "name": name, "run_name": name, "run_type": "iteration", "repetitions": 1, "repetition_index": 0,
+        "threads": 1, "iterations": 1, "real_time": seconds * 1000.0, "cpu_time": seconds * 1000.0, "time_unit": "ms",
+        "validationFailures": failures,
+    }
+    if exact:
+        row.update(shots=shots, scripts=scripts, blocks=blocks, solutions=solutions,
+                   frameAdvances=advances, saves=saves, loads=loads)
+    else:
+        row.update(shotsPerSecond=round(shots / seconds, 2), scriptsPerSecond=round(scripts / seconds, 2),
+                   frameAdvancesPerSecond=round(advances / seconds, 2))
+    if cycles is not None:
+        row["cycles"] = float(cycles.group(1))
+    if peak_mb is not None:
+        row["peakResidentMB"] = peak_mb
+    return row
+
+
+def cmd_tierd(args):
+    with open(args.log, "r", encoding="utf-8", errors="replace") as f:
+        lines = f.read().splitlines()
+    row = tierd_row(lines, args.name, args.exact, args.peak_mb)
+    with open(args.output, "w", encoding="utf-8") as f:
+        json.dump({"context": {"tier": "D"}, "benchmarks": [row]}, f, indent=2)
+    print("%s: %s s, %s" % (args.name, fmt_count(row["real_time"] / 1000.0), counts_of(row) or "rates only"))
+    return 0
+
+
 def main(argv):
     # Backward-compatible form: perf_compare.py BASELINE CURRENT [...]
-    if argv and argv[0] not in ("compare", "merge", "-h", "--help"):
+    if argv and argv[0] not in ("compare", "merge", "tierd", "-h", "--help"):
         argv = ["compare"] + argv
 
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -400,6 +467,15 @@ def main(argv):
                     help="add or overwrite a context entry of the merged file (numbers are stored as numbers)")
     mp.add_argument("parts", nargs="+")
     mp.set_defaults(func=cmd_merge)
+
+    tp = sub.add_parser("tierd", help="turn a bitfs-turn stage log into one benchmark row")
+    tp.add_argument("log")
+    tp.add_argument("-o", "--output", required=True)
+    tp.add_argument("--name", required=True, help="row name, e.g. TierD_Deterministic")
+    tp.add_argument("--exact", action="store_true",
+                    help="carry the exact counts (deterministic workloads); otherwise the rates")
+    tp.add_argument("--peak-mb", type=float, help="peak resident set in MB, sampled by the caller")
+    tp.set_defaults(func=cmd_tierd)
 
     args = ap.parse_args(argv)
     return args.func(args)

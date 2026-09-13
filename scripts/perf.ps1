@@ -277,43 +277,6 @@ function Get-MinRealTime([string]$Path, [string]$Name) {
     return @{ Min = $min; Unit = $rows[0].time_unit }
 }
 
-# Tier D: one bitfs-turn run per config, turned into a benchmark row that the compare script
-# understands. The deterministic run carries exact counts; the throughput run only rates.
-function ConvertFrom-TierDOutput([string]$Name, [string[]]$Lines, [bool]$Exact) {
-    $found = $Lines | Where-Object { $_ -match '^Found (\d+) solutions in (\d+) shots, (\d+) blocks, (\d+) scripts \((\d+) base-block validation failures\)' } | Select-Object -Last 1
-    if (-not $found) { throw "Tier D $Name`: no 'Found ...' summary in the output" }
-    $null = $found -match '^Found (\d+) solutions in (\d+) shots, (\d+) blocks, (\d+) scripts \((\d+) base-block validation failures\)'
-    $solutions = [double]$Matches[1]; $shots = [double]$Matches[2]; $blocks = [double]$Matches[3]; $scripts = [double]$Matches[4]; $failures = [double]$Matches[5]
-    $stage = $Lines | Where-Object { $_ -match '^=== stage \S+: \d+ solution\(s\) in ([\d.]+) s' } | Select-Object -Last 1
-    if (-not $stage) { throw "Tier D $Name`: no stage summary in the output" }
-    $null = $stage -match 'in ([\d.]+) s'
-    $seconds = [double]$Matches[1]
-    $work = $Lines | Where-Object { $_ -match 'frame advances (\d+), saves (\d+), loads (\d+)' } | Select-Object -Last 1
-    if (-not $work) { throw "Tier D $Name`: no resource counters in the output" }
-    $null = $work -match 'frame advances (\d+), saves (\d+), loads (\d+)'
-    $advances = [double]$Matches[1]; $saves = [double]$Matches[2]; $loads = [double]$Matches[3]
-
-    $row = [ordered]@{
-        name = $Name; run_name = $Name; run_type = 'iteration'; repetitions = 1; repetition_index = 0
-        threads = 1; iterations = 1; real_time = $seconds * 1000.0; cpu_time = $seconds * 1000.0; time_unit = 'ms'
-        validationFailures = $failures
-    }
-    if ($Exact) {
-        $row.shots = $shots; $row.scripts = $scripts; $row.blocks = $blocks; $row.solutions = $solutions
-        $row.frameAdvances = $advances; $row.saves = $saves; $row.loads = $loads
-    } else {
-        $row.shotsPerSecond = [math]::Round($shots / $seconds, 2)
-        $row.scriptsPerSecond = [math]::Round($scripts / $seconds, 2)
-        $row.frameAdvancesPerSecond = [math]::Round($advances / $seconds, 2)
-    }
-    # CPU cycles over every thread (bitfs-turn prints them where the platform counts them).
-    $cycles = $Lines | Where-Object { $_ -match '^\s*process cycles (\d+)' } | Select-Object -Last 1
-    if ($cycles) {
-        $null = $cycles -match 'process cycles (\d+)'
-        $row.cycles = [double]$Matches[1]
-    }
-    return $row
-}
 
 # One bitfs-turn run, at High priority pinned to $Mask (0 = unpinned), stdout to $Log; the
 # peak working set is sampled while it runs (it is not readable after exit).
@@ -638,6 +601,7 @@ try {
     # under perf\results.
     if (-not $NoTierD -and -not $Filter -and $Dll -and $M64) {
         if (-not (Test-Path $turn)) { throw "bitfs-turn.exe not found at $turn (needed for Tier D; pass -NoTierD to skip)" }
+        if (-not $python) { throw "python is needed to read the Tier D output (scripts\perf_compare.py tierd); pass -NoTierD to skip" }
         $useRefTurn = $useReference -and (Test-Path $refTurn)
         if ($useReference -and -not $useRefTurn) { Write-Host "note: no bitfs-turn.exe in $Reference; Tier D gates against the committed baseline" }
         $tierD = @()
@@ -667,8 +631,14 @@ try {
                     Write-Host "Tier D $($spec.Name) [$($binary.Tag) $a/$Alternations]: $($binary.Exe) --config $configPath, $threads threads, $pinText"
                     $log = Join-Path $resultsDir "$stamp-$sha-$($spec.Name)-$($binary.Tag)$a.log"
                     $run = Invoke-TierD $binary.Exe $configPath $log $mask
-                    $row = ConvertFrom-TierDOutput -Name $spec.Name -Lines $run.Lines -Exact $spec.Exact
-                    $row.peakResidentMB = $run.PeakMB
+                    # perf_compare.py tierd turns the stage log into the row (CI uses the same parser).
+                    $rowFile = "$log.row.json"
+                    $tierdArgs = @('tierd', $log, '-o', $rowFile, '--name', $spec.Name, '--peak-mb', "$($run.PeakMB)")
+                    if ($spec.Exact) { $tierdArgs += '--exact' }
+                    & $python.Source $compareScript @tierdArgs | Out-Null
+                    if ($LASTEXITCODE -ne 0) { throw "perf_compare.py tierd could not read $log" }
+                    $row = (Get-Content $rowFile -Raw | ConvertFrom-Json).benchmarks[0]
+                    Remove-Item $rowFile -Force
                     if (-not $best.ContainsKey($binary.Tag) -or $row.real_time -lt $best[$binary.Tag].real_time) {
                         $best[$binary.Tag] = $row
                     } else {

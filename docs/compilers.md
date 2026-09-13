@@ -13,8 +13,8 @@ that gives real confidence in C++20 code like this.
 |---|---|---|
 | MSVC 19.44 (VS 2022), Ninja | primary; warning-free at `/W3` | `scripts\build.ps1` (preset `msvc-<config>`) |
 | clang-cl 19.1 (VS "C++ Clang tools for Windows"), Ninja | warning-free at `/W4` locally and in CI (windows-clang-cl job) | `scripts\build.ps1 -Compiler clang` (preset `clang-cl-<config>`) |
-| GCC 13 on Linux (Ubuntu 24.04), Ninja | warning-free at `-Wall -Wextra` in CI (ubuntu-gcc job) and in the 24.04 container below; cannot run the game there, the Linux libsm64 `.so` needs glibc 2.43 (docs/libsm64.md) | `cmake --preset gcc-release`, then `cmake --build --preset gcc-release` |
-| Clang 17 on Linux (Ubuntu 24.04), Ninja | warning-free at `-Wall -Wextra` in CI (ubuntu-clang job) and in the 24.04 container below | presets `clang-<config>` |
+| GCC 13 on Linux (Ubuntu 24.04), Ninja | warning-free at `-Wall -Wextra` in CI (ubuntu-24.04-gcc job) and in the 24.04 container below; cannot run the game there, the Linux libsm64 `.so` needs glibc 2.43 (docs/libsm64.md) | `cmake --preset gcc-release`, then `cmake --build --preset gcc-release` |
+| Clang 17 on Linux (Ubuntu 24.04), Ninja | warning-free at `-Wall -Wextra` in CI (ubuntu-24.04-clang job) and in the 24.04 container below | presets `clang-<config>` |
 | GCC 15.2 on Linux (Ubuntu 26.04), Ninja | warning-free at `-Wall -Wextra` in the 26.04 container below; `LibSm64`'s `mprotect`/`SIGSEGV` save path passes the libsm64 test group against bitfs-sbb's JP `.so`, drift test max diff 0 (2026-09-08) | same presets, or the container commands below |
 | Clang 21.1 on Linux (Ubuntu 26.04), Ninja | as GCC 15.2, once the tests target got `-Wno-#warnings` (pitfall below) | same |
 
@@ -78,15 +78,18 @@ docker exec -w /tmp/build-gcc -e TASFW_LIBSM64=/src/res/sm64_jp_0.so -e TASFW_M6
 
 The same with `-DCMAKE_CXX_COMPILER=clang++` and `/tmp/build-clang`. Build with both
 containers before calling a change done: the 24.04 one is what the four matrix jobs run,
-the 26.04 one is what the `ubuntu-26.04-gcc-libsm64` job runs (its GCC only; Clang 21 is
-container-only), where the Linux game path is tested and where the newest compilers see
-the code first.
+the 26.04 one is what the `ubuntu-26.04-gcc` and `ubuntu-26.04-clang` jobs run, where the
+Linux game path is tested and where the newest compilers see the code first. Job names
+are `<os>[-<release>]-<compiler>`, the release only where two are in play; which jobs run
+the game is in docs/libsm64.md, not in the names.
 
 ## Policy
 
 1. A change is not done until it builds with MSVC, Clang and GCC with no warnings; CI
-   builds all four, plus GCC 15 in the Ubuntu 26.04 job, with warnings as errors, so one
-   warning anywhere fails the matrix. On a
+   builds all four, plus GCC 15 and Clang 21 in the Ubuntu 26.04 jobs, with warnings as
+   errors, so one warning anywhere fails the matrix. It runs on pull requests only, on the
+   branch merged into `master` (the state a merge would produce); a plain push runs
+   nothing, and `workflow_dispatch` runs it by hand. On a
    Windows machine that means MSVC and clang-cl locally plus GCC through the Linux CI job;
    on Linux it means GCC and Clang locally.
 2. When one compiler rejects or miscompiles something the standard allows, do not argue with

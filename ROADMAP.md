@@ -113,6 +113,11 @@ correctness and in speed.
         baseline, switches the power plan for the run and reports missing Defender
         exclusions (`-SetupDefender`); every row carries CPU cycles next to wall time
         (reported, not gated). docs/performance.md, "Running the suite".
+      - [x] Tier D exact counts in CI. Done 2026-09-13 on a CI-sized workload
+        (`perf/tierd-ci.json`: 100 shots, 4 threads, about 40 s on the desktop) with its own
+        committed counts, alongside `dllcheck`'s layout checks and leak scan and the
+        pipeline's dry run (docs/libsm64.md, "Continuous integration"). The full
+        deterministic workload stays local (eight copies, minutes on a hosted runner).
       *Done when:* a deliberate extra frame advance in `LoadBase` fails Tier C, a deliberate
       10% slowdown in `GetHash` fails Tier A, and a PR template asks for the delta table.
       Verified 2026-09-08 against the first baselines: one extra save/advance/load per
@@ -193,7 +198,8 @@ correctness and in speed.
 
 Goal: the DLL becomes a reproducible, swappable artifact instead of a mystery binary.
 
-- [ ] **2.1 Document and script DLL production.** Record which wafel release the 2022 DLL came from,
+- [x] **2.1 Document and script DLL production.** Done 2026-09-13 (closed by the maintainer;
+      see the end of this item). Record which wafel release the 2022 DLL came from,
       how to unlock a `.dll.locked` against a JP ROM with `libsm64_lock`, and add a script that
       makes the N per-thread copies. *Done when:* a fresh machine can populate `res/` from a wafel
       release plus a ROM by following the doc. Progress 2026-09-08: docs/libsm64.md now
@@ -209,11 +215,18 @@ Goal: the DLL becomes a reproducible, swappable artifact instead of a mystery bi
       test group and the Tier C count gates on the bitfs-sbb build with the `LIBSM64_KEY`
       secret on the Windows jobs and an Ubuntu 26.04 container job, skipping on forks
       (docs/libsm64.md, "Continuous integration"); the pinned DLL's provenance turned out
-      not to be needed for that. Still open: which wafel release the pinned 2022 DLL is,
-      the source revision and build command behind any of the builds, and Tier D counts in
-      CI (eight copies, minutes on a four-core runner). *Done when* stands: a fresh machine
-      can populate `res/` from a ROM by following the doc, which the script now makes one
-      command, and the provenance of the pinned build is recorded.
+      not to be needed for that. Provenance recorded 2026-09-13 by unlocking every locked
+      JP DLL in wafel's history with wafel's own locker: the pinned DLL is wafel v0.8.1's
+      libsm64 (built 2021-06-17, committed `c155b258`), bitfs-sbb's Windows DLLs are wafel
+      v0.8.5's re-locked, and the "wafel 2023" DLL is wafel's 2022-08-07 post-release
+      update (docs/libsm64.md, "Known builds"). *Done when* holds: a fresh machine can
+      populate `res/` from a ROM by following the doc, which the script makes one command,
+      and the provenance of the pinned build is recorded. Not recorded by anyone, and closed
+      without it by the maintainer's decision the same day: the decomp fork, commit and
+      build command behind the wafel builds. A build from source with a recorded recipe is
+      possible (jgcodes2020 built the Linux `.so` from the current decomp) and would be its
+      own item if it is ever wanted; nothing depends on it today. Tier D counts in CI moved
+      to 1.3.
 - [ ] **2.2 Generate the sm64 headers.** Replace the hand-copied `tasfw-core/inc/sm64/*.hpp` with
       headers generated from the decomp source (or from wafel's `sm64_layout` DWARF dump) for the
       exact DLL build. *Done when:* regenerating for a new DLL is one command and 1.1 passes.
@@ -314,7 +327,18 @@ Goal: the core's implicit invariants become explicit and enforced.
       Windows against bitfs-sbb's 2026 JP DLL (3.4, docs/libsm64.md). Learned on the way:
       terrain objects update before the player, so the pyramid reads Mario's previous-frame
       position (ARCHITECTURE.md).
-- [ ] **3.4 Linux parity.** Build with GCC/Clang, confirm the `mprotect`/`SIGSEGV` save path works,
+- [x] **3.4 Linux parity.** Done 2026-09-13: the `ubuntu-26.04-gcc` and `ubuntu-26.04-clang`
+      jobs pass the libsm64 test group, `dllcheck` with a zero-byte leak scan, the dry run
+      and the Tier C count gates against the `.so` unlocked from the secret (2.1), so both
+      halves of the "Done when" hold in CI. The one divergence from the Windows results,
+      noted as this item asks: the CI-sized Tier D search takes a different path on the
+      `.so`, which is a newer decomp build than the DLLs; the Linux counts are identical in
+      `dirty` and `full` mode and on both compilers, so it is the game, and Linux gates on
+      its own `perf/baselines/tierd-ci-linux.json` (docs/libsm64.md, "Linux").
+      - [ ] Locate the first frame where the `.so` and the DLL diverge on that search
+        (replay a solution's inputs on both and compare states), to know which decomp
+        change it is; until then the two expected-count files are the record.
+      Build with GCC/Clang, confirm the `mprotect`/`SIGSEGV` save path works,
       and note any divergence from MSVC results. *Done when:* the DLL-free tests run on Linux CI
       and the Linux `LibSm64` path passes the smoke test against a Linux libsm64 build.
       Progress 2026-09-08: both halves hold once, by hand. The DLL-free tests run on Linux CI
