@@ -196,10 +196,14 @@ Goal: the DLL becomes a reproducible, swappable artifact instead of a mystery bi
 - [ ] **2.2 Generate the sm64 headers.** Replace the hand-copied `tasfw-core/inc/sm64/*.hpp` with
       headers generated from the decomp source (or from wafel's `sm64_layout` DWARF dump) for the
       exact DLL build. *Done when:* regenerating for a new DLL is one command and 1.1 passes.
-- [ ] **2.3 Replace hardcoded lightweight-save offsets.** Derive the hot regions of `.data`/`.bss`
-      from symbol addresses (Mario state, object pool, surfaces, camera, RNG, timers) or adopt the
-      dirty-page tracking that the Linux branch already sketches. *Done when:* lightweight mode
-      works unchanged on a different DLL build and is no slower than today. Decided by the
+- [x] **2.3 Lightweight saves that do not depend on the pinned DLL's offsets.** Derive the hot
+      regions of `.data`/`.bss` from symbol addresses (Mario state, object pool, surfaces,
+      camera, RNG, timers) or adopt the dirty-page tracking that the Linux branch already
+      sketched. *Done when:* a lightweight save mode works unchanged on a different DLL
+      build, and the search on the pinned build is no slower than before. Both hold
+      (amended and closed by the maintainer 2026-09-12: the original wording asked for the
+      new mode itself to be no slower than the old offsets, which it is not on this search,
+      see below; the offsets stay available as `fixed` by decision). Decided by the
       maintainer 2026-09-12 after a first attempt was erased for putting the policy in the
       wrong place (scripts called a `BeginEpoch` hook on the resource; "stage" and "epoch"
       were pipeline words). The design that replaced it stays inside `LibSm64` and adds
@@ -214,20 +218,29 @@ Goal: the DLL becomes a reproducible, swappable artifact instead of a mystery bi
       Windows DLL has no symbol sizes) and start-up calibration too (coverage is a sample).
       Verified 2026-09-12: `dirty` saves and loads exactly (`--leak-scan` zero bytes) on the
       pinned DLL, wafel 2023, bitfs-sbb 2026 and the Linux `.so`, at about 7 us against 41 to
-      49 us for `fixed`, on MSVC, clang-cl, GCC 13, Clang 17, GCC 15 and Clang 21. Not done by
-      the letter of "no slower than today": on the BitFS search the dirty set grows to 525
-      pages (pellets die, the level reloads), so `dirty` runs the deterministic Tier D
+      49 us for `fixed`, on MSVC, clang-cl, GCC 13, Clang 17, GCC 15 and Clang 21. `dirty`
+      itself is slower than `fixed` on the BitFS search: the dirty set grows to 525 pages
+      (pellets die, the level reloads), so `dirty` first ran the deterministic Tier D
       workload 3.6% slower than `fixed` and the 16-thread throughput workload about 20%
       slower (docs/performance.md change log). The maintainer's decision: the pipeline and
       the Tier D workloads select `fixed`; `dirty` is the code default and the mode for any
-      other build and for Linux. What would close the gap, left for later: a re-baseline the
-      resource takes on its own when many loads have restored a large set (the per-shot
-      base-block save is the natural point; a shot loads it about 1,700 times), so loads
-      copy the pellet's pages instead of the run's. Measure it against these numbers. Two
-      smaller leftovers: the `BM_LibSm64Dirty` family anchors right after the first slot, so
-      its save and load rows copy nothing (0.1 us) and `dllcheck` 60 frames in is the number
-      to read; anchor it some frames into the run. And the committed baselines still hold the
-      old `Light` rows: re-save them (`perf.ps1 -SaveBaseline`) once this lands.
+      other build and for Linux. Follow-up, same day, on the re-baseline idea: implemented
+      as a baseline the resource takes at a save once the loads under the current one had
+      written back four times the sections' size (in the search, the base save that opens a
+      shot), measured, and dropped. It gained about 2% on the deterministic Tier D workload
+      and nothing on the 16-thread one, where the cost model's frequent saves made it fire
+      about a thousand times per thread: the dirty set regrows to about 500 pages within a
+      shot whatever the baseline, because pellets die and the level reloads, and `fixed`'s
+      five contiguous ranges stay cache-resident while `dirty`'s scattered pages do not
+      (docs/performance.md change log). What stayed from the attempt: baselines hold
+      copy-on-write pages filled in by the fault handler instead of a whole-section
+      snapshot, so taking one copies nothing and memory is only the pages written since
+      each began, and a baseline's pages are kept while any live slot's state names it.
+      Final numbers, `dirty` against `fixed`: about 10% slower on the deterministic
+      workload, about 25% on the throughput one. The decision stands. The two smaller
+      leftovers are done: the libsm64 benchmark families anchor 60 frames after the run's
+      first slot (the `dirty` rows measure 122 pages) with the frame-advance row registered
+      last, and both baselines are re-saved.
 - [x] **2.4 Object indices: keep them, verify them.** Decided by the maintainer 2026-09-08 after
       `dllcheck --objects` showed the live pool: BitFS spawns two objects running
       `bhvBitfsTiltingInvertedPyramid` (slot 84 at home x = -1945, the one the setup happens

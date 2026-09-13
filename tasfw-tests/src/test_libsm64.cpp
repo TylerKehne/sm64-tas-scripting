@@ -468,6 +468,118 @@ TEST_CASE("libsm64: every save mode restores .data and .bss exactly, including p
 	}
 }
 
+TEST_CASE("libsm64: dirty baselines hold copy-on-write pages, and every live state stays exact across a second run's baseline"
+	* doctest::skip(!HaveDll()))
+{
+	LibSm64Config config;
+	config.dllPath = Env("TASFW_LIBSM64");
+	config.countryCode = CountryCode::SUPER_MARIO_64_J;
+	config.saveMode = LibSm64SaveMode::Dirty;
+	int64_t frame = Env("TASFW_FRAME").empty() ? 3330 : std::stoll(Env("TASFW_FRAME"));
+
+	LibSm64 resource(config);
+	M64 m64(Env("TASFW_M64"));
+	REQUIRE(m64.load() == 1);
+	const LibSm64DirtyPages* d = resource.dirtyPages();
+	REQUIRE(d != nullptr);
+
+	auto sections = [&]()
+	{
+		std::vector<uint8_t> all;
+		for (const SegVal& seg : resource.segment)
+		{
+			const uint8_t* begin = static_cast<const uint8_t*>(seg.address);
+			all.insert(all.end(), begin, begin + seg.length);
+		}
+		return all;
+	};
+	auto play = [&](int frames, int variant)
+	{
+		for (int i = 0; i < frames; i++)
+		{
+			double angle = i * (variant == 0 ? 0.37 : 0.61);
+			resource.setInputs(Inputs(uint16_t(i % 7 == 0 ? 0x8000 : 0), int8_t(60.0 * std::cos(angle)), int8_t(60.0 * std::sin(angle))));
+			resource.FrameAdvance();
+		}
+	};
+	auto differing = [](const std::vector<uint8_t>& a, const std::vector<uint8_t>& b)
+	{
+		size_t n = 0;
+		for (size_t i = 0; i < a.size() && i < b.size(); i++)
+			n += a[i] != b[i];
+		return n + (a.size() > b.size() ? a.size() - b.size() : b.size() - a.size());
+	};
+	auto pagesOf = [&](int64_t slot) { return resource.slotManager.slotsById.at(slot).pages.size() / size_t(pagesize); };
+	auto isLive = [&](int b) { return d->baselines.at(size_t(b)).pages != nullptr; };
+
+	// What a top-level run's import does: the start save at power-on, under baseline 0, which
+	// holds no pages yet because nothing has been written since construction.
+	std::vector<uint8_t> powerOn = sections();
+	resource.save(resource.startSave);
+	resource.initialFrame = 0;
+	CHECK(d->baseline == 0);
+	CHECK(d->WrittenCount() == 0);
+
+	// Run 1: the first slot takes baseline 1; the pages the replay wrote were copied into
+	// baseline 0 by the fault handler before their first write.
+	PlayFrames(resource, m64, frame);
+	CHECK(d->WrittenCount() > 100); // the replay into the level: 525 pages on the pinned DLL, 368 on the Linux .so
+	std::vector<uint8_t> snap0 = sections();
+	int64_t s0 = resource.SaveState();
+	CHECK(d->baseline == 1);
+	CHECK(pagesOf(s0) == 0);
+	CHECK(isLive(0));
+	CHECK(isLive(1));
+	play(60, 0);
+	std::vector<uint8_t> snap1 = sections();
+	int64_t s1 = resource.SaveState();
+	CHECK(pagesOf(s1) > 0);
+	CHECK(pagesOf(s1) < 200);
+	for (int i = 0; i < 20; i++)
+		resource.LoadState(i % 2 ? s0 : s1);
+	resource.LoadState(s0);
+	CHECK(differing(sections(), snap0) == 0);
+	resource.LoadState(s1);
+	CHECK(differing(sections(), snap1) == 0);
+	CHECK(d->baseline == 1); // loads never take a baseline
+
+	// Back to power-on through the start save, exactly, with pages from baseline 0 (the only
+	// place their power-on content still exists).
+	resource.slotManager.EraseSlot(s0);
+	resource.slotManager.EraseSlot(s1);
+	resource.LoadState(-1);
+	CHECK(differing(sections(), powerOn) == 0);
+
+	// Run 2: the first slot takes baseline 2, releases baseline 1 (no live state names it)
+	// and keeps baseline 0 (the start save's).
+	PlayFrames(resource, m64, frame);
+	std::vector<uint8_t> snap2 = sections();
+	int64_t s2 = resource.SaveState();
+	CHECK(d->baseline == 2);
+	REQUIRE(d->baselines.size() == 3);
+	CHECK(isLive(0));
+	CHECK_FALSE(isLive(1));
+	CHECK(isLive(2));
+	CHECK(pagesOf(s2) == 0);
+	CHECK(differing(snap2, snap0) == 0); // the same replay reaches the same memory
+	play(60, 1);
+	std::vector<uint8_t> snap3 = sections();
+	int64_t s3 = resource.SaveState();
+	resource.LoadState(s2);
+	CHECK(differing(sections(), snap2) == 0);
+	resource.LoadState(s3);
+	CHECK(differing(sections(), snap3) == 0);
+	play(60, 0); // the same inputs from the same state reach the same memory
+	std::vector<uint8_t> snap4 = sections();
+	resource.LoadState(s3);
+	play(60, 0);
+	CHECK(differing(sections(), snap4) == 0);
+	MESSAGE("dirty baselines: " << d->faults << " first writes in all baselines; " << pagesOf(s3) << " pages in a state 60 frames after the first slot");
+
+	resource.slotManager.EraseSlot(s2);
+	resource.slotManager.EraseSlot(s3);
+}
+
 TEST_CASE("libsm64: PyramidUpdate reproduces the DLL's pyramid normal bit-for-bit"
 	* doctest::skip(!HaveDll()))
 {
