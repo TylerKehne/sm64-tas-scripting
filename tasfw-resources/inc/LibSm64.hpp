@@ -21,7 +21,8 @@ enum class LibSm64SaveMode
 	Full,  // both sections whole: 7.3 MB, about 184 us per save or load. The reference, and
 	       // the mode to use under a debugger (no page faults).
 	Fixed, // five hand-tuned byte ranges: 1.5 MB, about 41 us, constant whatever the game
-	       // does. Tuned to the pinned 2022 build: construction refuses it on a build whose
+	       // does. Tuned to the pinned build (wafel v0.8.1's libsm64, docs/libsm64.md):
+	       // construction refuses it on a build whose
 	       // sections are smaller, and `dllcheck --save-mode fixed` reports which of the
 	       // symbols the framework depends on the slices cover.
 	Dirty, // the pages the game has written since the current baseline: about 122 pages
@@ -43,15 +44,15 @@ public:
 
 constexpr int pagesize = 4096;
 
-// Exported names the decomp has changed since the pinned 2022 build (docs/libsm64.md).
+// Exported names the decomp has changed since the pinned build (docs/libsm64.md).
 // LibSm64::addr tries the name it was given first, so the pinned DLL never pays for this
 // table; only when that lookup fails does it try the other spelling. A newer build therefore
 // costs one extra failed lookup per addr() call, which callers must not make per frame
 // anyway (Resource::addr).
 struct LibSm64SymbolAlias
 {
-	const char* pinned;  // exported by the pinned 2022 build
-	const char* current; // exported by builds from the current decomp (wafel 2023, bitfs-sbb 2026)
+	const char* pinned;  // exported by the pinned build (wafel v0.8.1's libsm64)
+	const char* current; // exported by every later build (wafel v0.8.5 and its 2022-08-07 update, bitfs-sbb's .so)
 };
 
 inline constexpr LibSm64SymbolAlias LibSm64SymbolAliases[] = {

@@ -209,11 +209,16 @@ Goal: the DLL becomes a reproducible, swappable artifact instead of a mystery bi
       test group and the Tier C count gates on the bitfs-sbb build with the `LIBSM64_KEY`
       secret on the Windows jobs and an Ubuntu 26.04 container job, skipping on forks
       (docs/libsm64.md, "Continuous integration"); the pinned DLL's provenance turned out
-      not to be needed for that. Still open: which wafel release the pinned 2022 DLL is,
-      the source revision and build command behind any of the builds, and Tier D counts in
+      not to be needed for that. Provenance recorded 2026-09-13 by unlocking every locked
+      JP DLL in wafel's history with wafel's own locker: the pinned DLL is wafel v0.8.1's
+      libsm64 (built 2021-06-17, committed `c155b258`), bitfs-sbb's Windows DLLs are wafel
+      v0.8.5's re-locked, and the "wafel 2023" DLL is wafel's 2022-08-07 post-release
+      update (docs/libsm64.md, "Known builds"). Still open: the decomp fork, commit and
+      build command behind any of the builds (nobody recorded them), and Tier D counts in
       CI (eight copies, minutes on a four-core runner). *Done when* stands: a fresh machine
       can populate `res/` from a ROM by following the doc, which the script now makes one
-      command, and the provenance of the pinned build is recorded.
+      command, and the provenance of the pinned build is recorded; both hold, so what is
+      left is the source recipe, which may not be recoverable.
 - [ ] **2.2 Generate the sm64 headers.** Replace the hand-copied `tasfw-core/inc/sm64/*.hpp` with
       headers generated from the decomp source (or from wafel's `sm64_layout` DWARF dump) for the
       exact DLL build. *Done when:* regenerating for a new DLL is one command and 1.1 passes.
