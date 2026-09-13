@@ -650,11 +650,10 @@ template <class TState, derived_from_specialization_of<Resource> TResource,
 template <typename T>
 uint64_t ScattershotThread<TState, TResource, TStateTracker, TOutputState>::GetHash(const T& toHash) const
 {
-    std::hash<std::byte> byteHasher;
     const std::byte* data = reinterpret_cast<const std::byte*>(&toHash);
     uint64_t hashValue = 0;
     for (std::size_t i = 0; i < sizeof(T); i++)
-        hashValue ^= static_cast<uint64_t>(byteHasher(data[i])) + 0x9e3779b97f4a7c15ull + (hashValue << 6) + (hashValue >> 2);
+        hashValue ^= HashByte(data[i]) + 0x9e3779b97f4a7c15ull + (hashValue << 6) + (hashValue >> 2);
 
     return hashValue;
 }

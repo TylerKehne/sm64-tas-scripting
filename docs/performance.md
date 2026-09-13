@@ -236,15 +236,13 @@ Run by `scripts/perf.ps1` through `bitfs-turn` on two configs under `perf/`, eac
 
 A third config, `tierd-ci.json` (and `tierd-ci-linux.json` with the `.so` pattern and
 `dirty` saves), is the deterministic workload cut to 100 shots on 4 threads for CI, where
-only its exact counts gate (`perf/baselines/tierd-ci.json` on Windows,
-`tierd-ci-linux.json` on Linux; docs/libsm64.md, "Continuous integration"). `perf.ps1`
-does not run it. Its counts are the same in `fixed` and `dirty` mode and on every
-compiler, but differ between the two game builds, which is why there are two expected
-files: on the DLL 2,981,801 frame advances, 104 saves, 184,344 loads, 36,347 blocks,
-93,774 scripts and 10 solutions from 100 shots; on the newer-decomp `.so` 2,867,262,
-104, 183,657, 36,123, 93,648 and 11 (2026-09-13; docs/libsm64.md, "Linux"). The stage
-log of any Tier D run becomes a benchmark row through `perf_compare.py tierd`, which both
-`perf.ps1` and CI use.
+only its exact counts gate (`perf/baselines/tierd-ci.json`; docs/libsm64.md, "Continuous
+integration"). `perf.ps1` does not run it. Its counts are the same in `fixed` and `dirty`
+mode, on every compiler and on both game builds: 2,981,801 frame advances, 104 saves,
+184,344 loads, 36,347 blocks, 93,774 scripts and 10 solutions from 100 shots
+(2026-09-13; the first Linux run read differently until scattershot's hash stopped going
+through `std::hash`, docs/compilers.md). The stage log of any Tier D run becomes a
+benchmark row through `perf_compare.py tierd`, which both `perf.ps1` and CI use.
 
 Both run at High priority. The deterministic run is pinned to one logical CPU per
 performance core (`0x5555` on the desktop's 8P+16E i9-13900K: no SMT sibling sharing, no
@@ -516,6 +514,35 @@ What the Tier A and B numbers say together:
 ## Change log (measured)
 
 Every hot-path change records its delta table here, newest first.
+
+### 2026-09-13: scattershot's byte hash becomes the framework's own (ROADMAP 3.4, hard rule 3)
+
+`Scattershot::GetHash` (the block table's state-bin hash) and `ScattershotThread::GetHash`
+(the RNG chain behind `GetRng`/`GetTempRng`) mixed `std::hash<std::byte>` per byte, which
+MSVC's STL implements as FNV-1a over the byte and libstdc++ as the byte itself, so the same
+seed took a different search path on Linux from the first pellet (docs/compilers.md). Both
+now call `HashByte` in `Scattershot.hpp`, FNV-1a over the byte, the value MSVC computed all
+along; `test_scattershot_hash.cpp` pins it and the chain from seed 3. Interface unchanged.
+
+Measured, MSVC Release, the `^BM_Scattershot` family against the reference (machine factor
+1.00), fastest of nine:
+
+| row | reference | current | delta | cycles |
+|---|---|---|---|---|
+| `Scattershot_GetHash/0` | 21.7 ns | 21.6 ns | -0.3% | -0.7% |
+| `Scattershot_GetHash/1` | 10.1 ns | 10.0 ns | -0.9% | -0.8% |
+| `Scattershot_UpsertBlock_Novel/1000` | 0.1 ms | 0.1 ms | +0.3% | +0.1% |
+| `Scattershot_UpsertBlock_Novel/50000` | 6.2 ms | 6.4 ms | +2.8% | +3.1% |
+| `Scattershot_UpsertBlock_Redundant` | 65.3 ns | 65.9 ns | +1.0% | +0.8% |
+| `Scattershot_UpsertBlock_Improve` | 93.5 ns | 93.8 ns | +0.3% | +0.2% |
+
+Allocations identical on every row. Exact counts: the CI-sized Tier D workload reads its
+committed counts unchanged on the fixed MSVC build (2,981,801 frame advances, 10
+solutions), and on Linux, where it read 2,867,262 and 11 before, it now reads the same
+2,981,801 and 10 with GCC 15 and Clang 21; `perf/baselines/tierd-ci-linux.json` is gone.
+Builds clean with warnings as errors on MSVC, clang-cl, GCC 15 and Clang 21; 57 tests pass.
+Not measured: the full Tier D workloads, whose Windows counts cannot change (the hash value
+is the same function) and whose times do not depend on this.
 
 ### 2026-09-12: relative gate, performance-core pinning, pre-flight checks, CPU cycles (ROADMAP 1.3)
 

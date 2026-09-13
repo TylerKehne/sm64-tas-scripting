@@ -5,7 +5,7 @@
 #include <vector>
 
 #include <tasfw/testing/FakeResource.hpp>
-#include "PerfAccess.hpp"
+#include <tasfw/testing/PerfAccess.hpp>
 
 // Scattershot's block table and hashing, exercised without threads, resources or scripts.
 

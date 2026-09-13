@@ -331,13 +331,15 @@ Goal: the core's implicit invariants become explicit and enforced.
       jobs pass the libsm64 test group, `dllcheck` with a zero-byte leak scan, the dry run
       and the Tier C count gates against the `.so` unlocked from the secret (2.1), so both
       halves of the "Done when" hold in CI. The one divergence from the Windows results,
-      noted as this item asks: the CI-sized Tier D search takes a different path on the
-      `.so`, which is a newer decomp build than the DLLs; the Linux counts are identical in
-      `dirty` and `full` mode and on both compilers, so it is the game, and Linux gates on
-      its own `perf/baselines/tierd-ci-linux.json` (docs/libsm64.md, "Linux").
-      - [ ] Locate the first frame where the `.so` and the DLL diverge on that search
-        (replay a solution's inputs on both and compare states), to know which decomp
-        change it is; until then the two expected-count files are the record.
+      noted as this item asks and then resolved the same day: the CI-sized Tier D search
+      first took a different path on the `.so`, identically in `dirty` and `full` mode and
+      on both compilers, which pointed away from the save path and, on inspection, away
+      from the game too: scattershot's block hash and RNG chain went through
+      `std::hash<std::byte>`, which libstdc++ and MSVC's STL implement differently. With
+      the framework's own `HashByte` (FNV-1a per byte, MSVC's value, so every Windows
+      result stands) the Linux search reaches the DLL's exact counts with GCC 15 and Clang
+      21, and one `perf/baselines/tierd-ci.json` serves every job (docs/compilers.md,
+      docs/libsm64.md "Linux").
       Build with GCC/Clang, confirm the `mprotect`/`SIGSEGV` save path works,
       and note any divergence from MSVC results. *Done when:* the DLL-free tests run on Linux CI
       and the Linux `LibSm64` path passes the smoke test against a Linux libsm64 build.

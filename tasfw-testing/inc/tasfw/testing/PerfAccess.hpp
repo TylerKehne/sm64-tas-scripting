@@ -1,7 +1,7 @@
 #pragma once
 #include <utility>
 
-// Friend of Scattershot (declared in Scattershot.hpp). Lets benchmarks call the private
+// Friend of Scattershot (declared in Scattershot.hpp). Lets benchmarks and tests call the private
 // hashing and block-table methods directly without changing their visibility.
 class PerfAccess
 {
