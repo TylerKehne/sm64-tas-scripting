@@ -1,5 +1,5 @@
 #include <benchmark/benchmark.h>
-#include "alloc_counter.hpp"
+#include "measure.hpp"
 #include "resident.hpp"
 
 #include <LibSm64.hpp>
@@ -128,13 +128,13 @@ namespace
 			return;
 		LibSm64& resource = *game->resource;
 
-		uint64_t allocs0 = tasfw_perf::AllocCount();
+		tasfw_perf::Measurement m0 = tasfw_perf::BeginMeasure();
 		for (auto _ : state)
 		{
 			int64_t id = resource.SaveState();
 			resource.slotManager.EraseSlot(id);
 		}
-		tasfw_perf::ReportAllocs(state, allocs0);
+		tasfw_perf::EndMeasure(state, m0);
 	}
 
 	// Save into fresh storage: what a save costs when nothing has been released yet. Kept to
@@ -149,10 +149,10 @@ namespace
 		resource.slotManager._pooledMem = 0;
 
 		std::vector<int64_t> ids;
-		uint64_t allocs0 = tasfw_perf::AllocCount();
+		tasfw_perf::Measurement m0 = tasfw_perf::BeginMeasure();
 		for (auto _ : state)
 			ids.push_back(resource.SaveState());
-		tasfw_perf::ReportAllocs(state, allocs0);
+		tasfw_perf::EndMeasure(state, m0);
 
 		for (int64_t id : ids)
 			resource.slotManager.EraseSlot(id);
@@ -165,10 +165,10 @@ namespace
 			return;
 		LibSm64& resource = *game->resource;
 
-		uint64_t allocs0 = tasfw_perf::AllocCount();
+		tasfw_perf::Measurement m0 = tasfw_perf::BeginMeasure();
 		for (auto _ : state)
 			resource.LoadState(game->anchor);
-		tasfw_perf::ReportAllocs(state, allocs0);
+		tasfw_perf::EndMeasure(state, m0);
 	}
 
 	// One game frame with neutral inputs, from the anchor frame; the anchor is reloaded at
@@ -181,10 +181,10 @@ namespace
 		LibSm64& resource = *game->resource;
 
 		resource.setInputs(Inputs());
-		uint64_t allocs0 = tasfw_perf::AllocCount();
+		tasfw_perf::Measurement m0 = tasfw_perf::BeginMeasure();
 		for (auto _ : state)
 			resource.FrameAdvance();
-		tasfw_perf::ReportAllocs(state, allocs0);
+		tasfw_perf::EndMeasure(state, m0);
 		resource.LoadState(game->anchor);
 	}
 

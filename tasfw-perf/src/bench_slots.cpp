@@ -1,5 +1,5 @@
 #include <benchmark/benchmark.h>
-#include "alloc_counter.hpp"
+#include "measure.hpp"
 #include <vector>
 
 #include <tasfw/testing/FakeResource.hpp>
@@ -16,13 +16,13 @@ static void BM_SlotManager_CreateErase(benchmark::State& state)
 	for (int i = 0; i < live; i++)
 		slots.CreateSlot();
 
-	uint64_t allocs0 = tasfw_perf::AllocCount();
+	tasfw_perf::Measurement m0 = tasfw_perf::BeginMeasure();
 	for (auto _ : state)
 	{
 		int64_t id = slots.CreateSlot();
 		slots.EraseSlot(id);
 	}
-	tasfw_perf::ReportAllocs(state, allocs0);
+	tasfw_perf::EndMeasure(state, m0);
 }
 BENCHMARK(BM_SlotManager_CreateErase)->Arg(100)->Arg(1000)->Arg(10000)->Iterations(1000000);
 
@@ -37,13 +37,13 @@ static void BM_SlotManager_LoadSlot(benchmark::State& state)
 		ids.push_back(slots.CreateSlot());
 
 	std::size_t i = 0;
-	uint64_t allocs0 = tasfw_perf::AllocCount();
+	tasfw_perf::Measurement m0 = tasfw_perf::BeginMeasure();
 	for (auto _ : state)
 	{
 		slots.LoadSlot(ids[(i++ * 7919) % live]);
 	}
 	benchmark::DoNotOptimize(resource.checksum());
-	tasfw_perf::ReportAllocs(state, allocs0);
+	tasfw_perf::EndMeasure(state, m0);
 }
 BENCHMARK(BM_SlotManager_LoadSlot)->Arg(100)->Arg(1000)->Arg(10000)->Iterations(1000000);
 
@@ -57,12 +57,12 @@ static void BM_SlotManager_CreateAtCap(benchmark::State& state)
 	for (int i = 0; i < live; i++)
 		slots.CreateSlot();
 
-	uint64_t allocs0 = tasfw_perf::AllocCount();
+	tasfw_perf::Measurement m0 = tasfw_perf::BeginMeasure();
 	for (auto _ : state)
 	{
 		benchmark::DoNotOptimize(slots.CreateSlot());
 	}
-	tasfw_perf::ReportAllocs(state, allocs0);
+	tasfw_perf::EndMeasure(state, m0);
 }
 BENCHMARK(BM_SlotManager_CreateAtCap)->Arg(100)->Arg(1000)->Arg(10000)->Iterations(1000000);
 
@@ -70,13 +70,13 @@ BENCHMARK(BM_SlotManager_CreateAtCap)->Arg(100)->Arg(1000)->Arg(10000)->Iteratio
 static void BM_Resource_SaveLoadState(benchmark::State& state)
 {
 	FakeResource resource;
-	uint64_t allocs0 = tasfw_perf::AllocCount();
+	tasfw_perf::Measurement m0 = tasfw_perf::BeginMeasure();
 	for (auto _ : state)
 	{
 		int64_t id = resource.SaveState();
 		resource.LoadState(id);
 		resource.slotManager.EraseSlot(id);
 	}
-	tasfw_perf::ReportAllocs(state, allocs0);
+	tasfw_perf::EndMeasure(state, m0);
 }
 BENCHMARK(BM_Resource_SaveLoadState)->Iterations(1000000);

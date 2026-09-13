@@ -22,6 +22,8 @@ add_executable(tasfw-bitfs-turnaround
 	"src/Stages.cpp"
 	"src/Stages.hpp"
 	"src/ExportSolutions.hpp"
+	"src/ProcessCycles.cpp"
+	"src/ProcessCycles.hpp"
 	"src/SelfPath.cpp"
 	"src/SelfPath.hpp"
 	"src/TiltTargetShot.hpp"

@@ -1,5 +1,5 @@
 #include <benchmark/benchmark.h>
-#include "alloc_counter.hpp"
+#include "measure.hpp"
 #include <Scattershot.hpp>
 #include <random>
 #include <vector>
@@ -46,12 +46,12 @@ static void BM_Scattershot_GetHash(benchmark::State& state)
 	bool ignoreFiller = state.range(0) != 0;
 
 	std::size_t i = 0;
-	uint64_t allocs0 = tasfw_perf::AllocCount();
+	tasfw_perf::Measurement m0 = tasfw_perf::BeginMeasure();
 	for (auto _ : state)
 	{
 		benchmark::DoNotOptimize(PerfAccess::GetHash(scattershot, bins[i++ & 1023], ignoreFiller));
 	}
-	tasfw_perf::ReportAllocs(state, allocs0);
+	tasfw_perf::EndMeasure(state, m0);
 }
 BENCHMARK(BM_Scattershot_GetHash)->Arg(0)->Arg(1);
 
@@ -62,7 +62,7 @@ static void BM_Scattershot_UpsertBlock_Novel(benchmark::State& state)
 	Configuration cfg = MakeConfig(n + 16);
 	auto bins = RandomBins(n, 2);
 
-	uint64_t allocs0 = tasfw_perf::AllocCount();
+	tasfw_perf::Measurement m0 = tasfw_perf::BeginMeasure();
 	for (auto _ : state)
 	{
 		state.PauseTiming();
@@ -75,7 +75,7 @@ static void BM_Scattershot_UpsertBlock_Novel(benchmark::State& state)
 		benchmark::DoNotOptimize(PerfAccess::BlockCount(scattershot));
 	}
 	state.SetItemsProcessed(state.iterations() * n);
-	tasfw_perf::ReportAllocs(state, allocs0);
+	tasfw_perf::EndMeasure(state, m0);
 }
 BENCHMARK(BM_Scattershot_UpsertBlock_Novel)->Arg(1000)->Arg(50000)->Unit(benchmark::kMillisecond);
 
@@ -89,13 +89,13 @@ static void BM_Scattershot_UpsertBlock_Redundant(benchmark::State& state)
 		PerfAccess::UpsertBlock(scattershot, bins[i], false, Solution(), 1.0f, nullptr, uint8_t(1), uint64_t(i), uint16_t(0));
 
 	std::size_t i = 0;
-	uint64_t allocs0 = tasfw_perf::AllocCount();
+	tasfw_perf::Measurement m0 = tasfw_perf::BeginMeasure();
 	for (auto _ : state)
 	{
 		std::size_t index = i++;
 		benchmark::DoNotOptimize(PerfAccess::UpsertBlock(scattershot, bins[index & 63], false, Solution(), 1.0f, nullptr, uint8_t(1), uint64_t(index), uint16_t(0)));
 	}
-	tasfw_perf::ReportAllocs(state, allocs0);
+	tasfw_perf::EndMeasure(state, m0);
 }
 BENCHMARK(BM_Scattershot_UpsertBlock_Redundant);
 
@@ -107,12 +107,12 @@ static void BM_Scattershot_UpsertBlock_Improve(benchmark::State& state)
 	auto bins = RandomBins(1, 4);
 	float fitness = 0.0f;
 
-	uint64_t allocs0 = tasfw_perf::AllocCount();
+	tasfw_perf::Measurement m0 = tasfw_perf::BeginMeasure();
 	for (auto _ : state)
 	{
 		fitness += 1.0f;
 		benchmark::DoNotOptimize(PerfAccess::UpsertBlock(scattershot, bins[0], false, Solution(), fitness, nullptr, uint8_t(1), uint64_t(fitness), uint16_t(0)));
 	}
-	tasfw_perf::ReportAllocs(state, allocs0);
+	tasfw_perf::EndMeasure(state, m0);
 }
 BENCHMARK(BM_Scattershot_UpsertBlock_Improve);

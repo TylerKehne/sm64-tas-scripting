@@ -1,5 +1,5 @@
 #include <benchmark/benchmark.h>
-#include "alloc_counter.hpp"
+#include "measure.hpp"
 
 #include <BitFSPyramidOscillation.hpp>
 #include <LibSm64.hpp>
@@ -264,7 +264,7 @@ static void BM_Framework_PyramidOscillation(benchmark::State& state)
 	LibSm64& resource = *game->resource;
 
 	Work before = Snapshot(resource);
-	uint64_t allocs0 = tasfw_perf::AllocCount();
+	tasfw_perf::Measurement m0 = tasfw_perf::BeginMeasure();
 	uint64_t wall = 0;
 	uint64_t outputFrames = 0;
 	uint64_t asserted = 0;
@@ -277,7 +277,7 @@ static void BM_Framework_PyramidOscillation(benchmark::State& state)
 		outputFrames += result.diffFrames;
 		asserted += result.asserted ? 1 : 0;
 	}
-	tasfw_perf::ReportAllocs(state, allocs0);
+	tasfw_perf::EndMeasure(state, m0);
 	ReportWork(state, before, Snapshot(resource), wall, outputFrames);
 	double iterations = state.iterations() > 0 ? double(state.iterations()) : 1.0;
 	state.counters["solutions"] = benchmark::Counter(double(asserted) / iterations);
@@ -294,7 +294,7 @@ static void BM_Framework_DownhillAngle_PyramidUpdate(benchmark::State& state)
 	const int calls = 1000;
 
 	Work total;
-	uint64_t allocs0 = tasfw_perf::AllocCount();
+	tasfw_perf::Measurement m0 = tasfw_perf::BeginMeasure();
 	bool failed = false;
 	for (auto _ : state)
 	{
@@ -312,7 +312,7 @@ static void BM_Framework_DownhillAngle_PyramidUpdate(benchmark::State& state)
 	}
 	if (failed)
 		return;
-	tasfw_perf::ReportAllocs(state, allocs0);
+	tasfw_perf::EndMeasure(state, m0);
 	double iterations = state.iterations() > 0 ? double(state.iterations()) : 1.0;
 	state.counters["calls"] = benchmark::Counter(double(calls));
 	state.counters["frameAdvances"] = benchmark::Counter(double(total.frameAdvances) / iterations);
@@ -331,7 +331,7 @@ static void BM_Framework_TrackerSweep(benchmark::State& state)
 	NormalSpecsDto specs = DrNormalSpecs();
 
 	Work before = Snapshot(resource);
-	uint64_t allocs0 = tasfw_perf::AllocCount();
+	tasfw_perf::Measurement m0 = tasfw_perf::BeginMeasure();
 	uint64_t wall = 0;
 	bool failed = false;
 	for (auto _ : state)
@@ -352,7 +352,7 @@ static void BM_Framework_TrackerSweep(benchmark::State& state)
 	}
 	if (failed)
 		return;
-	tasfw_perf::ReportAllocs(state, allocs0);
+	tasfw_perf::EndMeasure(state, m0);
 	ReportWork(state, before, Snapshot(resource), wall, uint64_t(frames) * uint64_t(state.iterations()));
 }
 BENCHMARK(BM_Framework_TrackerSweep)->Unit(benchmark::kMillisecond)->Iterations(3);

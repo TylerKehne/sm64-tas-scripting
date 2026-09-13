@@ -120,8 +120,13 @@ Two kinds of metric are recorded for every workload:
 - **Counts** (frame advances, saves, loads, blocks, hash probes, allocations). These are
   machine-independent and, in deterministic mode, exactly reproducible. They are gated on
   exact equality.
-- **Times** (wall, per-operation mean, p50, p99). These are gated with a tolerance and tracked
-  over time.
+- **Times** (wall, per-operation mean, p50, p99). These are gated with a tolerance against
+  the baseline commit's own binaries run in the same session (the reference, "Running the
+  suite") and tracked over time.
+- **Cycles** (CPU cycles per iteration on the benchmark thread; for Tier D the process
+  total over every thread). Reported next to the times as the second opinion on a shift:
+  cycles ignore time spent descheduled and mostly ignore the clock, so a wall-time change
+  the cycles do not follow is the machine, not the code. Not gated.
 
 Counts catch the regressions that matter most, which are "the framework now does more work",
 independent of machine noise.
@@ -141,8 +146,9 @@ Google Benchmark via FetchContent. Cases:
   hierarchy depth 1, 4 and 16 and ad-hoc level 0 and 4; `AdvanceFrameWrite` erase cost with
   10,000 cached frames.
 
-Gate: time within 10% of baseline; heap allocations per iteration within 0.1 of baseline
-(counted on every benchmark; see "Running the suite").
+Gate: time within 10% of the reference (the baseline commit's binary, run interleaved in the
+same session; see "Running the suite"); heap allocations per iteration within 0.1 of the
+baseline (counted on every benchmark).
 
 ### Tier B: resource benchmarks (DLL required)
 
@@ -170,7 +176,10 @@ families play the movie to `TASFW_FRAME` (default 3330) once, then measure:
 `^BM_LibSm64Scaling` runs `FrameAdvance` and `SaveErase` on 1, 2, 4, 8 and 16 threads,
 each thread on its own DLL copy with `dirty` saves, as the search runs (thread i loads
 the copy whose trailing index is i + 1, `res\sm64_jp_1.dll` onward; the family skips
-without those copies). `perf.ps1` does not pin this family to one CPU. Google Benchmark
+without those copies). `perf.ps1` does not pin this family: pinned to the performance cores'
+16 logical CPUs it hung in 1 launch of 10, for both the current and the reference binary,
+after one thread died with `STATUS_RESOURCE_NOT_OWNED` (ROADMAP 3.12,
+`scripts\perf_scaling_hang.ps1`); unpinned, 0 of 20. Google Benchmark
 reports these rows per thread, so the aggregate rate is n times the row's;
 `perf_compare.py` computes efficiency, the per-thread rate at n threads over the rate at
 one thread, from each run's own rows. First numbers (2026-09-08, 16 cores, 32 logical
@@ -179,8 +188,9 @@ CPUs; MSVC and clang-cl within 3 points): frame advance 100 / 99 / 96 / 80% at 2
 mode existed; the family now runs `dirty`). Frames scale until the 16 threads start
 sharing physical cores; a bandwidth-bound save drops sooner.
 
-Gate: counts exact (`stateBytes` included); times within 10%; efficiency at 2, 4 and 8
-threads must not fall below the baseline by more than 5 points (`--efficiency-tolerance`).
+Gate: counts exact (`stateBytes` included); times within 10% of the reference; efficiency at
+2, 4 and 8 threads must not fall below the reference's by more than 5 points
+(`--efficiency-tolerance`; the baseline's where there is no reference).
 The 16-thread rows are reported, not gated: they share physical cores with each other and
 with whatever else runs, and moved 2 to 3 points between runs of the same binary.
 
@@ -224,29 +234,45 @@ Run by `scripts/perf.ps1` through `bitfs-turn` on two configs under `perf/`, eac
   `frameAdvancesPerSecond`, `peakResidentMB` (reported) and `validationFailures` (exact, 0);
   wall within 10%.
 
+Both run at High priority. The deterministic run is pinned to one logical CPU per
+performance core (`0x5555` on the desktop's 8P+16E i9-13900K: no SMT sibling sharing, no
+efficiency core); unpinned, Windows' hybrid scheduler handed each run a different mix of
+cores and the wall time moved with it. A machine with fewer performance cores than the
+configured threads runs it unpinned, and the runner says so. The throughput run stays
+unpinned: its 16 threads would have to share the 8 performance cores' SMT siblings, which
+is the configuration that hangs the scaling family (Tier B, ROADMAP 3.12) and is not the
+pipeline's shape either (16 threads on 24 cores). `perf.ps1` also runs the
+reference `bitfs-turn.exe` on each workload before the current one (`-Alternations`
+pairs, default 1, fastest of each); the time gate is current against reference, while the
+exact counts still gate against the committed baseline. Both rows carry `cycles`, the
+process's CPU cycles over every thread, next to the wall time (spin-waits at the
+deterministic run's barriers count).
+
 The deterministic run has the cost model off because automatic savestates depend on measured
 timings: with it on the search outcome is still identical (ROADMAP 4.5), but `frameAdvances`
 and `saves` are not. Both runs are skipped with `-Filter`, with `-NoTierD`, or when
 `res\sm64_jp_0.dll` .. `sm64_jp_15.dll` are missing; together they take about five minutes.
 Neither uses the full pipeline in `config.json`.
 
-When a Tier D wall row trips the gate while every exact count is identical, do not conclude
-from one run or one A/B: build the pre-change tree (`git stash`), and run pre, post, pre,
-post on the deterministic workload back to back. On 2026-09-08 this machine drifted from
-140 s to 160 s on that workload within one afternoon with no VM and nothing else running,
-and a single A/B in the middle pointed at a change that four interleaved runs then cleared
-(change log). Do not measure with Docker Desktop's VM up either; it alone adds about 11%.
-Do not start Tier D right after a large build or test pass: three times on 2026-09-12 the
-first run after one read 40 to 60% slow with the phase split unchanged, and a rerun a few
-minutes later was back at the baseline (change log).
+The interleaved reference exists because of what this machine did before it had one. On
+2026-09-08 it drifted from 140 s to 160 s on the deterministic workload within one
+afternoon with no VM and nothing else running, and a single A/B in the middle pointed at a
+change that four interleaved runs then cleared; Docker Desktop's VM alone added about 11%;
+and three times on 2026-09-12 the first run after a large build read 40 to 60% slow with
+the phase split unchanged, back at the baseline minutes later (change log). The pre-flight
+checks in "Running the suite" refuse the first two states and the calibration catches the
+third; the reference cancels whatever is left. If a Tier D wall row still trips the gate
+with identical counts and the cycles do not move with it, rerun with `-Alternations 2`
+before believing it.
 
 ### Reporting and gating
 
 - Tier A runs in CI on every PR.
 - Tiers B, C and D run locally before merging anything under `tasfw-core`,
   `tasfw-scattershot` or `tasfw-resources`. Paste the delta table into the PR description.
-- Policy: any increase in a gated count, or more than 5% wall-time regression on B, C or D,
-  blocks the merge unless the PR explains why and the maintainer accepts it.
+- Policy: any increase in a gated count, or more than 5% wall-time regression on B, C or D
+  against the reference binaries ("Running the suite"), blocks the merge unless the PR
+  explains why and the maintainer accepts it.
 - New hot-path features must add a benchmark in the tier that covers them.
 
 ## Profiling
@@ -294,12 +320,50 @@ powershell -ExecutionPolicy Bypass -File scripts\perf.ps1 -SaveBaseline   # stor
 powershell -ExecutionPolicy Bypass -File scripts\perf.ps1 -Filter Script -NoBuild   # one family, no Tier D
 powershell -ExecutionPolicy Bypass -File scripts\perf.ps1 -NoTierD        # skip the five-minute Tier D
 powershell -ExecutionPolicy Bypass -File scripts\perf.ps1 -TierDOnly -NoBuild   # only Tier D (other rows read MISSING)
+powershell -ExecutionPolicy Bypass -File scripts\perf.ps1 -SetupDefender  # once per machine: exclude build\, res\ and perf\ from real-time scanning
+powershell -ExecutionPolicy Bypass -File scripts\perf.ps1 -NoReference    # absolute against the committed baseline (noisier; see below)
 ```
 
-Results go to `perf\results\<timestamp>-<sha>.json` (gitignored). The baseline for a machine
+Results go to `perf\results\<timestamp>-<sha>.json` (gitignored; `-dirty` is appended to the
+commit when the tree has uncommitted changes, which is the usual state when a baseline is
+saved). The baseline for a machine
 is `perf\baselines\<computername>.json` (committed). `scripts\perf_compare.py` prints the delta
 table and exits non-zero on any regression over the threshold (default 10%). Paste that table
 into the PR.
+
+**The gate is relative.** `-SaveBaseline` also copies the `tasfw-perf.exe` and
+`bitfs-turn.exe` it measured into `perf\reference\<computername>[-clang]\` (gitignored, with
+a `reference.json` naming the commit), and every later run launches those next to the
+current build: reference, current, reference, current, family by family, and the two Tier D
+workloads the same way. `perf_compare.py --reference` gates time and thread-scaling
+efficiency against the reference's rows, which saw the same machine state minutes earlier,
+and prints the committed baseline's numbers next to them with a **machine factor** (median
+of reference over baseline across the rows) that says how the machine reads today. Exact
+counts and allocations gate against the committed baseline as before, and the compare warns
+when the reference's counts differ from the baseline's (it is then not the baseline commit's
+build). Without a reference (a fresh clone, a baseline saved elsewhere) the run compares
+absolute against the committed baseline and says so; build the baseline's commit and copy
+the two executables into that directory to get the relative gate back.
+
+**The machine is checked first.** `perf.ps1` refuses to run (`-SkipPreflight` overrides)
+next to a virtual machine (`vmmem`, Docker Desktop, VMware, VirtualBox) or a CPU more than
+8% busy over three seconds, naming the processes responsible (the desktop idles at 3 to
+4%). It reports when Defender's real-time scanning still covers `build\`, `res\` and the
+perf directories; `-SetupDefender` adds the exclusions once, asking for elevation, and is
+the right shape for it: scanning is per file written, the build writes thousands, and an
+exclusion toggled per run would need elevation every time and stay behind after a crash.
+It switches the power plan to High performance for the run (`-PowerPlan`, alias or GUID;
+`powercfg` accepts both without elevation; restored afterwards, also on an error or
+Ctrl+C), so the Balanced plan's core parking and frequency ramps stay out of the numbers.
+It reads the core topology (`GetLogicalProcessorInformationEx`) so that the efficiency
+cores of a hybrid CPU never measure anything: the single-thread families stay on one
+performance-core CPU (`-Affinity`, default `0x10`, moved if that CPU is not a performance
+core), the deterministic Tier D run takes one CPU per performance core, and the scaling
+family and the throughput run stay unpinned (their sections say why). Then it calibrates: the reference binary's `LibSm64Fixed_FrameAdvance` row
+(`BinaryStateBin_Pack` without the DLL), pinned as usual, against the baseline's reading of
+it. Outside 0.80 to 1.25 the machine is throttled or still busy; the runner waits 30 s and
+retries twice, then refuses. The factor, the power plan, the commit and the Tier D
+affinities are stored in the result's `context`.
 
 Every benchmark also reports `allocs`, heap allocations per iteration. `tasfw-perf` replaces
 the global `operator new` (`tasfw-perf/src/alloc_counter.cpp`) and each benchmark reads the
@@ -312,6 +376,15 @@ allocation and read as a 75% regression on the allocation-heavy benchmarks.
 
 Noise control, learned the hard way while setting this up:
 
+- The gate is relative (above). Comparing against numbers saved on another day read the
+  day's drift as a regression whenever the machine was slower, and hid real ones when it
+  was faster; the same binary run minutes apart is the only fair anchor for a wall time.
+- Nothing measures on an efficiency core by choice. The desktop's i9-13900K has 8
+  performance and 16 efficiency cores; a thread on an efficiency core runs the same code in
+  more time, and unpinned multithreaded runs got a different mix each time, so the
+  single-thread rows stay on one performance-core CPU and the deterministic Tier D run gets
+  one CPU per performance core. The 16-thread rows (scaling family, Tier D throughput) stay
+  unpinned: packing them onto the 8 performance cores' SMT siblings hangs (ROADMAP 3.12).
 - Each benchmark runs three repetitions in each of three fresh processes, and the comparison
   uses the **fastest** of the nine. External noise only ever adds time,
   so the minimum is the best estimate of intrinsic cost. Medians of three drifted 15 to 35%
@@ -352,7 +425,7 @@ Noise control, learned the hard way while setting this up:
 
 If a result still looks like noise, rerun with `-Repetitions 9` and close other programs
 before believing it. Never run two benchmark processes at once, and never benchmark while a
-build is running.
+build is running; the pre-flight check refuses to start in either state.
 
 Baselines are per machine **and per compiler**: `scripts\perf.ps1 -Compiler clang` builds
 with clang-cl and compares against `<computername>-clang.json`. Comparing the two baselines
@@ -428,6 +501,70 @@ What the Tier A and B numbers say together:
 ## Change log (measured)
 
 Every hot-path change records its delta table here, newest first.
+
+### 2026-09-12: relative gate, performance-core pinning, pre-flight checks, CPU cycles (ROADMAP 1.3)
+
+No framework code changed (`tasfw-core`, `tasfw-scattershot`, `tasfw-resources` untouched).
+The runner and the harness did, as "Running the suite" now describes: `perf.ps1` runs the
+baseline commit's binaries from `perf\reference\` interleaved with the current ones and
+`perf_compare.py --reference` gates time and efficiency against them; Tier D is pinned to
+the performance cores (`0x5555` deterministic, `0xFFFF` throughput) and the scaling family
+to `0xFFFF`; a pre-flight refuses a VM or a busy CPU, notes missing Defender exclusions,
+switches the power plan and calibrates; every benchmark reports `cycles`
+(`tasfw-perf/src/measure.cpp`: `QueryThreadCycleTime`, a per-thread `perf_event` on Linux
+where the kernel allows one), and `bitfs-turn` prints `process cycles` per stage
+(`ProcessCycles.cpp`, `QueryProcessCycleTime`, an inherited `perf_event` on Linux). The
+harness call sites moved from `AllocCount`/`ReportAllocs` to `BeginMeasure`/`EndMeasure`.
+The reason is the drift history in the Tier D section: three days of false regressions
+from the machine, not the code.
+
+Measured while setting it up (MSVC Release; reference = the 63b8ee3 binaries that produced
+the committed baseline, saved that evening):
+
+- Calibration, `LibSm64Fixed_FrameAdvance` on the reference binary: 14.39 and 14.62 us on
+  two launches against 14.81 us in the baseline (machine factor 0.97 and 0.99), under the
+  High performance plan.
+- `BinaryStateBin_Pack`, reference 114.5 ns against current 115.2 ns (+0.7%; -1.6% against
+  the baseline's 117.1 ns), 344 cycles per iteration, a 3.0 GHz effective clock.
+- The cooked `Win32_PerfFormattedData` CPU counter is unusable at script start-up: its first
+  call reported 13% (the previous interval, which was the script's own start) and the next
+  ones 0%, and the first full launch refused itself. The raw idle-time delta over the same
+  three seconds reads 3.8 to 4.0% on the idle desktop (Corsair services and Edge); the
+  check uses that and gates at 8%.
+- Cost: Tier A to C launch twice as many processes (66 instead of 33); Tier D takes about
+  ten minutes instead of five. A full run is about 22 minutes.
+- The full MSVC run (reference interleaved, 74 rows): machine factor 0.96, the High
+  performance plan and the pinning reading 4% faster than the day the baseline was saved.
+  Against the reference, 71 rows within +8% / -6%, every exact count identical, allocations
+  identical, efficiency within 5 points; Tier D deterministic 134.0 s reference against
+  132.7 s current (-1.0%; the committed baseline said 149.1 s, which the old absolute gate
+  would have read as an 11% improvement of nothing), throughput 70.6 against 71.8 s
+  (+1.7%). Over the gate: `Script_AdvanceFrameWrite` +12.1%, `Script_GetInputs_Uncached_Depth/1`
+  +16.6% and `/4` +16.5%, the three layout-sensitive rows the noise-control notes already
+  name, each about 19 ns, on framework code that did not change; the reference build is the
+  perf binary without the harness addition, so the attribution procedure above has already
+  run.
+- The full clang-cl run: machine factor 0.96 as well; counts, allocations and efficiency
+  as MSVC's; Tier D deterministic 144.9 s reference against 150.0 s current (+3.5%),
+  throughput 70.1 against 68.6 s (-2.1%). Over the gate, different rows from MSVC's, which
+  is the layout signature the noise-control notes describe: `Inputs_GetClosestInputByYawHau_PartialMag`
+  +15.2%, `Inputs_GetClosestInputByYawExact` +12.6%, `Script_GetInputs_Uncached_Depth/1`
+  +15.3% (`GetClosestInputByYawHau` +9.9%, `/4` +9.3%, `/16` +8.6% under it); the same
+  rows on MSVC moved -2.5% to +0.3%. `Inputs.cpp` and the framework are byte-identical
+  between the two binaries. Baselines and reference binaries for both compilers re-saved
+  from these runs; the next change's compare will carry the `cycles` column on every row.
+- Linux: GCC 13 and Clang 17 (the CI container) and GCC 15.2 and Clang 21.1 (26.04) build
+  the new files with warnings as errors and pass the DLL-free tests; in the containers the
+  kernel refuses the `perf_event`, so the rows carry `allocs` and no `cycles`, as intended.
+- The first full run stalled for 45 minutes on the last scaling launch: the family had been
+  pinned to the performance cores' 16 logical CPUs (`0xFFFF`) for this change, and one
+  thread of the 16-thread `FrameAdvance` row died with `STATUS_RESOURCE_NOT_OWNED` while
+  the rest waited at the end barrier with 5 s of CPU between them. Ten launches per
+  configuration afterwards (`scripts\perf_scaling_hang.ps1`): current pinned 9 ok 1 hung,
+  reference pinned 9 ok 1 hung, current unpinned 10 ok, reference unpinned 10 ok. The
+  pinning was the trigger, the bug is older than this change (ROADMAP 3.12). The family
+  and the throughput run are unpinned as before; only the deterministic Tier D run is
+  pinned, one thread per core.
 
 ### 2026-09-12: `dirty` re-baseline measured and dropped; copy-on-write baselines; benchmark rows re-anchored; baselines re-saved (ROADMAP 2.3)
 

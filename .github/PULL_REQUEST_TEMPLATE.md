@@ -6,16 +6,21 @@
 
 ## Verification
 
-- [ ] `scripts\build.ps1 -Config Release` and `scripts\build.ps1 -Config Release -Compiler clang`: no new warnings
-- [ ] `scripts\test.ps1` on both compilers (say whether the libsm64 tests ran)
+CI (`build.yml`) builds MSVC, clang-cl, GCC and Clang with warnings as errors and runs the
+DLL-free tests on every push and pull request; those checks must be green. What only a
+machine with the game can run:
+
+- [ ] `scripts\test.ps1` with the DLL in `res\` (the libsm64 smoke test), on both compilers
 - [ ] Documentation reconciled (AGENTS.md, ARCHITECTURE.md, ROADMAP.md, README.md, docs/)
 
 ## Performance
 
 <!-- Required for anything under tasfw-core, tasfw-scattershot or tasfw-resources
      (AGENTS.md hard rule 8). Paste the delta table printed by scripts\perf.ps1; with the DLL
-     in res\ it covers Tier A through D. A count that went up, or a wall-time regression over
-     the threshold, needs a sentence here and the maintainer's acceptance. -->
+     in res\ it covers Tier A through D, gated against the baseline commit's binaries run in
+     the same session (docs/performance.md, "Running the suite"). A count that went up, or a
+     wall-time regression over the threshold, needs a sentence here and the maintainer's
+     acceptance. -->
 
 ```
 (scripts\perf.ps1 delta table)

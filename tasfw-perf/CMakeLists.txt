@@ -35,6 +35,7 @@ endif()
 add_executable(tasfw-perf
 	"src/main.cpp"
 	"src/alloc_counter.cpp"
+	"src/measure.cpp"
 	"src/bench_statebin.cpp"
 	"src/bench_scattershot.cpp"
 	"src/bench_inputs.cpp"
