@@ -227,9 +227,35 @@ Goal: the DLL becomes a reproducible, swappable artifact instead of a mystery bi
       possible (jgcodes2020 built the Linux `.so` from the current decomp) and would be its
       own item if it is ever wanted; nothing depends on it today. Tier D counts in CI moved
       to 1.3.
-- [ ] **2.2 Generate the sm64 headers.** Replace the hand-copied `tasfw-core/inc/sm64/*.hpp` with
-      headers generated from the decomp source (or from wafel's `sm64_layout` DWARF dump) for the
-      exact DLL build. *Done when:* regenerating for a new DLL is one command and 1.1 passes.
+- [x] **2.2 The sm64 headers against the DLL and the decomp.** Reframed and done 2026-09-13,
+      the reframing approved by the maintainer the same day (the original item read
+      "Generate the sm64 headers:
+      replace the hand-copied `tasfw-core/inc/sm64/*.hpp` with headers generated from the
+      decomp source, or from wafel's `sm64_layout` DWARF dump, for the exact DLL build. Done
+      when regenerating for a new DLL is one command and 1.1 passes"). What replaced it: the
+      copied headers stay and are verified from both sides, without the game.
+      `tasfw-tests/src/sm64_layout.inc` is the table of every field offset and struct size of
+      the seven structs the code reads through, written by `scripts/dll_layout.py` from the
+      pinned DLL's DWARF through wafel's `sm64_layout`, and `test_sm64_layout.cpp` compiles
+      it against the headers with `offsetof` and `sizeof` on every run of the tests
+      (docs/libsm64.md, "Struct layouts"). `scripts/decomp_pin.json` pins each copied file
+      to the n64decomp/sm64 commit and path it came from with the hash of its residual
+      edits, and `scripts/decomp_diff.py` recomputes them, in CI too (docs/decomp.md).
+      Result: 818 fields and 7 sizes, 0 mismatches against the pinned build; the v0.8.5
+      build lays them out identically (its table differs in two `Camera` filler names); 42
+      names the newer decomp added are absent from the headers and harmless; the copies are
+      Refresh 13 of the decomp except `SurfaceTerrains.hpp` (Refresh 15). *Done when*
+      (reframed): checking a new DLL against the headers is one command (`dll_layout.py` on
+      it, diff the table) and every copy's origin is recorded and verified. Why not
+      generated: the Windows DLLs carry full DWARF, but the constants and the `o*`
+      object-field names are not in it (wafel injects them from its own hand-kept table),
+      the Linux `.so` has no DWARF at all, the build's own source is a private fork ahead
+      of upstream master (docs/libsm64.md, "Reproducing the DLL from source"), and the
+      comparison found the copies already exact; a generator would have replaced curated,
+      proven headers with a dependency and still needed a hand-kept table for half their
+      content. Generating from the DLL stays the option if a build with another layout
+      ever appears. The copying itself is the wrong pattern by the maintainer's account and
+      is a Phase 5 question ("One declared source for a game's vocabulary").
 - [x] **2.3 Lightweight saves that do not depend on the pinned DLL's offsets.** Derive the hot
       regions of `.data`/`.bss` from symbol addresses (Mario state, object pool, surfaces,
       camera, RNG, timers) or adopt the dirty-page tracking that the Linux branch already
@@ -504,6 +530,14 @@ Not scheduled. Listed so decisions in earlier phases do not paint us into a corn
   means the controller and movie format become properties of the resource or console, and
   the frame stays as the resource's indexable step (ARCHITECTURE.md, "Resource and savestates").
 - A second resource (another libsm64 build or an emulator core) is the real test of the abstraction.
+- **One declared source for a game's vocabulary.** How the game's structs, constants and
+  reimplemented logic enter the repository today is copying: headers copied by hand at
+  different decomp revisions, the physics reimplemented twice, and the decomp pin and the
+  DWARF table as after-the-fact checks (docs/decomp.md). Haphazard by the maintainer's own
+  account (2026-09-13); it stays because it is verified. When the framework takes a second
+  game, decide this once: a game module derived from a declared source (a DWARF layout, a
+  decomp revision), or an access contract that needs no copies (3.2, the `addr` replacement
+  hard rule 9 waits for), and the copies go.
 - **Hacks as a kind of input.** Today a direct write into game memory (`//! UNSAFE`) cannot
   be replayed from a savestate, which is why hard rule 1 forbids it. The intent is to make
   hacks a special input type the framework applies at a frame like any other input, so they
