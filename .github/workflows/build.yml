@@ -182,13 +182,13 @@ jobs:
         run: |
           apt-get update -qq
           DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ninja-build g++ cmake git ca-certificates python3 python3-cryptography
-          echo "::add-matcher::.github/matchers/gcc.json"
 
       - uses: actions/checkout@v5
 
       - name: Configure and build
         shell: bash
         run: |
+          echo "::add-matcher::.github/matchers/gcc.json"
           cmake --version
           cmake --preset gcc-release -DCMAKE_CXX_COMPILER=g++ -DTASFW_WARNINGS_AS_ERRORS=ON 2>&1 | tee configure.log
           cmake --build --preset gcc-release -- -k 0 2>&1 | tee build.log
