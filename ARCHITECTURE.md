@@ -110,7 +110,7 @@ Running children:
 | `Modify<T>(args...)` | If asserted, child's diff is merged into the parent's diff and the cursor moves to the frame after the diff's last frame. Otherwise reverted. |
 | `Test<T>(args...)` | `Execute` with the diff removed from the returned status. |
 | `ExecuteAdhoc` / `ModifyAdhoc` / `TestAdhoc` | Same three semantics for a lambda returning bool, run on the *same* script object at `_adhocLevel + 1`. |
-| `Compare<T>` family | Run `T` for each parameter tuple, keep the best by a comparator, optionally stop early. Lives in `ScriptCompareHelper.hpp`. |
+| `Compare<T>` family | Run `T` for each parameter tuple, keep the best by a comparator, optionally stop early. Lives in `ScriptCompareHelper.hpp`; its comparator, terminator, parameter generator and ad-hoc candidate are concepts on the call's result type, so a callable of the wrong shape leaves no viable overload at the call site. |
 
 Both forms manage savestates, reverts, the input diff and tracked-state coherence
 automatically; the author never touches a slot, and never touches the resource: every

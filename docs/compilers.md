@@ -318,26 +318,41 @@ values. Rule: nothing whose result must be reproducible across platforms goes th
 `std::hash`, and the same goes for the iteration order of `std::unordered_*` containers and
 for `std::sort` on equal keys.
 
-## What GCC found on first contact (2026-09-07)
-
-`-Wmissing-requires` on every concept in `ScriptCompareHelper.hpp` (`ScriptParamsGenerator`,
-`ScriptComparator`, `ScriptTerminator`, `AdhocScriptComparator`, `AdhocScriptTerminator`).
-They are written as
+### A concept-id as a requirement expression is always satisfied
 
 ```cpp
 concept ScriptTerminator = requires { std::same_as<std::invoke_result_t<F, ...>, bool>; };
 ```
 
-which only checks that the expression *is well-formed*, never that it is *true*: a
-requirement-body expression is not evaluated. Every one of these concepts is satisfied by
-anything, so the `Compare` family is effectively unconstrained and a wrong comparator fails
-deep inside the instantiation instead of at the call. The fix is `requires
-std::same_as<...>` (a nested requirement) or dropping the `requires` block for a plain
-constraint expression. Not changed yet because callers may currently rely on the leniency;
-ROADMAP 3.10. Until then `add_optimization_flags` passes `-Wno-missing-requires` to each
-target it is called on (GCC only; Clang and MSVC do not know the flag, and the probe fails
-there). `tasfw-scripts-scattershot-bitfs-dr` never had that call, which is why the GCC job
-kept annotating this warning, and why that library was built without LTO, until 2026-09-08.
+checks that the expression is *well-formed*, never that it is *true*: a requirement-body
+expression is not evaluated. Such a concept rejects an `F` that cannot be called with those
+arguments (the expression cannot be formed) but accepts any return type. GCC's
+`-Wmissing-requires` (on by default) points at it; Clang and MSVC are silent. Every concept
+in `ScriptCompareHelper.hpp` had this shape until 2026-09-13 (ROADMAP 3.10): a comparator
+returning `bool` passed the constraint and failed inside the instantiation. Write the
+constraint itself (`concept C = std::same_as<...>;`, what `AdhocScript` in
+`ScriptStatus.hpp` always did) or a nested requirement (`requires std::same_as<...>;`).
+
+A second form of the same mistake unpacked a tuple: `AdhocCompareScript` there and
+`constructible_from_tuple` in `SharedLib.hpp` were `requires { std::apply(check, tuple); }`
+with `check` a generic lambda carrying a `static_assert`. A requires-expression never
+instantiates the lambda's body, so the assert never fired and every tuple passed; and
+`std::apply`'s deduced return type makes a non-tuple argument a hard error inside
+`std::tuple_size` rather than a constraint that does not hold. A concept over a tuple's
+elements is a class template with a partial specialization for `std::tuple<Ts...>` whose
+`value` is the real constraint. `test_script_compare.cpp` pins both forms with
+static_asserts on the concepts and on the `Compare` and `CompareAdhoc` calls.
+
+## What GCC found on first contact (2026-09-07)
+
+`-Wmissing-requires` on every concept in `ScriptCompareHelper.hpp` (`ScriptParamsGenerator`,
+`ScriptComparator`, `ScriptTerminator`, `AdhocScriptComparator`, `AdhocScriptTerminator`),
+the pitfall above: the `Compare` family was effectively unconstrained and a wrong comparator
+failed deep inside the instantiation instead of at the call. Muted with
+`-Wno-missing-requires` in `add_optimization_flags` until the concepts were rewritten on
+2026-09-13 (ROADMAP 3.10); the mute is gone and the warning is live again.
+`tasfw-scripts-scattershot-bitfs-dr` never had that call, which is why the GCC job kept
+annotating this warning, and why that library was built without LTO, until 2026-09-08.
 
 ## What Clang found on first contact (2026-09-07)
 

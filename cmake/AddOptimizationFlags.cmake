@@ -63,7 +63,6 @@ check_ipo_supported(RESULT _ipo_supported LANGUAGES CXX)
 find_package(OpenMP REQUIRED)
 
 function(add_optimization_flags target)
-	check_cxx_compiler_flag("-Wno-missing-requires" has_missing_requires_warning)
 	get_target_property(target_type ${target} TYPE)
 	if (target_type STREQUAL "INTERFACE_LIBRARY")
 		# for header-only libraries
@@ -90,11 +89,6 @@ function(add_optimization_flags target)
 
 		# add OpenMP
 		target_link_libraries(${target} PUBLIC OpenMP::OpenMP_CXX)
-
-		# disable a warning on GCC/Clang (-Wno-missing-requires)
-		if (${has_missing_requires_warning})
-			target_compile_options(${target} PRIVATE "-Wno-missing-requires")
-		endif()
 	endif()
 
 	# add -march=native type flag

@@ -2,56 +2,60 @@
 #include <tasfw/ScriptStatus.hpp>
 #include <tasfw/SharedLib.hpp>
 
+#include <concepts>
+#include <tuple>
+#include <type_traits>
+
 #ifndef SCRIPT_COMPARE_HELPER_H
 #define SCRIPT_COMPARE_HELPER_H
 
 template <derived_from_specialization_of<Resource> TResource>
 class Script;
 
-template <typename F>
-auto AdhocCompareScript_impl = [](auto... params) constexpr -> void
+// The callables the Compare family takes, one concept per role. Each is a constraint on the
+// call's result type, so a callable of the wrong shape leaves no viable overload at the call
+// site. Not `requires { std::same_as<...>; }`: a requirement expression is only checked for
+// being well-formed, never for holding, so that form accepts any return type
+// (docs/compilers.md, ROADMAP 3.10).
+
+// bool(TCompareStatus*, Ts...) for a TTuple of std::tuple<Ts...>: an ad-hoc candidate, handed
+// its status and the tuple's elements the way ExecuteFromTupleAdhoc unpacks them. TTuple may be
+// const (a container's element).
+template <typename F, class TCompareStatus, class TTuple>
+struct AdhocCompareScriptImpl : std::false_type {};
+
+template <typename F, class TCompareStatus, typename... Ts>
+struct AdhocCompareScriptImpl<F, TCompareStatus, std::tuple<Ts...>>
 {
-	static_assert(std::same_as<std::invoke_result_t<F, decltype(params)...>, bool>,
-		"Ad-hoc script not constructible from supplied parameters");
+	static constexpr bool value = requires
+	{
+		requires std::same_as<std::invoke_result_t<F, TCompareStatus*, Ts...>, bool>;
+	};
 };
 
 template <typename F, class TCompareStatus, class TTuple>
-concept AdhocCompareScript = requires (TCompareStatus* status, TTuple& params)
-{
-	std::apply(AdhocCompareScript_impl<F>, std::tuple_cat(std::tuple(status), params));
-};
+concept AdhocCompareScript = AdhocCompareScriptImpl<F, TCompareStatus, std::remove_cv_t<TTuple>>::value;
 
+// bool(int64_t iteration, TTuple& params): fills params for the iteration, false when there
+// are no more.
 template <typename F, typename TTuple>
-concept ScriptParamsGenerator = requires
-{
-	std::same_as<std::invoke_result_t<F, int64_t, TTuple&>, bool>;
-};
+concept ScriptParamsGenerator = std::same_as<std::invoke_result_t<F, int64_t, TTuple&>, bool>;
 
+// Given the incumbent and the challenger, returns the one to keep.
 template <typename F, typename TScript>
-concept ScriptComparator = requires 
-{
-	derived_from_specialization_of<TScript, Script>;
-	std::same_as<std::invoke_result_t<F, const ScriptStatus<TScript>*, const ScriptStatus<TScript>*>, const ScriptStatus<TScript>*>;
-};
+concept ScriptComparator = derived_from_specialization_of<TScript, Script>
+	&& std::same_as<std::invoke_result_t<F, const ScriptStatus<TScript>*, const ScriptStatus<TScript>*>, const ScriptStatus<TScript>*>;
 
+// True when a candidate's status ends the comparison.
 template <typename F, typename TScript>
-concept ScriptTerminator = requires
-{
-	derived_from_specialization_of<TScript, Script>;
-	std::same_as<std::invoke_result_t<F, const ScriptStatus<TScript>*>, bool>;
-};
+concept ScriptTerminator = derived_from_specialization_of<TScript, Script>
+	&& std::same_as<std::invoke_result_t<F, const ScriptStatus<TScript>*>, bool>;
 
 template <typename F, typename TCompareStatus>
-concept AdhocScriptComparator = requires
-{
-	std::same_as<std::invoke_result_t<F, const AdhocScriptStatus<TCompareStatus>*, const AdhocScriptStatus<TCompareStatus>*>, const AdhocScriptStatus<TCompareStatus>*>;
-};
+concept AdhocScriptComparator = std::same_as<std::invoke_result_t<F, const AdhocScriptStatus<TCompareStatus>*, const AdhocScriptStatus<TCompareStatus>*>, const AdhocScriptStatus<TCompareStatus>*>;
 
 template <typename F, typename TCompareStatus>
-concept AdhocScriptTerminator = requires
-{
-	std::same_as<std::invoke_result_t<F, const AdhocScriptStatus<TCompareStatus>*>, bool>;
-};
+concept AdhocScriptTerminator = std::same_as<std::invoke_result_t<F, const AdhocScriptStatus<TCompareStatus>*>, bool>;
 
 template <derived_from_specialization_of<Script> TScript>
 class Substatus

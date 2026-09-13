@@ -1,8 +1,11 @@
 #pragma once
 
+#include <concepts>
 #include <cstddef>
 #include <filesystem>
 #include <string>
+#include <tuple>
+#include <type_traits>
 #include <unordered_map>
 
 #ifndef SHAREDLIB_H
@@ -26,19 +29,19 @@ concept derived_from_specialization_of = requires(const T& t)
 	derived_from_specialization_impl<Template>(t);
 };
 
-template <class T>
-auto constructible_from_params_impl = [](auto... params) constexpr -> void
-{
-	static_assert(std::constructible_from<T, decltype(params)...>,
-		"Class does not have a constructor that matches the supplied parameters.");
-};
+// T constructible from the elements of TTuple, a std::tuple<Ts...> possibly cv-qualified (a
+// container's element), the way ExecuteFromTuple builds a script from a parameter tuple. A
+// class template rather than a requires-expression over std::apply: apply's deduced return
+// type makes a mismatch a hard error inside the library instead of a constraint that does not
+// hold (docs/compilers.md, ROADMAP 3.10).
+template <class T, class TTuple>
+struct constructible_from_tuple_impl : std::false_type {};
+
+template <class T, typename... Ts>
+struct constructible_from_tuple_impl<T, std::tuple<Ts...>> : std::bool_constant<std::constructible_from<T, Ts...>> {};
 
 template <class T, typename TTuple>
-concept constructible_from_tuple = requires (const TTuple& t)
-{
-	requires derived_from_specialization_of<TTuple, std::tuple>;
-	std::apply(constructible_from_params_impl<T>, t);
-};
+concept constructible_from_tuple = constructible_from_tuple_impl<T, std::remove_cv_t<TTuple>>::value;
 
 struct SectionInfo
 {
