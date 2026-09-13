@@ -22,6 +22,7 @@
 #include <VerifyLayout.hpp>
 
 #include "PipelineConfig.hpp"
+#include "ProcessCycles.hpp"
 #include "SelfPath.hpp"
 #include "SolutionSet.hpp"
 #include "StageArgs.hpp"
@@ -283,6 +284,8 @@ namespace
 
 			std::printf("\n=== stage %s (%s, frame %lld) ===\n", stage.name.c_str(), stage.type.c_str(), (long long)stage.startFrame);
 			auto start = std::chrono::steady_clock::now();
+			uint64_t cyclesBefore = 0;
+			bool haveCycles = ProcessCycles(cyclesBefore);
 			ResourceCounters before = CountResourceWork(resources);
 
 			StageContext context { pipeline, stage, resources, input };
@@ -298,6 +301,11 @@ namespace
 				(unsigned long long)output.solutions.size(), seconds, pipeline.SolutionsFile(stage.name).string().c_str());
 			// The fixed-workload numbers hard rule 8 asks for (AGENTS.md), summed over threads.
 			std::printf("    frame advances %llu, saves %llu, loads %llu\n", work.frameAdvances, work.saves, work.loads);
+			// CPU cycles over every thread: unlike the wall time above, unaffected by time
+			// spent descheduled (scripts/perf.ps1 reads this line into the Tier D rows).
+			uint64_t cyclesAfter = 0;
+			if (haveCycles && ProcessCycles(cyclesAfter))
+				std::printf("    process cycles %llu\n", (unsigned long long)(cyclesAfter - cyclesBefore));
 			if (work.dirty)
 				std::printf("    dirty pages: up to %zu per state (%zu KB), %llu first writes, %d baseline(s) per thread\n",
 					work.dirtyPagesMax, work.dirtyPagesMax * pagesize / 1024, work.faults, work.baselinesMax);

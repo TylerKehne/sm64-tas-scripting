@@ -114,7 +114,14 @@ its place with numbers, and "it is cleaner" is not a number.
   needs nothing; the Tier B and C (libsm64) families run when `res\` has the DLL and movie,
   or pass `-Dll`/`-M64` (thread scaling also needs the copies `sm64_jp_1.dll` to
   `sm64_jp_16.dll`); Tier D runs `bitfs-turn` on `perf\tierd-*.json` when the 16 DLL
-  copies exist (about five minutes; `-NoTierD` skips it). Anything missing is skipped.
+  copies exist (about ten minutes with the reference; `-NoTierD` skips it). Anything missing
+  is skipped. Time gates against the baseline commit's own binaries, which `-SaveBaseline`
+  keeps under `perf\reference\` (gitignored) and every run launches interleaved with the
+  current build, so the machine's drift cancels; without them the compare is absolute and
+  says so. The runner refuses to start next to a VM or a busy CPU, keeps the single-thread
+  rows and the deterministic Tier D run on performance cores (never 16 threads packed onto
+  them: that hangs, ROADMAP 3.12), switches the power plan for the run, and asks for
+  `-SetupDefender` once per machine (docs/performance.md, "Running the suite").
 
 ## Hard rules
 
@@ -205,7 +212,8 @@ Verification means:
    `Script.t.hpp`, `ScattershotThread.t.hpp` or `LibSm64.cpp`; `test_script.cpp` encodes
    those invariants on the fake resource, so extend it rather than arguing in prose.
 4. For anything on a hot path, measure. Run `scripts\perf.ps1` and paste its delta table;
-   it exits non-zero on a time regression over 10%, an allocation increase, or any increase
+   it exits non-zero on a time regression over 10% against the reference (the baseline
+   commit's binaries run in the same session), an allocation increase, or any increase
    in an exact work count (Tier C and D rows: frame advances, saves, loads, shots, scripts,
    blocks, solutions). With the DLL in `res\` that covers Tiers A to D; without it, run a
    fixed DLL workload before and after in Release and report wall time plus the frame

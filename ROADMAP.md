@@ -102,6 +102,15 @@ correctness and in speed.
         prints the delta table for PRs (`perf_compare.py`: time, allocation, exact-count and
         overhead gates), the regression policy from the spec, and a PR template
         (`.github/PULL_REQUEST_TEMPLATE.md`) that asks for the table.
+      - [x] Relative gate and machine checks. Done 2026-09-12: `perf.ps1` runs the baseline
+        commit's binaries (`perf\reference\`, filled by `-SaveBaseline`) interleaved with the
+        current ones and `perf_compare.py --reference` gates time and efficiency against
+        them, the committed baseline anchoring the counts and showing the day's drift as a
+        machine factor; Tier D and the scaling family are pinned to the performance cores of
+        the hybrid CPU; the runner refuses a VM or a busy CPU, calibrates against the
+        baseline, switches the power plan for the run and reports missing Defender
+        exclusions (`-SetupDefender`); every row carries CPU cycles next to wall time
+        (reported, not gated). docs/performance.md, "Running the suite".
       *Done when:* a deliberate extra frame advance in `LoadBase` fails Tier C, a deliberate
       10% slowdown in `GetHash` fails Tier A, and a PR template asks for the delta table.
       Verified 2026-09-08 against the first baselines: one extra save/advance/load per
@@ -193,6 +202,11 @@ Goal: the DLL becomes a reproducible, swappable artifact instead of a mystery bi
       copies script, and the source revision and build command behind any of the builds.
       Policy set by the maintainer the same day: ROMs and unlocked binaries never enter the
       public repo; a CI job that needs them takes the key from a maintainer-only secret.
+      That job is still open (noted 2026-09-12): fetch the locked build, unlock it with the
+      key, run the libsm64 smoke test and the Tier C count gates on the Windows and Linux
+      runners (the `.so` needs a 26.04 container), skip on forks; it needs the pinned DLL's
+      source first. Until then the smoke test is the one verification step that stays local,
+      as the PR template says.
 - [ ] **2.2 Generate the sm64 headers.** Replace the hand-copied `tasfw-core/inc/sm64/*.hpp` with
       headers generated from the decomp source (or from wafel's `sm64_layout` DWARF dump) for the
       exact DLL build. *Done when:* regenerating for a new DLL is one command and 1.1 passes.
@@ -359,6 +373,25 @@ Goal: the core's implicit invariants become explicit and enforced.
       reuse; docs/performance.md, 2026-09-08). *Done when:* the current policy is one
       implementation of the abstraction with identical counts, and a second policy exists and
       is compared.
+
+- [ ] **3.12 Sixteen-thread hang under CPU pinning.** Found 2026-09-12 while pinning the
+      perf suite to the performance cores: with the `^BM_LibSm64Scaling` family (16 threads,
+      one DLL copy each, `dirty` saves) pinned to the i9-13900K's 16 performance-core logical
+      CPUs at High priority, 1 launch in 10 hung at the 16-thread `FrameAdvance` row, for the
+      current build and for the baseline commit's binary alike; unpinned, 0 in 20. Windows
+      Error Reporting logged one thread dying with `0xC0000264` (`STATUS_RESOURCE_NOT_OWNED`,
+      a lock released by a thread that does not hold it) in `ntdll.dll`; the other threads
+      then wait at Google Benchmark's end barrier for a thread that no longer exists, and the
+      process lives on with 5 s of CPU. The fault handler and the dirty-page registry in
+      `LibSm64.cpp` were read and are lock-free where the faults land (`DispatchWrite`); the
+      `gDirtyPageSetMutex` is only taken at construction and destruction. The crash dump
+      Windows wrote (`%LOCALAPPDATA%\CrashDumps\tasfw-perf.exe.<pid>.dmp`, full memory) is the
+      lead; the Release preset emits no PDB, so build with symbols first to name the frames
+      below ntdll. `scripts\perf_scaling_hang.ps1` reproduces it. Until it is understood
+      nothing packs 16 threads onto the 8 performance cores: the scaling family runs unpinned
+      as before and only the 8-thread deterministic Tier D run is pinned (one thread per
+      core). *Done when:* the owner of the released lock is named, the fix is in, and 100
+      pinned launches of the family pass.
 
 ## Phase 4: the squish-cancel brute forcer
 

@@ -57,5 +57,7 @@ build/
 out/
 local/
 
-# perf suite runs (baselines under perf/baselines/ are committed)
+# perf suite runs (baselines under perf/baselines/ are committed); perf/reference/ holds the
+# baseline commit's binaries per machine, which perf.ps1 runs interleaved with the current ones
 perf/results/
+perf/reference/

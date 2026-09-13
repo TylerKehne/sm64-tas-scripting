@@ -1,5 +1,5 @@
 #include <benchmark/benchmark.h>
-#include "alloc_counter.hpp"
+#include "measure.hpp"
 #include <tasfw/Inputs.hpp>
 #include <filesystem>
 
@@ -22,7 +22,7 @@ static void BM_M64_Save_10k(benchmark::State& state)
 	M64 m64(TempMovie());
 	FillMovie(m64, 10000);
 
-	uint64_t allocs0 = tasfw_perf::AllocCount();
+	tasfw_perf::Measurement m0 = tasfw_perf::BeginMeasure();
 	for (auto _ : state)
 	{
 		state.PauseTiming();
@@ -31,7 +31,7 @@ static void BM_M64_Save_10k(benchmark::State& state)
 		benchmark::DoNotOptimize(m64.save());
 	}
 	std::filesystem::remove(m64.fileName);
-	tasfw_perf::ReportAllocs(state, allocs0);
+	tasfw_perf::EndMeasure(state, m0);
 }
 BENCHMARK(BM_M64_Save_10k)->Unit(benchmark::kMillisecond);
 
@@ -44,7 +44,7 @@ static void BM_M64_Load_10k(benchmark::State& state)
 		writer.save();
 	}
 
-	uint64_t allocs0 = tasfw_perf::AllocCount();
+	tasfw_perf::Measurement m0 = tasfw_perf::BeginMeasure();
 	for (auto _ : state)
 	{
 		M64 m64(TempMovie());
@@ -52,6 +52,6 @@ static void BM_M64_Load_10k(benchmark::State& state)
 		benchmark::DoNotOptimize(m64.frames.size());
 	}
 	std::filesystem::remove(TempMovie());
-	tasfw_perf::ReportAllocs(state, allocs0);
+	tasfw_perf::EndMeasure(state, m0);
 }
 BENCHMARK(BM_M64_Load_10k)->Unit(benchmark::kMillisecond);
