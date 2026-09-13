@@ -69,7 +69,9 @@ correctness and in speed.
         passes `VerifyLayout` at frame 3330, plays the movie twice with identical Mario and
         pyramid state, and pins that state to exact golden values. Any one-frame change to the
         movie or the engine before frame 3330 fails it.
-      Runs in CI (DLL-free part) on all four compilers. `PyramidUpdate` against the DLL is
+      Runs in CI on all four compilers (DLL-free part), and since 2026-09-13 the libsm64
+      group as well on the Windows jobs and an Ubuntu 26.04 job, on the bitfs-sbb build
+      unlocked from the `LIBSM64_KEY` secret (2.1). `PyramidUpdate` against the DLL is
       covered by 3.3; not yet covered: the scattershot loop end to end (Tier D territory).
 - [x] **1.3 Performance test suite.** Done 2026-09-08 (see the sub-items; what is left is
       listed under them and is not part of the done condition). Implements
@@ -198,15 +200,20 @@ Goal: the DLL becomes a reproducible, swappable artifact instead of a mystery bi
       documents a second, scripted source, bitfs-sbb's `fernet-lock.py` (wafel's key
       derivation in Python), which unlocks both the Windows `.dll` and the Linux `.so` for JP
       and US from a ROM; its 2026-06-30 JP builds pass every check against the pinned DLL's
-      golden state on both platforms. Still open: which wafel release the pinned DLL is, the
-      copies script, and the source revision and build command behind any of the builds.
-      Policy set by the maintainer the same day: ROMs and unlocked binaries never enter the
-      public repo; a CI job that needs them takes the key from a maintainer-only secret.
-      That job is still open (noted 2026-09-12): fetch the locked build, unlock it with the
-      key, run the libsm64 smoke test and the Tier C count gates on the Windows and Linux
-      runners (the `.so` needs a 26.04 container), skip on forks; it needs the pinned DLL's
-      source first. Until then the smoke test is the one verification step that stays local,
-      as the PR template says.
+      golden state on both platforms. Policy set by the maintainer the same day: ROMs and
+      unlocked binaries never enter the public repo; a CI job that needs them takes the key
+      from a maintainer-only secret. Progress 2026-09-13: `scripts/unlock_libsm64.py` is the
+      copies script (fetches the pinned bitfs-sbb build, derives the key from a ROM or takes
+      it from the environment, verifies both sides by sha256, writes N copies), the source
+      movie is committed as `movies/bitfs-pyramid-jp.m64`, and `build.yml` runs the libsm64
+      test group and the Tier C count gates on the bitfs-sbb build with the `LIBSM64_KEY`
+      secret on the Windows jobs and an Ubuntu 26.04 container job, skipping on forks
+      (docs/libsm64.md, "Continuous integration"); the pinned DLL's provenance turned out
+      not to be needed for that. Still open: which wafel release the pinned 2022 DLL is,
+      the source revision and build command behind any of the builds, and Tier D counts in
+      CI (eight copies, minutes on a four-core runner). *Done when* stands: a fresh machine
+      can populate `res/` from a ROM by following the doc, which the script now makes one
+      command, and the provenance of the pinned build is recorded.
 - [ ] **2.2 Generate the sm64 headers.** Replace the hand-copied `tasfw-core/inc/sm64/*.hpp` with
       headers generated from the decomp source (or from wafel's `sm64_layout` DWARF dump) for the
       exact DLL build. *Done when:* regenerating for a new DLL is one command and 1.1 passes.

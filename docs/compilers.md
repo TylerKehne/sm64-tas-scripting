@@ -72,18 +72,21 @@ docker run -d --name tasfw-linux-26 -v "C:/repos/sm64-tas-scripting:/src" -w /sr
 docker exec tasfw-linux-26 bash -c "apt-get update -qq && apt-get install -y -qq ninja-build g++ clang libomp-dev cmake python3 binutils"
 docker exec tasfw-linux-26 cmake -S /src -B /tmp/build-gcc -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=g++ -DTASFW_WARNINGS_AS_ERRORS=ON
 docker exec tasfw-linux-26 cmake --build /tmp/build-gcc -- -k 0
-docker exec -w /tmp/build-gcc tasfw-linux-26 ./out/dllcheck /src/res/sm64_jp_0.so /src/res/comissonPyra2-Fanart_x-Z.m64 3330
-docker exec -w /tmp/build-gcc -e TASFW_LIBSM64=/src/res/sm64_jp_0.so -e TASFW_M64=/src/res/comissonPyra2-Fanart_x-Z.m64 -e TASFW_FRAME=3330 tasfw-linux-26 ./out/tasfw-tests -tc='libsm64*'
+docker exec -w /tmp/build-gcc tasfw-linux-26 ./out/dllcheck /src/res/sm64_jp_0.so /src/movies/bitfs-pyramid-jp.m64 3330
+docker exec -w /tmp/build-gcc -e TASFW_LIBSM64=/src/res/sm64_jp_0.so -e TASFW_M64=/src/movies/bitfs-pyramid-jp.m64 -e TASFW_FRAME=3330 tasfw-linux-26 ./out/tasfw-tests -tc='libsm64*'
 ```
 
 The same with `-DCMAKE_CXX_COMPILER=clang++` and `/tmp/build-clang`. Build with both
-containers before calling a change done: the 24.04 one is what CI runs, the 26.04 one is
-where the Linux game path is tested and where the newest compilers see the code first.
+containers before calling a change done: the 24.04 one is what the four matrix jobs run,
+the 26.04 one is what the `ubuntu-26.04-gcc-libsm64` job runs (its GCC only; Clang 21 is
+container-only), where the Linux game path is tested and where the newest compilers see
+the code first.
 
 ## Policy
 
 1. A change is not done until it builds with MSVC, Clang and GCC with no warnings; CI
-   builds all four with warnings as errors, so one warning anywhere fails the matrix. On a
+   builds all four, plus GCC 15 in the Ubuntu 26.04 job, with warnings as errors, so one
+   warning anywhere fails the matrix. On a
    Windows machine that means MSVC and clang-cl locally plus GCC through the Linux CI job;
    on Linux it means GCC and Clang locally.
 2. When one compiler rejects or miscompiles something the standard allows, do not argue with

@@ -7,10 +7,11 @@
 ## Verification
 
 CI (`build.yml`) builds MSVC, clang-cl, GCC and Clang with warnings as errors and runs the
-DLL-free tests on every push and pull request; those checks must be green. What only a
-machine with the game can run:
+DLL-free tests on every push and pull request, and with the maintainer's `LIBSM64_KEY`
+secret also the libsm64 tests and the Tier C count gates (docs/libsm64.md, "Continuous
+integration"); those checks must be green. A pull request from a fork skips the game steps,
+so say whether `scripts\test.ps1` ran with the DLL locally.
 
-- [ ] `scripts\test.ps1` with the DLL in `res\` (the libsm64 smoke test), on both compilers
 - [ ] Documentation reconciled (AGENTS.md, ARCHITECTURE.md, ROADMAP.md, README.md, docs/)
 
 ## Performance

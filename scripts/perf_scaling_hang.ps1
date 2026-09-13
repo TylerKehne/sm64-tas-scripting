@@ -37,7 +37,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $env:TASFW_LIBSM64 = Join-Path $root 'res\sm64_jp_0.dll'
-$env:TASFW_M64 = Join-Path $root 'res\comissonPyra2-Fanart_x-Z.m64'
+$env:TASFW_M64 = Join-Path $root 'movies\bitfs-pyramid-jp.m64'
 $env:TASFW_FRAME = '3330'
 foreach ($needed in @($env:TASFW_LIBSM64, $env:TASFW_M64)) {
     if (-not (Test-Path $needed)) { throw "$needed not found; the scaling family needs the DLL copies and the movie" }

@@ -52,9 +52,11 @@ ctest --preset gcc-release
 The executable needs files that are not in git (see [docs/libsm64.md](docs/libsm64.md)):
 
 - `res/sm64_jp_0.dll` through `res/sm64_jp_23.dll`, one copy of the libsm64 DLL per thread
-  (on Linux `.so` copies and `"dllPattern": "sm64_jp_{}.so"`). Unlock them from a ROM as
-  docs/libsm64.md describes; never commit a ROM or an unlocked binary.
-- The source `.m64` movies referenced by `config.json`.
+  (on Linux `.so` copies and `"dllPattern": "sm64_jp_{}.so"`). One command makes them from
+  a ROM: `python scripts\unlock_libsm64.py --rom <sm64 jp>.z64 --out res --copies 24`
+  (docs/libsm64.md); never commit a ROM or an unlocked binary.
+- The source movie, `movies/bitfs-pyramid-jp.m64`, is committed; CI, the tests and the perf
+  suite use it too. Other movies a stage names go under `res/`.
 
 # Running the pipeline
 

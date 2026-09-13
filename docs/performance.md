@@ -77,7 +77,7 @@ Ordered by how much they dominate a typical scattershot run:
 ### What the game writes per frame (2026-09-08)
 
 Measured on the pinned DLL with `dllcheck --dirty-scan 300 --dirty-replay` at frame 3330
-of `comissonPyra2-Fanart_x-Z.m64` (docs/libsm64.md). Consecutive frames compared page by
+of `movies/bitfs-pyramid-jp.m64` (docs/libsm64.md). Consecutive frames compared page by
 page; `.data` + `.bss` is 7,108 KB, the `fixed` slices copy 1,464 KB in 41 us.
 
 | | Pattern inputs from 3330, 300 frames | Movie replay, frames 1..3330 |
@@ -267,7 +267,10 @@ before believing it.
 
 ### Reporting and gating
 
-- Tier A runs in CI on every PR.
+- Tier A runs in CI on every PR. With the maintainer's `LIBSM64_KEY` secret the game jobs
+  also run Tier C there against the committed baselines with `perf_compare.py
+  --counts-only`: exact counts and allocations gate, timings are only printed
+  (docs/libsm64.md, "Continuous integration").
 - Tiers B, C and D run locally before merging anything under `tasfw-core`,
   `tasfw-scattershot` or `tasfw-resources`. Paste the delta table into the PR description.
 - Policy: any increase in a gated count, or more than 5% wall-time regression on B, C or D
@@ -464,7 +467,7 @@ These are the numbers to beat, and the ones that make "zero-cost" concrete.
 
 ### First Tier B numbers (from `dllcheck`, 2026-09-07)
 
-`dllcheck.exe res\sm64_jp_0.dll res\comissonPyra2-Fanart_x-Z.m64 3330 [--lightweight]`,
+`dllcheck.exe res\sm64_jp_0.dll movies\bitfs-pyramid-jp.m64 3330 [--lightweight]`,
 MSVC build, single thread, idle machine:
 
 | Primitive | Cost |

@@ -30,6 +30,9 @@ process total over every thread) show their change against the same anchor as th
 the "cycles" column. Cycles ignore time spent descheduled and mostly ignore the clock, so
 they are the second opinion on a wall-time shift; they are reported, not gated.
 
+`--counts-only` keeps just the exact-count and allocation gates and reports everything else;
+CI runs Tier C that way, since a hosted runner's timings compare to nothing.
+
 Tier C and D rows carry work counts (frameAdvances, saves, loads, shots, scripts, blocks,
 solutions, validationFailures). They are exact: the workloads run with the cost model off,
 or report only what is deterministic, so any increase is a regression ("the framework now
@@ -226,6 +229,8 @@ def cmd_compare(args):
     print("metric: %s, %s of repetitions; gate: >%.0f%% and >%.1f ns against the %s"
           % (args.metric, args.stat, args.threshold, args.min_abs_ns,
              "reference (baseline where the reference lacks the row)" if has_ref else "baseline"))
+    if args.counts_only:
+        print("counts only: time, overhead and efficiency are reported, not gated (a CI runner's timings are not comparable)")
     if cur_ctx.get("cpu_scaling_enabled"):
         print("warning: CPU frequency scaling is enabled on the current run; timings are noisier.")
     if args.reference and not has_ref:
@@ -289,7 +294,9 @@ def cmd_compare(args):
         delta_base = (cv - bv) / bv * 100.0 if bv else 0.0
         delta = (cv - av) / av * 100.0 if av else 0.0
         abs_ns = abs(cv - av) * UNIT_TO_NS.get(unit, 1.0)
-        if abs_ns < args.min_abs_ns:
+        if args.counts_only:
+            status = "ok (counts only)"
+        elif abs_ns < args.min_abs_ns:
             status = "ok (below %.1f ns)" % args.min_abs_ns
         elif delta > args.threshold:
             status = "REGRESSION"
@@ -317,7 +324,7 @@ def cmd_compare(args):
 
         # Tier C overhead: the share of wall time outside the resource, gated in points.
         bo, co = anchor.get("overheadPct"), c.get("overheadPct")
-        if bo is not None and co is not None and float(co) - float(bo) > args.overhead_tolerance:
+        if not args.counts_only and bo is not None and co is not None and float(co) - float(bo) > args.overhead_tolerance:
             status = "OVERHEAD REGRESSION" if "REGRESSION" not in status else status + " + OVERHEAD"
             count_regressions.append(name)
             changes = changes + [("overheadPct", float(bo), float(co))]
@@ -328,7 +335,7 @@ def cmd_compare(args):
         if ae is not None and ce is not None:
             changes = changes + [("efficiencyPct", ae, ce)]
             gated = int(THREADS_RE.match(name).group(2)) <= EFFICIENCY_GATE_MAX_THREADS
-            if gated and ae - ce > args.efficiency_tolerance:
+            if gated and not args.counts_only and ae - ce > args.efficiency_tolerance:
                 status = "EFFICIENCY REGRESSION" if "REGRESSION" not in status else status + " + EFFICIENCY"
                 efficiency_regressions.append(name)
 
@@ -369,6 +376,9 @@ def main(argv):
     cp.add_argument("--reference",
                     help="results of the baseline commit's binaries run interleaved with the current ones "
                          "in the same session; time and efficiency gate against it where it has the row")
+    cp.add_argument("--counts-only", action="store_true",
+                    help="gate only the exact counts and allocations (CI runners, whose timings are not "
+                         "comparable to a baseline); time, overhead and efficiency are reported")
     cp.add_argument("--threshold", type=float, default=10.0, help="regression threshold in percent")
     cp.add_argument("--min-abs-ns", type=float, default=1.0,
                     help="ignore deltas smaller than this many nanoseconds in absolute terms")

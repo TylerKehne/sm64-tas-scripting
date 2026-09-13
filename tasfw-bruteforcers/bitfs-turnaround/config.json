@@ -1,4 +1,4 @@
-﻿{
+{
 	"_comment": "The BitFS squish-cancel pipeline as it was last run from main.cpp. Paths are relative to this file; the build writes a copy next to bitfs-turn.exe with baseDirectory pointing here. README.md documents the schema, `bitfs-turn --list` the stage types.",
 	"resources": {
 		"dllDirectory": "../../res",
@@ -6,7 +6,7 @@
 		"threads": 16,
 		"saveMode": "fixed"
 	},
-	"m64": "../../res/comissonPyra2-Fanart_x-Z.m64",
+	"m64": "../../movies/bitfs-pyramid-jp.m64",
 	"outputDirectory": "../../analysis",
 	"scattershot": {
 		"pelletMaxScripts": 20,

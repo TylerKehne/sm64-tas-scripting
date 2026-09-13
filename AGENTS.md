@@ -67,8 +67,9 @@ its place with numbers, and "it is cleaner" is not a number.
 | `tasfw-testing/` | Header-only test support shared by tests and benchmarks (`FakeResource`). |
 | `perf/` | Committed benchmark baselines per machine; `perf/results/` is gitignored. |
 | `analysis/` | R script that plots scattershot CSV output; also the pipeline's default output directory (CSVs, `solutions/*.json`, `m64/`), all gitignored. |
-| `res/` | Gitignored runtime inputs: 24 copies of the libsm64 DLL, source .m64 files, and thousands of exported solution .m64 files. |
-| `scripts/` | `build.ps1`, the supported build entry point on Windows. |
+| `res/` | Gitignored runtime inputs: 24 copies of the libsm64 DLL (made by `scripts/unlock_libsm64.py`), other source .m64 files, and thousands of exported solution .m64 files. |
+| `movies/` | The committed source movie `bitfs-pyramid-jp.m64` (JP, 3,804 frames) that the tests, the perf suite, CI and `config.json` use. |
+| `scripts/` | `build.ps1` (the supported build entry point on Windows), `test.ps1`, `perf.ps1` and its compare script, `unlock_libsm64.py` (the game from a ROM or the CI key), `perf_scaling_hang.ps1`, `dll_symbols.py`. |
 | `cmake/` | `AddOptimizationFlags` (arch flag, FP determinism, LTO, OpenMP; applied to every first-party target), `Warnings` (`/W3`, `/W4`, `-Wall -Wextra` on every first-party target, and `TASFW_WARNINGS_AS_ERRORS`) and `SystemIncludes` (fetched dependencies as system headers, so their warnings never count). |
 | `docs/` | Provenance of the DLL and other reference notes. |
 
@@ -86,9 +87,13 @@ its place with numbers, and "it is cleaner" is not a number.
   committed one plus a `baseDirectory`, so its relative paths resolve into the source tree).
 - Dependencies (nlohmann/json; doctest and Google Benchmark for tests and perf) are fetched
   by CMake, hash-pinned and cached in `build\downloads` for offline builds. OpenMP is required.
-- Runtime inputs are not in git. You need `res\sm64_jp_0.dll` .. `res\sm64_jp_23.dll` (on
-  Linux, `.so` copies) and the .m64 files named in `config.json`.
-  [docs/libsm64.md](docs/libsm64.md) says where to get either and how to unlock them.
+- The game is not in git. You need `res\sm64_jp_0.dll` .. `res\sm64_jp_23.dll` (on Linux,
+  `.so` copies): `python scripts\unlock_libsm64.py --rom <sm64 jp>.z64 --out res --copies 24`
+  fetches the pinned bitfs-sbb build, unlocks it and writes the copies
+  ([docs/libsm64.md](docs/libsm64.md)). The source movie is committed as
+  `movies\bitfs-pyramid-jp.m64`. CI unlocks the same build from the maintainer-only
+  `LIBSM64_KEY` secret and runs the libsm64 tests and the Tier C count gates on it; forks
+  and outside pull requests skip those steps.
 - `bitfs-turn.exe --list` and `--dry-run` are safe: no search runs (`--dry-run` loads one
   DLL, runs the `VerifyLayout` script to the first stage's frame and prints its report,
   hardcoded object slots included; it exits 1 on a `FAIL`. A real run makes the same check
@@ -205,8 +210,9 @@ Verification means:
 1. `scripts\build.ps1` succeeds with **no warnings** on MSVC **and** with
    `-Compiler clang`. CI builds every compiler with `TASFW_WARNINGS_AS_ERRORS=ON`;
    `-CMakeArgs '-DTASFW_WARNINGS_AS_ERRORS=ON'` reproduces that locally.
-2. `scripts\test.ps1` passes, on both compilers. With the DLL and movie in `res\` it also
-   runs the libsm64 smoke test, which pins Mario's exact state at frame 3330. Anything
+2. `scripts\test.ps1` passes, on both compilers. With the DLL in `res\` it also runs the
+   libsm64 smoke test, which pins Mario's exact state at frame 3330 of the committed movie
+   (CI runs the same group on the bitfs-sbb build when it has the key). Anything
    touching `tasfw-core` needs a test in `tasfw-tests` for the behavior it changes.
 3. Reason explicitly about determinism and savestate purity for anything touching
    `Script.t.hpp`, `ScattershotThread.t.hpp` or `LibSm64.cpp`; `test_script.cpp` encodes

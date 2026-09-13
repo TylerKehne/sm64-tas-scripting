@@ -36,6 +36,8 @@
 *.db
 *.user
 *.m64
+# The source movie the tests, the perf suite, CI and config.json use (docs/libsm64.md).
+!movies/*.m64
 
 sm64-tas-scripting/sm64-tas-scripting/Debug/
 sm64-tas-scripting/sm64-tas-scripting/x64/
