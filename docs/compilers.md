@@ -171,6 +171,16 @@ void f() { a.contains(x); }              // clang-cl 19.1.5: access violation wh
 Workaround in `tasfw-core/src/core/Inputs.cpp`: a named `static const auto` plus two
 `static const auto&` references. Same code, no runtime cost.
 
+### Clang 17 with `-fopenmp`: a lambda cannot capture a structured binding
+
+`test_sm64_layout.cpp` iterated a map with `for (const auto& [name, count] : ...)` and
+put `name` in a doctest `INFO`, which wraps its argument in a lambda. Clang 17 rejects the
+capture whenever OpenMP is enabled, with "capturing a structured binding is not yet
+supported in OpenMP", and every first-party target is built with `-fopenmp`. MSVC, clang-cl
+19.1, GCC 13 and 15 and Clang 21 accept it; CI's ubuntu-24.04-clang job was the only one
+to fail (2026-09-13). The loop names the pair (`entry.first`, `entry.second`) instead. Any lambda, including the ones
+behind `INFO`, `CAPTURE` and the compare helpers, gets the same treatment.
+
 ### Clang 21 with libstdc++ 15: doctest's `<ciso646>` include is a `#warning`
 
 doctest (2.4.11, and still 2.4.12) does `#include <ciso646>` under Clang to probe for

@@ -80,11 +80,14 @@ TEST_CASE("sm64 headers: every field offset and struct size matches the pinned D
 	LayoutReport report = CheckLayout();
 
 	int checked = 0;
-	for (const auto& [name, count] : report.checkedPerStruct)
+	// Not a structured binding: INFO captures its argument in a lambda, and Clang 17 with
+	// -fopenmp rejects capturing a structured binding ("not yet supported in OpenMP";
+	// docs/compilers.md).
+	for (const auto& entry : report.checkedPerStruct)
 	{
-		INFO("struct " << name);
-		CHECK(count > 0);
-		checked += count;
+		INFO("struct " << entry.first);
+		CHECK(entry.second > 0);
+		checked += entry.second;
 	}
 	CHECK(report.checkedPerStruct.size() == 7);
 
