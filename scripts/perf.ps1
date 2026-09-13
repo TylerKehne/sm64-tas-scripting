@@ -63,7 +63,7 @@
 
 .PARAMETER Dll, M64, Frame
     Inputs for the Tier B and C (libsm64) families. Default to res\sm64_jp_0.dll,
-    res\comissonPyra2-Fanart_x-Z.m64 and frame 3330 when those files exist; those
+    the committed movies\bitfs-pyramid-jp.m64 and frame 3330 when those files exist; those
     benchmarks are skipped otherwise. The thread-scaling family also needs the copies
     sm64_jp_1.dll .. sm64_jp_16.dll next to the DLL and is skipped without them.
 
@@ -407,7 +407,7 @@ if (-not $Dll) {
     if (Test-Path $candidate) { $Dll = $candidate }
 }
 if (-not $M64) {
-    $candidate = Join-Path $root 'res\comissonPyra2-Fanart_x-Z.m64'
+    $candidate = Join-Path $root 'movies\bitfs-pyramid-jp.m64'
     if (Test-Path $candidate) { $M64 = $candidate }
 }
 if ($Dll -and $M64) {

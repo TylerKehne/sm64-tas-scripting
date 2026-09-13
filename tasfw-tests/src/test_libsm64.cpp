@@ -180,10 +180,11 @@ TEST_CASE("libsm64: loads, passes the layout check, and plays the movie determin
 		first.snapshot.pyramidNormal[0], first.snapshot.pyramidNormal[1], first.snapshot.pyramidNormal[2]);
 	MESSAGE(line);
 
-	// Golden values for res/sm64_jp_0.dll + res/comissonPyra2-Fanart_x-Z.m64 at frame 3330,
-	// captured 2026-09-07 (%.9g round-trips a float exactly). Any change to the movie, the
-	// DLL, or the engine's input/savestate plumbing before that frame shows up here.
-	if (frame == 3330 && Env("TASFW_M64").find("comissonPyra2-Fanart_x-Z") != std::string::npos)
+	// Golden values for the pinned DLL + movies/bitfs-pyramid-jp.m64 at frame 3330, captured
+	// 2026-09-07 (%.9g round-trips a float exactly); the bitfs-sbb builds CI unlocks reach
+	// the same state (docs/libsm64.md, "Known builds"). Any change to the movie, the DLL, or
+	// the engine's input/savestate plumbing before that frame shows up here.
+	if (frame == 3330 && Env("TASFW_M64").find("bitfs-pyramid-jp") != std::string::npos)
 	{
 		// Exact: the movie is deterministic and FP contraction is off on every compiler.
 		CHECK(first.snapshot.action == 0x0C400201u); // ACT_IDLE

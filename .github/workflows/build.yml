@@ -2,8 +2,17 @@
 # CMakePresets.json preset (the same ones scripts/build.ps1 and the IDEs use) with warnings
 # as errors (ROADMAP 1.5), builds every target with MSVC, clang-cl, GCC and Clang, runs the
 # DLL-free correctness tests, and runs every Tier A benchmark briefly to prove the perf
-# binary executes. Nothing here needs the game DLL. Benchmark timings from CI runners are not
-# gated; the gate is the local perf.ps1 comparison against a committed baseline.
+# binary executes. Benchmark timings from CI runners are not gated; the gate is the local
+# perf.ps1 comparison against a committed baseline.
+#
+# The game (ROADMAP 2.1, docs/libsm64.md "Continuous integration"): when the LIBSM64_KEY
+# repository secret is present (maintainer-only; empty on forks and on pull requests from
+# outside, so those steps skip), the Windows jobs and the Ubuntu 26.04 job fetch the pinned
+# bitfs-sbb libsm64 build, unlock it into the runner's temp directory, run the libsm64 test
+# group on movies/bitfs-pyramid-jp.m64, and gate the Tier C exact counts against the committed
+# baselines (scripts/perf_compare.py --counts-only). The unlocked binary never leaves the
+# runner. The 24.04 jobs cannot run the Linux .so (it needs glibc 2.43), hence the 26.04
+# container job.
 #
 # Failures are re-emitted as ::error:: annotations so they are readable through the public
 # API without downloading logs. On Linux a problem matcher turns compiler warnings into
@@ -15,6 +24,11 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+
+env:
+  LIBSM64_KEY: ${{ secrets.LIBSM64_KEY }}
+  TASFW_M64: movies/bitfs-pyramid-jp.m64
+  TASFW_FRAME: "3330"
 
 jobs:
   build:
@@ -28,10 +42,12 @@ jobs:
             os: windows-latest
             preset: msvc-release
             bindir: build/Release
+            baseline: perf/baselines/tyler-desktop.json
           - name: windows-clang-cl
             os: windows-latest
             preset: clang-cl-release
             bindir: build/Release-clang
+            baseline: perf/baselines/tyler-desktop-clang.json
           - name: ubuntu-gcc
             os: ubuntu-latest
             preset: gcc-release
@@ -110,6 +126,28 @@ jobs:
         run: |
           ${{ matrix.bindir }}/out/tasfw-perf --benchmark_filter='^BM_(BinaryStateBin|Scattershot|Inputs|M64|SlotManager|Resource|Script)' --benchmark_min_time=0.01s
 
+      # ------------------------------------------------- The game (Windows, with the key)
+      - name: Unlock libsm64 (skipped without the LIBSM64_KEY secret)
+        if: runner.os == 'Windows' && env.LIBSM64_KEY != ''
+        shell: pwsh
+        run: |
+          python -m pip install --quiet cryptography
+          python scripts/unlock_libsm64.py --key-env LIBSM64_KEY --platform windows --out "$env:RUNNER_TEMP/libsm64"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "TASFW_LIBSM64=$env:RUNNER_TEMP/libsm64/sm64_jp_0.dll" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+
+      - name: libsm64 tests (layout checks, golden state at frame 3330, drift test)
+        if: runner.os == 'Windows' && env.LIBSM64_KEY != ''
+        shell: bash
+        run: ${{ matrix.bindir }}/out/tasfw-tests -tc='libsm64*'
+
+      - name: Tier C exact counts against the committed baseline
+        if: runner.os == 'Windows' && env.LIBSM64_KEY != ''
+        shell: bash
+        run: |
+          ${{ matrix.bindir }}/out/tasfw-perf --benchmark_filter='^BM_Framework' --benchmark_repetitions=1 --benchmark_out=tierc.json --benchmark_out_format=json
+          python scripts/perf_compare.py compare ${{ matrix.baseline }} tierc.json --counts-only | grep -v MISSING
+
       - name: Report failure details as annotations
         if: failure()
         shell: bash
@@ -130,3 +168,59 @@ jobs:
             done
             echo "::endgroup::"
           fi
+
+  # The Linux game path: the bitfs-sbb .so needs glibc 2.43, so this job runs in an Ubuntu
+  # 26.04 container with that release's GCC (docs/compilers.md, "GCC and Clang locally").
+  # It builds and runs the DLL-free tests unconditionally, so the newest GCC sees every
+  # change even without the key.
+  ubuntu-26-libsm64:
+    name: ubuntu-26.04-gcc-libsm64
+    runs-on: ubuntu-latest
+    container: ubuntu:26.04
+    steps:
+      - name: Install toolchain
+        run: |
+          apt-get update -qq
+          DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ninja-build g++ cmake git ca-certificates python3 python3-cryptography
+          echo "::add-matcher::.github/matchers/gcc.json"
+
+      - uses: actions/checkout@v5
+
+      - name: Configure and build
+        shell: bash
+        run: |
+          cmake --version
+          cmake --preset gcc-release -DCMAKE_CXX_COMPILER=g++ -DTASFW_WARNINGS_AS_ERRORS=ON 2>&1 | tee configure.log
+          cmake --build --preset gcc-release -- -k 0 2>&1 | tee build.log
+
+      - name: Correctness tests (DLL-free)
+        run: build/Release-gcc/out/tasfw-tests
+
+      - name: Unlock libsm64 (skipped without the LIBSM64_KEY secret)
+        if: env.LIBSM64_KEY != ''
+        run: |
+          python3 scripts/unlock_libsm64.py --key-env LIBSM64_KEY --platform linux --out "$RUNNER_TEMP/libsm64"
+          echo "TASFW_LIBSM64=$RUNNER_TEMP/libsm64/sm64_jp_0.so" >> "$GITHUB_ENV"
+
+      - name: libsm64 tests (layout checks, golden state at frame 3330, drift test)
+        if: env.LIBSM64_KEY != ''
+        run: build/Release-gcc/out/tasfw-tests -tc='libsm64*'
+
+      - name: Tier C exact counts against the committed baseline
+        if: env.LIBSM64_KEY != ''
+        run: |
+          build/Release-gcc/out/tasfw-perf --benchmark_filter='^BM_Framework' --benchmark_repetitions=1 --benchmark_out=tierc.json --benchmark_out_format=json
+          python3 scripts/perf_compare.py compare perf/baselines/tyler-desktop.json tierc.json --counts-only | grep -v MISSING
+
+      - name: Report failure details as annotations
+        if: failure()
+        run: |
+          for f in configure.log build.log; do
+            if [ -f "$f" ]; then
+              echo "::group::$f (errors)"
+              grep -inE 'error|warning|fatal|could not|not found|no such' "$f" | head -40 | while IFS= read -r line; do
+                echo "::error title=$f::${line}"
+              done
+              echo "::endgroup::"
+            fi
+          done

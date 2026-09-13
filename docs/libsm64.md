@@ -47,6 +47,21 @@ by PBKDF2-SHA256) and unlock them on the user's machine:
   `.so`. The EU and Shindou builds needed audio patches and their author does not vouch for
   their accuracy; JP and US are the ones to use.
 
+`scripts\unlock_libsm64.py` does the bitfs-sbb route in one command and is how a fresh
+machine populates `res\`: it fetches the locked JP (or US) build for this platform from the
+pinned bitfs-sbb commit into `build\downloads\`, checks its sha256, derives the key from a
+ROM (or takes it from an environment variable, which is what CI does), unlocks, checks the
+unlocked bytes against the sha256 recorded in the script, and writes N per-thread copies.
+The derivation is wafel 0.7.1's (PBKDF2-HMAC-SHA256 over the z64 image, no salt, 10,000
+iterations, urlsafe base64), standard library; the Fernet step needs `pip install
+cryptography`:
+
+```
+python scripts\unlock_libsm64.py --rom <sm64 jp>.z64 --out res --copies 24     # res\sm64_jp_0.dll .. sm64_jp_23.dll
+python scripts\unlock_libsm64.py --rom <sm64 jp>.z64 --print-key               # the value for the LIBSM64_KEY secret
+python scripts\unlock_libsm64.py --key-env LIBSM64_KEY --platform linux --out res   # the .so, key from the environment
+```
+
 **Never commit a ROM or an unlocked binary, and do not vendor the locked ones either**; link
 to wafel or bitfs-sbb (AGENTS.md hard rule 6). If CI ever needs the game, the unlock key or
 the ROM goes in a maintainer-only repository secret so that forks and pull requests from
@@ -56,14 +71,14 @@ outside never see it, and the job skips when the secret is absent (ROADMAP 3.4).
 
 Every build below has been run through `dllcheck` and, where a movie exists for it, through
 the libsm64 test group (`scripts\test.ps1 -Dll <file> -Filter 'libsm64*'`): the layout
-checks, the golden state at frame 3330 of `comissonPyra2-Fanart_x-Z.m64`, save/load
+checks, the golden state at frame 3330 of `movies/bitfs-pyramid-jp.m64`, save/load
 determinism, and the `PyramidUpdate` drift test (docs/performance.md, ROADMAP 3.3).
 
 | Build | File | Size, MD5 | Status (2026-09-08) |
 |---|---|---|---|
 | wafel, 2022-03-12 (**pinned**) | `res\sm64_jp_0.dll` .. `_23.dll` | 32,958,049 B, `463a5be6` | The reference: every offset, check and golden value in this repo was taken from it. |
 | wafel, 2023-09-07, JP | `C:\repos\wafel\libsm64\sm64_jp.dll` | 31,872,634 B, `da7b3620` | Passes every layout check including fixed-slice coverage; identical golden state; drift test max diff 0 (MSVC). `dirty` mode: 125 pages per save, 7 us, leak scan zero bytes. |
-| bitfs-sbb, 2026-06-30, JP | `C:\repos\bitfs-sbb\libsm64\lib\sm64_jp.dll` | 33,068,386 B, `625fd921` | Passes every layout check including fixed-slice coverage; identical golden state; drift test max diff 0 on MSVC and clang-cl. `dllcheck`: 8.5 us per frame; `dirty` mode 123 pages per save, 7 to 8 us, leak scan zero bytes. |
+| bitfs-sbb, 2026-06-30, JP | `C:\repos\bitfs-sbb\libsm64\lib\sm64_jp.dll` | 33,068,386 B, `625fd921` | Passes every layout check including fixed-slice coverage; identical golden state; drift test max diff 0 on MSVC and clang-cl. `dllcheck`: 8.5 us per frame; `dirty` mode 123 pages per save, 7 to 8 us, leak scan zero bytes. Tier C exact counts and allocations identical to the pinned build's baseline (2026-09-13), which is what lets CI gate them on this build; its `DownhillAngle_PyramidUpdate` workload reads about 85% slower and `PyramidOscillation` 7% slower, the build's own code. |
 | bitfs-sbb, 2026-06-30, US | `...\lib\sm64_us.dll` | 33,508,967 B, `e2efd078` | Unlocked only. There is no US movie to play and the m64 country check is JP (ROADMAP 2.5). |
 | bitfs-sbb, 2026-06-30, JP, Linux | `res/sm64_jp_0.so` (copied from `...\lib\sm64_jp.so`) | 16,733,032 B, `06c58c69` | On Ubuntu 26.04: every layout check, identical golden state, drift test max diff 0 with GCC 15 and Clang 21 (see "Linux"). |
 | bitfs-sbb, 2026-06-30, US, Linux | `res/sm64_us_0.so` | 17,168,016 B, `61e27e4f` | Loads; no US movie. |
@@ -97,7 +112,7 @@ here calls it.
 |---|---|
 | `sm64_jp_0.dll` .. `sm64_jp_23.dll` | 24 byte-identical copies of the pinned build. |
 | `sm64_jp_0.so`, `sm64_us_0.so` | bitfs-sbb's Linux builds, for the container runs in "Linux". |
-| `comissonPyra2-Fanart_x-Z.m64`, `comissonPyra2-Fanart_XZ.m64`, `test3.m64` | Source movies referenced by `config.json`. JP ROM. |
+| `comissonPyra2-Fanart_XZ.m64`, `test3.m64` | Other source movies (JP). The one everything uses, formerly `comissonPyra2-Fanart_x-Z.m64`, is committed as `movies/bitfs-pyramid-jp.m64` (3,804 input frames, 16 KB; the tests, the perf suite, CI and `config.json` all name it). |
 | `bitfs_nut_*.m64` (thousands) | Exported solutions from past runs (new runs export under `analysis/m64/<stage>/`). Safe to delete. |
 
 ## Savestates
@@ -256,8 +271,8 @@ locally"); the repository is mounted at `/src`, so `res/sm64_jp_0.so` is
 - **Running the checks** (from a build tree inside the container):
 
   ```bash
-  ./out/dllcheck /src/res/sm64_jp_0.so /src/res/comissonPyra2-Fanart_x-Z.m64 3330
-  TASFW_LIBSM64=/src/res/sm64_jp_0.so TASFW_M64=/src/res/comissonPyra2-Fanart_x-Z.m64 TASFW_FRAME=3330 ./out/tasfw-tests -tc='libsm64*'
+  ./out/dllcheck /src/res/sm64_jp_0.so /src/movies/bitfs-pyramid-jp.m64 3330
+  TASFW_LIBSM64=/src/res/sm64_jp_0.so TASFW_M64=/src/movies/bitfs-pyramid-jp.m64 TASFW_FRAME=3330 ./out/tasfw-tests -tc='libsm64*'
   ```
 
   Both pass with GCC 15 and Clang 21 (2026-09-08): identical golden state to the pinned
@@ -291,6 +306,24 @@ Without the framework: parse the PE export table and confirm `sm64_init`, `sm64_
 (`scripts\dll_symbols.py` has the parser). For a `.so`: `nm -D --defined-only` for the
 exports, `objdump -T | grep GLIBC` for the glibc versions it needs. With the framework, use
 `dllcheck` above.
+
+## Continuous integration
+
+`.github/workflows/build.yml` runs the game when the `LIBSM64_KEY` repository secret is
+set: the Windows jobs (MSVC and clang-cl) and a separate Ubuntu 26.04 container job (the
+`.so` needs its glibc, "Linux" above) call `scripts/unlock_libsm64.py --key-env
+LIBSM64_KEY` to fetch the pinned bitfs-sbb JP build and unlock it into the runner's temp
+directory, run the `libsm64*` test group on `movies/bitfs-pyramid-jp.m64` (layout checks,
+the golden state at frame 3330, save/load determinism, the drift test), and run Tier C with
+`perf_compare.py --counts-only` against the committed baseline, so an extra frame advance
+or allocation in the framework fails the pull request. The secret is the derived key, not
+the ROM (`--print-key`), set by the maintainer under Settings, Secrets; GitHub withholds
+secrets from forks and from pull requests opened from them, so there those steps are
+skipped and the job is green on the DLL-free tests alone. The unlocked binary is never
+uploaded as an artifact. Hosted runners' timings are not gated (they compare to nothing);
+Tier D counts are not run there yet (eight copies, minutes on a four-core runner; ROADMAP
+2.1). The pinned 2022 wafel DLL itself never enters CI: it is a local artifact, and the
+bitfs-sbb build reaches the same golden state and counts ("Known builds").
 
 ## Reproducing the DLL from source (not yet done)
 

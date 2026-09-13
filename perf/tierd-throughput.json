@@ -1,7 +1,7 @@
-﻿{
+{
 	"_comment": "Tier D throughput run (docs/performance.md): the same stage as the deterministic run, 16 threads, cost model on, non-deterministic; only wall time and rates are compared. Run by scripts/perf.ps1; paths resolve against this file.",
 	"resources": { "dllDirectory": "../res", "dllPattern": "sm64_jp_{}.dll", "threads": 16, "saveMode": "fixed", "costModel": true },
-	"m64": "../res/comissonPyra2-Fanart_x-Z.m64",
+	"m64": "../movies/bitfs-pyramid-jp.m64",
 	"outputDirectory": "results/tierd-throughput",
 	"scattershot": {
 		"maxShots": 1200, "pelletsPerShot": 100, "shotsPerUpdate": 400, "maxSolutions": 100000,

@@ -5,8 +5,8 @@
 .DESCRIPTION
     Builds the tasfw-tests target with build.ps1, then runs it. The DLL-free tests always
     run. The libsm64 smoke test runs when a DLL and a movie are available: pass -Dll and
-    -M64, or leave them unset to use res\sm64_jp_0.dll and res\comissonPyra2-Fanart_x-Z.m64
-    when those files exist. Exit code is the test runner's.
+    -M64, or leave them unset to use res\sm64_jp_0.dll (scripts\unlock_libsm64.py makes it)
+    and the committed movies\bitfs-pyramid-jp.m64. Exit code is the test runner's.
 
 .PARAMETER Config
     Debug (default), Release or RelWithDebInfo.
@@ -56,7 +56,7 @@ if (-not $Dll) {
     if (Test-Path $candidate) { $Dll = $candidate }
 }
 if (-not $M64) {
-    $candidate = Join-Path $root 'res\comissonPyra2-Fanart_x-Z.m64'
+    $candidate = Join-Path $root 'movies\bitfs-pyramid-jp.m64'
     if (Test-Path $candidate) { $M64 = $candidate }
 }
 
