@@ -86,7 +86,9 @@ first.
 
 1. A change is not done until it builds with MSVC, Clang and GCC with no warnings; CI
    builds all four, plus GCC 15 and Clang 21 in the Ubuntu 26.04 jobs, with warnings as
-   errors, so one warning anywhere fails the matrix. On a
+   errors, so one warning anywhere fails the matrix. It runs on pull requests only, on the
+   branch merged into `master` (the state a merge would produce); a plain push runs
+   nothing, and `workflow_dispatch` runs it by hand. On a
    Windows machine that means MSVC and clang-cl locally plus GCC through the Linux CI job;
    on Linux it means GCC and Clang locally.
 2. When one compiler rejects or miscompiles something the standard allows, do not argue with

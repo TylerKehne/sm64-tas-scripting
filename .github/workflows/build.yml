@@ -24,8 +24,7 @@
 name: build
 
 on:
-  push:
-  pull_request:
+  pull_request:   # every run tests the merge of the branch into master, the state a merge would produce
   workflow_dispatch:
 
 env:

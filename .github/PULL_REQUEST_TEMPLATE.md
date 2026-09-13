@@ -7,7 +7,8 @@
 ## Verification
 
 CI (`build.yml`) builds MSVC, clang-cl, GCC and Clang with warnings as errors and runs the
-DLL-free tests on every push and pull request, and with the maintainer's `LIBSM64_KEY`
+DLL-free tests on every pull request (on the branch merged into `master`, the state a merge
+would produce; plain pushes do not run it), and with the maintainer's `LIBSM64_KEY`
 secret also the libsm64 tests and the Tier C count gates (docs/libsm64.md, "Continuous
 integration"); those checks must be green. A pull request from a fork skips the game steps,
 so say whether `scripts\test.ps1` ran with the DLL locally.
