@@ -113,6 +113,9 @@ correctness and in speed.
         baseline, switches the power plan for the run and reports missing Defender
         exclusions (`-SetupDefender`); every row carries CPU cycles next to wall time
         (reported, not gated). docs/performance.md, "Running the suite".
+      - [ ] Tier D exact counts in CI (moved here from 2.1, 2026-09-13): the deterministic
+        workload needs eight DLL copies and takes minutes on a four-core hosted runner;
+        Tier C counts already gate there (docs/libsm64.md, "Continuous integration").
       *Done when:* a deliberate extra frame advance in `LoadBase` fails Tier C, a deliberate
       10% slowdown in `GetHash` fails Tier A, and a PR template asks for the delta table.
       Verified 2026-09-08 against the first baselines: one extra save/advance/load per
@@ -193,7 +196,8 @@ correctness and in speed.
 
 Goal: the DLL becomes a reproducible, swappable artifact instead of a mystery binary.
 
-- [ ] **2.1 Document and script DLL production.** Record which wafel release the 2022 DLL came from,
+- [x] **2.1 Document and script DLL production.** Done 2026-09-13 (closed by the maintainer;
+      see the end of this item). Record which wafel release the 2022 DLL came from,
       how to unlock a `.dll.locked` against a JP ROM with `libsm64_lock`, and add a script that
       makes the N per-thread copies. *Done when:* a fresh machine can populate `res/` from a wafel
       release plus a ROM by following the doc. Progress 2026-09-08: docs/libsm64.md now
@@ -213,12 +217,14 @@ Goal: the DLL becomes a reproducible, swappable artifact instead of a mystery bi
       JP DLL in wafel's history with wafel's own locker: the pinned DLL is wafel v0.8.1's
       libsm64 (built 2021-06-17, committed `c155b258`), bitfs-sbb's Windows DLLs are wafel
       v0.8.5's re-locked, and the "wafel 2023" DLL is wafel's 2022-08-07 post-release
-      update (docs/libsm64.md, "Known builds"). Still open: the decomp fork, commit and
-      build command behind any of the builds (nobody recorded them), and Tier D counts in
-      CI (eight copies, minutes on a four-core runner). *Done when* stands: a fresh machine
-      can populate `res/` from a ROM by following the doc, which the script now makes one
-      command, and the provenance of the pinned build is recorded; both hold, so what is
-      left is the source recipe, which may not be recoverable.
+      update (docs/libsm64.md, "Known builds"). *Done when* holds: a fresh machine can
+      populate `res/` from a ROM by following the doc, which the script makes one command,
+      and the provenance of the pinned build is recorded. Not recorded by anyone, and closed
+      without it by the maintainer's decision the same day: the decomp fork, commit and
+      build command behind the wafel builds. A build from source with a recorded recipe is
+      possible (jgcodes2020 built the Linux `.so` from the current decomp) and would be its
+      own item if it is ever wanted; nothing depends on it today. Tier D counts in CI moved
+      to 1.3.
 - [ ] **2.2 Generate the sm64 headers.** Replace the hand-copied `tasfw-core/inc/sm64/*.hpp` with
       headers generated from the decomp source (or from wafel's `sm64_layout` DWARF dump) for the
       exact DLL build. *Done when:* regenerating for a new DLL is one command and 1.1 passes.

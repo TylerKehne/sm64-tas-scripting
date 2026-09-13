@@ -346,7 +346,9 @@ recipe on a newer decomp. Which wafel commit each Windows build belongs to is no
 exact bytes can always be recovered from wafel's git history with wafel's locker and a
 ROM. What is still not recorded anywhere, in this repo, in the wafel checkout at
 `C:\repos\wafel`, or in bitfs-sbb, is the decomp fork, the commit and the build command
-that produced them; finding and pinning those is what remains of ROADMAP 2.1 (start from
-https://github.com/branpk/wafel/issues/23, which discusses libsm64 as an external
-dependency, and from jgcodes2020). Until then, treat the pinned DLL as an opaque artifact
-and keep a backup of it; the v0.8.5 build is the tested fallback.
+that produced them. ROADMAP 2.1 was closed without them on 2026-09-13: nothing depends on
+rebuilding, the bytes are recoverable, and a build from source with a recorded recipe
+would be its own item if ever wanted (jgcodes2020 built the Linux `.so` from the current
+decomp, so it can be done; start from https://github.com/branpk/wafel/issues/23, which
+discusses libsm64 as an external dependency, and from jgcodes2020). Treat the pinned DLL as
+an opaque artifact and keep a backup of it; the v0.8.5 build is the tested fallback.
