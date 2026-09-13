@@ -1,6 +1,6 @@
 {
   "context": {
-    "date": "2026-09-12T22:50:16-04:00",
+    "date": "2026-09-13T19:19:24-04:00",
     "host_name": "TYLER-DESKTOP",
     "executable": "C:\\repos\\sm64-tas-scripting\\build\\Release\\out\\tasfw-perf.exe",
     "num_cpus": 32,
@@ -35,11 +35,10 @@
     "library_version": "v1.9.1",
     "library_build_type": "release",
     "json_schema_version": 1,
-    "tasfw_sha": "63b8ee3",
+    "tasfw_sha": "eda8df3-dirty",
     "compiler": "msvc",
     "power_plan": "High performance",
-    "reference_sha": "63b8ee3",
-    "machine_factor": 0.96,
+    "machine_factor": 1.034,
     "TierD_Deterministic_affinity": "0x5555",
     "TierD_Throughput_affinity": "0x0"
   },

@@ -426,11 +426,25 @@ Goal: the core's implicit invariants become explicit and enforced.
       lightweight 285 -> 50 us against 53 us. Pooled memory counts toward the slot budget.
       Gated by the Tier B `SaveErase`/`Load` benchmarks (docs/performance-changelog.md).
 
-- [ ] **3.10 Make the compare concepts actually constrain.** The concepts in
-      `ScriptCompareHelper.hpp` test whether `std::same_as<...>` is a valid *expression*, not
-      whether it holds, so they accept anything (GCC's `-Wmissing-requires`, docs/compilers.md).
-      Rewrite as nested requirements, then fix whatever callers stop compiling. *Done when:*
-      a comparator with the wrong signature fails at the call site on all three compilers.
+- [x] **3.10 Make the compare concepts actually constrain.** Done 2026-09-13. The concepts in
+      `ScriptCompareHelper.hpp` were `requires { std::same_as<...>; }` blocks, which check
+      that the expression is well-formed and never that it holds: a comparator, terminator or
+      parameter generator that could not be called at all was rejected, but any return type
+      passed; and `AdhocCompareScript` there and `constructible_from_tuple` in
+      `SharedLib.hpp`, which unpacked the tuple with `std::apply` around a lambda whose
+      `static_assert` a requires-expression never instantiates, accepted every tuple and
+      made a non-tuple a hard error inside `std::tuple_size`. Each is now a constraint on the
+      call's result type, the two tuple ones through a partial specialization for
+      `std::tuple<Ts...>`, so a wrong callable or tuple leaves no viable overload at the call
+      site (docs/compilers.md, "A concept-id as a requirement expression is always
+      satisfied"). No caller changed: every BitFS script passes generic lambdas of the right
+      shape. `test_script_compare.cpp` pins it with static_asserts on each concept and on
+      the `Compare` and `CompareAdhoc` calls themselves, and holds the first runtime tests
+      of the family on the fake resource. `-Wno-missing-requires` is gone from
+      `add_optimization_flags`, so GCC's warning is live again. Verified as the "Done when"
+      asks with MSVC, clang-cl, GCC 13 and 15 and Clang 17 and 21, warnings as errors;
+      compile-time only, so the machine code is the same instruction for instruction
+      (docs/performance-changelog.md).
 - [ ] **3.11 Pluggable savestate policy.** `shouldSave`/`shouldLoad` (replay-versus-load by
       measured average cost) and the LRU slot manager are one policy for every resource, and
       a naive one. The right policy depends on the resource: a full-game DLL with slow loads

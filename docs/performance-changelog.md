@@ -4,6 +4,63 @@ Every hot-path change records its delta table here, newest first; the policy, th
 how to run it are in [performance.md](performance.md). The first measurements (2026-09-07),
 which everything since is compared against, are at the bottom.
 
+## 2026-09-13: the compare concepts constrain (ROADMAP 3.10)
+
+The concepts behind the `Compare` family (`ScriptCompareHelper.hpp`, and
+`constructible_from_tuple` in `SharedLib.hpp`) are constraints on the call's result type
+now, instead of `requires { expr; }` blocks that only asked whether the expression was
+well-formed (docs/compilers.md, "A concept-id as a requirement expression is always
+satisfied"). Compile-time only: no caller changed, nothing instantiates differently, and
+`-Wno-missing-requires` left `add_optimization_flags`. The MSVC Release binaries before and
+after were compared function by function through their `.pdata` tables: `dllcheck.exe` and
+`m64splice.exe` have a byte-identical `.text`; `bitfs-turn.exe` (2417 functions) and
+`tasfw-perf.exe` (1976) have the same functions at the same sizes, 97% and 91% of them at
+the same address with the same bytes, and the rest the same instruction stream once call
+targets and RIP-relative operands are ignored (six checked by disassembly diff): the old
+header emitted a few bytes of static data per instantiation, and their removal moved a
+handful of functions and shifted `.rdata` constants by 8 to 16 bytes.
+
+Measured anyway, MSVC Release, `scripts\perf.ps1` with Tiers A to D against the reference
+(machine factor 1.01), fastest of the repetitions. Every count identical (Tier C scripts,
+Tier D frame advances, saves, loads, blocks and solutions), no allocation change, and the
+Tier B and D rows:
+
+| row | reference | current | delta |
+|---|---|---|---|
+| `LibSm64Fixed_FrameAdvance` | 14.1 us | 14.5 us | +2.3% |
+| `LibSm64Fixed_SaveErase` | 41.3 us | 42.8 us | +3.6% |
+| `LibSm64Fixed_Load` | 40.7 us | 41.8 us | +2.6% |
+| `LibSm64Dirty_SaveErase` | 7.1 us | 7.1 us | -0.1% |
+| `LibSm64Dirty_Load` | 6.9 us | 6.9 us | -0.3% |
+| `LibSm64Full_SaveErase` | 176.0 us | 181.5 us | +3.1% |
+| `LibSm64Full_Load` | 176.9 us | 175.7 us | -0.7% |
+| `Framework_PyramidOscillation` | 688.2 ms | 688.4 ms | +0.0% |
+| `TierD_Deterministic` | 133.6 s | 137.8 s | +3.1% |
+| `TierD_Throughput` | 75.5 s | 74.7 s | -1.1% |
+
+The scaling family's two efficiency flags (`FrameAdvance` at 2 and 4 threads, 95% and 94%
+against the reference's 101% and 100%) are the reference binary's own 1-thread row reading
+15.3 us in that run against 14.5 us for the current one; the 2- and 4-thread times are
+within 1% of the reference.
+
+Three Tier A rows on unchanged code moved, and moved the same way on a re-run of the
+`Script` and `SlotManager` families (`-Filter 'BM_Script_|BM_SlotManager_' -NoBuild
+-NoTierD`), the layout signature performance.md describes (a tight loop's alignment follows
+the functions around it):
+
+| row | reference (run 1 / run 2) | run 1 | run 2 |
+|---|---|---|---|
+| `Script_AdvanceFrameWrite` | 169.3 / 176.4 ns | 146.2 ns (-13.7%) | 150.5 ns (-14.7%) |
+| `Script_AdvanceFrameRead` | 235.4 / 229.5 ns | 251.9 ns (+7.0%) | 253.9 ns (+10.6%) |
+| `SlotManager_CreateAtCap/10000` | 220.9 / 230.2 ns | 240.9 ns (+9.0%) | 244.5 ns (+6.2%) |
+
+`Script::AdvanceFrameRead` and `AdvanceFrameWrite` did not change and their instruction
+streams are identical in the two `tasfw-perf.exe`; the read row's +10.6% on the second run
+is over the gate, so it is recorded here as layout and the `tyler-desktop` baseline
+re-saved (`-SaveBaseline`, a third run of the whole suite, calibration 1.03 against the
+previous baseline; its `tasfw-perf.exe` and `bitfs-turn.exe` are the reference now).
+clang-cl was built and tested, not measured.
+
 ## 2026-09-13: a savestate is the game's bytes only (ROADMAP 3.12, hard rule 7)
 
 The DLL's `.data` and `.bss` end in the mingw-w64 runtime's own state, which the Windows

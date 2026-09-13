@@ -22,6 +22,12 @@ namespace tasfw::tests
 	public:
 		using Base = TopLevelScript<FakeResource, TTracker>;
 		using Base::AdvanceFrameWrite;
+		using Base::Compare;
+		using Base::CompareAdhoc;
+		using Base::DynamicCompare;
+		using Base::DynamicCompareAdhoc;
+		using Base::DynamicModifyCompare;
+		using Base::DynamicModifyCompareAdhoc;
 		using Base::Execute;
 		using Base::ExecuteAdhoc;
 		using Base::ExportM64;
@@ -34,6 +40,8 @@ namespace tasfw::tests
 		using Base::LongLoad;
 		using Base::Modify;
 		using Base::ModifyAdhoc;
+		using Base::ModifyCompare;
+		using Base::ModifyCompareAdhoc;
 		using Base::Rollback;
 		using Base::Test;
 		using Base::TrackedStateExists;
