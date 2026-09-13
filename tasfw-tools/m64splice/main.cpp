@@ -11,8 +11,11 @@
 // (the MarioTrace script) and reports the first frame at which what the inputs produce
 // differs, with the state each movie carried into the level. Exit 0 when the spliced part
 // plays identically to the end of the second movie, 1 when a movie never enters the level
-// or the traces part, 2 on usage or load errors. The output's header is what M64::save
-// writes.
+// or the traces part, 2 on usage or load errors. Each DLL is declared to be the game its
+// file name says (sm64_jp, sm64_us; JP when it says nothing), and the output's header names
+// the first DLL's game, which is what it is for by construction. A movie whose header names
+// another game than the DLL it is played on gets a note, not an error: playing it is what
+// settles which game it is for.
 //
 // --lead <frames>: splice that many frames before each entry frame instead of at it. The
 // warp into a level is a stretch where the stick does nothing but the C buttons still turn
@@ -112,17 +115,24 @@ int main(int argc, char** argv)
 
 	try
 	{
-		LibSm64Config config;
-		config.dllPath = firstDll;
-		config.countryCode = CountryCode::SUPER_MARIO_64_J;
-		config.saveMode = LibSm64SaveMode::Dirty;
-		LibSm64 first(config);
+		auto declare = [](const fs::path& dll) -> LibSm64Config
+		{
+			LibSm64Config config;
+			config.dllPath = dll;
+			if (!LibSm64::VersionFromPath(dll, config.countryCode))
+			{
+				config.countryCode = CountryCode::SUPER_MARIO_64_J;
+				std::printf("note: %s does not say which game it is; taking it for the jp game\n", dll.string().c_str());
+			}
+			config.saveMode = LibSm64SaveMode::Dirty;
+			return config;
+		};
+		LibSm64 first(declare(firstDll));
 		std::optional<LibSm64> secondOwned;
 		LibSm64* second = &first;
 		if (!fs::equivalent(firstDll, secondDll))
 		{
-			config.dllPath = secondDll;
-			secondOwned.emplace(config);
+			secondOwned.emplace(declare(secondDll));
 			second = &*secondOwned;
 		}
 
@@ -138,6 +148,17 @@ int main(int argc, char** argv)
 			std::fprintf(stderr, "error: could not load movie %s\n", secondPath.string().c_str());
 			return 2;
 		}
+
+		auto headerNote = [](const M64& movie, const LibSm64& resource)
+		{
+			std::string mismatch = resource.CheckMovie(movie);
+			if (!mismatch.empty())
+				std::printf("note: %s; playing it there anyway, the transitions and the trace decide\n", mismatch.c_str());
+		};
+		headerNote(firstMovie, first);
+		headerNote(secondMovie, *second);
+		firstMovie.metadata.countryCode = first.config.countryCode; // the output is a movie for the first DLL's game
+		firstMovie.metadata.rom = LibSm64::RomFor(first.config.countryCode);
 
 		int64_t firstEntry = EntryFrame(first, firstMovie, level, "first");
 		int64_t secondEntry = EntryFrame(*second, secondMovie, level, "second");
@@ -165,8 +186,8 @@ int main(int argc, char** argv)
 			std::fprintf(stderr, "error: could not write %s\n", outPath.string().c_str());
 			return 2;
 		}
-		std::printf("wrote %s: %lld inputs (%lld from the first movie, %lld from the second)\n\n", outPath.string().c_str(),
-			(long long)splice.frames, (long long)firstCut, (long long)(splice.frames - firstCut));
+		std::printf("wrote %s: %lld inputs (%lld from the first movie, %lld from the second), a movie for the %s game\n\n", outPath.string().c_str(),
+			(long long)splice.frames, (long long)firstCut, (long long)(splice.frames - firstCut), LibSm64::VersionName(first.config.countryCode));
 
 		// Does the spliced part play on the first DLL as the second movie plays on its own? Trace
 		// both from their entry frames and compare what the inputs produce, frame by frame.

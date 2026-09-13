@@ -1,10 +1,14 @@
 #include <doctest/doctest.h>
 #include <tasfw/Inputs.hpp>
 
+#include "script_fixtures.hpp"
+
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <vector>
+
+using namespace tasfw::tests;
 
 namespace
 {
@@ -66,6 +70,83 @@ TEST_CASE("M64 save fills gaps with neutral inputs")
 	CHECK(reader.frames.at(2) == Inputs(0, 0, 0));
 	CHECK(reader.frames.at(4) == Inputs(4, 5, 6));
 
+	std::filesystem::remove(path);
+}
+
+TEST_CASE("M64 identity: a fresh movie is the JP game, and the game a movie is saved as loads back")
+{
+	auto path = TempMovie("tasfw-tests-identity.m64");
+	std::filesystem::remove(path);
+
+	M64 fresh(path);
+	CHECK(fresh.metadata.rom == Rom::SUPER_MARIO_64_J);
+	CHECK(fresh.metadata.countryCode == CountryCode::SUPER_MARIO_64_J);
+	fresh.frames[0] = Inputs(1, 2, 3);
+	REQUIRE(fresh.save() == 1);
+	M64 loadedJp(path);
+	REQUIRE(loadedJp.load() == 1);
+	CHECK(loadedJp.metadata.rom == Rom::SUPER_MARIO_64_J);
+	CHECK(loadedJp.metadata.countryCode == CountryCode::SUPER_MARIO_64_J);
+	std::filesystem::remove(path);
+
+	M64 us(path);
+	us.metadata.rom = Rom::SUPER_MARIO_64_U;
+	us.metadata.countryCode = CountryCode::SUPER_MARIO_64_U;
+	us.frames[0] = Inputs(1, 2, 3);
+	REQUIRE(us.save() == 1);
+	{
+		// Mupen layout: the ROM's CRC bytes at 0xE4, its country and version bytes at 0xE8.
+		std::ifstream f(path, std::ios::binary);
+		f.seekg(0xE4);
+		unsigned char header[6];
+		f.read(reinterpret_cast<char*>(header), 6);
+		CHECK(header[0] == 0x63);
+		CHECK(header[1] == 0x5A);
+		CHECK(header[2] == 0x2B);
+		CHECK(header[3] == 0xFF);
+		CHECK(header[4] == 'E');
+		CHECK(header[5] == 0);
+	}
+	M64 loadedUs(path);
+	REQUIRE(loadedUs.load() == 1);
+	CHECK(loadedUs.metadata.rom == Rom::SUPER_MARIO_64_U);
+	CHECK(loadedUs.metadata.countryCode == CountryCode::SUPER_MARIO_64_U);
+
+	// Saving into the existing file keeps writing the movie's own game.
+	loadedUs.frames[1] = Inputs(4, 5, 6);
+	REQUIRE(loadedUs.save() == 1);
+	M64 again(path);
+	REQUIRE(again.load() == 1);
+	CHECK(again.metadata.countryCode == CountryCode::SUPER_MARIO_64_U);
+	CHECK(again.frames.size() == 2);
+	std::filesystem::remove(path);
+}
+
+TEST_CASE("ExportM64 marks the export with the game the source movie is for")
+{
+	auto path = TempMovie("tasfw-tests-export-identity.m64");
+	std::filesystem::remove(path);
+
+	FakeResource resource;
+	M64 source;
+	source.metadata.rom = Rom::SUPER_MARIO_64_U;
+	source.metadata.countryCode = CountryCode::SUPER_MARIO_64_U;
+	for (int i = 0; i < 5; i++)
+		source.frames[i] = In(i);
+	RunRoot(resource, source, [&](auto& s)
+		{
+			s.AdvanceFrameWrite(In(10));
+			s.AdvanceFrameWrite(In(11));
+			CHECK(s.ExportM64(path));
+		});
+
+	M64 exported(path);
+	REQUIRE(exported.load() == 1);
+	CHECK(exported.metadata.rom == Rom::SUPER_MARIO_64_U);
+	CHECK(exported.metadata.countryCode == CountryCode::SUPER_MARIO_64_U);
+	REQUIRE(exported.frames.size() == 2);
+	CHECK(exported.frames.at(0) == In(10));
+	CHECK(exported.frames.at(1) == In(11));
 	std::filesystem::remove(path);
 }
 

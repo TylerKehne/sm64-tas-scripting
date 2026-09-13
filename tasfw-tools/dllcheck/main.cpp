@@ -1,8 +1,11 @@
 // dllcheck: is this libsm64 DLL the one our headers describe, and what does a frame cost?
 //
-//   dllcheck <libsm64.dll> <movie.m64> <frame> [--save-mode full|fixed|dirty] [--leak-scan [frames]] [--levels]
+//   dllcheck <libsm64.dll> <movie.m64> <frame> [--version jp|us] [--save-mode full|fixed|dirty] [--leak-scan [frames]] [--levels]
 //
-// Loads the DLL, runs the VerifyLayout script to <frame> (which should be inside a level)
+// Loads the DLL, declared to be the game --version says or its file name does (sm64_jp,
+// sm64_us; JP when neither), checks that the movie's header names the same game (a movie
+// for the other version desyncs without a word), runs the VerifyLayout script to <frame>
+// (which should be inside a level)
 // and prints one line per check (ROADMAP 1.1); in the fixed save mode it also reports
 // whether the fixed slices cover each symbol the framework depends on. Then it replays the
 // movie on the resource itself and prints the measured cost of a frame advance and of a
@@ -591,13 +594,15 @@ int main(int argc, char** argv)
 {
 	if (argc < 4)
 	{
-		std::fprintf(stderr, "usage: dllcheck <libsm64.dll> <movie.m64> <frame> [--save-mode full|fixed|dirty] [--leak-scan [frames]] [--objects] [--dirty-scan [frames]] [--dirty-replay] [--levels] [--trace [frames]]\n");
+		std::fprintf(stderr, "usage: dllcheck <libsm64.dll> <movie.m64> <frame> [--version jp|us] [--save-mode full|fixed|dirty] [--leak-scan [frames]] [--objects] [--dirty-scan [frames]] [--dirty-replay] [--levels] [--trace [frames]]\n");
 		return 2;
 	}
 
 	std::filesystem::path dllPath = argv[1];
 	std::filesystem::path m64Path = argv[2];
 	int64_t frame = std::stoll(argv[3]);
+	CountryCode version = CountryCode::SUPER_MARIO_64_J;
+	const char* versionSource = LibSm64::VersionFromPath(dllPath, version) ? "from the DLL's name" : "assumed; the DLL's name says nothing, pass --version";
 	LibSm64SaveMode saveMode = LibSm64SaveMode::Dirty;
 	bool listObjects = false;
 	int leakScanFrames = 0;
@@ -610,11 +615,29 @@ int main(int argc, char** argv)
 		std::string arg = argv[i];
 		if (arg == "--save-mode")
 		{
-			if (i + 1 >= argc || !ParseLibSm64SaveMode(argv[i + 1], saveMode))
+			if (i + 1 >= argc || !LibSm64::ParseSaveMode(argv[i + 1], saveMode))
 			{
 				std::fprintf(stderr, "--save-mode needs one of full, fixed, dirty\n");
 				return 2;
 			}
+			i++;
+		}
+		else if (arg == "--version")
+		{
+			bool known = false;
+			if (i + 1 < argc)
+				for (CountryCode candidate : {CountryCode::SUPER_MARIO_64_J, CountryCode::SUPER_MARIO_64_U})
+					if (std::string(argv[i + 1]) == LibSm64::VersionName(candidate))
+					{
+						version = candidate;
+						known = true;
+					}
+			if (!known)
+			{
+				std::fprintf(stderr, "--version needs one of jp, us\n");
+				return 2;
+			}
+			versionSource = "--version";
 			i++;
 		}
 		else if (arg == "--objects")
@@ -652,12 +675,12 @@ int main(int argc, char** argv)
 	{
 		LibSm64Config config;
 		config.dllPath = dllPath;
-		config.countryCode = CountryCode::SUPER_MARIO_64_J;
+		config.countryCode = version;
 		config.saveMode = saveMode;
 
 		std::cout << "DLL:   " << dllPath.string() << "\n";
 		std::cout << "movie: " << m64Path.string() << "\n";
-		std::cout << "frame: " << frame << " (" << LibSm64SaveModeName(saveMode) << " saves)\n\n";
+		std::cout << "frame: " << frame << " (" << LibSm64::SaveModeName(saveMode) << " saves)\n";
 
 		LibSm64 resource(config);
 
@@ -668,10 +691,21 @@ int main(int argc, char** argv)
 			return 2;
 		}
 
+		// The same game on both sides, or nothing below means anything.
+		int failures = 0;
+		std::string mismatch = resource.CheckMovie(m64);
+		std::cout << "game:  " << LibSm64::VersionName(version) << " (" << versionSource << "), movie header " << LibSm64::VersionName(m64.metadata.countryCode) << "\n";
+		if (!mismatch.empty())
+		{
+			std::cout << "  FAIL: " << mismatch << "\n";
+			failures++;
+		}
+		std::cout << "\n";
+
 		// The layout report comes from the same script the pipeline runs before its first stage.
 		std::cout << "Layout checks at frame " << frame << " (VerifyLayout):\n";
 		auto layout = TopLevelScriptBuilder<VerifyLayout>::Build(m64).ImportResource(&resource).Run(frame, std::vector<ExpectedObject>());
-		int failures = layout.failures;
+		failures += layout.failures;
 		for (const std::string& line : layout.lines)
 			std::cout << "  " << line << "\n";
 
@@ -725,7 +759,7 @@ int main(int argc, char** argv)
 			(unsigned long long)results.framesAdvanced, results.playMicros / 1000.0,
 			results.dirtyReplay ? " and the per-frame snapshots of --dirty-replay" : "");
 		std::printf("  save state:    %.1f us (%s saves, %d frames into the run)\n", results.saveMicros,
-			LibSm64SaveModeName(saveMode), results.warmupFrames);
+			LibSm64::SaveModeName(saveMode), results.warmupFrames);
 		std::printf("  load state:    %.1f us\n", results.loadMicros);
 		if (results.haveDirtyPages)
 			std::printf("  dirty pages:   %zu of %zu pages written since baseline %d (%zu KB per save), %llu first writes in all baselines\n",
@@ -739,7 +773,7 @@ int main(int argc, char** argv)
 			auto print = [&](const char* title, const std::vector<LeakRange>& ranges, size_t bytes)
 			{
 				std::printf("\n%s: %llu range(s), %llu byte(s) not restored by the load (%s saves)\n", title,
-					(unsigned long long)ranges.size(), (unsigned long long)bytes, LibSm64SaveModeName(saveMode));
+					(unsigned long long)ranges.size(), (unsigned long long)bytes, LibSm64::SaveModeName(saveMode));
 				size_t shown = 0;
 				for (const LeakRange& r : ranges)
 				{

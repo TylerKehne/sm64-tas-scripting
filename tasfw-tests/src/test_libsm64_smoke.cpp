@@ -108,6 +108,15 @@ TEST_CASE("libsm64: loads, passes the layout check, and plays the movie determin
 	M64 m64(Env("TASFW_M64"));
 	REQUIRE(m64.load() == 1);
 
+	// The movie and the DLL must be the same game (the DLL's from its name, the movie's from
+	// its header); the other pairing desyncs without a word.
+	CHECK(resource.CheckMovie(m64).empty());
+	M64 other = m64;
+	other.metadata.countryCode = config.countryCode == CountryCode::SUPER_MARIO_64_J ? CountryCode::SUPER_MARIO_64_U : CountryCode::SUPER_MARIO_64_J;
+	std::string mismatch = resource.CheckMovie(other);
+	CHECK(mismatch.find(LibSm64::VersionName(other.metadata.countryCode)) != std::string::npos);
+	CHECK(mismatch.find(LibSm64::VersionName(config.countryCode)) != std::string::npos);
+
 	SmokeResults first = Play(resource, m64, frame);
 	CHECK(first.snapshot.frame == uint32_t(frame));
 

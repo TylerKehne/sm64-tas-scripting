@@ -338,6 +338,18 @@ int M64::load()
 			std::cerr << "empty M64\n";
 			return 0;
 		}
+
+		// The game the movie is for (the members); a file too short for a header keeps the defaults.
+		if (length >= 0xEA)
+		{
+			uint32_t bigEndianRom;
+			uint16_t bigEndianCountry;
+			f.seekg(0xE4, std::ios_base::beg);
+			f.read(reinterpret_cast<char*>(&bigEndianRom), sizeof(uint32_t));
+			f.read(reinterpret_cast<char*>(&bigEndianCountry), sizeof(uint16_t));
+			metadata.rom = Rom(byteswap(bigEndianRom));
+			metadata.countryCode = CountryCode(byteswap(bigEndianCountry));
+		}
 		f.seekg(0x400, std::ios_base::beg);
 
 		uint64_t index = 0;
@@ -440,12 +452,15 @@ int M64::save(long initFrame)
 			char romName[32] = "SUPER MARIO 64";
 			f.write(reinterpret_cast<char*>(romName), 14);
 
-			f.seekp(0xE4, std::ios_base::beg);
-			uint32_t rom = byteswap((uint32_t)Rom::SUPER_MARIO_64);
-			uint16_t countryCode = byteswap((uint16_t)CountryCode::SUPER_MARIO_64_J);
-			f.write(reinterpret_cast<char*>(&rom), sizeof(uint32_t));
-			f.write(reinterpret_cast<char*>(&countryCode), sizeof(uint16_t));
 		}
+
+		// The game the movie is for, for new and existing files alike: the members are the
+		// movie's own (loaded from this file, or copied from the source movie by ExportM64).
+		f.seekp(0xE4, std::ios_base::beg);
+		uint32_t bigEndianRom = byteswap((uint32_t)metadata.rom);
+		uint16_t bigEndianCountry = byteswap((uint16_t)metadata.countryCode);
+		f.write(reinterpret_cast<char*>(&bigEndianRom), sizeof(uint32_t));
+		f.write(reinterpret_cast<char*>(&bigEndianCountry), sizeof(uint16_t));
 
 		// Write frames
 		f.seekp(0x400 + 4 * initFrame, std::ios_base::beg);

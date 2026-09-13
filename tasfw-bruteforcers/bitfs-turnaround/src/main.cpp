@@ -162,7 +162,12 @@ namespace
 			LibSm64Config config;
 			config.dllPath = paths[size_t(i)];
 			config.saveMode = pipeline.saveMode;
-			config.countryCode = CountryCode::SUPER_MARIO_64_J;
+			// A DLL is the game its name says (sm64_jp, sm64_us); one whose name says nothing is
+			// taken for the movie's game, which is what {version} in dllPattern resolves to anyway.
+			// VerifyGame then checks the movie against it, so a literal pattern naming the other
+			// game fails before any stage.
+			if (!LibSm64::VersionFromPath(config.dllPath, config.countryCode))
+				config.countryCode = pipeline.countryCode;
 			resources.emplace_back(config);
 			resources.back().useCostModel = pipeline.costModel;
 		}
@@ -179,6 +184,12 @@ namespace
 		M64 m64(moviePath);
 		if (m64.load() != 1)
 			throw std::runtime_error("could not load movie " + moviePath.string());
+		std::string mismatch = resource.CheckMovie(m64); // a stage's own movie may name another game than the pipeline's
+		if (!mismatch.empty())
+		{
+			std::fprintf(stderr, "error: %s\n", mismatch.c_str());
+			return false;
+		}
 		auto status = TopLevelScriptBuilder<VerifyLayout>::Build(m64).ImportResource(&resource).Run(stage.startFrame, BitFsExpectedObjects);
 		std::printf("layout checks at frame %lld (stage \"%s\", %s):\n", (long long)stage.startFrame, stage.name.c_str(),
 			pipeline.DllPaths()[0].filename().string().c_str());
@@ -224,8 +235,8 @@ namespace
 		{
 			std::printf("config:  %s\nmovie:   %s\ndlls:    %s (%d threads, %s saves)\noutput:  %s\n",
 				options.config.string().c_str(), pipeline.m64.string().c_str(),
-				(pipeline.dllDirectory / pipeline.dllPattern).string().c_str(), pipeline.threads,
-				LibSm64SaveModeName(pipeline.saveMode), pipeline.outputDirectory.string().c_str());
+				(pipeline.dllDirectory / pipeline.ResolvedDllPattern()).string().c_str(), pipeline.threads,
+				LibSm64::SaveModeName(pipeline.saveMode), pipeline.outputDirectory.string().c_str());
 			ListStages(pipeline);
 
 			if (pipeline.stages.empty())

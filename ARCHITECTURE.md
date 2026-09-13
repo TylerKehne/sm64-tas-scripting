@@ -336,10 +336,12 @@ Everything below assumes the pinned DLL in `res/` (see `docs/libsm64.md`):
   and `dllcheck --save-mode fixed` adds the slice coverage (docs/libsm64.md). The framework
   itself has no layout concept.
 - `PyramidUpdate` re-implements physics from the decomp.
-- `M64::save` writes the JP ROM CRC and country code (`Rom`, `CountryCode` in `Inputs.hpp`)
-  into every movie it creates, and `M64::load` reads no header at all (ROADMAP 2.5): a movie
-  for the US game exported today is marked JP, and nothing checks that a movie and a DLL are
-  the same game.
+- `M64` reads the game a movie is for from its header (the ROM CRC and country code, `Rom`
+  and `CountryCode` in `Inputs.hpp`) and writes it back; `ExportM64` marks an export with
+  its source movie's. Whether a movie and a DLL are the same game is libsm64's question, not
+  the framework's (`LibSm64::CheckMovie`, asked by the pipeline before its first stage, the
+  tests and `dllcheck`); the pipeline's `dllPattern` picks the DLLs by the movie's game
+  (`{version}`).
 
 The decomp checkout at `C:\repos\sm64` is not part of the build; it is reference material.
 

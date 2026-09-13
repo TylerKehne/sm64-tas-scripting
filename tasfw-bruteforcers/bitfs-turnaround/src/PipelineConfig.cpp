@@ -101,7 +101,17 @@ PipelineConfig PipelineConfig::Load(const fs::path& file)
 	{
 		ConfigError(file.string() + ": " + e.what());
 	}
-	return Parse(root, fs::absolute(file).parent_path());
+	PipelineConfig pipeline = Parse(root, fs::absolute(file).parent_path());
+
+	// The movie says which game the pipeline runs: {version} in dllPattern, and what the
+	// resources are declared to be. A missing movie is reported later (CheckInputsExist).
+	if (fs::exists(pipeline.m64))
+	{
+		M64 movie(pipeline.m64);
+		if (movie.load())
+			pipeline.countryCode = movie.metadata.countryCode;
+	}
+	return pipeline;
 }
 
 PipelineConfig PipelineConfig::Parse(const json& root, const fs::path& configDirectory)
@@ -116,10 +126,10 @@ PipelineConfig PipelineConfig::Parse(const json& root, const fs::path& configDir
 	const json& resources = RequireObject(root, "resources", "the top level");
 	RejectUnknownKeys(resources, { "dllDirectory", "dllPattern", "threads", "saveMode", "costModel" }, "resources");
 	pipeline.dllDirectory = pipeline.Resolve(Require<std::string>(resources, "dllDirectory", "resources"));
-	pipeline.dllPattern = Optional<std::string>(resources, "dllPattern", "sm64_jp_{}.dll", "resources");
+	pipeline.dllPattern = Optional<std::string>(resources, "dllPattern", "sm64_{version}_{}.dll", "resources");
 	pipeline.threads = Optional<int>(resources, "threads", 1, "resources");
-	std::string saveMode = Optional<std::string>(resources, "saveMode", LibSm64SaveModeName(LibSm64SaveMode::Dirty), "resources");
-	if (!ParseLibSm64SaveMode(saveMode, pipeline.saveMode))
+	std::string saveMode = Optional<std::string>(resources, "saveMode", LibSm64::SaveModeName(LibSm64SaveMode::Dirty), "resources");
+	if (!LibSm64::ParseSaveMode(saveMode, pipeline.saveMode))
 		ConfigError("\"saveMode\" in resources must be \"full\", \"fixed\" or \"dirty\", not \"" + saveMode + "\"");
 	pipeline.costModel = Optional<bool>(resources, "costModel", true, "resources");
 	if (pipeline.threads < 1)
@@ -184,13 +194,23 @@ fs::path PipelineConfig::Resolve(const fs::path& path) const
 	return (path.is_absolute() ? path : baseDirectory / path).lexically_normal();
 }
 
+std::string PipelineConfig::ResolvedDllPattern() const
+{
+	std::string pattern = dllPattern;
+	size_t version = pattern.find("{version}");
+	if (version != std::string::npos)
+		pattern.replace(version, 9, LibSm64::VersionName(countryCode));
+	return pattern;
+}
+
 std::vector<fs::path> PipelineConfig::DllPaths() const
 {
 	std::vector<fs::path> paths;
 	paths.reserve(size_t(threads));
+	std::string pattern = ResolvedDllPattern();
 	for (int i = 0; i < threads; i++)
 	{
-		std::string name = dllPattern;
+		std::string name = pattern;
 		size_t placeholder = name.find("{}");
 		if (placeholder != std::string::npos)
 			name.replace(placeholder, 2, std::to_string(i));

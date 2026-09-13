@@ -183,7 +183,7 @@ on the deliberate first-write faults unless told not to; use `full` there.
 ## Checking a DLL: `dllcheck`
 
 ```
-build\Release\out\dllcheck.exe <libsm64.dll> <movie.m64> <frame> [--save-mode full|fixed|dirty] [--leak-scan [frames]] [--objects] [--dirty-scan [frames]] [--dirty-replay] [--levels] [--trace [frames]]
+build\Release\out\dllcheck.exe <libsm64.dll> <movie.m64> <frame> [--version jp|us] [--save-mode full|fixed|dirty] [--leak-scan [frames]] [--objects] [--dirty-scan [frames]] [--dirty-replay] [--levels] [--trace [frames]]
 ```
 
 Runs the `VerifyLayout` script (`tasfw-scripts/inc/VerifyLayout.hpp`) to `<frame>` (pick
@@ -213,6 +213,11 @@ The script takes a list of expected objects (`ExpectedObject`; the pipeline pass
 slot: active, running the declared behavior and, unless the declaration opts out, at the
 declared home. `bitfs-turn --dry-run` prints the report at the first stage's frame; a run
 prints it before its first stage and stops on a failure.
+
+Before the layout checks `dllcheck` prints which game the DLL is declared to be
+(`--version jp|us`, or its file name: `sm64_jp`, `sm64_us`; JP when neither says) and which
+game the movie's header names, with a `FAIL:` when they differ: a movie for the other
+version desyncs without a word, so nothing below it would mean anything.
 
 `--dirty-scan [frames]` (default 120) and `--dirty-replay` measure what the game writes:
 consecutive frames are compared page by page (4 KB), under a fixed input pattern from
@@ -298,10 +303,15 @@ Mario's coordinates, so cutting ten frames earlier drops the presses and nothing
 trace is also where to look when another pair of movies parts: health, coins, lives, cap
 flags, the R-button camera selection and the RNG seed are all in it.
 
-The output's header is what `M64::save` writes today, the JP CRC and country code
-(ROADMAP 2.5). `scripts\test.ps1` runs the libsm64 group on `res\sm64_us_0.dll` and this
-movie at frame 3397 whenever that DLL exists; the group passes there (2026-09-13): layout,
-slots, determinism, every save mode, the drift test with max diff 0.
+The output's header names the US game: `m64splice` marks the output as the first DLL's
+game (`M64Metadata`, which `M64` reads from a header and writes back), and
+every place a movie meets a DLL checks that the two agree (`LibSm64::CheckMovie`: the
+pipeline before its first stage, the libsm64 tests, `dllcheck`), since the other pairing
+desyncs without a word. `1keyU.m64`'s own header says JP, whoever wrote it; `m64splice`
+notes that and plays it anyway, because playing is what settles which game a movie is for.
+`scripts\test.ps1` runs the libsm64 group on `res\sm64_us_0.dll` and this movie at frame
+3397 whenever that DLL exists; the group passes there (2026-09-13): layout, slots,
+determinism, every save mode, the drift test with max diff 0.
 
 ## Why one copy per thread
 
@@ -316,7 +326,7 @@ thread needs its own private game memory, so each thread loads a distinct file.
 ```
 
 ```bash
-for i in $(seq 1 23); do cp res/sm64_jp_0.so res/sm64_jp_$i.so; done   # and "dllPattern": "sm64_jp_{}.so"
+for i in $(seq 1 23); do cp res/sm64_jp_0.so res/sm64_jp_$i.so; done   # and "dllPattern": "sm64_{version}_{}.so"
 ```
 
 ## Linux
@@ -381,8 +391,10 @@ making these derived instead of hardcoded.
    by decision (ROADMAP 2.4) and declared with behavior and home in
    `tasfw-scripts/inc/BitFsObjects.hpp`; the `VerifyLayout` script verifies them inside the
    level before the pipeline's first stage, so a shift fails start-up loudly.
-4. **ROM/country codes** in `Inputs.hpp` (`Rom::SUPER_MARIO_64`, `CountryCode::SUPER_MARIO_64_J`):
-   what `M64::save` writes into every movie it creates; `M64::load` checks nothing (ROADMAP 2.5).
+4. **ROM/country codes** in `Inputs.hpp` (`Rom`, `CountryCode`: the JP and US values). `M64`
+   reads them from a movie's header and writes them back, and `LibSm64::CheckMovie` compares
+   a movie's with the game a DLL was declared to be (its file name, `--version`, or the
+   movie itself in the pipeline). A build of another version is a new pair of values.
 5. **Exported names.** See "Renamed symbols"; new renames go into `LibSm64SymbolAliases`.
 
 ## Verifying a DLL by hand
@@ -429,8 +441,8 @@ skipped and the jobs are green on the DLL-free tests alone. The unlocked binarie
 uploaded as artifacts. Hosted runners' timings are not gated (they compare to nothing).
 The pinned DLL (wafel v0.8.1's) itself never enters CI: it is a local artifact, and the
 bitfs-sbb build (wafel v0.8.5's) reaches the same golden state and counts ("Known
-builds"). The US game is not in CI either: its key derives from the US ROM, so it would be
-a second secret (ROADMAP 2.5).
+builds"). The US game is not in CI, by decision (2026-09-13): the local run covers it
+(`scripts\test.ps1` with `res\sm64_us_0.dll` present, "A movie for the US game").
 
 ## Reproducing the DLL from source (not yet done)
 

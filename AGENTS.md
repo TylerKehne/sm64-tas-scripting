@@ -108,7 +108,7 @@ its place with numbers, and "it is cleaner" is not a number.
 - Tests: `powershell -ExecutionPolicy Bypass -File scripts\test.ps1` (add `-Config Release`,
   `-Compiler clang`, `-Filter '*Script*'`). Under a second without the DLL, a few seconds with it.
 - The DLL-level check is `build\Release\out\dllcheck.exe <dll> <m64> <frame>
-  [--save-mode full|fixed|dirty] [--leak-scan [frames]] [--objects] [--dirty-scan [frames]]
+  [--version jp|us] [--save-mode full|fixed|dirty] [--leak-scan [frames]] [--objects] [--dirty-scan [frames]]
   [--dirty-replay] [--levels] [--trace [frames]]` (docs/libsm64.md). It plays to a frame,
   verifies the struct layouts
   against the game, and prints frame-advance and save/load cost in the chosen save mode.
