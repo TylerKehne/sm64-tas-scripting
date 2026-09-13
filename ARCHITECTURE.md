@@ -57,11 +57,15 @@ type is planned (ROADMAP 3.11).
   for diagnosis (it is how ROADMAP 4.5 was bisected) and costs replay time.
 
 `LibSm64` (`tasfw-resources/src/LibSm64.cpp`) loads the DLL with `LoadLibrary`, calls
-`sm64_init`, and treats the `.data` and `.bss` sections as the whole game state:
+`sm64_init`, and treats the game's bytes of the `.data` and `.bss` sections as the whole game
+state. The sections' edges hold the state of the C runtime the DLL was built with, which the
+loader writes from every thread of the process (a TLS callback at each thread's exit), so no
+save mode copies or restores them: `LibSm64KnownGameBytes` bounds the game's bytes per known
+build, verified at construction (docs/libsm64.md, "The game's bytes"; ROADMAP 3.12):
 
 - Three save modes, `LibSm64SaveMode`, chosen once at construction (`resources.saveMode` in
   the pipeline config; docs/libsm64.md, "Savestates") and invisible to scripts: `full` copies
-  both sections (about 2.4 MB + 4.9 MB); `fixed` copies five hardcoded 100 KB-granular
+  the game's bytes of both sections (about 2.4 MB + 4.9 MB); `fixed` copies five hardcoded 100 KB-granular
   slices (about 1.5 MB) found empirically for the pinned DLL build, not derived from
   symbols; `dirty` (the default) write-protects the sections, records first writes per page
   and copies the pages written since a baseline the resource takes on its own at the first

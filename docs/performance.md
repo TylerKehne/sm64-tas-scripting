@@ -176,10 +176,11 @@ families play the movie to `TASFW_FRAME` (default 3330) once, then measure:
 `^BM_LibSm64Scaling` runs `FrameAdvance` and `SaveErase` on 1, 2, 4, 8 and 16 threads,
 each thread on its own DLL copy with `dirty` saves, as the search runs (thread i loads
 the copy whose trailing index is i + 1, `res\sm64_jp_1.dll` onward; the family skips
-without those copies). `perf.ps1` does not pin this family: pinned to the performance cores'
-16 logical CPUs it hung in 1 launch of 10, for both the current and the reference binary,
-after one thread died with `STATUS_RESOURCE_NOT_OWNED` (ROADMAP 3.12,
-`scripts\perf_scaling_hang.ps1`); unpinned, 0 of 20. Google Benchmark
+without those copies). `perf.ps1` does not pin this family: 16 threads on the 8
+performance cores' SMT siblings is not the pipeline's shape (16 threads on 24 cores), and
+pinning it that way once exposed a savestate race in `LibSm64` that hung 1 launch in 10
+(ROADMAP 3.12: the runtime's bytes at the sections' edges, fixed 2026-09-13 and gated
+with 100 pinned launches by `scripts\perf_scaling_hang.ps1`). Google Benchmark
 reports these rows per thread, so the aggregate rate is n times the row's;
 `perf_compare.py` computes efficiency, the per-thread rate at n threads over the rate at
 one thread, from each run's own rows. First numbers (2026-09-08, 16 cores, 32 logical
@@ -250,8 +251,8 @@ efficiency core); unpinned, Windows' hybrid scheduler handed each run a differen
 cores and the wall time moved with it. A machine with fewer performance cores than the
 configured threads runs it unpinned, and the runner says so. The throughput run stays
 unpinned: its 16 threads would have to share the 8 performance cores' SMT siblings, which
-is the configuration that hangs the scaling family (Tier B, ROADMAP 3.12) and is not the
-pipeline's shape either (16 threads on 24 cores). `perf.ps1` also runs the
+is not the pipeline's shape (16 threads on 24 cores); it is also the configuration that
+exposed the savestate race of ROADMAP 3.12 in the scaling family (Tier B), fixed since. `perf.ps1` also runs the
 reference `bitfs-turn.exe` on each workload before the current one (`-Alternations`
 pairs, default 1, fastest of each); the time gate is current against reference, while the
 exact counts still gate against the committed baseline. Both rows carry `cycles`, the

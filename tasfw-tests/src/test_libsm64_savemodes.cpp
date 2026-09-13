@@ -5,16 +5,18 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <memory>
 #include <stdexcept>
 #include <string>
 #include <vector>
 
 // The resource's save modes, against the real game DLL (libsm64_env.hpp says when these run
-// and what they play). Every mode must bring the whole .data and .bss back byte for byte from
-// a load, and the dirty mode's copy-on-write baselines must keep every live state exact
-// across runs. The subject is the resource itself, so these tests drive it directly, outside
-// any script (AGENTS.md, hard rule 9).
+// and what they play). Every mode must bring the game's bytes of .data and .bss back byte
+// for byte from a load and leave the C runtime's bytes at the sections' edges alone
+// (LibSm64GameBytes), and the dirty mode's copy-on-write baselines must keep every live
+// state exact across runs. The subject is the resource itself, so these tests drive it
+// directly, outside any script (AGENTS.md, hard rule 9).
 
 using namespace tasfw::tests;
 
@@ -158,6 +160,78 @@ TEST_CASE("libsm64: every save mode restores .data and .bss exactly, including p
 			MESSAGE("dirty pages: " << results.pagesInS0 << " at the first save of the run, " << results.pagesInS1
 				<< " after 60 frames; " << results.faults << " first writes recorded in all baselines");
 		}
+	}
+}
+
+TEST_CASE("libsm64: no save mode copies or restores the C runtime's bytes at the sections' edges"
+	* doctest::skip(!HaveDll()))
+{
+	// Both sections end in the state of the runtime the DLL was built with, which the loader
+	// touches from every thread of the process (LibSm64GameBytes; ROADMAP 3.12, the hang). A
+	// save takes the game's bytes only and a load puts back only those. Observed through the
+	// runtime's thread-key critical section in the .bss tail: changing its spin count is a
+	// legitimate operation on it (the Windows API for exactly that), and a load that restored
+	// the tail would put the old count back. In dirty mode that write is also what makes the
+	// load consider the page at all: it is the first write to it since the save's baseline.
+	for (LibSm64SaveMode mode : {LibSm64SaveMode::Dirty, LibSm64SaveMode::Fixed, LibSm64SaveMode::Full})
+	{
+		std::string modeName = LibSm64::SaveModeName(mode);
+		CAPTURE(modeName);
+		std::unique_ptr<LibSm64> owned;
+		try
+		{
+			owned = std::make_unique<LibSm64>(DllConfig(mode));
+		}
+		catch (const std::runtime_error& e)
+		{
+			REQUIRE(mode == LibSm64SaveMode::Fixed);
+			MESSAGE("fixed save mode unavailable on this build: " << std::string(e.what()));
+			continue;
+		}
+		LibSm64& resource = *owned;
+		const LibSm64GameBytes* game = resource.gameBytes();
+#if defined(_WIN32)
+		REQUIRE(game != nullptr); // every Windows build the tests run on has an entry
+#else
+		if (game == nullptr)
+		{
+			MESSAGE("no LibSm64KnownGameBytes entry for this build: both sections are saved whole, nothing to check");
+			continue;
+		}
+#endif
+		CHECK(game->begin[0] > 0);
+		CHECK(game->end[0] < resource.segment[0].length);
+		CHECK(game->begin[1] > 0);
+		CHECK(game->end[1] < resource.segment[1].length);
+
+		M64 m64(Env("TASFW_M64"));
+		REQUIRE(m64.load() == 1);
+		PlayFrames(resource, m64, TestFrame());
+		int64_t slot = resource.SaveState();
+
+		if (mode == LibSm64SaveMode::Full)
+		{
+			const LibSm64Mem& state = resource.slotManager.slotsById.at(slot);
+			CHECK(state.buf1.size() == game->end[0] - game->begin[0]);
+			CHECK(state.buf2.size() == game->end[1] - game->begin[1]);
+		}
+
+#if defined(_WIN32)
+		auto* cs = reinterpret_cast<CRITICAL_SECTION*>(static_cast<uint8_t*>(resource.segment[1].address) + game->threadKeyLock);
+		auto spinCount = [cs]()
+		{
+			ULONG_PTR raw = 0;
+			std::memcpy(&raw, &cs->SpinCount, sizeof raw);
+			return unsigned(raw & 0x00FFFFFFu); // the high byte holds flags the API keeps
+		};
+		const unsigned before = spinCount();
+		SetCriticalSectionSpinCount(cs, before + 1);
+		REQUIRE(spinCount() == before + 1);
+		resource.LoadState(slot);
+		CHECK(spinCount() == before + 1);
+		SetCriticalSectionSpinCount(cs, before);
+#endif
+		resource.slotManager.EraseSlot(slot);
 	}
 }
 

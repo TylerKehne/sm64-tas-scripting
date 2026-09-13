@@ -22,7 +22,11 @@ Every build goes through a `CMakePresets.json` preset named `<compiler>-<config>
 (`msvc-release`, `clang-cl-debug`, `gcc-relwithdebinfo`, ...), with build and test presets
 of the same names. The build directory is `build\<Config>` for MSVC and
 `build\<Config>-<compiler>` otherwise (`build\Release-clang`, `build/Release-gcc`), so every
-compiler can coexist. `build.ps1` only adds the Visual Studio environment on top of the
+compiler can coexist on one machine. Not across machines sharing a checkout: the Linux
+`clang-<config>` presets and the Windows `clang-cl-<config>` presets name the same
+directory (`build/Release-clang`), so in a container with the Windows checkout mounted the
+Linux preset finds the Windows cache and refuses; configure with `-B /tmp/build-clang` there,
+as the container commands below do. `build.ps1` only adds the Visual Studio environment on top of the
 Windows presets, and its `-CMakeArgs` passes extra cache variables through. `-KeepGoing`
 passes `-k 0` to ninja so every error in the tree is reported in one pass, which is what
 you want when checking a compiler for the first time.

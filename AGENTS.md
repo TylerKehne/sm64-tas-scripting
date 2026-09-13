@@ -62,14 +62,14 @@ its place with numbers, and "it is cleaner" is not a number.
 | `tasfw-scripts/` | Reusable BitFS scripts (pyramid oscillation, downhill angle search, dive-recover attempts), scattershot stages, and the scripts that look at the game rather than play it (`VerifyLayout`, `LevelTransitions`, `MarioTrace`, `SpliceMovie`), which the tools and tests run. |
 | `tasfw-bruteforcers/bitfs-turnaround/` | The only executable (`bitfs-turn.exe`): the BitFS pipeline as config-selected stages (`config.json`, `Stages.cpp`, `PipelineConfig`). `--list`, `--dry-run`, `--stage`. |
 | `tasfw-perf/` | Performance suite (Tier A microbenchmarks on an in-memory fake resource). Release only. |
-| `tasfw-tools/` | `dllcheck`: runs the `VerifyLayout` script against a DLL, reports fixed-slice coverage, measures frame-advance and savestate cost, and lists a movie's level transitions (`--levels`) or Mario and the camera around a frame (`--trace`). `m64splice`: a movie for one game version out of two, the first up to the frame it enters a level, the second from its own, played and checked frame by frame (docs/libsm64.md, "A movie for the US game"). |
+| `tasfw-tools/` | `dllcheck`: runs the `VerifyLayout` script against a DLL, reports fixed-slice coverage and what a savestate holds of the sections (`bytes:`, docs/libsm64.md "The game's bytes"), measures frame-advance and savestate cost, and lists a movie's level transitions (`--levels`) or Mario and the camera around a frame (`--trace`). `m64splice`: a movie for one game version out of two, the first up to the frame it enters a level, the second from its own, played and checked frame by frame (docs/libsm64.md, "A movie for the US game"). |
 | `tasfw-tests/` | Correctness tests (doctest), one file per subject; `script_fixtures.hpp` and `libsm64_env.hpp` hold what the `test_script_*` and `test_libsm64_*` files share. DLL-free tests always run; the libsm64 tests run when `res\` has the DLL and movie. `test_sm64_layout.cpp` compiles `sm64_layout.inc`, the pinned DLL's field offsets and struct sizes, against the copied headers, so the layout is checked without the game (docs/libsm64.md, "Struct layouts"). |
 | `tasfw-testing/` | Header-only test support shared by tests and benchmarks (`FakeResource`). |
 | `perf/` | Committed benchmark baselines, one directory per machine and compiler (`tyler-desktop\`, `tyler-desktop-clang\`): a JSON file per benchmark family plus `context.json`, written by `scripts\perf.ps1 -SaveBaseline` and read through `perf_compare.py compare`, not by hand; `tierd-ci.json` is CI's Tier D baseline. `perf/results/` is gitignored. |
 | `analysis/` | R script that plots scattershot CSV output; also the pipeline's default output directory (CSVs, `solutions/*.json`, `m64/`), all gitignored. |
 | `res/` | Gitignored runtime inputs: 24 copies of the libsm64 DLL (made by `scripts/unlock_libsm64.py`), other source .m64 files, and thousands of exported solution .m64 files. |
 | `movies/` | The committed source movies: `bitfs-pyramid-jp.m64` (JP, 3,804 frames; the tests, the perf suite, CI and `config.json` use it), `bitfs-osc-final-jp.m64` (JP, 3,726 frames; the `osc-final-test3` stage), `1keyU.m64` (US, 7,628 frames; a whole 1-key run, the source of the US way into BitFS) and `bitfs-pyramid-us.m64` (US, 3,871 frames; `1keyU.m64` to its BitFS entry, then the JP movie from its own: its frame 3397 is the JP movie's 3330, the libsm64 tests run on it when `res\` has the US DLL). |
-| `scripts/` | `build.ps1` (the supported build entry point on Windows), `test.ps1`, `perf.ps1` and its compare script, `unlock_libsm64.py` (the game from a ROM or the CI key), `perf_scaling_hang.ps1`, `dll_symbols.py`, `dll_layout.py` (the layout table from a DLL's DWARF), `decomp_diff.py` with `decomp_pin.json` (the copied decomp files against their pinned upstream revision; docs/decomp.md). |
+| `scripts/` | `build.ps1` (the supported build entry point on Windows), `test.ps1`, `perf.ps1` and its compare script, `unlock_libsm64.py` (the game from a ROM or the CI key), `perf_scaling_hang.ps1`, `dll_symbols.py`, `dll_layout.py` (the layout table from a DLL's DWARF), `dll_game_bytes.py` (a build's `LibSm64KnownGameBytes` entry from its COFF symbols: where the game's bytes of `.data` and `.bss` end and the C runtime's begin), `decomp_diff.py` with `decomp_pin.json` (the copied decomp files against their pinned upstream revision; docs/decomp.md). |
 | `cmake/` | `AddOptimizationFlags` (arch flag, FP determinism, LTO, OpenMP; applied to every first-party target), `Warnings` (`/W3`, `/W4`, `-Wall -Wextra` on every first-party target, and `TASFW_WARNINGS_AS_ERRORS`) and `SystemIncludes` (fetched dependencies as system headers, so their warnings never count). |
 | `docs/` | Provenance of the DLL (libsm64.md), what was copied from the decomp and at which revision (decomp.md), compiler pitfalls, performance. |
 
@@ -137,7 +137,8 @@ its place with numbers, and "it is cleaner" is not a number.
   current build, so the machine's drift cancels; without them the compare is absolute and
   says so. The runner refuses to start next to a VM or a busy CPU, keeps the single-thread
   rows and the deterministic Tier D run on performance cores (never 16 threads packed onto
-  them: that hangs, ROADMAP 3.12), switches the power plan for the run, and asks for
+  them: not the pipeline's shape, and the configuration that exposed the savestate race of
+  ROADMAP 3.12), switches the power plan for the run, and asks for
   `-SetupDefender` once per machine (docs/performance.md, "Running the suite").
 
 ## Hard rules
@@ -173,7 +174,10 @@ its place with numbers, and "it is cleaner" is not a number.
 7. Do not change what a `LibSm64` save mode copies, or when `dirty` takes a baseline, without
    the Tier B and D numbers; the `fixed` slices (`LibSm64FixedSlices` in `LibSm64.hpp`) are
    tuned to the pinned DLL build and are what the BitFS search runs on (docs/libsm64.md,
-   "Savestates").
+   "Savestates"). No mode copies or restores the C runtime's state at the sections' edges
+   (`LibSm64KnownGameBytes`, derived per build by `scripts/dll_game_bytes.py`): the loader
+   writes it from every thread of the process, and a savestate that carried it hung the
+   16-thread runs (docs/libsm64.md, "The game's bytes").
 8. **Performance regressions are bugs.** Changes under `tasfw-core`, `tasfw-scattershot` or
    `tasfw-resources` must include the perf suite delta table (docs/performance.md) and, for
    anything the DLL workload exercises, before/after wall time and the frame-advance/save/load
@@ -303,6 +307,13 @@ Agents without hooks follow the same procedure by hand at the end of every chang
   each unless told to ignore access violations; run with `"saveMode": "full"` when
   debugging, and expect test harnesses that install their own `SIGSEGV` handler to need
   the re-arming `LibSm64` already does (docs/libsm64.md, "Linux").
+- The DLL's `.data` and `.bss` are not all game: their edges hold the mingw-w64 runtime's
+  own state, and the Windows loader runs the DLL's TLS callback on **every** thread of the
+  process at its exit (a Windows thread-pool worker retiring counts), which takes a
+  critical section in the last page of `.bss`. `LibSm64` leaves those bytes out of every
+  savestate (`LibSm64KnownGameBytes`); a new DLL build needs its entry from
+  `scripts/dll_game_bytes.py`, or it is saved whole and the race is back (docs/libsm64.md,
+  "The game's bytes"; ROADMAP 3.12).
 
 ## Glossary
 

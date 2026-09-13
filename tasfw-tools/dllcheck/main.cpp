@@ -10,7 +10,9 @@
 // whether the fixed slices cover each symbol the framework depends on. Then it replays the
 // movie on the resource itself and prints the measured cost of a frame advance and of a
 // savestate save/load, the first Tier B numbers in docs/performance.md. Exit code 0 when
-// every check passes, 1 on a failed check, 2 on usage or load errors.
+// every check passes, 1 on a failed check, 2 on usage or load errors. Its `bytes:` line says
+// whether a savestate on this build holds the game's bytes of the sections only (a build in
+// LibSm64KnownGameBytes) or the whole sections, runtime state at the edges included.
 //
 // --leak-scan: at <frame>, save a state, snapshot the DLL's .data and .bss, play `frames`
 // (default 120) of a fixed input pattern, load the state back and snapshot again. Every byte
@@ -683,6 +685,13 @@ int main(int argc, char** argv)
 		std::cout << "frame: " << frame << " (" << LibSm64::SaveModeName(saveMode) << " saves)\n";
 
 		LibSm64 resource(config);
+
+		// What a savestate holds of the sections (LibSm64GameBytes, docs/libsm64.md "Savestates").
+		if (const LibSm64GameBytes* game = resource.gameBytes())
+			std::printf("bytes: the game's: .data [0x%zX, 0x%zX) and .bss [0x%zX, 0x%zX); the C runtime's state at the sections' edges is neither saved nor restored (a known build)\n",
+				game->begin[0], game->end[0], game->begin[1], game->end[1]);
+		else
+			std::cout << "bytes: whole .data and .bss; no LibSm64KnownGameBytes entry has this build's section sizes, so the C runtime's state at their edges is saved and restored too (scripts/dll_game_bytes.py derives an entry)\n";
 
 		M64 m64(m64Path);
 		if (!m64.load())

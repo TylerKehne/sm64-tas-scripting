@@ -18,8 +18,8 @@ inline constexpr int LibSm64ObjectPoolCapacity = 240;
 // automatic whichever mode is set. Costs are for the pinned DLL on the reference machine.
 enum class LibSm64SaveMode
 {
-	Full,  // both sections whole: 7.3 MB, about 184 us per save or load. The reference, and
-	       // the mode to use under a debugger (no page faults).
+	Full,  // the game's bytes of both sections: 7.3 MB, about 184 us per save or load. The
+	       // reference, and the mode to use under a debugger (no page faults).
 	Fixed, // five hand-tuned byte ranges: 1.5 MB, about 41 us, constant whatever the game
 	       // does. Tuned to the pinned build (wafel v0.8.1's libsm64, docs/libsm64.md):
 	       // construction refuses it on a build whose
@@ -78,9 +78,47 @@ inline constexpr LibSm64FixedSlice LibSm64FixedSlices[] = {
 };
 inline constexpr size_t LibSm64FixedBuf1Size = 200000;
 inline constexpr size_t LibSm64FixedBuf2Size = 1300000;
+inline constexpr size_t LibSm64FixedSliceCount = sizeof(LibSm64FixedSlices) / sizeof(LibSm64FixedSlices[0]);
 
-// A savestate. Full and Fixed fill buf1/buf2 (the whole sections, or the fixed slices
-// packed). Dirty records which baseline the state is relative to, which pages of the page
+// The game's bytes of the DLL's .data and .bss. Each section holds, besides the game's
+// state, the state of the C runtime the DLL was built with (mingw-w64) at both ends: at the
+// head `crtdll.c`'s atexit table and attach count, at the tail the startup lock and state,
+// the TLS index, the pseudo-relocation table, the thread-key list with its critical section
+// (`__mingwthr_cs`), gdtoa's memory and its critical section, and the math-error and
+// exception handlers. The loader runs the runtime's code on every thread of the process,
+// not only on the one that owns the instance: at every thread's exit it calls the DLL's TLS
+// callback, which enters and leaves `__mingwthr_cs`, and at every thread's attach and
+// detach it calls `DllMainCRTStartup`. A load that restored those bytes while another thread
+// was inside that critical section reset it under that thread, which then died leaving a
+// lock it no longer owned (STATUS_RESOURCE_NOT_OWNED) and left the process hanging on its
+// join (ROADMAP 3.12, the sixteen-thread hang). So a savestate is the game's bytes only: no
+// mode copies or restores anything outside [begin, end) of either section.
+//
+// Where the runtime's objects end and begin is a property of the build, read from the DLL's
+// COFF symbol table by scripts/dll_game_bytes.py, which prints the entry for this table. A
+// build is recognised by its sections' sizes; construction then checks that `__mingwthr_cs`
+// reads as an initialised, unlocked critical section at the offset the entry names and
+// refuses the DLL otherwise (a wrong entry would leave the race in place without a word). A
+// build no entry knows (the Linux .so, whose loader runs nothing in the library at a thread's
+// exit) is saved and restored whole, as before; `dllcheck` prints which applies.
+struct LibSm64GameBytes
+{
+	size_t dataSize;      // the build's .data size in bytes: its key, with bssSize
+	size_t bssSize;       //     and its .bss size
+	size_t begin[2];      // the game's bytes of .data (0) and .bss (1): [begin, end), section-relative
+	size_t end[2];
+	size_t threadKeyLock; // .bss offset of the runtime's __mingwthr_cs, checked at construction
+};
+
+inline constexpr LibSm64GameBytes LibSm64KnownGameBytes[] = {
+	{0x248B50, 0x4A8810, {0x20, 0x20}, {0x248A80, 0x4A7C60}, 0x4A7CE0}, // wafel v0.8.1, JP: the pinned build (res/sm64_jp_N.dll)
+	{0x247310, 0x4A8810, {0x20, 0x20}, {0x247240, 0x4A7C60}, 0x4A7CE0}, // wafel v0.8.5, JP (bitfs-sbb's sm64_jp.dll)
+	{0x247290, 0x4A87D0, {0x20, 0x20}, {0x2471C0, 0x4A7C20}, 0x4A7CA0}, // wafel's 2022-08-07 update, JP
+	{0x2B04B0, 0x4A8710, {0x20, 0x20}, {0x2B03E0, 0x4A7B60}, 0x4A7BE0}, // wafel v0.8.5, US (bitfs-sbb's sm64_us.dll, res/sm64_us_0.dll)
+};
+
+// A savestate. Full and Fixed fill buf1/buf2 (the game's bytes of the sections, or the fixed
+// slices packed). Dirty records which baseline the state is relative to, which pages of the page
 // index space (.data's pages then .bss's) the game had written since that baseline began,
 // and those pages' contents in index order. SlotManager recycles these objects, so the
 // vectors keep their capacity and a save into a warm slot allocates nothing.
@@ -132,6 +170,16 @@ struct LibSm64DirtyPages
 	Range range[2];
 	size_t pageCount = 0;
 	int baseline = 0; // index of the current baseline
+
+	// The game's bytes of each page (LibSm64GameBytes): the whole page except where a
+	// section's edge falls inside it. A save copies this much of a page and a load restores
+	// this much; the handler's baseline copies take the whole page, which is only a read.
+	struct Span
+	{
+		uint32_t offset = 0;
+		uint32_t length = pagesize;
+	};
+	std::vector<Span> span; // one per page of the index space
 
 	// One entry per baseline taken, by index. A live one holds every page written since it
 	// began (`present`, one bit per page) with the content the page had when it began; a
@@ -196,6 +244,11 @@ public:
 	// report and the tests.
 	const LibSm64DirtyPages* dirtyPages() const { return _dirtyPages.get(); }
 
+	// The entry of LibSm64KnownGameBytes this DLL matched, or nullptr when no entry knows the
+	// build and both sections are saved and restored whole. Read-only, for dllcheck's report
+	// and the tests.
+	const LibSm64GameBytes* gameBytes() const { return _gameBytes; }
+
 private:
 	// Resolved once at construction. DLL symbol addresses never move. (GetProcAddress
 	// measures ~60 ns on this DLL, so the four per-frame lookups this replaces were about
@@ -204,6 +257,17 @@ private:
 	UpdateFn _sm64Update = nullptr;
 	uint8_t* _controllerPads = nullptr; // gControllerPads: u16 button, s8 stick_x, s8 stick_y
 	const uint32_t* _globalTimer = nullptr;
+
+	// The game's bytes of .data (0) and .bss (1) as the save modes copy them (LibSm64GameBytes;
+	// the whole section when the build is unknown), and the fixed slices cut to them.
+	struct Bytes
+	{
+		uint8_t* begin = nullptr;
+		size_t length = 0;
+	};
+	const LibSm64GameBytes* _gameBytes = nullptr;
+	Bytes _game[2];
+	LibSm64FixedSlice _fixedSlices[LibSm64FixedSliceCount] {};
 
 	std::unique_ptr<LibSm64DirtyPages> _dirtyPages;
 	void TakeBaseline(const LibSm64Mem& saving) const; // `saving`: the state about to be written

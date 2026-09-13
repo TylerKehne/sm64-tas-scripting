@@ -306,6 +306,35 @@ LibSm64::LibSm64(const LibSm64Config& config) : dll(config.dllPath), config(conf
 		SegVal {".bss", sections[".bss"].address, sections[".bss"].length},
 	};
 
+	// The game's bytes of each section (LibSm64GameBytes): on a build the table knows, the C
+	// runtime's state at both ends of .data and .bss is left out; any other build is taken
+	// whole.
+	for (int i = 0; i < 2; i++)
+		_game[i] = Bytes {static_cast<uint8_t*>(segment[size_t(i)].address), segment[size_t(i)].length};
+	for (const LibSm64GameBytes& known : LibSm64KnownGameBytes)
+	{
+		if (known.dataSize != segment[0].length || known.bssSize != segment[1].length)
+			continue;
+		// The runtime's thread-key critical section lies where the entry says, initialised by
+		// the DLL's process attach and held by nobody: an unlocked RTL_CRITICAL_SECTION reads
+		// LockCount -1, RecursionCount 0 and a null OwningThread. Anything else means the entry
+		// does not describe this DLL, and a wrong entry would leave the race the table exists
+		// to remove in place without a word.
+		const uint8_t* cs = static_cast<const uint8_t*>(segment[1].address) + known.threadKeyLock;
+		int32_t lockCount = 0, recursionCount = 0;
+		uint64_t owningThread = 0;
+		std::memcpy(&lockCount, cs + 8, sizeof lockCount);
+		std::memcpy(&recursionCount, cs + 12, sizeof recursionCount);
+		std::memcpy(&owningThread, cs + 16, sizeof owningThread);
+		if (lockCount != -1 || recursionCount != 0 || owningThread != 0)
+			throw std::runtime_error("LibSm64: " + config.dllPath.string() + " has the section sizes of a known build, but its C runtime's critical section is not at .bss+"
+				+ std::to_string(known.threadKeyLock) + "; regenerate its LibSm64KnownGameBytes entry with scripts/dll_game_bytes.py");
+		_gameBytes = &known;
+		for (int i = 0; i < 2; i++)
+			_game[i] = Bytes {static_cast<uint8_t*>(segment[size_t(i)].address) + known.begin[i], known.end[i] - known.begin[i]};
+		break;
+	}
+
 	if (config.saveMode == LibSm64SaveMode::Fixed)
 	{
 		// The slices were cut for the pinned build; on a build with smaller sections (the Linux
@@ -319,6 +348,17 @@ LibSm64::LibSm64(const LibSm64Config& config) : dll(config.dllPath), config(conf
 				throw std::runtime_error("fixed save mode: the slice at " + seg.name + "+" + std::to_string(slice.offset) + " ("
 					+ std::to_string(slice.length) + " bytes) lies beyond the end of " + seg.name + " (" + std::to_string(seg.length)
 					+ " bytes) in " + config.dllPath.string() + "; the slices fit the pinned build only, use the dirty or full save mode");
+		}
+		// The slices cut to the game's bytes: the first slice of each section starts at offset 0
+		// and would otherwise carry the runtime's head along.
+		for (size_t s = 0; s < LibSm64FixedSliceCount; s++)
+		{
+			const LibSm64FixedSlice& slice = LibSm64FixedSlices[s];
+			const Bytes& game = _game[slice.segment];
+			size_t gameBegin = size_t(game.begin - static_cast<uint8_t*>(segment[size_t(slice.segment)].address));
+			size_t from = std::max(slice.offset, gameBegin);
+			size_t to = std::min(slice.offset + slice.length, gameBegin + game.length);
+			_fixedSlices[s] = LibSm64FixedSlice {slice.segment, from, to > from ? to - from : 0, slice.bufOffset + (from - slice.offset)};
 		}
 	}
 
@@ -348,6 +388,26 @@ LibSm64::LibSm64(const LibSm64Config& config) : dll(config.dllPath), config(conf
 			d.range[1].pages = overlap < d.range[1].pages ? d.range[1].pages - overlap : 0;
 		}
 		d.pageCount = d.range[0].pages + d.range[1].pages;
+		// The game's bytes of each page: the whole page except where a section's edge falls
+		// inside it (the runtime's head and tail on a known build; on Linux, the neighbouring
+		// sections that share an edge page with .data or .bss).
+		d.span.assign(d.pageCount, LibSm64DirtyPages::Span {});
+		for (size_t index = 0; index < d.pageCount; index++)
+		{
+			const uint8_t* page = d.PageAddress(index);
+			uint32_t from = pagesize, to = 0;
+			for (const Bytes& game : _game)
+			{
+				const uint8_t* lo = std::max(page, static_cast<const uint8_t*>(game.begin));
+				const uint8_t* hi = std::min(page + pagesize, static_cast<const uint8_t*>(game.begin + game.length));
+				if (lo < hi)
+				{
+					from = std::min(from, uint32_t(lo - page));
+					to = std::max(to, uint32_t(hi - page));
+				}
+			}
+			d.span[index] = from < to ? LibSm64DirtyPages::Span {from, to - from} : LibSm64DirtyPages::Span {0, 0};
+		}
 		d.AddBaseline(); // baseline 0: the state right after sm64_init
 		RegisterDirtyPages(&d);
 		d.ProtectAll();
@@ -426,7 +486,12 @@ void LibSm64::save(LibSm64Mem& state) const
 			{
 				int b = std::countr_zero(w);
 				w &= w - 1;
-				std::memcpy(dst, d.PageAddress(j * 64 + size_t(b)), pagesize);
+				size_t index = j * 64 + size_t(b);
+				const LibSm64DirtyPages::Span span = d.span[index]; // the game's bytes of the page; whole but at a section's edge
+				if (span.length == pagesize)
+					std::memcpy(dst, d.PageAddress(index), pagesize);
+				else if (span.length != 0)
+					std::memcpy(dst + span.offset, d.PageAddress(index) + span.offset, span.length);
 				dst += pagesize;
 			}
 		}
@@ -435,7 +500,7 @@ void LibSm64::save(LibSm64Mem& state) const
 	case LibSm64SaveMode::Fixed:
 		state.buf1.resize(LibSm64FixedBuf1Size);
 		state.buf2.resize(LibSm64FixedBuf2Size);
-		for (const LibSm64FixedSlice& slice : LibSm64FixedSlices)
+		for (const LibSm64FixedSlice& slice : _fixedSlices)
 		{
 			const uint8_t* src = reinterpret_cast<const uint8_t*>(segment[size_t(slice.segment)].address) + slice.offset;
 			uint8_t* dst = (slice.segment == 0 ? state.buf1.data() : state.buf2.data()) + slice.bufOffset;
@@ -443,10 +508,10 @@ void LibSm64::save(LibSm64Mem& state) const
 		}
 		return;
 	case LibSm64SaveMode::Full:
-		state.buf1.resize(segment[0].length);
-		state.buf2.resize(segment[1].length);
-		std::memcpy(state.buf1.data(), segment[0].address, segment[0].length);
-		std::memcpy(state.buf2.data(), segment[1].address, segment[1].length);
+		state.buf1.resize(_game[0].length);
+		state.buf2.resize(_game[1].length);
+		std::memcpy(state.buf1.data(), _game[0].begin, _game[0].length);
+		std::memcpy(state.buf2.data(), _game[1].begin, _game[1].length);
 		return;
 	}
 }
@@ -480,19 +545,23 @@ void LibSm64::load(const LibSm64Mem& state)
 				u &= u - 1;
 				size_t index = j * 64 + size_t(bit);
 				uint8_t* page = d.PageAddress(index);
-				if ((saved >> bit) & 1)
-				{
-					std::memcpy(page, src, pagesize); // the state's pages are stored in index order
+				// From the state (its pages are stored in index order) or from the baseline; the
+				// game's bytes of the page only, whole but at a section's edge.
+				const bool inState = ((saved >> bit) & 1) != 0;
+				const uint8_t* from = inState ? src : base.pages.get() + index * pagesize;
+				const LibSm64DirtyPages::Span span = d.span[index];
+				if (span.length == pagesize)
+					std::memcpy(page, from, pagesize);
+				else if (span.length != 0)
+					std::memcpy(page + span.offset, from + span.offset, span.length);
+				if (inState)
 					src += pagesize;
-				}
-				else
-					std::memcpy(page, base.pages.get() + index * pagesize, pagesize);
 			}
 		}
 		return;
 	}
 	case LibSm64SaveMode::Fixed:
-		for (const LibSm64FixedSlice& slice : LibSm64FixedSlices)
+		for (const LibSm64FixedSlice& slice : _fixedSlices)
 		{
 			uint8_t* dst = reinterpret_cast<uint8_t*>(segment[size_t(slice.segment)].address) + slice.offset;
 			const uint8_t* src = (slice.segment == 0 ? state.buf1.data() : state.buf2.data()) + slice.bufOffset;
@@ -500,8 +569,8 @@ void LibSm64::load(const LibSm64Mem& state)
 		}
 		return;
 	case LibSm64SaveMode::Full:
-		std::memcpy(segment[0].address, state.buf1.data(), segment[0].length);
-		std::memcpy(segment[1].address, state.buf2.data(), segment[1].length);
+		std::memcpy(_game[0].begin, state.buf1.data(), _game[0].length);
+		std::memcpy(_game[1].begin, state.buf2.data(), _game[1].length);
 		return;
 	}
 }
