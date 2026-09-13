@@ -288,6 +288,16 @@ locally"); the repository is mounted at `/src`, so `res/sm64_jp_0.so` is
 
   Both pass with GCC 15 and Clang 21 (2026-09-08): identical golden state to the pinned
   Windows DLL, save/load determinism, drift test max |diff| = 0 over 240 frames.
+- **The search diverges from the Windows builds.** The `.so` is jgcodes2020's build of a
+  newer decomp than the DLLs (2026 against 2022), and while every check above and the
+  Tier C workloads read identically, the CI-sized Tier D search (`perf/tierd-ci-linux.json`,
+  100 shots, seed 3) takes a different path on it: 2,867,262 frame advances, 183,657 loads,
+  93,648 scripts, 36,123 blocks and 11 solutions against the DLL's 2,981,801, 184,344,
+  93,774, 36,347 and 10 (2026-09-13). It is the game, not the framework: the Linux counts
+  are identical in `dirty` and `full` save mode and with GCC 15 and Clang 21, and the
+  Windows counts are identical on the pinned v0.8.1 DLL and the v0.8.5 one. So Linux has
+  its own expected counts, `perf/baselines/tierd-ci-linux.json`, and which decomp change
+  the search hits first is not yet located (ROADMAP 3.4).
 
 ## What depends on the exact build
 
@@ -339,10 +349,12 @@ count; 4 on Linux), then run everything about the game that is exact:
 - Tier D on a CI-sized workload, `perf/tierd-ci.json` (`tierd-ci-linux.json` with the
   `.so` pattern and `dirty` saves): the deterministic tilt-target stage cut to 100 shots
   on 4 threads, cost model off, about 40 s on the desktop, exact counts compared with
-  `perf/baselines/tierd-ci.json` through `perf_compare.py tierd` and `--counts-only`. The
-  counts are the same in `fixed` and `dirty` mode (verified 2026-09-13), so both platforms
-  share the one expected file; regenerate it with the same two commands when the framework
-  legitimately changes its work.
+  `perf/baselines/tierd-ci.json` on Windows and `perf/baselines/tierd-ci-linux.json` on
+  Linux, through `perf_compare.py tierd` and `--counts-only`. The counts are the same in
+  `fixed` and `dirty` mode and on every compiler, but not across the two game builds: the
+  `.so` is a newer decomp than the DLL and this search takes a different path on it
+  ("Linux" above), hence the two expected files. Regenerate them with the same two
+  commands when the framework legitimately changes its work.
 
 So an extra frame advance, save, load or allocation anywhere in the framework, a struct
 that stopped matching the DLL, a slice that stopped covering a hot symbol, or a load that

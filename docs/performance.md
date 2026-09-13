@@ -236,11 +236,15 @@ Run by `scripts/perf.ps1` through `bitfs-turn` on two configs under `perf/`, eac
 
 A third config, `tierd-ci.json` (and `tierd-ci-linux.json` with the `.so` pattern and
 `dirty` saves), is the deterministic workload cut to 100 shots on 4 threads for CI, where
-only its exact counts gate (`perf/baselines/tierd-ci.json`; docs/libsm64.md, "Continuous
-integration"). `perf.ps1` does not run it. Its counts are the same in `fixed` and `dirty`
-mode: 2,981,801 frame advances, 104 saves, 184,344 loads, 36,347 blocks, 93,774 scripts,
-10 solutions from 100 shots (2026-09-13). The stage log of any Tier D run becomes a
-benchmark row through `perf_compare.py tierd`, which both `perf.ps1` and CI use.
+only its exact counts gate (`perf/baselines/tierd-ci.json` on Windows,
+`tierd-ci-linux.json` on Linux; docs/libsm64.md, "Continuous integration"). `perf.ps1`
+does not run it. Its counts are the same in `fixed` and `dirty` mode and on every
+compiler, but differ between the two game builds, which is why there are two expected
+files: on the DLL 2,981,801 frame advances, 104 saves, 184,344 loads, 36,347 blocks,
+93,774 scripts and 10 solutions from 100 shots; on the newer-decomp `.so` 2,867,262,
+104, 183,657, 36,123, 93,648 and 11 (2026-09-13; docs/libsm64.md, "Linux"). The stage
+log of any Tier D run becomes a benchmark row through `perf_compare.py tierd`, which both
+`perf.ps1` and CI use.
 
 Both run at High priority. The deterministic run is pinned to one logical CPU per
 performance core (`0x5555` on the desktop's 8P+16E i9-13900K: no SMT sibling sharing, no
