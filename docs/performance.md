@@ -46,13 +46,14 @@ Places where the code pays (or paid) for an abstraction it should not, gated by 
 - `Resource::save` / `load` / `advance` / `setInputs` are virtual and called per frame.
 - Block segments are `std::shared_ptr<Segment>` chains, touched on every decode.
 - Tracker scripts are constructed per tracked frame: three lifecycle sandboxes and a
-  `CustomStatus` move (with `std::vector`s in the real trackers). The per-level containers
-  are created on first use and, with `M64Diff::frames`, are `FrameMap`s (ROADMAP 3.7,
-  2026-09-14): a sandbox allocates nothing, a tracked frame 3 times instead of 14, and
-  Tier C counts 17 heap allocations per tracked frame in the `StateTracker_BitfsDr` sweep
-  (29 before), 5 per frame advanced in the nested-script pyramid oscillation (9) and 42
-  per downhill-angle call (56); what remains is the trackers' own `CustomStatus` contents
-  and the node per tracked state (performance-changelog.md).
+  `CustomStatus` move. The per-level containers are created on first use and, with
+  `M64Diff::frames`, are `FrameMap`s (ROADMAP 3.7, 2026-09-14): a sandbox allocates
+  nothing and a tracked frame 3 times instead of 14. The BitFS trackers' status objects
+  (`TiltTargetShotMetrics`, `BitfsOscFinalMetrics`, `StateTracker_BitfsDr`) hold their
+  per-axis values in `std::array`s since the same day; as `std::vector`s they were
+  thirteen allocations per construction and per copy in the tilt-target tracker, 7% of
+  the throughput Tier D run (ROADMAP 3.8, performance-changelog.md). What remains per
+  tracked frame is the node per tracked state.
 
 ## What costs what
 
@@ -383,10 +384,12 @@ Found by the profile rather than suspected:
    cached, so the cost is one evaluation per script; only fewer or cheaper evaluation frames
    change it (ROADMAP 4.3, `PyramidUpdate` as the stand-in).
 10. **The tracker's status object is the heap**: `TiltTargetShotMetrics::CustomScriptStatus`
-    holds thirteen `std::vector`s for three-element arrays, is constructed per tracked frame
-    and copied whole wherever a `GetTrackedState` result is taken by value: 7.0% of the CPU
+    held thirteen `std::vector`s for three-element arrays, constructed per tracked frame
+    and copied whole wherever a `GetTrackedState` result was taken by value: 7.0% of the CPU
     in the allocator alone (11.1% is heap in total), and most of the 8.9% in `std::vector`
-    code. A stage-script change, not a framework one.
+    code. Fixed the same day in the stage scripts: the per-axis values are `std::array`s
+    in the tilt-target, osc-final and DR trackers and their solutions, and the tilt-target
+    tracker reads its previous states by reference (performance-changelog.md).
 11. **`resource->addr()` per call**: 1.5%, and `LdrGetProcedureAddressForCaller` takes the
     loader lock, so 16 threads contend on it (`RtlEnterCriticalSection`, `RtlBackoff`):
     5.6 us per call at 16 threads against 61 ns alone. Fixed the same day: `LibSm64::addr`

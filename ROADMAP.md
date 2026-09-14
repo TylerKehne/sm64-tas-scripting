@@ -474,15 +474,17 @@ Goal: the core's implicit invariants become explicit and enforced.
       The deterministic gate run is 58% barrier spin-wait, the spread of a script's cost
       under `QueueThreadById`'s barriers, so its `process cycles` row measures waiting.
       Block decoding is 2 to 3%; `UpsertBlock`, the `print` section and the slot budget are
-      nothing. Remaining, one PR each, in the order of the numbers: the tracker status in
-      `TiltTargetShot.hpp` (arrays and references instead of vectors and copies; a stage
-      script, gated by the Tier D throughput row); the framework's per-sandbox and
-      per-frame allocations and map nodes (3.7's remainder, about 9%); `addr` per call
-      (with 3.2's access contract); a profile of the `dr-oscillations` stage for the
-      `PyramidUpdateMem` import and `CalculateOscillations`, which the tilt-target workload
-      never runs; whether a thread-ordered ticket instead of N+1 barriers per script moves
-      the deterministic run's wall time; and the Tier D row carrying the outside share
-      once its run-to-run spread is known (reported, not gated, until then).
+      nothing. Done from that list the same day: the framework's per-sandbox and
+      per-frame allocations and map nodes (3.7, `FrameMap`), `addr` per call (3.7, the
+      table), and the trackers' status objects (`std::array`s instead of `std::vector`s
+      for the per-axis values in the tilt-target, osc-final and DR trackers and their
+      solutions, the tilt-target tracker reading its previous states by reference; a
+      stage-script change, measured in docs/performance-changelog.md). Remaining, one PR
+      each: a profile of the `dr-oscillations` stage for the `PyramidUpdateMem` import and
+      `CalculateOscillations`, which the tilt-target workload never runs; whether a
+      thread-ordered ticket instead of N+1 barriers per script moves the deterministic
+      run's wall time; and the Tier D row carrying the outside share once its run-to-run
+      spread is known (reported, not gated, until then).
 - [x] **3.9 Pool savestate buffers.** Done 2026-09-07: `SlotManager` keeps erased and evicted
       states in a bounded pool (32) that the next `CreateSlot` reuses, so a save into a
       recycled state is one copy. `dllcheck`: full save 1561 -> 191 us against a 222 us load,

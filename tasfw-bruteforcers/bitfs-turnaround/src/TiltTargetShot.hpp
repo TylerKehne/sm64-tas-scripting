@@ -1,4 +1,5 @@
 #pragma once
+#include <array>
 #include <Scattershot.hpp>
 #include <BitFSPyramidOscillation.hpp>
 #include <cmath>
@@ -32,10 +33,10 @@ public:
     float pyraNormX = 0;
     float pyraNormY = 0;
     float pyraNormZ = 0;
-    std::vector<float> error = { INFINITY, INFINITY, INFINITY };
-    std::vector<float> remainderError = { INFINITY, INFINITY, INFINITY };
-    std::vector<float> adjustedRemainderError = { INFINITY, INFINITY, INFINITY };
-    std::vector<int> incrementFrames = { 0, 0, 0 };
+    std::array<float, 3> error = { INFINITY, INFINITY, INFINITY };
+    std::array<float, 3> remainderError = { INFINITY, INFINITY, INFINITY };
+    std::array<float, 3> adjustedRemainderError = { INFINITY, INFINITY, INFINITY };
+    std::array<int, 3> incrementFrames = { 0, 0, 0 };
     int64_t equilibriumFrame = -1;
 };
 
@@ -67,28 +68,28 @@ public:
         bool isMoving = true;
         bool isOnPyramid = false;
 
-        std::vector<float> normal = { INFINITY, INFINITY, INFINITY };
+        std::array<float, 3> normal = { INFINITY, INFINITY, INFINITY };
 
-        std::vector<float> target = { INFINITY, INFINITY, INFINITY };
-        std::vector<float> errorRaw = { INFINITY, INFINITY, INFINITY };
-        std::vector<float> error = { INFINITY, INFINITY, INFINITY };
-        std::vector<float> remainderErrorRaw = { INFINITY, INFINITY, INFINITY };
-        std::vector<float> remainderError = { INFINITY, INFINITY, INFINITY };
-        std::vector<float> adjustedRemainderError = { INFINITY, INFINITY, INFINITY };
-        std::vector<int> incrementFrames = { 0, 0, 0 };
+        std::array<float, 3> target = { INFINITY, INFINITY, INFINITY };
+        std::array<float, 3> errorRaw = { INFINITY, INFINITY, INFINITY };
+        std::array<float, 3> error = { INFINITY, INFINITY, INFINITY };
+        std::array<float, 3> remainderErrorRaw = { INFINITY, INFINITY, INFINITY };
+        std::array<float, 3> remainderError = { INFINITY, INFINITY, INFINITY };
+        std::array<float, 3> adjustedRemainderError = { INFINITY, INFINITY, INFINITY };
+        std::array<int, 3> incrementFrames = { 0, 0, 0 };
 
-        std::vector<float> minErrorRaw = { INFINITY, INFINITY, INFINITY };
-        std::vector<float> minError = { INFINITY, INFINITY, INFINITY };
+        std::array<float, 3> minErrorRaw = { INFINITY, INFINITY, INFINITY };
+        std::array<float, 3> minError = { INFINITY, INFINITY, INFINITY };
         int64_t minErrorFrame = 0;
 
-        std::vector<float> minRemainderErrorRaw = { INFINITY, INFINITY, INFINITY };
-        std::vector<float> minRemainderError = { INFINITY, INFINITY, INFINITY };
+        std::array<float, 3> minRemainderErrorRaw = { INFINITY, INFINITY, INFINITY };
+        std::array<float, 3> minRemainderError = { INFINITY, INFINITY, INFINITY };
         int64_t minRemainderErrorFrame = 0;
 
         uint32_t action = ACT_UNINITIALIZED;
         float forwardVel = INFINITY;
         int16_t faceAngle = 0;
-        std::vector<float> marioPos = { INFINITY, INFINITY, INFINITY };
+        std::array<float, 3> marioPos = { INFINITY, INFINITY, INFINITY };
 
         int64_t equilibriumFrame = -1;
         int64_t frame = -1;
@@ -193,7 +194,7 @@ public:
             normalZ += sign(CustomStatus.error[2]) * 0.01f;
         }
 
-        auto prevState = GetTrackedState<TiltTargetShotMetrics>(GetCurrentFrame() - 1);
+        const auto& prevState = GetTrackedState<TiltTargetShotMetrics>(GetCurrentFrame() - 1);
 
         if (_targetX && CustomStatus.error[0] < prevState.minError[0])
         {
@@ -267,8 +268,8 @@ private:
     bool CheckEquilibrium()
     {
 
-        auto prevState2 = GetTrackedState<TiltTargetShotMetrics>(GetCurrentFrame() - 2);
-        auto prevState1 = GetTrackedState<TiltTargetShotMetrics>(GetCurrentFrame() - 1);
+        const auto& prevState2 = GetTrackedState<TiltTargetShotMetrics>(GetCurrentFrame() - 2);
+        const auto& prevState1 = GetTrackedState<TiltTargetShotMetrics>(GetCurrentFrame() - 1);
         bool wasMoving2 = prevState2.forwardVel != 0 || prevState2.action != ACT_IDLE;
         bool wasMoving1 = prevState1.forwardVel != 0 || prevState1.action != ACT_IDLE;
 
@@ -306,7 +307,7 @@ private:
             return false;
 
         // This cannot be later than the current frame based on how this is calculated
-        auto prevState = GetTrackedState<TiltTargetShotMetrics>(equilibriumFrame);
+        const auto& prevState = GetTrackedState<TiltTargetShotMetrics>(equilibriumFrame);
 
         TiltTargetShotMetrics::CustomScriptStatus eqState;
         if (uint64_t(equilibriumFrame + 1) == GetCurrentFrame())
@@ -314,7 +315,7 @@ private:
         else
             eqState = GetTrackedState<TiltTargetShotMetrics>(equilibriumFrame + 1);
 
-        std::vector<float> solutionError;
+        std::array<float, 3> solutionError {};
         if (isAdjusted)
             solutionError = eqState.adjustedRemainderError;
         else
@@ -464,7 +465,7 @@ public:
             return state;
         }
 
-        std::vector<float> solutionError;
+        std::array<float, 3> solutionError {};
         if (_errorType == ErrorType::ADJUSTED)
         {
             state.AddValueBits(bitCursor, 1, 0);
@@ -723,7 +724,7 @@ public:
         if (std::fabs(state.normal[0]) > 0.4f || std::fabs(state.normal[2]) > 0.4f)
             return false;
 
-        std::vector<float> solutionError;
+        std::array<float, 3> solutionError {};
         if (_errorType == ErrorType::ADJUSTED)
             solutionError = state.adjustedRemainderError;
         else

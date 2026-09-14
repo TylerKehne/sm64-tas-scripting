@@ -4,6 +4,42 @@ Every hot-path change records its delta table here, newest first; the policy, th
 how to run it are in [performance.md](performance.md). The first measurements (2026-09-07),
 which everything since is compared against, are at the bottom.
 
+## 2026-09-14: the trackers' status objects as arrays (ROADMAP 3.8)
+
+The 3.8 profile's largest item outside the framework: `TiltTargetShotMetrics::CustomScriptStatus`
+held thirteen `std::vector`s for three-element values, constructed per tracked frame and
+copied whole wherever a `GetTrackedState` result was taken by value, 7.0% of the throughput
+run's CPU in the allocator and most of its 8.9% in `std::vector` code. The per-axis values
+are `std::array<float, 3>` and `std::array<int, 3>` now, in that tracker, in
+`BitfsOscFinalMetrics`, in `StateTracker_BitfsDr` and `Scattershot_BitfsDr`, and in their
+solutions (`Stages.cpp`'s metrics writer takes any per-axis range), and the tilt-target
+tracker reads its previous states by reference (`const auto&`), which the tracked states'
+node container keeps valid across the other frames it may track meanwhile. Stage scripts
+only; no framework header changed. MSVC Release, High performance plan, the same hour,
+before and after this change alone:
+
+| | Before | After |
+|---|---|---|
+| Throughput: wall, scripts/s, frame advances/s | 64.7 s, 15.8 k, 532 k | 59.1 s, 17.2 k, 601 k |
+| Throughput: CPU outside the resource | 19.1% (0.191 ms per script) | 10.7% (0.098 ms per script) |
+| Deterministic: wall, CPU time (counts identical) | 123.1 s, 970 s | 109.5 s, 867 s |
+
+The deterministic run's counts are the baseline's to the last frame advance (18,014,927;
+608 saves; 1,038,084 loads; 109,958 blocks; 55 solutions; 520,052 scripts). Over the
+day's three changes the throughput run went from 69.8 s and 24.0% outside the resource
+to 59.1 s and 10.7%, the deterministic run from 133.7 s to 109.5 s.
+
+The suite (`perf.ps1`, MSVC Release, reference 5238d9b interleaved): 0 regressions on 74
+rows, 23 rows faster, counts identical, allocations down where this change reaches:
+`Framework_TrackerSweep` 14,548 -> 3,034 allocations for 500 tracked frames (6 per frame,
+from 17 after the FrameMap and 29 at the start of the day) at 7.5 -> 7.0 ms;
+`TierD_Deterministic` 129.7 -> 109.3 s (-15.7%) and `TierD_Throughput` 67.9 -> 58.0 s
+(-14.6%) against the reference, of which this change is -11.2% and -11.9% against the
+FrameMap head's result of an hour earlier. In that last compare, without an interleaved
+reference, `LibSm64Fixed_Load` read 38.3 -> 42.3 us; the row is a 1.5 MB `memcpy` this
+change does not reach, it read 42.0, 38.3 and 42.3 us across the day's three suite runs,
+and the reference-interleaved gate has it within noise.
+
 ## 2026-09-14: the frame-keyed containers as sorted vectors (ROADMAP 3.7)
 
 `M64Base::frames` (the source movie and every diff) and `Script`'s five per-level

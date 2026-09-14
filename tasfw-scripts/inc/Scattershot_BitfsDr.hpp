@@ -1,4 +1,5 @@
 #pragma once
+#include <array>
 #include <Scattershot.hpp>
 #include <BitFSPyramidOscillation.hpp>
 #include <cmath>
@@ -18,7 +19,7 @@ public:
     float xzSum = 0;
     int currentOscillation = 0;
     int16_t roughTargetAngle = 0;
-    std::vector<int> incrementFrames = { -1, -1, -1 };
+    std::array<int, 3> incrementFrames = { -1, -1, -1 };
 };
 
 class NormalSpecsDto
@@ -82,8 +83,8 @@ public:
         int16_t roughTargetAngle = 8192; 
         Phase phase = Phase::INITIAL;
         bool facingRoughTargetAngle = false;
-        std::vector<float> adjustedRemainderError = { INFINITY, INFINITY, INFINITY };
-        std::vector<int> incrementFrames = { -1, -1, -1 };
+        std::array<float, 3> adjustedRemainderError = { INFINITY, INFINITY, INFINITY };
+        std::array<int, 3> incrementFrames = { -1, -1, -1 };
         int64_t frame = -1;
     };
     CustomScriptStatus CustomStatus = CustomScriptStatus();
@@ -113,7 +114,7 @@ private:
     int minOscillationFrames = 15;
     NormalSpecsDto normalSpecsDto;
     int64_t initialFrame = 0;
-    std::vector<float> targetNormal = { INFINITY, INFINITY, INFINITY };
+    std::array<float, 3> targetNormal = { INFINITY, INFINITY, INFINITY };
 
     void SetStateVariables(MarioState* marioState, Object* pyramid);
     void CalculateOscillations(CustomScriptStatus lastFrameState, MarioState* marioState, Object* pyramid);

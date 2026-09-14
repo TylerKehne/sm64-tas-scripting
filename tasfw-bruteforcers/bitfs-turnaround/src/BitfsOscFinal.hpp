@@ -1,4 +1,5 @@
 #pragma once
+#include <array>
 #include <Scattershot.hpp>
 #include <BitFSPyramidOscillation.hpp>
 #include <cmath>
@@ -46,10 +47,10 @@ public:
     public:
         bool initialized = false;
 
-        std::vector<float> normal = { INFINITY, INFINITY, INFINITY };
-        std::vector<float> target = { INFINITY, INFINITY, INFINITY };
-        std::vector<float> adjustedRemainderError = { INFINITY, INFINITY, INFINITY };
-        std::vector<int> incrementFrames = { 0, 0, 0 };
+        std::array<float, 3> normal = { INFINITY, INFINITY, INFINITY };
+        std::array<float, 3> target = { INFINITY, INFINITY, INFINITY };
+        std::array<float, 3> adjustedRemainderError = { INFINITY, INFINITY, INFINITY };
+        std::array<int, 3> incrementFrames = { 0, 0, 0 };
 
         uint32_t action = ACT_UNINITIALIZED;
         float forwardVel = INFINITY;
