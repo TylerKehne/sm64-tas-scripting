@@ -6,48 +6,48 @@ void Scattershot_BitfsDr::SelectMovementOptions()
 
     AddRandomMovementOption(
         {
-            {MovementOption::MAX_MAGNITUDE, 4},
-            {MovementOption::ZERO_MAGNITUDE, 0},
-            {MovementOption::SAME_MAGNITUDE, 0},
-            {MovementOption::RANDOM_MAGNITUDE, 1}
+            {BasicMoves::MAX_MAGNITUDE, 4},
+            {BasicMoves::ZERO_MAGNITUDE, 0},
+            {BasicMoves::SAME_MAGNITUDE, 0},
+            {BasicMoves::RANDOM_MAGNITUDE, 1}
         });
 
     AddRandomMovementOption(
         {
-            {MovementOption::MATCH_FACING_YAW, 1},
-            {MovementOption::ANTI_FACING_YAW, 2},
-            {MovementOption::SAME_YAW, 4},
-            {MovementOption::RANDOM_YAW, 16}
+            {BasicMoves::MATCH_FACING_YAW, 1},
+            {BasicMoves::ANTI_FACING_YAW, 2},
+            {BasicMoves::SAME_YAW, 4},
+            {BasicMoves::RANDOM_YAW, 16}
         });
 
     AddRandomMovementOption(
         {
-            {MovementOption::SAME_BUTTONS, 0},
-            {MovementOption::NO_BUTTONS, 0},
-            {MovementOption::RANDOM_BUTTONS, 10}
+            {BasicMoves::SAME_BUTTONS, 0},
+            {BasicMoves::NO_BUTTONS, 0},
+            {BasicMoves::RANDOM_BUTTONS, 10}
         });
 
     auto state = GetTrackedState<StateTracker_BitfsDr>(GetCurrentFrame());
     switch (state.phase)
     {
         case StateTracker_BitfsDr::Phase::INITIAL:
-            AddMovementOption(MovementOption::NO_SCRIPT);
+            AddMovementOption(CustomMoves::NO_SCRIPT);
             break;
 
         case StateTracker_BitfsDr::Phase::RUN_DOWNHILL:
             AddRandomMovementOption(
                 {
-                    {MovementOption::NO_SCRIPT, 0},
-                    {MovementOption::RUN_DOWNHILL_MIN, 5},
-                    {MovementOption::TURN_UPHILL, marioState->forwardVel <= 16.0f ? 0 : 1}
+                    {CustomMoves::NO_SCRIPT, 0},
+                    {CustomMoves::RUN_DOWNHILL_MIN, 5},
+                    {CustomMoves::TURN_UPHILL, marioState->forwardVel <= 16.0f ? 0 : 1}
                 });
             break;
 
         case StateTracker_BitfsDr::Phase::RUN_DOWNHILL_PRE_CROSSING:
             AddRandomMovementOption(
                 {
-                    {MovementOption::RUN_DOWNHILL_MIN, 1},
-                    {MovementOption::RUN_DOWNHILL, 1}
+                    {CustomMoves::RUN_DOWNHILL_MIN, 1},
+                    {CustomMoves::RUN_DOWNHILL, 1}
                 });
             break;
 
@@ -58,29 +58,29 @@ void Scattershot_BitfsDr::SelectMovementOptions()
 
             AddRandomMovementOption(
                 {
-                    {MovementOption::NO_SCRIPT, 0},
-                    {MovementOption::TURN_UPHILL, 10},
-                    {MovementOption::RUN_FORWARD, 0},
-                    {MovementOption::TURN_AROUND, state.marioAction != ACT_WALKING || avoidDoubleTurnaround ? 0 : 1},
-                    {MovementOption::PBD, 0}
+                    {CustomMoves::NO_SCRIPT, 0},
+                    {CustomMoves::TURN_UPHILL, 10},
+                    {CustomMoves::RUN_FORWARD, 0},
+                    {CustomMoves::TURN_AROUND, state.marioAction != ACT_WALKING || avoidDoubleTurnaround ? 0 : 1},
+                    {CustomMoves::PBD, 0}
                 });
             break;
         }
 
         case StateTracker_BitfsDr::Phase::TURN_AROUND:
-            AddMovementOption(MovementOption::TURN_AROUND);
+            AddMovementOption(CustomMoves::TURN_AROUND);
             break;
 
         case StateTracker_BitfsDr::Phase::ATTEMPT_DR:
-            AddMovementOption(MovementOption::NO_SCRIPT);
+            AddMovementOption(CustomMoves::NO_SCRIPT);
             break;
 
         case StateTracker_BitfsDr::Phase::QUICKTURN:
-            AddMovementOption(MovementOption::QUICKTURN);
+            AddMovementOption(CustomMoves::QUICKTURN);
             break;
 
         default:
-            AddMovementOption(MovementOption::NO_SCRIPT);
+            AddMovementOption(CustomMoves::NO_SCRIPT);
     }
 }
 
@@ -91,9 +91,9 @@ bool Scattershot_BitfsDr::ApplyMovement()
     auto state = GetTrackedState<StateTracker_BitfsDr>(GetCurrentFrame());
 
     // Scripts
-    if (!CheckMovementOptions(MovementOption::NO_SCRIPT))
+    if (!CheckMovementOptions(CustomMoves::NO_SCRIPT))
     {
-        if (CheckMovementOptions(MovementOption::REWIND))
+        if (CheckMovementOptions(CustomMoves::REWIND))
         {
             int64_t currentFrame = GetCurrentFrame();
             int maxRewind = int((currentFrame - config.StartFrame) / 2);
@@ -101,19 +101,19 @@ bool Scattershot_BitfsDr::ApplyMovement()
             Load(currentFrame - rewindFrames);
         }
 
-        if (CheckMovementOptions(MovementOption::RUN_DOWNHILL_MIN))
+        if (CheckMovementOptions(CustomMoves::RUN_DOWNHILL_MIN))
         {
             RunDownhill_1f();
             return true;
         }
-        else if (CheckMovementOptions(MovementOption::RUN_DOWNHILL))
+        else if (CheckMovementOptions(CustomMoves::RUN_DOWNHILL))
         {
             RunDownhill_1f(false);
             return true;
         }
-        else if (CheckMovementOptions(MovementOption::PBD) && Pbd())
+        else if (CheckMovementOptions(CustomMoves::PBD) && Pbd())
             return true;
-        else if (CheckMovementOptions(MovementOption::TURN_UPHILL))
+        else if (CheckMovementOptions(CustomMoves::TURN_UPHILL))
         {
             //auto state = GetTrackedState<StateTracker_BitfsDr>(GetCurrentFrame());
 
@@ -128,16 +128,16 @@ bool Scattershot_BitfsDr::ApplyMovement()
 
             return true;
         }
-        else if (CheckMovementOptions(MovementOption::RUN_FORWARD) && RunForwardThenTurnAround())
+        else if (CheckMovementOptions(CustomMoves::RUN_FORWARD) && RunForwardThenTurnAround())
             return true;
-        else if (CheckMovementOptions(MovementOption::TURN_AROUND))
+        else if (CheckMovementOptions(CustomMoves::TURN_AROUND))
         {
             TurnAround();
             if (marioState->action == ACT_FINISH_TURNING_AROUND)
                 Rollback(GetCurrentFrame() - 1);
             return true;
         }
-        else if (CheckMovementOptions(MovementOption::QUICKTURN) && Quickturn())
+        else if (CheckMovementOptions(CustomMoves::QUICKTURN) && Quickturn())
             return true;
     }
 

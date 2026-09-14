@@ -620,12 +620,45 @@ Goal: the core's implicit invariants become explicit and enforced.
       per iteration, each thread making one queue call per iteration, so an input count
       that is not a multiple of the thread count leaves the threads with different call
       counts and their later calls pairing across that boundary in timing order; the
-      ticket queue of 3.8 inherits it unchanged. No committed stage runs deterministic
-      with inputs (`tilt-x` has none), and hard rule 3 wants it fixed before one does.
+      ticket queue of 3.8 inherits it unchanged, and with it the mismatch can also hang:
+      the same scratch stage, run while builds shared the machine (2026-09-14, evening),
+      never finished, all eight threads spinning in `WaitForTurn` (30 CPU-seconds per 5 s
+      of wall time) for a turn passed to a ticket no thread takes, and was killed after
+      ten minutes; its log went with it (stdout is buffered when redirected), so the pass
+      is inferred: the first pass has completed every time today and uses no inputs, and
+      the same stage on the idle machine completed both passes in 17 s right after. No
+      committed stage runs deterministic with inputs (`tilt-x` has none), and hard rule 3
+      wants it fixed before one does.
       *Done when:* the loop makes the same number of queue calls on every thread (the
       inputs handed out in rounds every thread takes part in), the `dr` stage's second
       pass reproduces in deterministic mode, and the mock test pins a piped-in run on
       three threads with two inputs.
+
+- [ ] **3.15 The ticket wait spins on libomp.** Seen 2026-09-14 in the clang-cl perf suite:
+      the deterministic Tier D run's wall time fell 40% against the pre-branch binaries
+      (151.5 to 90.4 s) while its process cycles rose 57%, where the MSVC run's cycles fell
+      with its wall time (129.1 to 91.7 s, cycles -29%). `WaitForTurn` (3.8) spins with
+      `_mm_pause` until its ticket comes up; libomp's barriers block after their spin budget
+      (`KMP_BLOCKTIME`), which is presumably the idle time the old cycles left out, while
+      vcomp's spun, so on clang-cl the ticket queue trades the barrier's idle time for
+      busy CPU. Counts are identical on both compilers and nothing is gated
+      on cycles, so this is a cost, not a defect. *Done when:* the wait yields after a
+      bounded spin (or waits on the turn counter), measured on both runtimes: the clang-cl
+      run's cycles back near its wall time times the thread count without a wall-time
+      regression on either compiler, and the counts unchanged.
+
+- [ ] **3.16 `BM_M64_Save_10k` is 20% slower on clang-cl since the FrameMap commit.** Seen
+      2026-09-14 in the clang-cl perf suite (1.4 to 1.7 ms; MSVC's build of the row went
+      the other way, 2.1 to 1.8 ms) and bisected to 0fb3aaf, the sorted-vector containers
+      of 3.7, with its parent still fast. It is not the frame loop: the per-frame lookups
+      replaced by one walk, one stream call per frame, and one per 4 KB chunk all left the
+      row where it was on both compilers, so the time is in the file operations around the
+      loop (create, header writes and seeks, close), where nothing in that commit is. The
+      row is an export path (one save per exported solution) and is accepted as measured
+      for the merge (docs/performance-changelog.md). *Done when:* an xperf profile of
+      `tasfw-perf.exe` on clang-cl (docs/performance.md, the RelWithDebInfo recipe) names
+      where the 0.3 ms goes, and either the cause is fixed or the row is re-baselined with
+      the reason written here.
 
 ## Phase 4: the squish-cancel brute forcer
 
@@ -711,24 +744,30 @@ Not scheduled. Listed so decisions in earlier phases do not paint us into a corn
   already Python (`scripts/unlock_libsm64.py`, `perf_compare.py`, the DLL scripts), so a
   `scripts/new_script.py` and `new_resource.py` are the natural shape, with the skeletons
   kept as templates the generator fills in, not as strings in the script.
-- **Per-scenario movement options.** `MovementOption` is one enum for every scenario's
-  scripted moves plus the framework's three input groups (stick magnitude, direction,
-  buttons, which `RandomInputs` reads), a compromise the maintainer would rather not keep
-  as scenarios add moves (2026-09-14). The script author's side is what must stay plain:
-  `AddRandomMovementOption({{X, 4}, {Y, 1}})`. A member function template deducing the
-  enum from that call fails, since the inner braces are a non-deduced context for
-  `std::pair<T, double>`, which is the snag an earlier attempt hit; a fifth thread
-  template parameter for the enum threads it through every type that names the thread,
-  and a deducible entry type costs a word per entry, neither of which a script author
-  should have to know. The shape that asks nothing of the author: the three calls take
-  an `OptionId`, a value plus a tag for the enum it came from, with a converting
-  constructor from any enum, so `{Move::X, 5}` converts to `std::pair<OptionId, double>`
-  by implicit conversion and nothing is deduced; a scenario declares `enum class Move`
-  nested in its own class and writes today's syntax, the framework's input groups stay
-  in `MovementOption` through the same calls, and the selected set is a handful of ids
-  compared by tag and value, so enums never collide. The list walk of 3.8 is already
-  keyed on the option's value. Rule 10 design when wanted, a follow-up of that change's
-  size.
+- **Per-scenario movement options** (done 2026-09-14: `CustomMoves`, on C++23).
+  `BasicMoves` (then `MovementOption`) was one enum for every scenario's scripted moves plus the framework's
+  three input groups (stick magnitude, direction, buttons, which `RandomInputs` reads), a
+  compromise the maintainer would rather not keep as scenarios add moves. The script
+  author's side had to stay plain, `AddRandomMovementOption({{X, 4}, {Y, 1}})`, and no
+  C++20 shape managed it: a member function template deducing the enum from that call
+  fails (the inner braces are a non-deduced context for `std::pair<T, double>`, the snag
+  the first attempt hit), a fifth thread template parameter threads the enum through every
+  type that names the thread, and a deducible entry type or an id with a converting
+  constructor costs a word or a concept per entry. C++23's explicit object parameter is
+  the missing piece: the three calls have an overload taking `this Self&`, constrained on
+  `Self::CustomMoves` being an enum, so the enum is known from the object before
+  the braced list is considered and nothing is deduced from it. A search declares
+  a public `enum class CustomMoves` nested in its class, the magic name the way
+  `CustomScriptStatus` is one (and public like it), and writes today's syntax; a foreign enum does not compile;
+  the framework's input groups stay in `BasicMoves` through the same calls. The
+  selected options are a second bit vector, and the draw is the 3.8 list walk over either
+  enum (`DrawOption`). The cost is the toolchain floor (GCC 14, Clang 18, MSVC 17.2; CI
+  moved to GCC 14 and Clang 18), none at run time: the deterministic Tier D and dr counts
+  are identical (docs/performance-changelog.md), and `test_scattershot_mock.cpp` runs a
+  search on its own enum and pins the typing with static assertions. The five searches
+  moved their moves out of `BasicMoves` the same day, each `CustomMoves` listing them in the
+  order they had, so every draw walks the same order and every count is identical
+  (docs/performance-changelog.md); `BasicMoves` is the three input groups only.
 - **Hacks as a kind of input.** Today a direct write into game memory (`//! UNSAFE`) cannot
   be replayed from a savestate, which is why hard rule 1 forbids it. The intent is to make
   hacks a special input type the framework applies at a frame like any other input, so they

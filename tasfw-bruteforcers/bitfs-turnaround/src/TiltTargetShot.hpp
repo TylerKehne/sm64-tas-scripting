@@ -385,7 +385,7 @@ public:
 
     void SelectMovementOptions() override
     {
-        AddMovementOption(MovementOption::NO_SCRIPT);
+        // No moves: ApplyMovement draws its inputs itself (SelectRandomInputs).
     }
 
     bool ApplyMovement() override
@@ -806,7 +806,6 @@ private:
         if (GetTempRng() % 2 == 0)
         {
             int16_t intendedYaw;
-            auto state = GetTrackedState<TiltTargetShotMetrics>(GetCurrentFrame());
             if (_errorType == ErrorType::ABSOLUTE_ERROR && GetTempRng() % 4 != 0)
                 intendedYaw = int16_t(GetTempRng());
             else if (GetTempRng() % 8 != 0)

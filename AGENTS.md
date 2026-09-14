@@ -6,7 +6,7 @@ operational. Long-form material lives in [ARCHITECTURE.md](ARCHITECTURE.md),
 
 ## What this project is
 
-sm64-tas-scripting ("TASFW") is a C++20 framework for scripting and brute-forcing
+sm64-tas-scripting ("TASFW") is a C++23 framework for scripting and brute-forcing
 Super Mario 64 TAS inputs. The game itself runs inside a native x64 DLL (wafel's libsm64,
 built from the SM64 decompilation). Scripts drive it with savestates and frame advances,
 and a multithreaded "scattershot" search explores input space on top of that. The purpose
@@ -28,7 +28,7 @@ that is harder to write and a script that is harder to write, take the harder ba
 A design that puts a template argument, a wrapper, a new call or a new concept in front of
 the script author to buy something internal is the wrong design, even when it is the
 easier one to implement; hard rules 9 and 10 below are this principle applied to the
-resource and to the framework's surface, and the `MovementOption` discussion in
+resource and to the framework's surface, and the `BasicMoves` discussion in
 ROADMAP.md (Phase 5) is a worked example.
 
 ## Performance is a correctness requirement
@@ -84,7 +84,7 @@ its place with numbers, and "it is cleaner" is not a number.
 | `res/` | Gitignored runtime inputs: 24 copies of the libsm64 DLL (made by `scripts/unlock_libsm64.py`), other source .m64 files, and thousands of exported solution .m64 files. |
 | `movies/` | The committed source movies: `bitfs-pyramid-jp.m64` (JP, 3,804 frames; the tests, the perf suite, CI and `config.json` use it), `bitfs-osc-final-jp.m64` (JP, 3,726 frames; the `osc-final-test3` stage), `1keyU.m64` (US, 7,628 frames; a whole 1-key run, the source of the US way into BitFS) and `bitfs-pyramid-us.m64` (US, 3,871 frames; `1keyU.m64` to its BitFS entry, then the JP movie from its own: its frame 3397 is the JP movie's 3330, the libsm64 tests run on it when `res\` has the US DLL). |
 | `scripts/` | `build.ps1` (the supported build entry point on Windows), `test.ps1`, `perf.ps1` and its compare script, `unlock_libsm64.py` (the game from a ROM or the CI key), `perf_scaling_hang.ps1`, `dll_symbols.py`, `dll_layout.py` (the layout table from a DLL's DWARF), `dll_game_bytes.py` (a build's `LibSm64KnownGameBytes` entry from its COFF symbols: where the game's bytes of `.data` and `.bss` end and the C runtime's begin), `decomp_diff.py` with `decomp_pin.json` (the copied decomp files against their pinned upstream revision; docs/decomp.md). |
-| `cmake/` | `AddOptimizationFlags` (arch flag, FP determinism, LTO, OpenMP; applied to every first-party target), `Warnings` (`/W3`, `/W4`, `-Wall -Wextra` on every first-party target, and `TASFW_WARNINGS_AS_ERRORS`) and `SystemIncludes` (fetched dependencies as system headers, so their warnings never count). |
+| `cmake/` | `AddOptimizationFlags` (arch flag, FP determinism, LTO unless `TASFW_LTO=OFF`, OpenMP; applied to every first-party target), `Warnings` (`/W3`, `/W4`, `-Wall -Wextra` on every first-party target, and `TASFW_WARNINGS_AS_ERRORS`) and `SystemIncludes` (fetched dependencies as system headers, so their warnings never count). |
 | `docs/` | Provenance of the DLL (libsm64.md), what was copied from the decomp and at which revision (decomp.md), compiler pitfalls, performance. |
 
 ## Build and run

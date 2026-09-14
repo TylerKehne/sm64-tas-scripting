@@ -4,6 +4,95 @@ Every hot-path change records its delta table here, newest first; the policy, th
 how to run it are in [performance.md](performance.md). The first measurements (2026-09-07),
 which everything since is compared against, are at the bottom.
 
+## 2026-09-14: a search's own movement options (C++23, ROADMAP Phase 5)
+
+Designed under hard rule 10 and prototyped on a branch for the maintainer's decision. The
+three movement-option calls gain overloads on the search's own nested
+`enum class CustomMoves`, taken from the object through a C++23 explicit object
+parameter; the selected options go in a second per-thread bit vector, and the weighted
+draw of 3.8 is one template over either enum (`DrawOption`), which the `BasicMoves`
+overloads now call. Nothing on the hot path changes shape: the `BasicMoves` calls do
+what they did through the same helpers, the second vector is cleared per script like the
+first (a fill over an empty vector in a search without the enum), and no scenario's
+script changed, so every count is expected identical and was checked exactly (MSVC
+Release, the ticket-queue commit a9c14a9 against this change):
+
+| Workload | a9c14a9 | This change |
+|---|---|---|
+| CI-sized Tier D (`perf/tierd-ci.json`: 4 threads, deterministic, 100 shots) | 88,778 scripts, 34,241 blocks, 12 solutions, 2,948,886 advances, 104 saves, 174,384 loads | identical |
+| dr scratch stage (8 threads pinned, deterministic, 3,000 shots) | 9 solutions, 212,436 blocks, 2,910,119 scripts | identical |
+
+The names are the maintainer's: the framework's enum `MovementOption` became `BasicMoves`
+and the magic name `CustomMoves`, the three calls unchanged, every entry keeping its
+spelling. The five searches then moved their moves out of `BasicMoves` into their own `CustomMoves`
+(`Scattershot_BitfsDr`, `Scattershot_BitfsDrApproach`, `Scattershot_BitfsDrRecover`,
+`BitfsOscFinal`; `TiltTargetShot` only ever added `NO_SCRIPT` and never checked it, so that
+line is gone and it declares none), each enum listing its moves in the order they had in
+`BasicMoves`. The weighted draw walks a list in enum order, so every draw maps the RNG
+to the same choice as before, and `BasicMoves` is the three input groups only. Checked
+exactly on the same two workloads (the CI-sized Tier D and the dr scratch stage, whose
+search is the DR script): every count identical.
+
+The Linux builds of the same change (GCC 14 and 15, Clang 18 and 21, warnings as errors;
+docs/compilers.md) rejected an unused copy of the tracked state in
+`TiltTargetShot::SelectRandomInputs`, a leftover that became a warning when that status
+turned into arrays (3.7). The copy primed the tracker's cache for a frame nothing read
+there and is removed, which changes nothing the search decides: the CI-sized Tier D workload, whose stage is that script, repeats every count above
+to the frame advance, save and load (the lookup was a cache hit every time).
+
+The perf suite (MSVC Release, three processes, the reference being the 5238d9b binaries
+interleaved, the branch's only reference; the deltas are the branch's and are logged per
+change above) shows no regression: 0 over 10%, 24 improvements, 0 allocation increases.
+The rows this change could touch:
+
+| Row | Reference (5238d9b) | This branch | Allocs |
+|---|---|---|---|
+| BM_Scattershot_UpsertBlock_Redundant | 64.5 ns | 27.6 ns | 2 to 0 |
+| BM_Scattershot_UpsertBlock_Improve | 92.3 ns | 54.4 ns | 3 to 1 |
+| BM_Scattershot_UpsertBlock_Novel/50000 | 6.2 ms | 3.7 ms | 150,005 to 50,003 |
+| BM_Scattershot_GetHash/0 | 20.9 ns | 20.6 ns | 0 |
+| BM_Script_AdvanceFrameWrite | 145.9 ns | 49.8 ns | 2 to 0 |
+| BM_Framework_PyramidOscillation | 680.7 ms | 669.0 ms | 404,555 to 229,042 |
+| TierD_Deterministic (wall) | 129.1 s | 91.7 s | |
+| TierD_Throughput (wall) | 105.7 s | 87.6 s | |
+
+The one count flag is the deterministic Tier D row against the pre-branch baseline: its
+counts (52 solutions, 111,860 blocks, 524,380 scripts, 17,800,136 advances, 608 saves,
+1,045,094 loads) are the ticket queue's to the number, so the baseline is what moves at
+the merge (`-SaveBaseline`). Tier D alone, rerun on the tree with the searches migrated:
+deterministic 92.3 s against the reference's 130.2 s with the same counts, throughput 89.1 s
+against 107.5 s. The one efficiency flag, the
+DLL's frame advance at 8 threads (97.0 to 91.6 points), is not this change's code and did
+not reproduce: the family rerun alone put the row within a point of the reference (94.1 to
+93.4) with no flag. 
+
+The clang-cl suite (same shape, the `tyler-desktop-clang` reference) passed the same
+gates with one time flag that reproduced on two family reruns: `BM_M64_Save_10k`, 1.4 to
+1.7 ms (MSVC's build of the same row is 16% faster than its reference). It is not this
+change's: the C++20 hotspots head (a9c14a9) built with clang-cl and run as the reference
+against this tree shows the same 1.7 ms (-0.8%), and it is not the per-frame lookups in
+`M64::save` either (a single walk over the sorted frames changed neither compiler's number
+and is not kept). Bisected over the branch's clang-cl builds, run as the reference against
+this tree: the FrameMap commit 0fb3aaf already has the slow row (1.8 ms), its parent 54e52e7 the fast one (1.4 ms, this tree +20.4% against it),
+so the container's arrival is what moved it, though not through its lookups. What remains
+per frame is the stream, three `ofstream::write` calls for four bytes, and it is not that
+either: one call per frame, and then one call per 4 KB chunk (ten per save instead of
+thirty thousand), each built, tested on both compilers and measured, left the row at
+1.7 ms on clang-cl and 1.8 ms on MSVC, so neither is kept. The frame loop is not this
+row's cost; the save's time is the file operations around it (create, header, close),
+and why the FrameMap commit's clang-cl build pays 0.3 ms more there is open (ROADMAP
+3.16): an export path, one save per exported solution, presented to the maintainer for
+the explicit acceptance the policy asks for (docs/performance.md) rather than hidden in a
+baseline re-save. Its
+efficiency flag (frame advance at 2 threads) did not reproduce on the family rerun, and
+the 16-thread `SaveErase` row, a save path nothing here touches, read +0.9% in the suite
+and +14.9% on that rerun, the 16-thread noise seen all day. The deterministic row's counts
+are the ticket queue's on this compiler too; its process cycles rose 57% against the
+pre-branch binaries while wall time fell 40%, the ticket wait spinning where libomp's
+barriers slept (ROADMAP 3.15). Tier D alone on the migrated tree, clang-cl: deterministic
+89.9 s against the reference's 144.5 s with the same counts, throughput 89.7 s against
+104.0 s.
+
 ## 2026-09-14: the deterministic queue as a ticket (ROADMAP 3.8)
 
 Designed under hard rule 10, prototyped on a branch and accepted by the maintainer on the

@@ -276,6 +276,9 @@ using Alias_Scattershot_BitfsOscFinal = Scattershot<BinaryStateBin<16>, LibSm64,
 class BitfsOscFinal : public Alias_ScattershotThread_BitfsOscFinal
 {
 public:
+    // This search's moves; the draw walks a list in this order.
+    enum class CustomMoves { NO_SCRIPT, RUN_DOWNHILL, RUN_DOWNHILL_MIN, TURN_UPHILL, RUN_FORWARD };
+
     BitfsOscFinalArgs _args;
     
     enum class ErrorType
@@ -297,10 +300,10 @@ public:
         case BitfsOscFinalMetrics::Phase::RUN_DOWNHILL:
             AddRandomMovementOption(
                 {
-                    {MovementOption::NO_SCRIPT, 0},
-                    {MovementOption::RUN_DOWNHILL_MIN, 5},
-                    {MovementOption::RUN_DOWNHILL, 5},
-                    {MovementOption::TURN_UPHILL, marioState->forwardVel <= 16.0f ? 0 : 2}
+                    {CustomMoves::NO_SCRIPT, 0},
+                    {CustomMoves::RUN_DOWNHILL_MIN, 5},
+                    {CustomMoves::RUN_DOWNHILL, 5},
+                    {CustomMoves::TURN_UPHILL, marioState->forwardVel <= 16.0f ? 0 : 2}
                 });
             break;
 
@@ -311,19 +314,19 @@ public:
 
             AddRandomMovementOption(
                 {
-                    {MovementOption::NO_SCRIPT, 10},
-                    {MovementOption::TURN_UPHILL, 10},
-                    {MovementOption::RUN_FORWARD, 10}
+                    {CustomMoves::NO_SCRIPT, 10},
+                    {CustomMoves::TURN_UPHILL, 10},
+                    {CustomMoves::RUN_FORWARD, 10}
                 });
             break;
         }
 
         case BitfsOscFinalMetrics::Phase::BRAKE:
-            AddMovementOption(MovementOption::NO_SCRIPT);
+            AddMovementOption(CustomMoves::NO_SCRIPT);
             break;
 
         default:
-            AddMovementOption(MovementOption::NO_SCRIPT);
+            AddMovementOption(CustomMoves::NO_SCRIPT);
         }
 
     }
@@ -352,19 +355,19 @@ public:
         }
 
         // Scripts
-        if (!CheckMovementOptions(MovementOption::NO_SCRIPT))
+        if (!CheckMovementOptions(CustomMoves::NO_SCRIPT))
         {
-            if (CheckMovementOptions(MovementOption::RUN_DOWNHILL_MIN))
+            if (CheckMovementOptions(CustomMoves::RUN_DOWNHILL_MIN))
             {
                 RunDownhill_1f();
                 return true;
             }
-            else if (CheckMovementOptions(MovementOption::RUN_DOWNHILL))
+            else if (CheckMovementOptions(CustomMoves::RUN_DOWNHILL))
             {
                 RunDownhill_1f(false);
                 return true;
             }
-            else if (CheckMovementOptions(MovementOption::TURN_UPHILL))
+            else if (CheckMovementOptions(CustomMoves::TURN_UPHILL))
             {
                 TurnUphill_1f();
                 return true;

@@ -39,7 +39,7 @@ add_executable(tasfw-tests
 	"src/test_pipeline.cpp"
 )
 target_link_libraries(tasfw-tests PRIVATE tasfw::core tasfw::resources tasfw::scattershot tasfw::testing tasfw::scripts_general tasfw::bitfs_pipeline doctest::doctest)
-target_compile_features(tasfw-tests PRIVATE cxx_std_20)
+target_compile_features(tasfw-tests PRIVATE cxx_std_23)
 set_target_properties(tasfw-tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/out")
 add_optimization_flags(tasfw-tests)
 

@@ -261,6 +261,9 @@ using Alias_Scattershot_BitfsDrApproach = Scattershot<BinaryStateBin<16>, LibSm6
 class Scattershot_BitfsDrApproach : public Alias_ScattershotThread_BitfsDrApproach
 {
 public:
+    // This search's moves; the draw walks a list in this order.
+    enum class CustomMoves { NO_SCRIPT, PBD, RUN_DOWNHILL, RUN_DOWNHILL_MIN, REWIND, TURN_UPHILL, RUN_FORWARD, QUICKTURN, C_UP_TRICK };
+
     Scattershot_BitfsDrApproach(Alias_Scattershot_BitfsDrApproach& scattershot)
         : Alias_ScattershotThread_BitfsDrApproach(scattershot) { }
 
@@ -274,10 +277,10 @@ public:
             case StateTracker_BitfsDrApproach::Phase::RUN_DOWNHILL:
                 AddRandomMovementOption(
                     {
-                        {MovementOption::NO_SCRIPT, 0},
-                        {MovementOption::RUN_DOWNHILL_MIN, 5},
-                        {MovementOption::RUN_DOWNHILL, 5},
-                        {MovementOption::TURN_UPHILL, marioState->forwardVel <= 16.0f ? 0 : 2}
+                        {CustomMoves::NO_SCRIPT, 0},
+                        {CustomMoves::RUN_DOWNHILL_MIN, 5},
+                        {CustomMoves::RUN_DOWNHILL, 5},
+                        {CustomMoves::TURN_UPHILL, marioState->forwardVel <= 16.0f ? 0 : 2}
                     });
                 break;
 
@@ -287,43 +290,43 @@ public:
 
                 AddRandomMovementOption(
                     {
-                        {MovementOption::NO_SCRIPT, 0},
-                        {MovementOption::TURN_UPHILL, 10},
-                        {MovementOption::RUN_FORWARD, 0},
-                        {MovementOption::PBD, state.marioAction == ACT_WALKING ? 10 : 0}
+                        {CustomMoves::NO_SCRIPT, 0},
+                        {CustomMoves::TURN_UPHILL, 10},
+                        {CustomMoves::RUN_FORWARD, 0},
+                        {CustomMoves::PBD, state.marioAction == ACT_WALKING ? 10 : 0}
                     });
                 break;
             }
 
             case StateTracker_BitfsDrApproach::Phase::ATTEMPT_DR:
-                AddMovementOption(MovementOption::NO_SCRIPT);
-                AddMovementOption(MovementOption::RANDOM_BUTTONS);
+                AddMovementOption(CustomMoves::NO_SCRIPT);
+                AddMovementOption(BasicMoves::RANDOM_BUTTONS);
 
                 AddRandomMovementOption(
                     {
-                        {MovementOption::MAX_MAGNITUDE, 4},
-                        {MovementOption::ZERO_MAGNITUDE, 0},
-                        {MovementOption::SAME_MAGNITUDE, 0},
-                        {MovementOption::RANDOM_MAGNITUDE, 1}
+                        {BasicMoves::MAX_MAGNITUDE, 4},
+                        {BasicMoves::ZERO_MAGNITUDE, 0},
+                        {BasicMoves::SAME_MAGNITUDE, 0},
+                        {BasicMoves::RANDOM_MAGNITUDE, 1}
                     });
 
                 AddRandomMovementOption(
                     {
-                        {MovementOption::MATCH_FACING_YAW, 1},
-                        {MovementOption::RANDOM_YAW, 1}
+                        {BasicMoves::MATCH_FACING_YAW, 1},
+                        {BasicMoves::RANDOM_YAW, 1}
                     });
                 break;
 
             case StateTracker_BitfsDrApproach::Phase::QUICKTURN:
-                AddMovementOption(MovementOption::QUICKTURN);
+                AddMovementOption(CustomMoves::QUICKTURN);
                 break;
 
             case StateTracker_BitfsDrApproach::Phase::C_UP_TRICK:
-                AddMovementOption(MovementOption::C_UP_TRICK);
+                AddMovementOption(CustomMoves::C_UP_TRICK);
                 break;
 
             default:
-                AddMovementOption(MovementOption::NO_SCRIPT);
+                AddMovementOption(CustomMoves::NO_SCRIPT);
         }
     }
 
@@ -332,9 +335,9 @@ public:
         MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
 
         // Scripts
-        if (!CheckMovementOptions(MovementOption::NO_SCRIPT))
+        if (!CheckMovementOptions(CustomMoves::NO_SCRIPT))
         {
-            if (CheckMovementOptions(MovementOption::REWIND))
+            if (CheckMovementOptions(CustomMoves::REWIND))
             {
                 int64_t currentFrame = GetCurrentFrame();
                 int maxRewind = int((currentFrame - config.StartFrame) / 2);
@@ -342,27 +345,27 @@ public:
                 Load(currentFrame - rewindFrames);
             }
 
-            if (CheckMovementOptions(MovementOption::RUN_DOWNHILL_MIN))
+            if (CheckMovementOptions(CustomMoves::RUN_DOWNHILL_MIN))
             {
                 RunDownhill_1f();
                 return true;
             }
-            else if (CheckMovementOptions(MovementOption::RUN_DOWNHILL))
+            else if (CheckMovementOptions(CustomMoves::RUN_DOWNHILL))
             {
                 RunDownhill_1f(false);
                 return true;
             }
-            else if (CheckMovementOptions(MovementOption::PBD))
+            else if (CheckMovementOptions(CustomMoves::PBD))
             {
                 Pbd();
                 return true;
             }
-            else if (CheckMovementOptions(MovementOption::TURN_UPHILL))
+            else if (CheckMovementOptions(CustomMoves::TURN_UPHILL))
             {
                 TurnUphill_1f();
                 return true;
             }
-            else if (CheckMovementOptions(MovementOption::QUICKTURN) && Quickturn())
+            else if (CheckMovementOptions(CustomMoves::QUICKTURN) && Quickturn())
                 return true;
         }
 

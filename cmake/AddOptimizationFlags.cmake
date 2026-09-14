@@ -55,9 +55,16 @@ else()
 	set(_fp_flags "-ffp-contract=off")
 endif()
 
-# Check for IPO/LTO
+# Check for IPO/LTO. TASFW_LTO=OFF builds without it where a toolchain's LTO is broken:
+# GCC 14.2's LTO link of bitfs-turn fails (docs/compilers.md), so CI's ubuntu-24.04-gcc job
+# passes it; every other build keeps LTO.
+option(TASFW_LTO "Link-time optimization on every first-party target where the toolchain supports it" ON)
 include(CheckIPOSupported)
 check_ipo_supported(RESULT _ipo_supported LANGUAGES CXX)
+if(_ipo_supported AND NOT TASFW_LTO)
+	message(STATUS "LTO off (TASFW_LTO=OFF)")
+	set(_ipo_supported FALSE)
+endif()
 
 # Check for OpenMP
 find_package(OpenMP REQUIRED)

@@ -335,7 +335,8 @@ before believing it.
 ## Profiling
 
 - Build with `scripts\build.ps1 -Config RelWithDebInfo`. LTO is enabled for every config by
-  `add_optimization_flags`, and the `/arch` flag is detected at configure time.
+  `add_optimization_flags` (`-DTASFW_LTO=OFF` is only for a toolchain whose LTO is broken,
+  docs/compilers.md), and the `/arch` flag is detected at configure time.
 - MSVC's OpenMP is the 2.0 runtime (`-openmp`). `-openmp:llvm` is available if newer
   directives are needed; measure before switching.
 - Tools that work with this code: Visual Studio Performance Profiler (CPU sampling handles

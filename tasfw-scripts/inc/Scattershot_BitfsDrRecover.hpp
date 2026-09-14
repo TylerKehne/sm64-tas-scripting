@@ -339,6 +339,9 @@ using Alias_Scattershot_BitfsDrRecover = Scattershot<BinaryStateBin<16>, LibSm64
 class Scattershot_BitfsDrRecover : public Alias_ScattershotThread_BitfsDrRecover
 {
 public:
+    // This search's moves; the draw walks a list in this order.
+    enum class CustomMoves { NO_SCRIPT, PBD, RUN_DOWNHILL, RUN_DOWNHILL_MIN, REWIND, TURN_UPHILL, QUICKTURN, C_UP_TRICK };
+
     Scattershot_BitfsDrRecover(Alias_Scattershot_BitfsDrRecover& scattershot, StateTracker_BitfsDrRecover::Phase lastPhase)
         : Alias_ScattershotThread_BitfsDrRecover(scattershot), _lastPhase(lastPhase) { }
 
@@ -349,34 +352,34 @@ public:
         switch (state.phase)
         {
             case StateTracker_BitfsDrRecover::Phase::ATTEMPT_DR:
-                AddMovementOption(MovementOption::NO_SCRIPT);
-                AddMovementOption(MovementOption::RANDOM_BUTTONS);
+                AddMovementOption(CustomMoves::NO_SCRIPT);
+                AddMovementOption(BasicMoves::RANDOM_BUTTONS);
 
                 AddRandomMovementOption(
                     {
-                        {MovementOption::MAX_MAGNITUDE, 1},
-                        {MovementOption::ZERO_MAGNITUDE, 0},
-                        {MovementOption::SAME_MAGNITUDE, 0},
-                        {MovementOption::RANDOM_MAGNITUDE, 1}
+                        {BasicMoves::MAX_MAGNITUDE, 1},
+                        {BasicMoves::ZERO_MAGNITUDE, 0},
+                        {BasicMoves::SAME_MAGNITUDE, 0},
+                        {BasicMoves::RANDOM_MAGNITUDE, 1}
                     });
 
                 AddRandomMovementOption(
                     {
-                        {MovementOption::MATCH_FACING_YAW, 1},
-                        {MovementOption::RANDOM_YAW, 1}
+                        {BasicMoves::MATCH_FACING_YAW, 1},
+                        {BasicMoves::RANDOM_YAW, 1}
                     });
                 break;
 
             case StateTracker_BitfsDrRecover::Phase::QUICKTURN:
-                AddMovementOption(MovementOption::QUICKTURN);
+                AddMovementOption(CustomMoves::QUICKTURN);
                 break;
 
             case StateTracker_BitfsDrRecover::Phase::C_UP_TRICK:
-                AddMovementOption(MovementOption::C_UP_TRICK);
+                AddMovementOption(CustomMoves::C_UP_TRICK);
                 break;
 
             default:
-                AddMovementOption(MovementOption::NO_SCRIPT);
+                AddMovementOption(CustomMoves::NO_SCRIPT);
         }
     }
 
@@ -385,9 +388,9 @@ public:
         MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
 
         // Scripts
-        if (!CheckMovementOptions(MovementOption::NO_SCRIPT))
+        if (!CheckMovementOptions(CustomMoves::NO_SCRIPT))
         {
-            if (CheckMovementOptions(MovementOption::REWIND))
+            if (CheckMovementOptions(CustomMoves::REWIND))
             {
                 int64_t currentFrame = GetCurrentFrame();
                 int maxRewind = int((currentFrame - config.StartFrame) / 2);
@@ -395,32 +398,32 @@ public:
                 Load(currentFrame - rewindFrames);
             }
 
-            if (CheckMovementOptions(MovementOption::RUN_DOWNHILL_MIN))
+            if (CheckMovementOptions(CustomMoves::RUN_DOWNHILL_MIN))
             {
                 RunDownhill_1f();
                 return true;
             }
-            else if (CheckMovementOptions(MovementOption::RUN_DOWNHILL))
+            else if (CheckMovementOptions(CustomMoves::RUN_DOWNHILL))
             {
                 RunDownhill_1f(false);
                 return true;
             }
-            else if (CheckMovementOptions(MovementOption::PBD))
+            else if (CheckMovementOptions(CustomMoves::PBD))
             {
                 Pbd();
                 return true;
             }
-            else if (CheckMovementOptions(MovementOption::TURN_UPHILL))
+            else if (CheckMovementOptions(CustomMoves::TURN_UPHILL))
             {
                 TurnUphill_1f();
                 return true;
             }
-            else if (CheckMovementOptions(MovementOption::QUICKTURN))
+            else if (CheckMovementOptions(CustomMoves::QUICKTURN))
             {
                 Quickturn();
                 return true;
             }
-            else if (CheckMovementOptions(MovementOption::C_UP_TRICK))
+            else if (CheckMovementOptions(CustomMoves::C_UP_TRICK))
             {
                 return CUpTrick();
             }

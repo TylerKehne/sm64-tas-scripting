@@ -453,7 +453,8 @@ template <class TState, derived_from_specialization_of<Resource> TResource,
     class TOutputState>
 bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::ChooseScriptAndApply()
 {
-    std::fill(movementOptions.begin(), movementOptions.end(), false);
+    std::fill(basicMoves.begin(), basicMoves.end(), false);
+    std::fill(customMoves.begin(), customMoves.end(), false);
 
     ExecuteAdhoc([&]()
         {
@@ -742,21 +743,25 @@ void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::RetireFr
 template <class TState, derived_from_specialization_of<Resource> TResource,
     std::derived_from<Script<TResource>> TStateTracker,
     class TOutputState>
-void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::SelectOption(MovementOption option)
+void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::AddOption(std::size_t index, double probability, std::vector<bool>& set)
 {
-    std::size_t index = std::size_t(option);
-    if (index >= movementOptions.size())
-        movementOptions.resize(index + 1, false);
-    movementOptions[index] = true;
+    if (probability <= 0.0)
+        return;
+
+    if (probability >= 1.0 || GetTempRng() % 65536 <= uint64_t(int(probability / 65535.0)))
+    {
+        if (index >= set.size())
+            set.resize(index + 1, false);
+        set[index] = true;
+    }
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
     std::derived_from<Script<TResource>> TStateTracker,
     class TOutputState>
-bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::OptionSelected(MovementOption option) const
+bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::OptionSelected(std::size_t index, const std::vector<bool>& set)
 {
-    std::size_t index = std::size_t(option);
-    return index < movementOptions.size() && movementOptions[index];
+    return index < set.size() && set[index];
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
@@ -787,9 +792,10 @@ std::size_t ScattershotThread<TState, TResource, TStateTracker, TOutputState>::S
 template <class TState, derived_from_specialization_of<Resource> TResource,
     std::derived_from<Script<TResource>> TStateTracker,
     class TOutputState>
-void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::AddRandomMovementOption(std::initializer_list<std::pair<MovementOption, double>> weightedOptions)
+template <class TOption>
+void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::DrawOption(std::initializer_list<std::pair<TOption, double>> weightedOptions, std::vector<bool>& set)
 {
-    std::array<std::pair<MovementOption, double>, MaxWeightedEntries> options;
+    std::array<std::pair<TOption, double>, MaxWeightedEntries> options;
     std::size_t count = SortedByKey(weightedOptions, options);
     if (count == 0)
         return;
@@ -816,34 +822,38 @@ void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::AddRando
         double rngRangeMax = rngRangeMin + options[i].second * maxRng / totalWeight;
         if (rng >= rngRangeMin && rng < rngRangeMax)
         {
-            SelectOption(options[i].first);
+            AddOption(std::size_t(options[i].first), 1.0, set);
             return;
         }
 
         rngRangeMin = rngRangeMax;
     }
 
-    SelectOption(options[count - 1].first);
+    AddOption(std::size_t(options[count - 1].first), 1.0, set);
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
     std::derived_from<Script<TResource>> TStateTracker,
     class TOutputState>
-void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::AddMovementOption(MovementOption movementOption, double probability)
+void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::AddRandomMovementOption(std::initializer_list<std::pair<BasicMoves, double>> weightedOptions)
 {
-    if (probability <= 0.0)
-        return;
-
-    if (probability >= 1.0 || GetTempRng() % 65536 <= uint64_t(int(probability / 65535.0)))
-        SelectOption(movementOption);
+    DrawOption(weightedOptions, basicMoves);
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
     std::derived_from<Script<TResource>> TStateTracker,
     class TOutputState>
-bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::CheckMovementOptions(MovementOption movementOption)
+void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::AddMovementOption(BasicMoves movementOption, double probability)
 {
-    return OptionSelected(movementOption);
+    AddOption(std::size_t(movementOption), probability, basicMoves);
+}
+
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::CheckMovementOptions(BasicMoves movementOption)
+{
+    return OptionSelected(std::size_t(movementOption), basicMoves);
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
@@ -862,33 +872,33 @@ Inputs ScattershotThread<TState, TResource, TStateTracker, TOutputState>::Random
 
             // stick mag
             float intendedMag = 0;
-            if (CheckMovementOptions(MovementOption::MAX_MAGNITUDE))
+            if (CheckMovementOptions(BasicMoves::MAX_MAGNITUDE))
                 intendedMag = 32.0f;
-            else if (CheckMovementOptions(MovementOption::ZERO_MAGNITUDE))
+            else if (CheckMovementOptions(BasicMoves::ZERO_MAGNITUDE))
                 intendedMag = 0;
-            else if (CheckMovementOptions(MovementOption::SAME_MAGNITUDE))
+            else if (CheckMovementOptions(BasicMoves::SAME_MAGNITUDE))
                 intendedMag = marioState->intendedMag;
-            else if (CheckMovementOptions(MovementOption::RANDOM_MAGNITUDE))
+            else if (CheckMovementOptions(BasicMoves::RANDOM_MAGNITUDE))
                 intendedMag = (GetTempRng() % 1024) / 32.0f;
 
             // Intended yaw
             int16_t intendedYaw = 0;
-            if (CheckMovementOptions(MovementOption::MATCH_FACING_YAW))
+            if (CheckMovementOptions(BasicMoves::MATCH_FACING_YAW))
                 intendedYaw = marioState->faceAngle[1];
-            else if (CheckMovementOptions(MovementOption::ANTI_FACING_YAW))
+            else if (CheckMovementOptions(BasicMoves::ANTI_FACING_YAW))
                 intendedYaw = marioState->faceAngle[1] + 0x8000;
-            else if (CheckMovementOptions(MovementOption::SAME_YAW))
+            else if (CheckMovementOptions(BasicMoves::SAME_YAW))
                 intendedYaw = marioState->intendedYaw;
-            else if (CheckMovementOptions(MovementOption::RANDOM_YAW))
+            else if (CheckMovementOptions(BasicMoves::RANDOM_YAW))
                 intendedYaw = int16_t(GetTempRng());
 
             // Buttons
             uint16_t buttons = 0;
-            if (CheckMovementOptions(MovementOption::SAME_BUTTONS))
+            if (CheckMovementOptions(BasicMoves::SAME_BUTTONS))
                 buttons = this->GetInputs(this->GetCurrentFrame() - 1).buttons;
-            else if (CheckMovementOptions(MovementOption::NO_BUTTONS))
+            else if (CheckMovementOptions(BasicMoves::NO_BUTTONS))
                 buttons = 0;
-            else if (CheckMovementOptions(MovementOption::RANDOM_BUTTONS))
+            else if (CheckMovementOptions(BasicMoves::RANDOM_BUTTONS))
             {
                 for (std::size_t i = 0; i < count; i++)
                 {

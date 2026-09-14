@@ -128,6 +128,9 @@ using Alias_Scattershot_BitfsDr = Scattershot<BinaryStateBin<16>, LibSm64, State
 class Scattershot_BitfsDr : public Alias_ScattershotThread_BitfsDr
 {
 public:
+    // This search's moves; the draw walks a list in this order.
+    enum class CustomMoves { NO_SCRIPT, PBD, RUN_DOWNHILL, RUN_DOWNHILL_MIN, REWIND, TURN_UPHILL, RUN_FORWARD, TURN_AROUND, QUICKTURN };
+
     Scattershot_BitfsDr(Alias_Scattershot_BitfsDr& scattershot, int targetOscillation, NormalSpecsDto normalSpecsDto)
         : Alias_ScattershotThread_BitfsDr(scattershot), _targetOscillation(targetOscillation), _normalSpecsDto(normalSpecsDto) {}
 

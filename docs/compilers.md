@@ -5,7 +5,7 @@ Cross-platform compatibility is a requirement, not a nicety. The code must build
 experience: features that the standard and vendor documentation say are supported are
 sometimes not supported in practice, and the only way to know is to build with more than
 one compiler. Three compilers with three different template implementations is the minimum
-that gives real confidence in C++20 code like this.
+that gives real confidence in C++23 code like this.
 
 ## Supported toolchains
 
@@ -13,10 +13,39 @@ that gives real confidence in C++20 code like this.
 |---|---|---|
 | MSVC 19.44 (VS 2022), Ninja | primary; warning-free at `/W3` | `scripts\build.ps1` (preset `msvc-<config>`) |
 | clang-cl 19.1 (VS "C++ Clang tools for Windows"), Ninja | warning-free at `/W4` locally and in CI (windows-clang-cl job) | `scripts\build.ps1 -Compiler clang` (preset `clang-cl-<config>`) |
-| GCC 13 on Linux (Ubuntu 24.04), Ninja | warning-free at `-Wall -Wextra` in CI (ubuntu-24.04-gcc job) and in the 24.04 container below; cannot run the game there, the Linux libsm64 `.so` needs glibc 2.43 (docs/libsm64.md) | `cmake --preset gcc-release`, then `cmake --build --preset gcc-release` |
-| Clang 17 on Linux (Ubuntu 24.04), Ninja | warning-free at `-Wall -Wextra` in CI (ubuntu-24.04-clang job) and in the 24.04 container below | presets `clang-<config>` |
+| GCC 14 on Linux (Ubuntu 24.04), Ninja | the CI compiler since the move to C++23 (2026-09-14, GCC 13 before; "Language standard" below), built without LTO (`-DTASFW_LTO=OFF`: its LTO link of `bitfs-turn` fails, pitfall below); warning-free at `-Wall -Wextra` in CI (ubuntu-24.04-gcc job) and in the 24.04 container below; cannot run the game there, the Linux libsm64 `.so` needs glibc 2.43 (docs/libsm64.md) | `cmake --preset gcc-release`, then `cmake --build --preset gcc-release` |
+| Clang 18 on Linux (Ubuntu 24.04), Ninja | the CI compiler since the move to C++23 (Clang 17 before); warning-free at `-Wall -Wextra` in CI (ubuntu-24.04-clang job) and in the 24.04 container below | presets `clang-<config>` |
 | GCC 15.2 on Linux (Ubuntu 26.04), Ninja | warning-free at `-Wall -Wextra` in the 26.04 container below; `LibSm64`'s `mprotect`/`SIGSEGV` save path passes the libsm64 test group against bitfs-sbb's JP `.so`, drift test max diff 0 (2026-09-08) | same presets, or the container commands below |
 | Clang 21.1 on Linux (Ubuntu 26.04), Ninja | as GCC 15.2, once the tests target got `-Wno-#warnings` (pitfall below) | same |
+
+## Language standard: C++23
+
+Every first-party target asks CMake for `cxx_std_23` (since 2026-09-14; C++20 before). The
+one C++23 feature the code relies on is the explicit object parameter (P0847, "deducing
+this"): `ScattershotThread`'s movement-option calls take the script's own nested
+`CustomMoves` enum from the object they are called on (ARCHITECTURE.md,
+"Scattershot"), which no C++20 shape managed without a word in front of the script author.
+The floors that sets: MSVC 19.32 (VS 2022 17.2), clang-cl 18, GCC 14 and Clang 18. CMake
+spells the standard `/std:c++latest` for MSVC (no `/std:c++23` exists yet) and `-std=c++23`
+for clang-cl; the Ubuntu 24.04 CI jobs moved from GCC 13 and Clang 17 to GCC 14 and Clang
+18 for it, both in that release's own packages.
+
+The enum has to be public, as `CustomScriptStatus` has to be: the framework names it from
+outside the class, and a base class has no access to a derived class's private names. With
+a private `CustomMoves`, MSVC 19.44 rejects each call as C2664, "cannot convert argument 1 from
+'Shot::CustomMoves' to 'BasicMoves'", with the note that the `Self` overload "failed to
+specialize" (`Self=Shot`); the fix is the `public:` section, nothing else.
+
+### A requires-expression outside a template is not a soft check
+
+`test_scattershot_mock.cpp` first asserted the typing of the movement-option calls at
+namespace scope, `static_assert(!requires(CustomShot& s) { s.CheckMovementOptions(ForeignOption::Other); })`.
+MSVC 19.44 reports the failed call as an error (C2665) and the assertion as failed (C2607)
+instead of evaluating the expression to `false`, and it is right: a requires-expression
+whose requirement is invalid is ill-formed unless it appears in a templated entity
+([expr.prim.req.general]). The calls are also protected, which namespace scope cannot
+reach. The checks are variable templates of a class template derived from the script
+(`Probe<TShot>`), so both hold.
 
 Every build goes through a `CMakePresets.json` preset named `<compiler>-<config>`
 (`msvc-release`, `clang-cl-debug`, `gcc-relwithdebinfo`, ...), with build and test presets
@@ -52,13 +81,13 @@ inside the container (a build tree on the mount is slow):
 
 ```bash
 docker run -d --name tasfw-linux -v "C:/repos/sm64-tas-scripting:/src" -w /src ubuntu:24.04 sleep infinity
-docker exec tasfw-linux bash -c "apt-get update -qq && apt-get install -y -qq ninja-build g++-13 clang-17 libomp-17-dev cmake python3"
-docker exec tasfw-linux cmake -S /src -B /tmp/build-gcc -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=g++-13 -DTASFW_WARNINGS_AS_ERRORS=ON
+docker exec tasfw-linux bash -c "apt-get update -qq && apt-get install -y -qq ninja-build g++-14 clang-18 libomp-18-dev cmake python3"
+docker exec tasfw-linux cmake -S /src -B /tmp/build-gcc -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=g++-14 -DTASFW_WARNINGS_AS_ERRORS=ON -DTASFW_LTO=OFF
 docker exec tasfw-linux cmake --build /tmp/build-gcc -- -k 0
 docker exec -w /tmp/build-gcc tasfw-linux ./out/tasfw-tests
 ```
 
-The same with `clang++-17` and `/tmp/build-clang`. The dependency tarballs come from the
+The same with `clang++-18` and `/tmp/build-clang`, without `-DTASFW_LTO=OFF`. The dependency tarballs come from the
 shared `build/downloads` cache, so nothing is downloaded twice. From Git Bash, prefix
 `docker` commands with `MSYS_NO_PATHCONV=1`, or the container paths in the arguments are
 rewritten into Windows paths. The container is throwaway: `docker rm -f tasfw-linux`.
@@ -67,7 +96,7 @@ restart of Docker Desktop stops the container (`Exited (255)`); `docker start ta
 brings it back with its packages installed, but build trees under `/tmp` did not survive
 that on 2026-09-08, so reconfigure.
 
-That image matches CI (GCC 13, Clang 17, CMake 3.28, glibc 2.39). To run the game on Linux
+That image matches CI (GCC 14, Clang 18, CMake 3.28, glibc 2.39). To run the game on Linux
 the `.so` needs glibc 2.43 (docs/libsm64.md), which means a second container from Ubuntu
 26.04 (GCC 15.2, Clang 21.1, CMake 4.2):
 
@@ -256,6 +285,32 @@ clang-cl's spelling of GNU `-Wall -Wextra` is `/W4` (`/W1` to `/W3` are `-Wall`)
 `-Wextra` half has no CL homonym and would work on its own; `cmake/Warnings.cmake` uses
 `/W4`. Found 2026-09-08 (ROADMAP 1.7).
 
+### GCC 14.2: the LTO link of `bitfs-turn` loses a vtable
+
+Ubuntu 24.04's `g++-14` (14.2.0-4ubuntu2~24.04.1, binutils 2.42) compiles every target but
+cannot link `bitfs-turn` with LTO: `ld` dies with signal 11, and with an unlimited stack
+it reports the error the crash was hiding, `undefined reference to 'vtable for
+Scattershot_BitfsDr'` from LTO-generated code in `Scattershot::RunBase`. The class's key
+function is in `Scattershot_BitfsDr.cpp`, so the vtable exists; GCC 14's link-time
+optimizer drops it and keeps the reference. It is not the C++23 change: the C++20 head
+before it fails the same way, and GCC 13 and GCC 15.2 link both; nor is it a linker or a
+partitioning question (gold, lld, `-flto=1`, `-flto-partition=none`, `-fno-devirtualize`,
+`-fno-ipa-icf`, `-fno-ipa-cp-clone -fno-ipa-sra`, `-fno-inline` all fail the same way;
+2026-09-14). Without LTO the same tree builds, links and passes the tests. So
+`TASFW_LTO=OFF` exists, CI's ubuntu-24.04-gcc job passes it, and the LTO build on GCC is
+covered by the ubuntu-26.04-gcc job (GCC 15).
+
+### GCC and Clang: an unused copy of a tracked state
+
+`TiltTargetShot::SelectRandomInputs` copied the tracked state into a local it never read,
+`auto state = GetTrackedState<TiltTargetShotMetrics>(GetCurrentFrame());`. While that
+status held `std::vector`s no compiler said anything; the day it became `std::array`s
+(2026-09-14, the tracker status change of ROADMAP 3.7) GCC 14 and 15
+(`-Wunused-but-set-variable`) and Clang 18 and 21 (`-Wunused-variable`) rejected it under
+`-Werror`, while MSVC at `/W3` (C4189 is a level 4 warning) and clang-cl 19.1 at `/W4` did
+not report it. The line is gone; the lookup only primed the tracker's cache for a frame
+nothing read there. Found in the containers before CI saw it: build every compiler.
+
 ### GCC 13: `-Wdangling-reference` on a reference returned past a temporary
 
 `const json& RequireObject(const json& parent, const char* key, const std::string& where)`
@@ -263,7 +318,8 @@ returns a reference into `parent`, but a call with a string literal binds a temp
 `std::string` to `where`, and GCC 13's heuristic assumes the returned reference might refer
 to that temporary. The warning is in `-Wall` and there was no real bug. The fix that keeps
 the function honest is to take `where` by value as a `std::string_view`, which the heuristic
-does not consider; GCC 14 narrowed the check, but 13 is the CI compiler.
+does not consider; GCC 14 narrowed the check, and 13 was the CI compiler when this was
+found (2026-09-13). The fix stays.
 
 ### `static` function declarations in a header
 
@@ -407,8 +463,9 @@ without any `/arch` flag while clang-cl got `-march=native`. Fixed 2026-09-07; a
 - OpenMP: MSVC provides the 2.0 runtime via `-openmp`; clang-cl uses `-Xclang -fopenmp`
   (OpenMP 5.1) and links `libomp`. Both are found by CMake's `FindOpenMP`. Behavioral
   differences between the two runtimes (scheduling, barrier cost) are a Tier D concern.
-- LTO: MSVC `/GL` + `/LTCG`; clang-cl `-flto=thin` with `lld-link`. Both are enabled by
-  `cmake/AddOptimizationFlags.cmake` through CMake's IPO support.
+- LTO: MSVC `/GL` + `/LTCG`; clang-cl `-flto=thin` with `lld-link`; GCC `-flto=auto`. All are
+  enabled by `cmake/AddOptimizationFlags.cmake` through CMake's IPO support; `-DTASFW_LTO=OFF`
+  turns it off for a toolchain whose LTO is broken (GCC 14, below).
 - `-march=native` is accepted by clang-cl and detected as such; MSVC gets an `/arch` flag
   from a configure-time probe.
 - `__rdtsc` comes from `<intrin.h>` on MSVC and `<x86intrin.h>` elsewhere (`Resource.t.hpp`).

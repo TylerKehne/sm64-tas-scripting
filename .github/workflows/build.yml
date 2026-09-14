@@ -58,12 +58,16 @@ jobs:
             os: ubuntu-24.04
             preset: gcc-release
             bindir: build/Release-gcc
-            cxx: g++-13
+            cxx: g++-14
+            # GCC 14.2's LTO link of bitfs-turn fails (docs/compilers.md); GCC 15 (the
+            # ubuntu-26.04-gcc job) covers the LTO build.
+            cmakeArgs: -DTASFW_LTO=OFF
           - name: ubuntu-24.04-clang
             os: ubuntu-24.04
             preset: clang-release
             bindir: build/Release-clang
-            cxx: clang++-17
+            cxx: clang++-18
+            cmakeArgs: ''
 
     steps:
       - uses: actions/checkout@v5
@@ -73,7 +77,9 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build gcc-13 g++-13 clang-17 libomp-17-dev
+          # GCC 14 and Clang 18: the first with C++23's explicit object parameters (deducing
+          # this), which the scattershot's per-script movement options use (docs/compilers.md).
+          sudo apt-get install -y ninja-build gcc-14 g++-14 clang-18 libomp-18-dev
           echo "::add-matcher::.github/matchers/gcc.json"
 
       - name: Configure (Linux)
@@ -82,7 +88,7 @@ jobs:
         run: |
           cmake --version
           # The preset names the generic g++ / clang++; pin the version the matrix tests.
-          cmake --preset ${{ matrix.preset }} -DCMAKE_CXX_COMPILER=${{ matrix.cxx }} -DTASFW_WARNINGS_AS_ERRORS=ON 2>&1 | tee configure.log
+          cmake --preset ${{ matrix.preset }} -DCMAKE_CXX_COMPILER=${{ matrix.cxx }} -DTASFW_WARNINGS_AS_ERRORS=ON ${{ matrix.cmakeArgs }} 2>&1 | tee configure.log
 
       - name: Build (Linux)
         if: runner.os == 'Linux'

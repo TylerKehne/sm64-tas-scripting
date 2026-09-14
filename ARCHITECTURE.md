@@ -258,7 +258,7 @@ by firing random "pellets" from existing blocks. It predates this framework and 
 a good general-purpose algorithm for SM64, though configuring it (bin resolution, fitness,
 movement mix) is the hard part. It was ported here to be pushed further: the original
 works on individual per-frame inputs, whereas a pellet in TASFW can apply a whole scripted
-move (a `MovementOption` may be a script, not just a random stick), so the search can be
+move (one of a search's `CustomMoves` may be a script, not just a random stick), so the search can be
 more discerning about which movements it tries. The aim is to find good paths faster and to
 keep the state space from exploding, because each move is a meaningful step rather than a
 random frame. The state tracker is the other contribution: because a thread's state bin,
@@ -271,11 +271,16 @@ are going, not only by where they are.
 `ScattershotThread<...>` is a `TopLevelScript` that each OpenMP thread runs. A concrete
 search subclasses `ScattershotThread` and implements:
 
-- `SelectMovementOptions()`: choose weighted `MovementOption`s using `AddRandomMovementOption`,
-  one draw per decision (stick magnitude, stick direction, buttons, which scripted move) from
-  a braced list of `{option, weight}` pairs that is walked in `MovementOption` order whatever
-  order it is written in; the options selected for the script are one bit each in a vector
-  that grows with the enum, cleared per script, and read back with `CheckMovementOptions`.
+- `SelectMovementOptions()`: choose weighted options using `AddRandomMovementOption`, one
+  draw per decision (stick magnitude, stick direction, buttons, which scripted move) from a
+  braced list of `{option, weight}` pairs that is walked in enum order whatever order it is
+  written in. The framework's input groups are `BasicMoves`, which `RandomInputs` reads;
+  a search's own moves are its public nested `enum class CustomMoves`, a magic name the way
+  `CustomScriptStatus` is one (and public for the same reason: the framework reads it from
+  outside the class), and go through the same calls (`AddMovementOption` and
+  `CheckMovementOptions` too), typed to that enum: another search's enum does not compile,
+  and a search without one has only `BasicMoves`. The options selected for the script
+  are one bit each per enum, in a vector that grows with the enum and is cleared per script.
 - `ApplyMovement()`: turn those options into frames (random inputs or a scripted move).
 - `GetStateBin()`: quantise the game state into a `TState` (a `BinaryStateBin<16>` in practice).
 - `ValidateState()`, `GetStateFitness()`, `IsSolution()`, `GetSolutionState()`.
