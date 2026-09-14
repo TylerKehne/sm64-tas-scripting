@@ -84,8 +84,9 @@ Two things the gate flags are not regressions:
   row measures two loads instead of one load and a replay. The extra allocation per
   iteration is the touch-order node `SlotManager::LoadSlot` inserts for any load. At depth 1
   the cost model declines the jump (two frames of replay are cheaper than a load on the fake
-  resource) and the row is unchanged. These two rows and the three faster ones are
-  re-baselined by the next `-SaveBaseline`.
+  resource) and the row is unchanged. These two rows and the three faster ones were
+  re-baselined on 2026-09-14 (`-SaveBaseline` at commit 5238d9b, MSVC and clang-cl), so
+  the committed baselines and the reference binaries are this build's.
 
 What the fixed branch does with the cost model on: the deterministic Tier D stage with
 `costModel: true` (8 threads, `fixed` saves, seed 3, 600 shots), reference and current
