@@ -176,17 +176,17 @@ protected:
 		script.isStateTracker = isStateTracker;
 		script.Initialize(this);
 
-		uint64_t loadStateTimeStart = resource->GetTotalLoadStateTime();
-		uint64_t saveStateTimeStart = resource->GetTotalSaveStateTime();
-		uint64_t advanceFrameTimeStart = resource->GetTotalFrameAdvanceTime();
+		uint64_t loadCyclesStart = resource->work.loadCycles;
+		uint64_t saveCyclesStart = resource->work.saveCycles;
+		uint64_t advanceCyclesStart = resource->work.advanceCycles;
 
 		uint64_t start = get_time();
 		script.Run();
 		uint64_t finish = get_time();
 
-		BaseStatus[_adhocLevel].loadDuration = resource->GetTotalLoadStateTime() - loadStateTimeStart;
-		BaseStatus[_adhocLevel].saveDuration = resource->GetTotalSaveStateTime() - saveStateTimeStart;
-		BaseStatus[_adhocLevel].advanceFrameDuration = resource->GetTotalFrameAdvanceTime() - advanceFrameTimeStart;
+		BaseStatus[_adhocLevel].loadDuration = resource->work.loadCycles - loadCyclesStart;
+		BaseStatus[_adhocLevel].saveDuration = resource->work.saveCycles - saveCyclesStart;
+		BaseStatus[_adhocLevel].advanceFrameDuration = resource->work.advanceCycles - advanceCyclesStart;
 		BaseStatus[_adhocLevel].totalDuration = finish - start;
 
 		// Load if necessary
@@ -209,17 +209,17 @@ protected:
 		script.isStateTracker = isStateTracker;
 		script.Initialize(this);
 
-		uint64_t loadStateTimeStart = resource->GetTotalLoadStateTime();
-		uint64_t saveStateTimeStart = resource->GetTotalSaveStateTime();
-		uint64_t advanceFrameTimeStart = resource->GetTotalFrameAdvanceTime();
+		uint64_t loadCyclesStart = resource->work.loadCycles;
+		uint64_t saveCyclesStart = resource->work.saveCycles;
+		uint64_t advanceCyclesStart = resource->work.advanceCycles;
 
 		uint64_t start = get_time();
 		script.Run();
 		uint64_t finish = get_time();
 
-		BaseStatus[_adhocLevel].loadDuration = resource->GetTotalLoadStateTime() - loadStateTimeStart;
-		BaseStatus[_adhocLevel].saveDuration = resource->GetTotalSaveStateTime() - saveStateTimeStart;
-		BaseStatus[_adhocLevel].advanceFrameDuration = resource->GetTotalFrameAdvanceTime() - advanceFrameTimeStart;
+		BaseStatus[_adhocLevel].loadDuration = resource->work.loadCycles - loadCyclesStart;
+		BaseStatus[_adhocLevel].saveDuration = resource->work.saveCycles - saveCyclesStart;
+		BaseStatus[_adhocLevel].advanceFrameDuration = resource->work.advanceCycles - advanceCyclesStart;
 		BaseStatus[_adhocLevel].totalDuration = finish - start;
 
 		ApplyChildDiff(script.BaseStatus[0], SaveBankIfCreated(script, 0), initialFrame, &script);
@@ -744,9 +744,9 @@ private:
 		TStateTracker script = stateTrackerFactory->Generate();
 		script.Initialize(this);
 
-		uint64_t loadStateTimeStart = resource->GetTotalLoadStateTime();
-		uint64_t saveStateTimeStart = resource->GetTotalSaveStateTime();
-		uint64_t advanceFrameTimeStart = resource->GetTotalFrameAdvanceTime();
+		uint64_t loadCyclesStart = resource->work.loadCycles;
+		uint64_t saveCyclesStart = resource->work.saveCycles;
+		uint64_t advanceCyclesStart = resource->work.advanceCycles;
 
 		uint64_t start = get_time();
 		// The information is stored per frame, so we need to make sure we are there before running the state tracking script.
@@ -758,9 +758,9 @@ private:
 		script.Run();
 		uint64_t finish = get_time();
 
-		BaseStatus[_adhocLevel].loadDuration = resource->GetTotalLoadStateTime() - loadStateTimeStart;
-		BaseStatus[_adhocLevel].saveDuration = resource->GetTotalSaveStateTime() - saveStateTimeStart;
-		BaseStatus[_adhocLevel].advanceFrameDuration = resource->GetTotalFrameAdvanceTime() - advanceFrameTimeStart;
+		BaseStatus[_adhocLevel].loadDuration = resource->work.loadCycles - loadCyclesStart;
+		BaseStatus[_adhocLevel].saveDuration = resource->work.saveCycles - saveCyclesStart;
+		BaseStatus[_adhocLevel].advanceFrameDuration = resource->work.advanceCycles - advanceCyclesStart;
 		BaseStatus[_adhocLevel].totalDuration = finish - start;
 
 		// Load if necessary
@@ -1024,18 +1024,18 @@ private:
 
 		script.TrackState(&script, script.GetInputsMetadata(ScriptFriend<TResource>::GetCurrentFrame(&script)));
 
-		uint64_t loadStateTimeStart = resource->GetTotalLoadStateTime();
-		uint64_t saveStateTimeStart = resource->GetTotalSaveStateTime();
-		uint64_t advanceFrameTimeStart = resource->GetTotalFrameAdvanceTime();
+		uint64_t loadCyclesStart = resource->work.loadCycles;
+		uint64_t saveCyclesStart = resource->work.saveCycles;
+		uint64_t advanceCyclesStart = resource->work.advanceCycles;
 
 		uint64_t start = get_time();
 		ScriptFriend<TResource>::Run(&script);
 		uint64_t finish = get_time();
 
 		auto& baseStatus = ScriptFriend<TResource>::GetBaseStatus(&script)[0];
-		baseStatus.loadDuration = resource->GetTotalLoadStateTime() - loadStateTimeStart;
-		baseStatus.saveDuration = resource->GetTotalSaveStateTime() - saveStateTimeStart;
-		baseStatus.advanceFrameDuration = resource->GetTotalFrameAdvanceTime() - advanceFrameTimeStart;
+		baseStatus.loadDuration = resource->work.loadCycles - loadCyclesStart;
+		baseStatus.saveDuration = resource->work.saveCycles - saveCyclesStart;
+		baseStatus.advanceFrameDuration = resource->work.advanceCycles - advanceCyclesStart;
 		baseStatus.totalDuration = finish - start;
 
 		//Dispose of slot handles before resource goes out of scope because they trigger destructor events in the resource.

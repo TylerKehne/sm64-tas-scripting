@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <vector>
 
-#include <tasfw/testing/FakeResource.hpp>
+#include <tasfw/testing/MockResource.hpp>
 #include <tasfw/testing/PerfAccess.hpp>
 
 // The search's hashes must be the same function on every platform: the block table's
@@ -18,7 +18,7 @@
 namespace
 {
 	using Bin = BinaryStateBin<16>;
-	using SS = Scattershot<Bin, FakeResource, DefaultStateTracker<FakeResource>, DefaultState>;
+	using SS = Scattershot<Bin, MockResource, DefaultStateTracker<MockResource>, DefaultState>;
 	using Solution = ScattershotSolution<DefaultState>;
 
 	const std::vector<Solution> NoInputSolutions;

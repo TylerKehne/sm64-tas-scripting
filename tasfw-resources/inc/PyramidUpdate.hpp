@@ -116,8 +116,14 @@ private:
 class PyramidUpdate : public Resource<PyramidUpdateMem>
 {
 public:
+	// Its savestate limit, taken from the process budget while it lives (ROADMAP 3.5). A
+	// state is a few kilobytes of surfaces and the downhill scripts save a handful of times,
+	// and one of these exists per thread at a time, so the pipeline leaves this much room per
+	// thread beside its game resource's budget.
+	static constexpr int64_t SavestateBudgetBytes = int64_t(16) * 1024 * 1024;
+
 	PyramidUpdate();
-	PyramidUpdate(PyramidUpdateConfig config) : _enableMarioMovement(config.EnableMarioMovement) { }
+	PyramidUpdate(PyramidUpdateConfig config);
 	void save(PyramidUpdateMem& state) const override;
 	void load(const PyramidUpdateMem& state) override;
 	void advance() override;

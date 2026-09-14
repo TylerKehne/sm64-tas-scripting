@@ -4,7 +4,7 @@
 
 #include <cstdint>
 
-// Savestates on the fake resource (script_fixtures.hpp): loads restore exact state and
+// Savestates on the mock resource (script_fixtures.hpp): loads restore exact state and
 // replays are bit-identical, state is a pure function of the start save and the resolved
 // inputs, rollback and ad-hoc writes invalidate what they must, and a child's saves reach
 // the parent only when the inputs they were made with survive.
@@ -13,7 +13,7 @@ using namespace tasfw::tests;
 
 TEST_CASE("Load restores exact state and replays are bit-identical")
 {
-	FakeResource resource;
+	MockResource resource;
 	M64 m64;
 	RunRoot(resource, m64, [](auto& s)
 		{
@@ -48,7 +48,7 @@ TEST_CASE("Load restores exact state and replays are bit-identical")
 
 TEST_CASE("State is a pure function of the start save and the resolved inputs across the hierarchy")
 {
-	FakeResource resource;
+	MockResource resource;
 	M64 m64;
 	for (int i = 0; i < 20; i++)
 		m64.frames[i] = In(500 + i);
@@ -77,7 +77,7 @@ TEST_CASE("State is a pure function of the start save and the resolved inputs ac
 
 TEST_CASE("Rollback erases the diff from the target frame and lands there")
 {
-	FakeResource resource;
+	MockResource resource;
 	M64 m64;
 	RunRoot(resource, m64, [](auto& s)
 		{
@@ -98,7 +98,7 @@ TEST_CASE("Rollback erases the diff from the target frame and lands there")
 
 TEST_CASE("Saves made by a child survive being handed to the parent on Modify")
 {
-	FakeResource resource;
+	MockResource resource;
 	M64 m64;
 	RunRoot(resource, m64, [&resource](auto& s)
 		{
@@ -110,12 +110,12 @@ TEST_CASE("Saves made by a child survive being handed to the parent on Modify")
 
 			// Loading the child's save frame from the parent is one load and no replay: the
 			// handle was moved, not copied and then released by the child's bank.
-			uint64_t loads = resource.nLoadStates;
-			uint64_t advances = resource.nFrameAdvances;
+			uint64_t loads = resource.work.loads;
+			uint64_t advances = resource.work.frameAdvances;
 			s.Load(3);
 			CHECK(s.GetCurrentFrame() == 3);
-			CHECK(resource.nLoadStates == loads + 1);
-			CHECK(resource.nFrameAdvances == advances);
+			CHECK(resource.work.loads == loads + 1);
+			CHECK(resource.work.frameAdvances == advances);
 		});
 }
 
@@ -123,9 +123,9 @@ TEST_CASE("A reverted child's saves made after its first written frame never ser
 {
 	// ROADMAP 4.5: scattershot's base-block validation failed on about 2% of shots because
 	// Revert moved every save of a child whose saves were all desynced into the parent's
-	// bank. The fake resource's cost model is off so that no auto-save can mask the stale
+	// bank. The mock resource's cost model is off so that no auto-save can mask the stale
 	// one by landing on the same frame first.
-	FakeResource resource;
+	MockResource resource;
 	resource.useCostModel = false;
 	M64 m64;
 	for (int i = 0; i < 20; i++)
@@ -164,7 +164,7 @@ TEST_CASE("A reverted child's saves made after its first written frame never ser
 
 TEST_CASE("Ad-hoc writes invalidate later saves and caches")
 {
-	FakeResource resource;
+	MockResource resource;
 	M64 m64;
 	RunRoot(resource, m64, [](auto& s)
 		{
@@ -185,5 +185,47 @@ TEST_CASE("Ad-hoc writes invalidate later saves and caches")
 			s.Load(0);
 			s.Load(6);
 			CHECK(s.resource->checksum() == direct);
+		});
+}
+
+TEST_CASE("A forward load jumps to a save that lies between the cursor and the target")
+{
+	// LoadBase and LongLoad compared that save's frame with the target instead of the cursor
+	// from 2022-06-14 to 2026-09-13, which the lookup makes impossible, so a forward load
+	// always replayed from where it stood (ROADMAP 3.11). The cost model is on: on the mock
+	// resource a load is a 256-byte copy and an advance a few operations, so skipping a
+	// thousand frames is cheaper than replaying them by a wide margin.
+	MockResource resource;
+	M64 m64;
+	RunRoot(resource, m64, [&resource](auto& s)
+		{
+			uint64_t at1190 = 0;
+			for (int i = 0; i < 1200; i++)
+			{
+				if (i == 1000)
+					s.Save();
+				if (i == 1190)
+					at1190 = s.resource->checksum();
+				s.AdvanceFrameWrite(In(i));
+			}
+			s.Load(0);
+
+			uint64_t loads = resource.work.loads;
+			uint64_t advances = resource.work.frameAdvances;
+			s.Load(1190); // the save at 1000 lies between the cursor and the target
+			CHECK(s.GetCurrentFrame() == 1190);
+			CHECK(s.resource->checksum() == at1190);
+			CHECK(resource.work.loads == loads + 1);
+			CHECK(resource.work.frameAdvances == advances + 190);
+
+			// LongLoad takes the same jump (and saves where it lands, as it always did).
+			s.Load(0);
+			loads = resource.work.loads;
+			advances = resource.work.frameAdvances;
+			s.LongLoad(1190);
+			CHECK(s.GetCurrentFrame() == 1190);
+			CHECK(s.resource->checksum() == at1190);
+			CHECK(resource.work.loads == loads + 1);
+			CHECK(resource.work.frameAdvances == advances + 190);
 		});
 }

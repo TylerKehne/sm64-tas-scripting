@@ -221,9 +221,11 @@ counts (docs/performance-changelog.md; `bitfs-turn` prints the set size and the 
 baselines per stage). Re-baselining again during a run, at a save once its loads had paid
 for one, was measured and dropped: the set regrows within a shot whatever the baseline, and
 with the cost model saving often the rule fired about a thousand times per thread. No
-result depends on when a baseline is taken. Older states stay loadable: a state names the
-baseline it was saved under, every baseline a live slot's state names keeps its pages, the
-start save's is always kept, and the rest are released at the next baseline. Debuggers stop
+result depends on when a baseline is taken. Older states stay loadable: a state takes a
+reference on the baseline it was saved under and gives it back when its slot is erased
+(`LibSm64Mem::dispose`, the slot manager's hook), a referenced baseline keeps its pages,
+the start save's is referenced for as long as the start save stands, and the rest are
+released at the next baseline. Debuggers stop
 on the deliberate first-write faults unless told not to; use `full` there.
 
 ## Checking a DLL: `dllcheck`

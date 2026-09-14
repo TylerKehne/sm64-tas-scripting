@@ -3,13 +3,11 @@
 #error "Script.t.hpp should only be included by Script.hpp"
 #else
 
-#include <chrono>
-
 template <derived_from_specialization_of<Resource> TResource>
 void SlotHandle<TResource>::Release()
 {
 	if (resource && slotId != -1)
-		resource->slotManager.EraseSlot(slotId);
+		resource->DisposeState(slotId);
 	resource = nullptr;
 	slotId = -1;
 }
@@ -25,7 +23,7 @@ bool SlotHandle<TResource>::isValid()
 	if (slotId == -1)
 		return true;
 
-	return resource->slotManager.isValid(slotId);
+	return resource->HasState(slotId);
 }
 
 template <derived_from_specialization_of<Resource> TResource>
@@ -550,7 +548,8 @@ void Script<TResource>::LongLoad(int64_t frame)
 		return;
 
 	// Load most recent save at or before frame. Check child saves before
-	// parent. If target frame is in future, check if faster to frame advance or load.
+	// parent. If target frame is in future and a save lies between the cursor and it, check
+	// if faster to frame advance or load (see LoadBase for the history of this condition).
 	// Also, don't cache as it is unlikely the save will be needed again.
 	auto latestSave = GetLatestSave(frame);
 	if (frame < currentFrame)
@@ -558,8 +557,11 @@ void Script<TResource>::LongLoad(int64_t frame)
 		resource->LoadState(latestSave.GetSlotHandle()->slotId);
 		BaseStatus[_adhocLevel].nLoads++;
 	}
-	else if (latestSave.frame > frame && resource->shouldLoad(latestSave.frame - currentFrame))
+	else if (latestSave.frame > currentFrame && resource->shouldLoad(latestSave.frame - currentFrame))
+	{
 		resource->LoadState(latestSave.GetSlotHandle()->slotId);
+		BaseStatus[_adhocLevel].nLoads++;
+	}
 
 	// If save is before target frame, play back until frame is reached
 	currentFrame = GetCurrentFrame();
@@ -587,15 +589,24 @@ void Script<TResource>::LoadBase(uint64_t frame, bool desync)
 		return;
 
 	// Load most recent save at or before frame. Check child saves before
-	// parent. If target frame is in future, check if faster to frame advance or load.
+	// parent. If target frame is in future and a save lies between the cursor and it, check
+	// if faster to load that save than to frame advance to it. The save is in sync with the
+	// inputs about to be replayed (the lookup never returns one past a level's own writes).
+	// Until 2026-09-13 this compared the save's frame with the target instead of the cursor,
+	// which the lookup makes impossible, so a forward load never jumped: written that way on
+	// 2022-03-22, corrected in Load on 2022-04-09, and lost when Load became this function on
+	// 2022-06-14 (ROADMAP 3.11).
 	auto latestSave = GetLatestSaveAndCache(frame);
 	if (desync || frame < currentFrame)
 	{
 		resource->LoadState(latestSave.GetSlotHandle()->slotId);
 		BaseStatus[_adhocLevel].nLoads++;
 	}
-	else if (latestSave.frame > static_cast<int64_t>(frame) && resource->shouldLoad(latestSave.frame - currentFrame))
+	else if (latestSave.frame > static_cast<int64_t>(currentFrame) && resource->shouldLoad(latestSave.frame - static_cast<int64_t>(currentFrame)))
+	{
 		resource->LoadState(latestSave.GetSlotHandle()->slotId);
+		BaseStatus[_adhocLevel].nLoads++;
+	}
 
 	// Run custom state tracker
 	currentFrame = GetCurrentFrame();
@@ -911,21 +922,21 @@ BaseScriptStatus Script<TResource>::ExecuteAdhocBase(F adhocScript)
 	_adhocLevel++;
 	BaseStatus[_adhocLevel].validated = true;
 
-	uint64_t loadStateTimeStart = resource->GetTotalLoadStateTime();
-	uint64_t saveStateTimeStart = resource->GetTotalSaveStateTime();
-	uint64_t advanceFrameTimeStart = resource->GetTotalFrameAdvanceTime();
+	uint64_t loadCyclesStart = resource->work.loadCycles;
+	uint64_t saveCyclesStart = resource->work.saveCycles;
+	uint64_t advanceCyclesStart = resource->work.advanceCycles;
 
-	auto start = std::chrono::high_resolution_clock::now();
+	// Cycles, like every other duration (ROADMAP 3.6). This was the one place that recorded
+	// milliseconds through std::chrono.
+	uint64_t start = get_time();
 	BaseStatus[_adhocLevel].executed = adhocScript();
-	auto finish = std::chrono::high_resolution_clock::now();
+	uint64_t finish = get_time();
 
-	BaseStatus[_adhocLevel].loadDuration = resource->GetTotalLoadStateTime() - loadStateTimeStart;
-	BaseStatus[_adhocLevel].saveDuration = resource->GetTotalSaveStateTime() - saveStateTimeStart;
-	BaseStatus[_adhocLevel].advanceFrameDuration = resource->GetTotalFrameAdvanceTime() - advanceFrameTimeStart;
+	BaseStatus[_adhocLevel].loadDuration = resource->work.loadCycles - loadCyclesStart;
+	BaseStatus[_adhocLevel].saveDuration = resource->work.saveCycles - saveCyclesStart;
+	BaseStatus[_adhocLevel].advanceFrameDuration = resource->work.advanceCycles - advanceCyclesStart;
 
-	BaseStatus[_adhocLevel].executionDuration =
-		std::chrono::duration_cast<std::chrono::milliseconds>(finish - start)
-		.count();
+	BaseStatus[_adhocLevel].executionDuration = finish - start;
 
 	BaseStatus[_adhocLevel].asserted = BaseStatus[_adhocLevel].executed;
 

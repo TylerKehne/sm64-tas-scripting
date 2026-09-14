@@ -4,6 +4,115 @@ Every hot-path change records its delta table here, newest first; the policy, th
 how to run it are in [performance.md](performance.md). The first measurements (2026-09-07),
 which everything since is compared against, are at the bottom.
 
+## 2026-09-14: a saved state's lifecycle has two ends
+
+A state's contents live from `Resource::save` until its slot is erased. A state type that
+holds a reference to something outside itself now defines `dispose()`, which
+`SlotManager::EraseSlot` calls at that point, resolved at compile time like `LevelStack`'s
+`Reset()`, and `LibSm64Mem` uses it to give its dirty baseline its reference back. The
+dirty mode's baseline bookkeeping is reference counts kept at save and dispose instead of a
+walk over the slot table at each baseline, so `LibSm64` no longer names the slot manager;
+neither does `SlotHandle`, which releases and checks a slot through `Resource::DisposeState`
+and `HasState`; and a resource's limit is the one argument of `Resource`'s constructor.
+`FakeResource` is `MockResource`. Measured, MSVC Release against the reference, the two
+families the erase path touches: `SlotManager_CreateErase` at 100, 1,000 and 10,000 live
+slots +0.6%, -0.1%, -1.1%, `LoadSlot` and `CreateAtCap` within +2.0% .. -1.5%,
+`LibSm64Dirty_SaveErase` 6.9 us both, `SaveFresh` -0.7%, `Load` -0.9%, `FrameAdvance`
+-1.0%; allocations and counts unchanged. The dirty-baseline test now checks the reference
+counts across a run and its erases.
+
+## 2026-09-14: a process-wide savestate budget (ROADMAP 3.5)
+
+`SlotBudget` is a budget and a balance for the whole process: a resource subtracts its
+limit from the balance when it is created, or throws if the balance is too low, and adds
+it back when it dies. The pipeline sets the budget from `resources.savestateBudgetMB`
+(default 8192) and gives each thread's game resource an equal share less the 16 MB a
+script's `PyramidUpdate` takes per thread. One subtraction per resource created, nothing on
+the save or load path. Checked with the CI-sized Tier D stage (100 shots, 4 threads,
+`fixed`, cost model off): at the default, counts identical to the committed baseline
+(2,981,801 frame advances, 104 saves, 184,344 loads, 10 solutions, 36,347 blocks, 93,774
+scripts) with the slot line at 3 live per thread and 0 evictions; at 80 MB, which leaves
+each thread two saves, the slot line reads 2 live and 4 evictions and every count is still
+identical, the evicted save never being loaded again. Nothing this pipeline does comes near
+the default: 27 savestates per thread at most (previous entry).
+
+## 2026-09-13: one counter struct, one clock, and the forward jump that never fired (ROADMAP 3.6, 3.11)
+
+`Resource` keeps its counts and cycles in one struct now, `ResourceWork work`, which also
+carries the slot manager's high-water marks, pool reuses and evictions; the Tier C
+benchmarks and `bitfs-turn` read it instead of copying six fields, and the stage summary
+prints the slot line. `ExecuteAdhocBase` times the ad-hoc body with `get_time()` like every
+other duration: it was the one place that went through `std::chrono::high_resolution_clock`
+and stored milliseconds, and that clock call was the dearer of the two. And `LoadBase` and
+`LongLoad` compare a found save's frame with the cursor instead of the target, so a forward
+load with a save between the cursor and the target loads it when `shouldLoad` says the
+skipped frames cost more than a load. Written wrong on 2022-03-22, corrected in `Load` on
+2022-04-09, lost when `Load` became `LoadBase` on 2022-06-14 and copied into `LongLoad` that
+August, the branch could not fire until now (ROADMAP 3.11).
+
+MSVC Release, `scripts\perf.ps1` with Tiers A to D against the reference (the baseline
+commit's binaries, interleaved; machine factor 0.97), fastest of the repetitions. Every gated
+count identical: Tier C scripts, saves, loads and allocations, and Tier D deterministic
+18,014,927 frame advances, 608 saves, 1,038,084 loads, 55 solutions, 109,958 blocks,
+520,052 scripts. Those workloads run with the cost model off, where the fixed branch stays
+dead by construction.
+
+| row | reference | current | delta |
+|---|---|---|---|
+| `Script_ExecuteAdhoc_Empty` | 85.3 ns | 72.5 ns | -15.0% (the clock; -14.3% under clang-cl) |
+| `Script_ExecuteAdhoc_OneFrame` | 275.6 ns | 260.0 ns | -5.7% |
+| `Script_Execute_ChildEmpty` | 446.0 ns | 403.7 ns | -9.5% |
+| `Script_AdvanceFrameWrite` | 144.1 ns, 151.0 ns | 163.5 ns, 163.0 ns | +13.4%, +8.0% in two runs; see below |
+| `Script_AdvanceFrameRead` | 246.1 ns | 237.7 ns | -3.4% |
+| `Script_LongLoad_RewindToRoot_Depth/4` | 470.1 ns | 202.9 ns | -56.9%, allocations 1 -> 2 per iteration |
+| `Script_LongLoad_RewindToRoot_Depth/16` | 3.58 us | 204.2 ns | -94.3%, allocations 1.02 -> 2.02 |
+| Tier B, every `LibSm64Full`, `LibSm64Fixed`, `LibSm64Dirty`, `SlotManager` and `Resource` row | | | within -1.5% .. +0.8% |
+| Tier C `PyramidOscillation`, `DownhillAngle_PyramidUpdate`, `TrackerSweep` | 681.5 ms, 2.8 ms, 7.4 ms | 682.8 ms, 2.8 ms, 7.4 ms | +0.2%, -1.1%, +0.2% |
+| `TierD_Deterministic` (8 threads, cost model off) | 132.5 s | 131.5 s | -0.7% |
+| `TierD_Throughput` (16 threads, cost model on) | 69.3 s | 69.5 s | +0.3% |
+
+Two things the gate flags are not regressions:
+
+- `Script_AdvanceFrameWrite` +13.4%, and +8.0% on a rerun of the family: the current MSVC
+  binary is consistently about 12 ns slower on it. Nothing on that path changed but the two
+  counter increments inside `FrameAdvance`, which `AdvanceFrameRead` shares and reads faster;
+  and clang-cl, same source against its own reference, has the row at +3.2% with
+  `AdvanceFrameRead` at +0.5%. MSVC code layout, the sensitivity these rows are on record for.
+- The two `LongLoad_RewindToRoot` rows are the fixed branch at work. The benchmark rewinds to
+  the root's save and loads forward to where it was; the save it made there on the previous
+  iteration now serves that load as a jump instead of a replay through every level, so the
+  row measures two loads instead of one load and a replay. The extra allocation per
+  iteration is the touch-order node `SlotManager::LoadSlot` inserts for any load. At depth 1
+  the cost model declines the jump (two frames of replay are cheaper than a load on the fake
+  resource) and the row is unchanged. These two rows and the three faster ones are
+  re-baselined by the next `-SaveBaseline`.
+
+What the fixed branch does with the cost model on: the deterministic Tier D stage with
+`costModel: true` (8 threads, `fixed` saves, seed 3, 600 shots), reference and current
+binaries alternated twice at the suite's priority and placement. The search is the same in
+all four runs (55 solutions, 109,958 blocks, 520,052 scripts); the rest is per run:
+
+| | frame advances | saves | loads | wall | process cycles | peak resident |
+|---|---|---|---|---|---|---|
+| reference, run 1 | 17,797,387 | 41,724 | 1,038,084 | 132.1 s | 3.133e12 | 358 MB |
+| current, run 1 | 17,750,784 | 41,071 | 1,041,776 | 131.4 s | 3.119e12 | 321 MB |
+| reference, run 2 | 17,796,971 | 41,966 | 1,038,084 | 131.8 s | 3.129e12 | 359 MB |
+| current, run 2 | 17,750,204 | 41,309 | 1,041,784 | 131.0 s | 3.110e12 | 325 MB |
+
+The reference loads exactly as often as with the cost model off, in both runs: a dead
+branch's signature. The fix makes about 3,700 more loads (+0.4%) and 46,600 fewer frame
+advances (-0.3%) per run, about 650 fewer automatic saves since a jumped stretch
+accumulates no replay history, and a 0.5% shorter run in wall time and process cycles,
+which is what 3,700 fixed-slice loads at 40 us against 46,600 advances at 14 us predicts;
+peak resident memory is 35 MB lower in both pairs. On the throughput run (cost model on,
+16 threads, not deterministic) the same shift shows as loads +1.6% and advances -0.2%
+against the reference at unchanged wall time.
+
+The slot line, printed per stage from now on: the deterministic run holds at most 3
+savestates per thread (4 MB), the cost-model-on and throughput runs 25 to 27 (35 to 38 MB),
+with zero evictions in every run, so nothing this pipeline does comes near the per-thread
+8 GB cap (ROADMAP 3.5).
+
 ## 2026-09-13: the compare concepts constrain (ROADMAP 3.10)
 
 The concepts behind the `Compare` family (`ScriptCompareHelper.hpp`, and

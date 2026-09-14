@@ -100,13 +100,18 @@ copy it saves; tracking has to accumulate and reset at coarse points (a stage's 
 
 Use it and extend it rather than adding ad-hoc timers:
 
-- `Resource`: `nFrameAdvances`, `nLoads`, `nSaves` and rdtsc totals for each.
+- `Resource::work` (`ResourceWork`, `tasfw/Resource.hpp`): frame advances, saves and loads
+  with the rdtsc cycles each cost, and the slot manager's high-water marks (slots and bytes
+  live at once), pool reuses and evictions. Tier C snapshots it per workload, `bitfs-turn`
+  per stage; the difference of two snapshots is the work between them (the maxima stay
+  the later snapshot's).
 - `BaseScriptStatus` per script and per ad-hoc level: validation/execution/assertion
   durations, save/load/advance durations, and counts.
 - Scattershot end-of-run summary: Load / Save / Frame Advance / Overhead / Other percentages,
   plus Futility / Redundancy / Discovery ratios and CSV row counts.
-- Known inconsistency: `ExecuteAdhocBase` records `executionDuration` in milliseconds via
-  `std::chrono` while everything else is rdtsc cycles. Unifying this is ROADMAP 3.6.
+- Every duration is rdtsc cycles, read through `get_time()` in `Resource.t.hpp`; divide by
+  the machine's TSC rate for seconds. (Until ROADMAP 3.6, `ExecuteAdhocBase` alone recorded
+  its `executionDuration` in milliseconds through `std::chrono`.)
 
 ## The performance test suite
 
@@ -140,9 +145,9 @@ Google Benchmark via FetchContent. Cases:
 - `Inputs::GetClosestInputByYawHau` and `GetClosestInputByYawExact` across a yaw x magnitude
   grid; `GetIntendedYawMagFromInput`.
 - `M64::load` / `M64::save` on a 10,000-frame movie; `M64Diff` merge as done by `ApplyChildDiff`.
-- `SlotManager` with a fake `Resource`: `CreateSlot`, `LoadSlot`, `EraseOldestSlot` at 100,
+- `SlotManager` with the mock `Resource`: `CreateSlot`, `LoadSlot`, `EraseOldestSlot` at 100,
   1,000 and 10,000 live slots.
-- `Script` bookkeeping with a fake `Resource`: `GetInputsMetadata` and `GetLatestSave` at
+- `Script` bookkeeping with the mock `Resource`: `GetInputsMetadata` and `GetLatestSave` at
   hierarchy depth 1, 4 and 16 and ad-hoc level 0 and 4; `AdvanceFrameWrite` erase cost with
   10,000 cached frames.
 
@@ -312,7 +317,11 @@ These are suspects, not verdicts. Measure before changing any of them.
    `unordered_map<int64_t, std::map<...>>` per ad-hoc level.
 6. Console output under the `print` critical section every shot.
 7. Barriers per script in `Deterministic` mode.
-8. Per-thread 8 GB slot budget and the resulting eviction pattern under memory pressure.
+8. The slot budget (`resources.savestateBudgetMB`, the process budget the threads' resources
+   subtract their limits from) and the eviction pattern under memory pressure. Measured 2026-09-13 through the stage summary's slot
+   line: the tilt-target stage never holds more than 27 savestates per thread (38 MB) and
+   never evicts under the default, so there is no pressure to measure until a search keeps
+   far more saves alive; the slot line shows it when one does.
 
 ## Rules of thumb for hot paths
 
@@ -451,7 +460,7 @@ Baselines are per machine **and per compiler**: `scripts\perf.ps1 -Compiler clan
 with clang-cl and compares against `<computername>-clang\`. Comparing the two baselines
 against each other is the cheapest way to see which compiler the hot paths prefer.
 
-The benchmarks in `tasfw-perf/src/bench_script.cpp` run on `FakeResource`, an in-memory
+The benchmarks in `tasfw-perf/src/bench_script.cpp` run on `MockResource`, an in-memory
 resource whose frame advance is a few nanoseconds, so they isolate what the framework adds
 per operation. Everything else there is a direct measurement of the named component.
 

@@ -280,10 +280,8 @@ size_t LibSm64DirtyPages::WrittenCount() const
 	return count;
 }
 
-LibSm64::LibSm64(const LibSm64Config& config) : dll(config.dllPath), config(config)
+LibSm64::LibSm64(const LibSm64Config& config) : Resource(config.savestateBudgetBytes), dll(config.dllPath), config(config)
 {
-	slotManager._saveMemLimit = int64_t(8000) * 1024 * 1024; //8 GB
-
 	// constructor of SharedLib will throw if it can't load
 	void* processID = dll.get("sm64_init");
 
@@ -424,31 +422,24 @@ LibSm64::~LibSm64()
 }
 
 // Start a new baseline unless nothing was written since the current one began (then it is
-// as good as new: construction followed by the start save costs nothing). Baselines no live
-// state can refer to are released: a state refers to the baseline it was saved under, so
-// every baseline a live slot's state names is kept, and the start save's unless the start
-// save itself is what is being written. The state being written is skipped (a recycled state
-// carries the baseline of a save long gone), so at the first slot of a run only the start
-// save's baseline survives. Nothing is copied here: the new baseline fills in from the fault
-// handler as pages get written.
-void LibSm64::TakeBaseline(const LibSm64Mem& saving) const
+// as good as new: construction followed by the start save costs nothing). Every baseline no
+// state references any more is released: a state takes a reference on the baseline it is
+// saved under (save) and gives it back when its slot is erased (LibSm64Mem::dispose) or when
+// it is written again (only the start save ever is), so at the first slot of a run only the
+// start save's baseline survives. Nothing is copied here: the new baseline fills in from the
+// fault handler as pages get written.
+void LibSm64::TakeBaseline() const
 {
 	LibSm64DirtyPages& d = *_dirtyPages;
 	if (d.WrittenCount() == 0)
 		return;
 	d.AddBaseline();
 
-	std::vector<bool> referenced(d.baselines.size(), false);
-	referenced.back() = true;
-	if (&saving != &startSave)
-		referenced[size_t(startSave.baseline)] = true;
-	for (const auto& [id, state] : slotManager.slotsById)
-		if (&state != &saving)
-			referenced[size_t(state.baseline)] = true;
 	d.live.clear();
 	for (size_t b = 0; b < d.baselines.size(); b++)
 	{
-		if (!referenced[b])
+		bool referenced = d.baselines[b].refs > 0 || b + 1 == d.baselines.size();
+		if (!referenced)
 		{
 			d.baselines[b].pages.reset();
 			d.baselines[b].present.clear();
@@ -466,16 +457,20 @@ void LibSm64::save(LibSm64Mem& state) const
 	{
 	case LibSm64SaveMode::Dirty:
 	{
-		// "No live slots" seen from inside a save: SlotManager::CreateSlot emplaces the new
-		// slot before calling save, so the first slot of a run is the map's only entry and is
-		// the state being written; the start save is not in the map at all.
-		const auto& slots = slotManager.slotsById;
-		bool firstSlot = slots.empty() || (slots.size() == 1 && &slots.begin()->second == &state);
-		if (firstSlot)
-			TakeBaseline(state);
-		const LibSm64DirtyPages& d = *_dirtyPages;
+		LibSm64DirtyPages& d = *_dirtyPages;
+		// The reference this state holds, if it was saved before: only the start save is ever
+		// written twice (a slot's state gave its reference back when its slot was erased).
+		if (state.baseline >= 0)
+			d.baselines[size_t(state.baseline)].refs--;
+		// The first slot of a run takes a baseline: no slot is live (the start save is not one).
+		if (d.liveSlots == 0)
+			TakeBaseline();
+		if (&state != &startSave)
+			d.liveSlots++;
 		const std::vector<uint64_t>& written = d.Written();
 		state.baseline = d.baseline;
+		state.dirty = &d;
+		d.baselines[size_t(d.baseline)].refs++;
 		state.written.assign(written.begin(), written.end());
 		state.pages.resize(d.WrittenCount() * pagesize);
 		uint8_t* dst = state.pages.data();
@@ -620,3 +615,13 @@ uint32_t LibSm64::getCurrentFrame() const
 	return *_globalTimer - 1;
 }
 
+
+// Only the slot manager calls this, for a slot's state; the start save is not a slot.
+void LibSm64Mem::dispose()
+{
+	if (baseline < 0)
+		return;
+	dirty->baselines[size_t(baseline)].refs--;
+	dirty->liveSlots--;
+	baseline = -1;
+}

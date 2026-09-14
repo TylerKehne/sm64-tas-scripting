@@ -291,6 +291,9 @@ TEST_CASE("libsm64: dirty baselines hold copy-on-write pages, and every live sta
 	std::vector<uint8_t> snap0 = sections();
 	int64_t s0 = resource.SaveState();
 	CHECK(d->baseline == 1);
+	CHECK(d->baselines.at(1).refs == 1); // s0's reference; the start save holds baseline 0's
+	CHECK(d->baselines.at(0).refs == 1);
+	CHECK(d->liveSlots == 1);
 	CHECK(pagesOf(s0) == 0);
 	CHECK(isLive(0));
 	CHECK(isLive(1));
@@ -311,6 +314,8 @@ TEST_CASE("libsm64: dirty baselines hold copy-on-write pages, and every live sta
 	// place their power-on content still exists).
 	resource.slotManager.EraseSlot(s0);
 	resource.slotManager.EraseSlot(s1);
+	CHECK(d->baselines.at(1).refs == 0); // both states gave theirs back
+	CHECK(d->liveSlots == 0);
 	resource.LoadState(-1);
 	CHECK(differing(sections(), powerOn) == 0);
 

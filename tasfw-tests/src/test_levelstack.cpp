@@ -1,7 +1,7 @@
 #include <doctest/doctest.h>
 #include <tasfw/LevelStack.hpp>
 #include <tasfw/Script.hpp>
-#include <tasfw/testing/FakeResource.hpp>
+#include <tasfw/testing/MockResource.hpp>
 
 #include <map>
 #include <vector>
@@ -118,11 +118,11 @@ TEST_CASE("References to a level survive pushes and pops of other levels")
 
 TEST_CASE("Erasing a level destroys its contents: slot handles release their slots")
 {
-	FakeResource resource;
-	LevelStack<std::map<int64_t, SlotHandle<FakeResource>>> saveBank;
+	MockResource resource;
+	LevelStack<std::map<int64_t, SlotHandle<MockResource>>> saveBank;
 
 	int64_t slot = resource.slotManager.CreateSlot();
-	saveBank[1].emplace(5, SlotHandle<FakeResource>(&resource, slot));
+	saveBank[1].emplace(5, SlotHandle<MockResource>(&resource, slot));
 	REQUIRE(resource.slotManager.isValid(slot));
 
 	saveBank.erase(1);

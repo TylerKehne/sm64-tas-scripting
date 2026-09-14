@@ -2,7 +2,7 @@
 #include "measure.hpp"
 #include <tasfw/Script.hpp>
 
-#include <tasfw/testing/FakeResource.hpp>
+#include <tasfw/testing/MockResource.hpp>
 
 // Framework overhead per operation, measured on a resource whose frame advance is ~free.
 // These numbers are what the script hierarchy costs on top of the game itself.
@@ -13,11 +13,11 @@
 // between runs on MSVC. Fixed counts make the sequence deterministic.
 
 // Root script that exposes the protected Script API to a benchmark body.
-template <class Body, class TTracker = DefaultStateTracker<FakeResource>>
-class BenchRoot : public TopLevelScript<FakeResource, TTracker>
+template <class Body, class TTracker = DefaultStateTracker<MockResource>>
+class BenchRoot : public TopLevelScript<MockResource, TTracker>
 {
 public:
-	using Base = TopLevelScript<FakeResource, TTracker>;
+	using Base = TopLevelScript<MockResource, TTracker>;
 	using Base::AdvanceFrameWrite;
 	using Base::Execute;
 	using Base::ExecuteAdhoc;
@@ -53,10 +53,10 @@ private:
 	Body _body;
 };
 
-template <class TTracker = DefaultStateTracker<FakeResource>, class Body>
+template <class TTracker = DefaultStateTracker<MockResource>, class Body>
 static void RunRoot(benchmark::State& state, Body body)
 {
-	FakeResource resource;
+	MockResource resource;
 	M64 m64;
 	TopLevelScriptBuilder<BenchRoot<Body, TTracker>>::Build(m64).ImportResource(&resource).Run(state, body);
 	benchmark::DoNotOptimize(resource.checksum());
@@ -169,7 +169,7 @@ BENCHMARK(BM_Script_ModifyAdhoc_OneFrame)->Iterations(100000);
 
 // --- Child scripts ------------------------------------------------------------------------
 
-class EmptyScript : public Script<FakeResource>
+class EmptyScript : public Script<MockResource>
 {
 public:
 	class CustomScriptStatus {};
@@ -180,7 +180,7 @@ public:
 	bool assertion() override { return true; }
 };
 
-class OneFrameScript : public Script<FakeResource>
+class OneFrameScript : public Script<MockResource>
 {
 public:
 	class CustomScriptStatus {};
@@ -233,7 +233,7 @@ BENCHMARK(BM_Script_Modify_ChildOneFrame)->Iterations(100000);
 
 // Nests itself `depth` levels, each level writing two frames, then runs the timed loop at
 // the leaf so lookups have to walk the whole ancestor chain.
-class DepthScript : public Script<FakeResource>
+class DepthScript : public Script<MockResource>
 {
 public:
 	enum class Mode
@@ -318,7 +318,7 @@ BENCHMARK(BM_Script_LongLoad_RewindToRoot_Depth)->Arg(1)->Arg(4)->Arg(16)->Itera
 
 // --- State trackers -----------------------------------------------------------------------
 
-class TrivialTracker : public Script<FakeResource>
+class TrivialTracker : public Script<MockResource>
 {
 public:
 	class CustomScriptStatus
@@ -340,7 +340,7 @@ public:
 };
 
 // Mirrors the real trackers: each frame's state depends on the previous frame's state.
-class RecursiveTracker : public Script<FakeResource>
+class RecursiveTracker : public Script<MockResource>
 {
 public:
 	class CustomScriptStatus

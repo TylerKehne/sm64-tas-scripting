@@ -124,7 +124,7 @@ PipelineConfig PipelineConfig::Parse(const json& root, const fs::path& configDir
 		: configDirectory;
 
 	const json& resources = RequireObject(root, "resources", "the top level");
-	RejectUnknownKeys(resources, { "dllDirectory", "dllPattern", "threads", "saveMode", "costModel" }, "resources");
+	RejectUnknownKeys(resources, { "dllDirectory", "dllPattern", "threads", "saveMode", "costModel", "savestateBudgetMB" }, "resources");
 	pipeline.dllDirectory = pipeline.Resolve(Require<std::string>(resources, "dllDirectory", "resources"));
 	pipeline.dllPattern = Optional<std::string>(resources, "dllPattern", "sm64_{version}_{}.dll", "resources");
 	pipeline.threads = Optional<int>(resources, "threads", 1, "resources");
@@ -132,6 +132,9 @@ PipelineConfig PipelineConfig::Parse(const json& root, const fs::path& configDir
 	if (!LibSm64::ParseSaveMode(saveMode, pipeline.saveMode))
 		ConfigError("\"saveMode\" in resources must be \"full\", \"fixed\" or \"dirty\", not \"" + saveMode + "\"");
 	pipeline.costModel = Optional<bool>(resources, "costModel", true, "resources");
+	pipeline.savestateBudgetMB = Optional<int64_t>(resources, "savestateBudgetMB", 8192, "resources");
+	if (pipeline.savestateBudgetMB < 1)
+		ConfigError("\"savestateBudgetMB\" in resources must be at least 1");
 	if (pipeline.threads < 1)
 		ConfigError("\"threads\" in resources must be at least 1");
 	if (pipeline.threads > 1 && pipeline.dllPattern.find("{}") == std::string::npos)

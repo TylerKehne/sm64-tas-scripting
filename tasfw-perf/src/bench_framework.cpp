@@ -85,26 +85,16 @@ namespace
 		return game.get();
 	}
 
-	struct Work
+	// The counts and cycles the resource keeps (ResourceWork, tasfw/Resource.hpp).
+	ResourceWork Snapshot(LibSm64& resource)
 	{
-		uint64_t frameAdvances = 0;
-		uint64_t saves = 0;
-		uint64_t loads = 0;
-		uint64_t advanceCycles = 0;
-		uint64_t saveCycles = 0;
-		uint64_t loadCycles = 0;
-	};
-
-	Work Snapshot(LibSm64& resource)
-	{
-		return { resource.nFrameAdvances, resource.nSaveStates, resource.nLoadStates,
-			resource.GetTotalFrameAdvanceTime(), resource.GetTotalSaveStateTime(), resource.GetTotalLoadStateTime() };
+		return resource.work;
 	}
 
 	// Exact counts per iteration, the replay ratio (frames advanced per frame of output)
 	// and the framework overhead: the share of wall time spent outside the resource's own
 	// advance, save and load (all measured in rdtsc cycles, so the units agree).
-	void ReportWork(benchmark::State& state, const Work& before, const Work& after, uint64_t wallCycles, uint64_t outputFrames)
+	void ReportWork(benchmark::State& state, const ResourceWork& before, const ResourceWork& after, uint64_t wallCycles, uint64_t outputFrames)
 	{
 		double iterations = state.iterations() > 0 ? double(state.iterations()) : 1.0;
 		uint64_t advances = after.frameAdvances - before.frameAdvances;
@@ -263,7 +253,7 @@ static void BM_Framework_PyramidOscillation(benchmark::State& state)
 		return;
 	LibSm64& resource = *game->resource;
 
-	Work before = Snapshot(resource);
+	ResourceWork before = Snapshot(resource);
 	tasfw_perf::Measurement m0 = tasfw_perf::BeginMeasure();
 	uint64_t wall = 0;
 	uint64_t outputFrames = 0;
@@ -293,7 +283,7 @@ static void BM_Framework_DownhillAngle_PyramidUpdate(benchmark::State& state)
 	LibSm64& resource = *game->resource;
 	const int calls = 1000;
 
-	Work total;
+	ResourceWork total;
 	tasfw_perf::Measurement m0 = tasfw_perf::BeginMeasure();
 	bool failed = false;
 	for (auto _ : state)
@@ -330,7 +320,7 @@ static void BM_Framework_TrackerSweep(benchmark::State& state)
 	const int frames = 500;
 	NormalSpecsDto specs = DrNormalSpecs();
 
-	Work before = Snapshot(resource);
+	ResourceWork before = Snapshot(resource);
 	tasfw_perf::Measurement m0 = tasfw_perf::BeginMeasure();
 	uint64_t wall = 0;
 	bool failed = false;

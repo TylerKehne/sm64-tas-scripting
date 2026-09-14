@@ -4,7 +4,7 @@
 
 #include <cstdint>
 
-// The script lifecycle on the fake resource (script_fixtures.hpp): what AdvanceFrameWrite
+// The script lifecycle on the mock resource (script_fixtures.hpp): what AdvanceFrameWrite
 // records, where inputs come from, and what Execute, Modify, Test and the ad-hoc runners
 // keep or revert.
 
@@ -12,7 +12,7 @@ using namespace tasfw::tests;
 
 TEST_CASE("AdvanceFrameWrite records the diff and applies inputs to the resource")
 {
-	FakeResource resource;
+	MockResource resource;
 	M64 m64;
 	RunRoot(resource, m64, [](auto& s)
 		{
@@ -28,7 +28,7 @@ TEST_CASE("AdvanceFrameWrite records the diff and applies inputs to the resource
 			CHECK(s.GetInputs(3) == In(3));
 			CHECK(s.GetInputs(7) == Inputs(0, 0, 0)); // beyond the diff, no movie: neutral
 
-			const FakeState& state = s.resource->state();
+			const MockState& state = s.resource->state();
 			CHECK(state.buttons == In(4).buttons);
 			CHECK(state.stickX == In(4).stick_x);
 			CHECK(state.stickY == In(4).stick_y);
@@ -37,7 +37,7 @@ TEST_CASE("AdvanceFrameWrite records the diff and applies inputs to the resource
 
 TEST_CASE("Inputs fall back to the movie when no diff covers a frame")
 {
-	FakeResource resource;
+	MockResource resource;
 	M64 m64;
 	for (int i = 0; i < 10; i++)
 		m64.frames[i] = In(100 + i);
@@ -57,7 +57,7 @@ TEST_CASE("Inputs fall back to the movie when no diff covers a frame")
 
 TEST_CASE("Execute reverts the child's frames; Modify keeps them")
 {
-	FakeResource resource;
+	MockResource resource;
 	M64 m64;
 	RunRoot(resource, m64, [](auto& s)
 		{
@@ -90,7 +90,7 @@ TEST_CASE("Execute reverts the child's frames; Modify keeps them")
 
 TEST_CASE("Modify reverts a child whose assertion fails")
 {
-	FakeResource resource;
+	MockResource resource;
 	M64 m64;
 	RunRoot(resource, m64, [](auto& s)
 		{
@@ -108,7 +108,7 @@ TEST_CASE("Modify reverts a child whose assertion fails")
 
 TEST_CASE("ExecuteAdhoc sandboxes; ModifyAdhoc persists")
 {
-	FakeResource resource;
+	MockResource resource;
 	M64 m64;
 	RunRoot(resource, m64, [](auto& s)
 		{

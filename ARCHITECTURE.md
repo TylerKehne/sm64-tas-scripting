@@ -38,20 +38,37 @@ game, rewinding (a load) is slow compared with advancing, and that ratio dictate
 TASing algorithms are viable; a custom state machine that simulates only the part of the
 game a search cares about (`PyramidUpdate`) makes both advancing and rewinding much faster
 and so changes what is affordable. The savestate policy (`shouldSave`/`shouldLoad`, the slot
-manager) is currently one naive policy for every resource; making it pluggable per resource
-type is planned (ROADMAP 3.11).
+manager) is one policy for every scenario, the agnostic cost model below. A policy chosen
+per run at the top-level script is designed and tabled (ROADMAP Phase 5, "A savestate
+policy the run chooses"); the maintainer's framing is that the policy belongs to the
+scenario, not to the resource type.
 
 `Resource<TState>` (`tasfw-core/inc/tasfw/Resource.hpp`) is the abstract game: `save`, `load`,
-`advance`, `addr(symbol)`, `getCurrentFrame`. It also owns a `SlotManager` and timing counters.
+`advance`, `addr(symbol)`, `getCurrentFrame`. A state's contents live from `save` until its
+slot is erased; a state type that holds a reference to something outside itself defines
+`dispose()`, which the slot manager calls at that point, resolved at compile time
+(`LibSm64Mem`'s dirty baseline). Scripts reach a slot only through the resource,
+`DisposeState` and `HasState`, never through the slot manager. It also owns a `SlotManager` and its counters,
+`work` (`ResourceWork`: counts and rdtsc cycles of advances, saves and loads, and the slot
+manager's high-water marks, pool reuses and evictions; docs/performance.md, "Existing
+instrumentation").
 
 - `SlotManager` stores savestates by integer slot id, evicts least-recently-touched slots when
-  `_saveMemLimit` (8 GB, set in `LibSm64`'s constructor) would be exceeded, and throws if a
-  single save cannot fit. Erased and evicted states go to a bounded pool (32) that the next
+  the resource's limit would be exceeded, and throws if a single save cannot fit. The limit
+  is the one argument of `Resource`'s constructor, so a derived resource passes its number
+  and never touches the slot manager (`LibSm64Config::savestateBudgetBytes`, 8 GB by
+  default; 16 MB for `PyramidUpdate`; 64 MB for the mock). `SlotBudget` is the
+  process-wide budget and its balance: a resource subtracts its limit from the balance when
+  it is created, or throws if the balance is too low, and adds it back when it dies. The
+  application sets the budget once, the pipeline from `resources.savestateBudgetMB`; no
+  budget is the default (ROADMAP 3.5). Erased and evicted states go to a bounded pool (32) that the next
   save reuses, so a save into a recycled state is one copy; pooled memory counts toward the
   limit.
 - `shouldSave(n)` / `shouldLoad(n)` compare the measured average cost of a save or load
-  (rdtsc cycles) against `n` frame advances. Scripts call these to decide whether a
-  savestate is worth creating. Every "cost-based" decision in the framework routes here.
+  (rdtsc cycles, from `work`) against `n` frame advances: whether a replayed stretch has
+  earned a savestate, and whether a save that lies between the cursor and a target ahead
+  is worth loading rather than advancing to. Every "cost-based" decision in the framework
+  routes here.
   `useCostModel = false` makes both return false, so a run creates no automatic savestates
   and is independent of timing; the pipeline exposes it as `resources.costModel`. It exists
   for diagnosis (it is how ROADMAP 4.5 was bisected) and costs replay time.
@@ -148,9 +165,11 @@ the frame's "state owner"; its frame counter is the one charged for replays thro
 
 Loading (`LoadBase`): find the latest usable save at or before the target across levels and
 ancestors, never searching past the start of a level's own diff (that would desync). Load it
-if the target is in the past. (The branch that would load a save *after* a future target when
-`shouldLoad` says so cannot fire, because the lookup only returns saves at or before the
-target; `shouldLoad` is effectively unused.) Then `AdvanceFrameRead` to the target, creating
+if the target is in the past. If the target is ahead and that save lies between the cursor
+and it, load it when `shouldLoad` says the frames it skips cost more than a load (from
+2022-06-14 to 2026-09-13 this branch compared the save with the target instead of the
+cursor and never fired, so a forward load always replayed from where it stood; ROADMAP
+3.11). Then `AdvanceFrameRead` to the target, creating
 savestates along the way when `shouldSave` says the accumulated frame counter justifies it.
 Those automatic saves go into the frame's state owner's bank, and they are the only
 timing-dependent decision in the engine: two runs of the same deterministic search differ
@@ -381,8 +400,9 @@ short today (scripts resolving symbols by name per execution, virtual per-frame 
 `Resource`, `shared_ptr` segment chains, one `std::map` node per cached frame in the
 bookkeeping) is listed in the performance doc and on the roadmap.
 
-Instrumentation already in the code: rdtsc totals and counts on `Resource`, per-script
-durations and counts in `BaseScriptStatus`, and the scattershot end-of-run percentages.
+Instrumentation already in the code: `Resource::work` (counts, rdtsc cycles and the slot
+manager's marks), per-script durations and counts in `BaseScriptStatus`, and the
+scattershot end-of-run percentages, all in the same cycles.
 Counts are the metrics to trust; they are deterministic and machine-independent.
 
 ## Sharp edges worth knowing
@@ -392,7 +412,9 @@ Counts are the metrics to trust; they are deterministic and machine-independent.
 - `GetTrackedState` returns a reference into the root's table. A write at or before that
   frame (`AdvanceFrameWrite`, `Apply`, `Rollback`) invalidates it; copy the state
   (`auto state = ...`) when it has to survive one.
-- `SlotManager` limits are per resource, so aggregate memory scales with thread count.
+- `SlotManager` limits are per resource; `SlotBudget` bounds their sum, so a resource created
+  when the balance is too low throws, a `PyramidUpdate` built inside a script included, which
+  is why the pipeline leaves room for one per thread.
 - `BinaryStateBin` throws on out-of-range values; a state bin that can throw will abort a
   pellet inside an `ExecuteAdhoc`, which is treated as "invalid state", not as a crash.
 - `Configuration::MaxBlocks` is a hard cap; hitting it throws "Block cap reached".

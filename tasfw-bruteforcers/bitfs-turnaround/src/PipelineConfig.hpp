@@ -37,6 +37,7 @@ struct PipelineConfig
 	int threads = 1;
 	LibSm64SaveMode saveMode = LibSm64SaveMode::Dirty; // "saveMode": "full" | "fixed" | "dirty" (docs/libsm64.md)
 	bool costModel = true; // Resource::useCostModel; false makes runs timing-independent (diagnosis)
+	int64_t savestateBudgetMB = 8192; // the process cap on savestate memory (SlotBudget), shared by the threads' resources (README.md, "Configuration")
 	std::filesystem::path m64;
 	std::filesystem::path outputDirectory;
 	nlohmann::json scattershotDefaults;
