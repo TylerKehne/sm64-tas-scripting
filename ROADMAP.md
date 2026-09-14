@@ -72,7 +72,8 @@ correctness and in speed.
       Runs in CI on all four compilers (DLL-free part), and since 2026-09-13 the libsm64
       group as well on the Windows jobs and an Ubuntu 26.04 job, on the bitfs-sbb build
       unlocked from the `LIBSM64_KEY` secret (2.1). `PyramidUpdate` against the DLL is
-      covered by 3.3; not yet covered: the scattershot loop end to end (Tier D territory).
+      covered by 3.3; the scattershot loop end to end by 3.13 on the mock resource (Tier D
+      covers it on the game).
 - [x] **1.3 Performance test suite.** Done 2026-09-08 (see the sub-items; what is left is
       listed under them and is not part of the done condition). Implements
       [docs/performance.md](docs/performance.md) as a `tasfw-perf` target tree plus the
@@ -528,14 +529,20 @@ Goal: the core's implicit invariants become explicit and enforced.
       family and the throughput run unpinned, now by choice rather than necessity: 16
       threads on the 8 performance cores' SMT siblings is not the pipeline's shape
       (docs/performance.md).
-- [ ] **3.13 Scattershot on the mock resource.** No test runs a scattershot without the DLL:
-      `test_scattershot_hash.cpp` covers the hash and the block table, and the search itself
-      is exercised only by Tier D. A `ScattershotThread` on `MockResource` (a tiny state
-      bin, a movement that writes a frame) would pin in milliseconds, deterministically,
-      what only the CI-sized Tier D pins today: that a seed reproduces its search, the
-      slot line's counts under a tight cap (3.5), and the validation-failure diagnostics of
-      4.5. Identified 2026-09-14 when 3.5 went in with the pipeline-config test, the slot
-      tests and the Tier D slot line as its only checks.
+- [x] **3.13 Scattershot on the mock resource.** Done 2026-09-14: `test_scattershot_mock.cpp`
+      runs a `ScattershotThread` on `MockResource` (a four-byte bin of frame offset and a
+      checksum byte, a movement that writes one random-stick frame, the cost model off so
+      every count is exact) in well under a second, and pins what only the CI-sized Tier D
+      pinned before: a seed reproduces its search, shots, scripts, blocks, solutions and the
+      resource's work alike, single-threaded and on two threads in deterministic mode, and
+      another seed does not; a limit of one slot evicts and replays without changing the
+      search; and a bin that is not a function of state (it counts its own calls) fails the
+      base-block validation of 4.5 and is counted, with the diagnostics' `error.m64`
+      written. The thread reads the run's totals through `PerfAccess` in its `assertion()`.
+      Found on the way: the 4.5 diagnostic sized its `error.m64` from the last frame of the
+      total diff, undefined when the failing base block is the root with nothing applied;
+      guarded. Identified 2026-09-14 when 3.5 went in with the pipeline-config test, the
+      slot tests and the Tier D slot line as its only checks.
 
 ## Phase 4: the squish-cancel brute forcer
 

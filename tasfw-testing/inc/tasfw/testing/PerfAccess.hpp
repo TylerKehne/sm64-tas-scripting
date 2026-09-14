@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdint>
 #include <utility>
 
 // Friend of Scattershot (declared in Scattershot.hpp). Lets benchmarks and tests call the private
@@ -22,5 +23,24 @@ public:
 	static std::size_t BlockCount(TScattershot& scattershot)
 	{
 		return scattershot.Blocks.size();
+	}
+
+	// The run's totals (Scattershot prints them at the end; the mock scattershot test reads them).
+	template <class TScattershot>
+	static uint64_t TotalShots(const TScattershot& scattershot)
+	{
+		return scattershot.TotalShots;
+	}
+
+	template <class TScattershot>
+	static uint64_t ScriptCount(const TScattershot& scattershot)
+	{
+		return scattershot.ScriptCount;
+	}
+
+	template <class TScattershot>
+	static uint64_t ValidationFailures(const TScattershot& scattershot)
+	{
+		return scattershot.ValidationFailures;
 	}
 };

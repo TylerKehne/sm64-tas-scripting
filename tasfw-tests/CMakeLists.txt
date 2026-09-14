@@ -23,6 +23,7 @@ add_executable(tasfw-tests
 	"src/test_m64.cpp"
 	"src/test_statebin.cpp"
 	"src/test_scattershot_hash.cpp"
+	"src/test_scattershot_mock.cpp"
 	"src/test_slots.cpp"
 	"src/test_levelstack.cpp"
 	"src/test_script_lifecycle.cpp"

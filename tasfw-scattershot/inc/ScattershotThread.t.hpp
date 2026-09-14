@@ -303,7 +303,9 @@ bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::Validate
         }
 
         // Dumped next to the CSVs for post-mortem; the path comes from the configuration (AGENTS.md hard rule 5).
-        this->ExportM64(std::filesystem::path(scattershot.config.CsvOutputDirectory) / "error.m64", this->GetTotalDiff().frames.rbegin()->first + 1);
+        // A root base block has nothing applied, so there may be no inputs to dump.
+        if (!LastDecodedDiff.frames.empty())
+            this->ExportM64(std::filesystem::path(scattershot.config.CsvOutputDirectory) / "error.m64", LastDecodedDiff.frames.rbegin()->first + 1);
 
         #pragma omp critical (print)
         {
