@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <stdexcept>
 
-// State trackers on the fake resource (script_fixtures.hpp): per-frame state computed on
+// State trackers on the mock resource (script_fixtures.hpp): per-frame state computed on
 // demand and recursively, in a sandbox that leaves the cursor where it was, typed by the
 // tracker the root installs, and following the diff through Modify and Execute.
 
@@ -13,7 +13,7 @@ using namespace tasfw::tests;
 
 TEST_CASE("State trackers compute per-frame state, recursively, without moving the cursor")
 {
-	FakeResource resource;
+	MockResource resource;
 	M64 m64;
 	RunRoot<RecursiveTracker>(resource, m64, [](auto& s)
 		{
@@ -39,7 +39,7 @@ TEST_CASE("State trackers compute per-frame state, recursively, without moving t
 
 TEST_CASE("A tracked state ahead of the cursor is computed in a sandbox and the cursor stays")
 {
-	FakeResource resource;
+	MockResource resource;
 	M64 m64;
 	for (int i = 0; i < 20; i++)
 		m64.frames[i] = In(100 + i);
@@ -60,16 +60,16 @@ TEST_CASE("A tracked state ahead of the cursor is computed in a sandbox and the 
 			CHECK(s.IsDiffEmpty());
 
 			// The frames computed on the way are cached: no further frame advances.
-			uint64_t advances = resource.nFrameAdvances;
+			uint64_t advances = resource.work.frameAdvances;
 			CHECK(s.template GetTrackedState<RecursiveTracker>(12).sum == 78);
 			CHECK(s.template GetTrackedState<RecursiveTracker>(9).sum == 45);
-			CHECK(resource.nFrameAdvances == advances);
+			CHECK(resource.work.frameAdvances == advances);
 		});
 }
 
 TEST_CASE("Asking for a tracker type the root does not install throws instead of miscasting")
 {
-	FakeResource resource;
+	MockResource resource;
 	M64 m64;
 	RunRoot<RecursiveTracker>(resource, m64, [](auto& s)
 		{
@@ -89,7 +89,7 @@ TEST_CASE("Asking for a tracker type the root does not install throws instead of
 
 TEST_CASE("A tracker that does not assert leaves a default state that is not recomputed")
 {
-	FakeResource resource;
+	MockResource resource;
 	M64 m64;
 	RunRoot<EvenFramesTracker>(resource, m64, [&resource](auto& s)
 		{
@@ -101,15 +101,15 @@ TEST_CASE("A tracker that does not assert leaves a default state that is not rec
 			CHECK_FALSE(s.template GetTrackedState<EvenFramesTracker>(3).initialized);
 			CHECK(s.template TrackedStateExists<EvenFramesTracker>(3)); // stored, as a default
 
-			uint64_t advances = resource.nFrameAdvances;
+			uint64_t advances = resource.work.frameAdvances;
 			CHECK_FALSE(s.template GetTrackedState<EvenFramesTracker>(3).initialized);
-			CHECK(resource.nFrameAdvances == advances); // served from the table
+			CHECK(resource.work.frameAdvances == advances); // served from the table
 		});
 }
 
 TEST_CASE("Tracked states follow the diff: kept by Modify, dropped by Execute")
 {
-	FakeResource resource;
+	MockResource resource;
 	M64 m64;
 	RunRoot<RecursiveTracker>(resource, m64, [](auto& s)
 		{

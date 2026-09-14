@@ -3,7 +3,7 @@
 #error "Resource.t.hpp should only be included by Resource.hpp"
 #else
 
-#include <chrono>
+#include <algorithm>
 
 #ifdef _MSC_VER
 #include <intrin.h>
@@ -12,25 +12,16 @@
 #include <x86intrin.h>
 #endif
 
-#if 1
+// The framework's clock: rdtsc cycles. Every duration in ResourceWork, BaseScriptStatus and
+// the scattershot summary is a difference of two of these (ROADMAP 3.6); divide by the
+// machine's TSC rate for seconds.
 static inline uint64_t get_time()
 {
 	return __rdtsc();
 }
-#else
-#include <sys/time.h>
-static inline uint64_t get_time()
-{
-	struct timeval st
-	{
-	};
-	gettimeofday(&st, nullptr);
-	return st.tv_sec * 1000000 + st.tv_usec;
-}
-#endif
 
 template <class TState>
-bool SlotManager<TState>::isValid(int64_t slotId)
+bool SlotManager<TState>::isValid(int64_t slotId) const
 {
 	return slotsById.contains(slotId);
 }
@@ -57,7 +48,7 @@ int64_t SlotManager<TState>::CreateSlot()
 				_pooledMem -= _resource->getStateSize(_pool.back());
 				slot = &slotsById.emplace(slotId, std::move(_pool.back())).first->second;
 				_pool.pop_back();
-				nPoolReuses++;
+				_resource->work.poolReuses++;
 			}
 			else
 				slot = &slotsById.emplace(slotId, TState()).first->second;
@@ -73,6 +64,8 @@ int64_t SlotManager<TState>::CreateSlot()
 			//Save memory into slot (a recycled state already has its buffers sized)
 			_resource->save(*slot);
 			_currentSaveMem += _resource->getStateSize(*slot);
+			_resource->work.slotsLiveMax = (std::max)(_resource->work.slotsLiveMax, uint64_t(slotsById.size()));
+			_resource->work.slotBytesMax = (std::max)(_resource->work.slotBytesMax, uint64_t(_currentSaveMem));
 
 			return slotId;
 		}
@@ -80,7 +73,8 @@ int64_t SlotManager<TState>::CreateSlot()
 		if (slotsById.size() == 0)
 			throw std::runtime_error("Not enough resource slot memory allocated");
 
-		// If save memory is full, remove the earliest save (into the pool) and try again
+		// If save memory is full, remove the least recently touched save (into the pool) and try again
+		_resource->work.evictions++;
 		EraseOldestSlot();
 	}
 }
@@ -92,6 +86,9 @@ void SlotManager<TState>::EraseSlot(int64_t slotId)
 	if (slot == slotsById.end())
 		return;
 
+	// Its contents are dead, whether pooled or freed below.
+	if constexpr (requires { slot->second.dispose(); })
+		slot->second.dispose();
 	int64_t size = _resource->getStateSize(slot->second);
 	_currentSaveMem -= size;
 	if (_pool.size() < _maxPooledStates)
@@ -139,9 +136,9 @@ int64_t Resource<TState>::SaveState()
 {
 	auto start = get_time();
 	int64_t slotId = slotManager.CreateSlot();
-	_totalSaveStateTime += get_time() - start;
+	work.saveCycles += get_time() - start;
 
-	nSaveStates++;
+	work.saves++;
 
 	return slotId;
 }
@@ -156,9 +153,9 @@ void Resource<TState>::LoadState(int64_t slotId)
 	else
 		slotManager.LoadSlot(slotId);
 
-	_totalLoadStateTime += get_time() - start;
-	
-	nLoadStates++;
+	work.loadCycles += get_time() - start;
+
+	work.loads++;
 }
 
 template <class TState>
@@ -166,27 +163,9 @@ void Resource<TState>::FrameAdvance()
 {
 	auto start = get_time();
 	advance();
-	_totalFrameAdvanceTime += get_time() - start;
+	work.advanceCycles += get_time() - start;
 
-	nFrameAdvances++;
-}
-
-template <class TState>
-uint64_t Resource<TState>::GetTotalSaveStateTime()
-{
-	return _totalSaveStateTime;
-}
-
-template <class TState>
-uint64_t Resource<TState>::GetTotalLoadStateTime()
-{
-	return _totalLoadStateTime;
-}
-
-template <class TState>
-uint64_t Resource<TState>::GetTotalFrameAdvanceTime()
-{
-	return _totalFrameAdvanceTime;
+	work.frameAdvances++;
 }
 
 template <class TState>
@@ -195,12 +174,12 @@ bool Resource<TState>::shouldSave(int64_t estFrameAdvances) const
 	if (!useCostModel || estFrameAdvances == 0)
 		return false;
 
-	if (nSaveStates == 0 || nFrameAdvances == 0 || estFrameAdvances < 0)
+	if (work.saves == 0 || work.frameAdvances == 0 || estFrameAdvances < 0)
 		return true;
 
-	double estTimeToSave = double(_totalSaveStateTime) / nSaveStates;
+	double estTimeToSave = double(work.saveCycles) / work.saves;
 	double estTimeToFrameAdvance =
-		(double(_totalFrameAdvanceTime) / nFrameAdvances) * estFrameAdvances;
+		(double(work.advanceCycles) / work.frameAdvances) * estFrameAdvances;
 
 	return estTimeToSave < estTimeToFrameAdvance;
 }
@@ -211,12 +190,12 @@ bool Resource<TState>::shouldLoad(int64_t framesAhead) const
 	if (!useCostModel || framesAhead == 0)
 		return false;
 
-	if (nLoadStates == 0 || nFrameAdvances == 0 || framesAhead < 0)
+	if (work.loads == 0 || work.frameAdvances == 0 || framesAhead < 0)
 		return true;
 
-	double estTimeToLoad = double(_totalLoadStateTime) / nLoadStates;
+	double estTimeToLoad = double(work.loadCycles) / work.loads;
 	double estTimeToFrameAdvance =
-		(double(_totalFrameAdvanceTime) / nFrameAdvances) * framesAhead;
+		(double(work.advanceCycles) / work.frameAdvances) * framesAhead;
 
 	return estTimeToLoad < estTimeToFrameAdvance;
 }

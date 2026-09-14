@@ -425,10 +425,9 @@ short PyramidUpdateMem::GetFloorClass(Sm64Surface* floor, u32 action)
 	return floorClass;
 }
 
-PyramidUpdate::PyramidUpdate()
-{
-    slotManager._saveMemLimit = 1024 * 1024 * 1024; //1 GB
-}
+PyramidUpdate::PyramidUpdate() : Resource(SavestateBudgetBytes) { }
+
+PyramidUpdate::PyramidUpdate(PyramidUpdateConfig config) : Resource(SavestateBudgetBytes), _enableMarioMovement(config.EnableMarioMovement) { }
 
 void PyramidUpdate::save(PyramidUpdateMem& state) const
 {

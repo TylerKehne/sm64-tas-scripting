@@ -37,6 +37,9 @@ public:
 	std::filesystem::path dllPath;
 	CountryCode countryCode;
 	LibSm64SaveMode saveMode = LibSm64SaveMode::Dirty;
+	// The resource's savestate limit, taken from the process budget for as long as the
+	// resource lives (SlotBudget, tasfw/Resource.hpp; ROADMAP 3.5).
+	int64_t savestateBudgetBytes = int64_t(8192) * 1024 * 1024;
 };
 
 constexpr int pagesize = 4096;
@@ -117,6 +120,8 @@ inline constexpr LibSm64GameBytes LibSm64KnownGameBytes[] = {
 	{0x2B04B0, 0x4A8710, {0x20, 0x20}, {0x2B03E0, 0x4A7B60}, 0x4A7BE0}, // wafel v0.8.5, US (bitfs-sbb's sm64_us.dll, res/sm64_us_0.dll)
 };
 
+struct LibSm64DirtyPages;
+
 // A savestate. Full and Fixed fill buf1/buf2 (the game's bytes of the sections, or the fixed
 // slices packed). Dirty records which baseline the state is relative to, which pages of the page
 // index space (.data's pages then .bss's) the game had written since that baseline began,
@@ -127,9 +132,13 @@ class LibSm64Mem
 public:
 	std::vector<uint8_t> buf1;
 	std::vector<uint8_t> buf2;
-	int baseline = 0;
+	int baseline = -1;                  // the baseline this state was saved under and holds a reference on; -1 when none
+	LibSm64DirtyPages* dirty = nullptr; // where that reference is counted (the resource's, which outlives every state)
 	std::vector<uint64_t> written;
 	std::vector<uint8_t> pages;
+
+	// The slot manager erasing this state's slot: give the baseline its reference back.
+	void dispose();
 };
 
 // The bookkeeping behind Dirty mode (ROADMAP 2.3). Whole pages covering .data and .bss (edge
@@ -183,14 +192,17 @@ struct LibSm64DirtyPages
 
 	// One entry per baseline taken, by index. A live one holds every page written since it
 	// began (`present`, one bit per page) with the content the page had when it began; a
-	// released one (no live state names it) has no storage.
+	// released one (no state references it) has no storage. A state takes a reference on the
+	// baseline it is saved under and gives it back when its slot is erased (LibSm64Mem::dispose).
 	struct Baseline
 	{
 		std::vector<uint64_t> present;
 		std::unique_ptr<uint8_t[]> pages; // pageCount * pagesize bytes, touched only where present
+		int refs = 0;                     // states saved under it whose slots still exist, the start save included
 	};
 	std::vector<Baseline> baselines;
 	std::vector<int> live;              // indices of the baselines with storage, for the handler
+	int liveSlots = 0;                  // slot states saved and not yet erased (the start save is not a slot)
 	uint64_t faults = 0;                // first writes recorded, all baselines
 
 	const std::vector<uint64_t>& Written() const { return baselines[size_t(baseline)].present; } // since the current baseline began
@@ -270,7 +282,7 @@ private:
 	LibSm64FixedSlice _fixedSlices[LibSm64FixedSliceCount] {};
 
 	std::unique_ptr<LibSm64DirtyPages> _dirtyPages;
-	void TakeBaseline(const LibSm64Mem& saving) const; // `saving`: the state about to be written
+	void TakeBaseline() const;
 };
 
 #endif

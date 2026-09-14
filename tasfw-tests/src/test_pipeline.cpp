@@ -20,7 +20,7 @@ namespace
 	{
 		return json::parse(R"({
 			"_comment": "comments are keys starting with an underscore",
-			"resources": { "dllDirectory": "../res", "threads": 3 },
+			"resources": { "dllDirectory": "../res", "threads": 3, "savestateBudgetMB": 4096 },
 			"m64": "../res/movie.m64",
 			"outputDirectory": "../analysis",
 			"scattershot": { "maxShots": 1234, "seed": 9 },
@@ -52,6 +52,10 @@ TEST_CASE("Pipeline config resolves paths against its directory and expands the 
 	CHECK(p.outputDirectory.generic_string() == "base/analysis");
 	CHECK(p.threads == 3);
 	CHECK(p.saveMode == LibSm64SaveMode::Dirty);
+	CHECK(p.savestateBudgetMB == 4096); // the process cap the threads' resources share (ROADMAP 3.5)
+	json noBudget = BaseConfig();
+	noBudget["resources"].erase("savestateBudgetMB");
+	CHECK(PipelineConfig::Parse(noBudget, fs::path("base/cfg")).savestateBudgetMB == 8192);
 
 	auto dlls = p.DllPaths();
 	REQUIRE(dlls.size() == 3);

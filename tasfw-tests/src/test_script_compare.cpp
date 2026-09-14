@@ -6,7 +6,7 @@
 #include <tuple>
 #include <vector>
 
-// The Compare family (ScriptCompareHelper.hpp) on the fake resource. Two things are pinned:
+// The Compare family (ScriptCompareHelper.hpp) on the mock resource. Two things are pinned:
 //   * the concepts that describe its callables (parameter generator, comparator, terminator,
 //     ad-hoc candidate) hold only for the right signature, and a wrong one makes every
 //     overload non-viable at the call site rather than failing inside the instantiation
@@ -195,7 +195,7 @@ namespace
 
 TEST_CASE("Compare runs every candidate, keeps the one the comparator prefers and reverts")
 {
-	FakeResource resource;
+	MockResource resource;
 	M64 m64;
 	RunRoot(resource, m64, [&](auto& s)
 		{
@@ -224,7 +224,7 @@ TEST_CASE("Compare runs every candidate, keeps the one the comparator prefers an
 
 TEST_CASE("A terminator ends the comparison at the first candidate it accepts")
 {
-	FakeResource resource;
+	MockResource resource;
 	M64 m64;
 	RunRoot(resource, m64, [&](auto& s)
 		{
@@ -252,7 +252,7 @@ TEST_CASE("ModifyCompare applies the winner's frames to the parent")
 	SUBCASE("the winner in the middle") { candidates = { { 2, 10 }, { 5, 20 }, { 3, 30 } }; }
 	SUBCASE("the winner last") { candidates = { { 2, 10 }, { 3, 30 }, { 5, 20 } }; }
 
-	FakeResource resource;
+	MockResource resource;
 	M64 m64;
 	RunRoot(resource, m64, [&](auto& s)
 		{
@@ -271,7 +271,7 @@ TEST_CASE("ModifyCompare applies the winner's frames to the parent")
 
 TEST_CASE("The generator form asks for one parameter tuple per iteration")
 {
-	FakeResource resource;
+	MockResource resource;
 	M64 m64;
 	RunRoot(resource, m64, [&](auto& s)
 		{
@@ -299,7 +299,7 @@ TEST_CASE("The generator form asks for one parameter tuple per iteration")
 
 TEST_CASE("CompareAdhoc hands each candidate its status and the tuple's elements")
 {
-	FakeResource resource;
+	MockResource resource;
 	M64 m64;
 	RunRoot(resource, m64, [&](auto& s)
 		{
@@ -325,7 +325,7 @@ TEST_CASE("CompareAdhoc hands each candidate its status and the tuple's elements
 
 TEST_CASE("ModifyCompareAdhoc keeps the winner's frames")
 {
-	FakeResource resource;
+	MockResource resource;
 	M64 m64;
 	RunRoot(resource, m64, [&](auto& s)
 		{
@@ -352,7 +352,7 @@ TEST_CASE("ModifyCompareAdhoc keeps the winner's frames")
 
 TEST_CASE("DynamicModifyCompareAdhoc mutates between candidates and applies the winner on its mutations")
 {
-	FakeResource resource;
+	MockResource resource;
 	M64 m64;
 	RunRoot(resource, m64, [&](auto& s)
 		{

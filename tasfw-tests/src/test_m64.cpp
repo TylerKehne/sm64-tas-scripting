@@ -127,7 +127,7 @@ TEST_CASE("ExportM64 marks the export with the game the source movie is for")
 	auto path = TempMovie("tasfw-tests-export-identity.m64");
 	std::filesystem::remove(path);
 
-	FakeResource resource;
+	MockResource resource;
 	M64 source;
 	source.metadata.rom = Rom::SUPER_MARIO_64_U;
 	source.metadata.countryCode = CountryCode::SUPER_MARIO_64_U;

@@ -61,10 +61,10 @@ its place with numbers, and "it is cleaner" is not a number.
 | `tasfw-scattershot/` | Header-only OpenMP brute-force search (blocks, segments, solutions, CSV export). |
 | `tasfw-scripts/` | Reusable BitFS scripts (pyramid oscillation, downhill angle search, dive-recover attempts), scattershot stages, and the scripts that look at the game rather than play it (`VerifyLayout`, `LevelTransitions`, `MarioTrace`, `SpliceMovie`), which the tools and tests run. |
 | `tasfw-bruteforcers/bitfs-turnaround/` | The only executable (`bitfs-turn.exe`): the BitFS pipeline as config-selected stages (`config.json`, `Stages.cpp`, `PipelineConfig`). `--list`, `--dry-run`, `--stage`. |
-| `tasfw-perf/` | Performance suite (Tier A microbenchmarks on an in-memory fake resource). Release only. |
+| `tasfw-perf/` | Performance suite (Tier A microbenchmarks on an in-memory mock resource). Release only. |
 | `tasfw-tools/` | `dllcheck`: runs the `VerifyLayout` script against a DLL, reports fixed-slice coverage and what a savestate holds of the sections (`bytes:`, docs/libsm64.md "The game's bytes"), measures frame-advance and savestate cost, and lists a movie's level transitions (`--levels`) or Mario and the camera around a frame (`--trace`). `m64splice`: a movie for one game version out of two, the first up to the frame it enters a level, the second from its own, played and checked frame by frame (docs/libsm64.md, "A movie for the US game"). |
 | `tasfw-tests/` | Correctness tests (doctest), one file per subject; `script_fixtures.hpp` and `libsm64_env.hpp` hold what the `test_script_*` and `test_libsm64_*` files share. DLL-free tests always run; the libsm64 tests run when `res\` has the DLL and movie. `test_sm64_layout.cpp` compiles `sm64_layout.inc`, the pinned DLL's field offsets and struct sizes, against the copied headers, so the layout is checked without the game (docs/libsm64.md, "Struct layouts"). |
-| `tasfw-testing/` | Header-only test support shared by tests and benchmarks (`FakeResource`). |
+| `tasfw-testing/` | Header-only test support shared by tests and benchmarks (`MockResource`). |
 | `perf/` | Committed benchmark baselines, one directory per machine and compiler (`tyler-desktop\`, `tyler-desktop-clang\`): a JSON file per benchmark family plus `context.json`, written by `scripts\perf.ps1 -SaveBaseline` and read through `perf_compare.py compare`, not by hand; `tierd-ci.json` is CI's Tier D baseline. `perf/results/` is gitignored. |
 | `analysis/` | R script that plots scattershot CSV output; also the pipeline's default output directory (CSVs, `solutions/*.json`, `m64/`), all gitignored. |
 | `res/` | Gitignored runtime inputs: 24 copies of the libsm64 DLL (made by `scripts/unlock_libsm64.py`), other source .m64 files, and thousands of exported solution .m64 files. |
@@ -203,7 +203,10 @@ its place with numbers, and "it is cleaner" is not a number.
     a free function in their headers, a new concept or term) is proposed to the maintainer
     and agreed before it is written, however small, and even when it fixes a violation of
     another rule: say what the concept is in the framework's own terms, who calls it, what
-    it costs, and which alternatives leave the framework unchanged. Bug fixes and measured
+    it costs, and which alternatives leave the framework unchanged. A class's public surface
+    is its contract: each member it exposes is a decision about what information that
+    component shares and with whom, so nothing is added for convenience alone, and a member
+    that only repeats access the class already grants does not belong. Bug fixes and measured
     optimizations behind an unchanged interface do not need this. The Stop hook names any
     framework header a turn changed and asks where that discussion happened.
 
@@ -240,7 +243,7 @@ Verification means:
    `tasfw-core` needs a test in `tasfw-tests` for the behavior it changes.
 3. Reason explicitly about determinism and savestate purity for anything touching
    `Script.t.hpp`, `ScattershotThread.t.hpp` or `LibSm64.cpp`; the `test_script_*.cpp`
-   files encode those invariants on the fake resource (fixtures in `script_fixtures.hpp`),
+   files encode those invariants on the mock resource (fixtures in `script_fixtures.hpp`),
    so extend them rather than arguing in prose.
 4. For anything on a hot path, measure. Run `scripts\perf.ps1` and paste its delta table;
    it exits non-zero on a time regression over 10% against the reference (the baseline

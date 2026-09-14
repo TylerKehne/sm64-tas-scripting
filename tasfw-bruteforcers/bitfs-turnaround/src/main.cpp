@@ -19,6 +19,7 @@
 
 #include <BitFsObjects.hpp>
 #include <LibSm64.hpp>
+#include <PyramidUpdate.hpp>
 #include <VerifyLayout.hpp>
 
 #include "PipelineConfig.hpp"
@@ -111,9 +112,9 @@ namespace
 
 	struct ResourceCounters
 	{
-		unsigned long long frameAdvances = 0;
-		unsigned long long saves = 0;
-		unsigned long long loads = 0;
+		// The resources' own counters (ResourceWork, tasfw/Resource.hpp) summed over threads;
+		// its two maxima are the largest any thread reached.
+		ResourceWork work;
 		// Dirty save mode only (docs/libsm64.md, "Savestates"): first-write faults summed over
 		// threads, and the largest dirty set and baseline index any thread reached, which say
 		// what a save or load was copying by the end of the stage.
@@ -125,9 +126,7 @@ namespace
 		ResourceCounters operator-(const ResourceCounters& other) const
 		{
 			ResourceCounters d = *this;
-			d.frameAdvances -= other.frameAdvances;
-			d.saves -= other.saves;
-			d.loads -= other.loads;
+			d.work = work - other.work;
 			d.faults -= other.faults;
 			return d;
 		}
@@ -138,9 +137,17 @@ namespace
 		ResourceCounters total;
 		for (const LibSm64& resource : resources)
 		{
-			total.frameAdvances += resource.nFrameAdvances;
-			total.saves += resource.nSaveStates;
-			total.loads += resource.nLoadStates;
+			const ResourceWork& w = resource.work;
+			total.work.frameAdvances += w.frameAdvances;
+			total.work.saves += w.saves;
+			total.work.loads += w.loads;
+			total.work.advanceCycles += w.advanceCycles;
+			total.work.saveCycles += w.saveCycles;
+			total.work.loadCycles += w.loadCycles;
+			total.work.poolReuses += w.poolReuses;
+			total.work.evictions += w.evictions;
+			total.work.slotsLiveMax = std::max(total.work.slotsLiveMax, w.slotsLiveMax);
+			total.work.slotBytesMax = std::max(total.work.slotBytesMax, w.slotBytesMax);
 			if (const LibSm64DirtyPages* d = resource.dirtyPages())
 			{
 				total.dirty = true;
@@ -154,6 +161,17 @@ namespace
 
 	std::vector<LibSm64> BuildResources(const PipelineConfig& pipeline, int count)
 	{
+		// The process cap on savestate memory is the config's total, and the threads' resources
+		// share it equally, less the room each thread needs for the resource its scripts
+		// create: one PyramidUpdate at a time, at its own budget (ROADMAP 3.5).
+		int64_t cap = pipeline.savestateBudgetMB * 1024 * 1024;
+		int64_t share = cap / pipeline.threads - PyramidUpdate::SavestateBudgetBytes;
+		if (share <= 0)
+			ConfigError("\"savestateBudgetMB\" " + std::to_string(pipeline.savestateBudgetMB) + " leaves no savestate memory per thread for "
+				+ std::to_string(pipeline.threads) + " thread(s) beyond the " + std::to_string(PyramidUpdate::SavestateBudgetBytes / (1024 * 1024))
+				+ " MB each reserves for a PyramidUpdate");
+		SlotBudget::Set(cap);
+
 		std::vector<fs::path> paths = pipeline.DllPaths();
 		std::vector<LibSm64> resources;
 		resources.reserve(size_t(count));
@@ -162,6 +180,7 @@ namespace
 			LibSm64Config config;
 			config.dllPath = paths[size_t(i)];
 			config.saveMode = pipeline.saveMode;
+			config.savestateBudgetBytes = share;
 			// A DLL is the game its name says (sm64_jp, sm64_us); one whose name says nothing is
 			// taken for the movie's game, which is what {version} in dllPattern resolves to anyway.
 			// VerifyGame then checks the movie against it, so a literal pattern naming the other
@@ -307,19 +326,26 @@ namespace
 				ExportSolutionSet(context, output);
 
 			double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
-			ResourceCounters work = CountResourceWork(resources) - before;
+			ResourceCounters counters = CountResourceWork(resources) - before;
+			const ResourceWork& work = counters.work;
 			std::printf("=== stage %s: %llu solution(s) in %.1f s, written to %s ===\n", stage.name.c_str(),
 				(unsigned long long)output.solutions.size(), seconds, pipeline.SolutionsFile(stage.name).string().c_str());
 			// The fixed-workload numbers hard rule 8 asks for (AGENTS.md), summed over threads.
-			std::printf("    frame advances %llu, saves %llu, loads %llu\n", work.frameAdvances, work.saves, work.loads);
+			std::printf("    frame advances %llu, saves %llu, loads %llu\n",
+				(unsigned long long)work.frameAdvances, (unsigned long long)work.saves, (unsigned long long)work.loads);
 			// CPU cycles over every thread: unlike the wall time above, unaffected by time
 			// spent descheduled (scripts/perf.ps1 reads this line into the Tier D rows).
 			uint64_t cyclesAfter = 0;
 			if (haveCycles && ProcessCycles(cyclesAfter))
 				std::printf("    process cycles %llu\n", (unsigned long long)(cyclesAfter - cyclesBefore));
-			if (work.dirty)
+			// The slot manager: what the per-thread memory cap is up against (ROADMAP 3.5). The
+			// high-water marks are the run's so far, not the stage's.
+			std::printf("    slots: up to %llu live per thread (%llu MB), %llu evictions, %llu pool reuses\n",
+				(unsigned long long)work.slotsLiveMax, (unsigned long long)(work.slotBytesMax / (1024 * 1024)),
+				(unsigned long long)work.evictions, (unsigned long long)work.poolReuses);
+			if (counters.dirty)
 				std::printf("    dirty pages: up to %zu per state (%zu KB), %llu first writes, %d baseline(s) per thread\n",
-					work.dirtyPagesMax, work.dirtyPagesMax * pagesize / 1024, work.faults, work.baselinesMax);
+					counters.dirtyPagesMax, counters.dirtyPagesMax * pagesize / 1024, counters.faults, counters.baselinesMax);
 
 			size_t count = output.solutions.size();
 			produced[stage.name] = std::move(output);

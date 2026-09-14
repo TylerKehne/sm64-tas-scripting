@@ -57,7 +57,7 @@ correctness and in speed.
         positions, `M64` round trip and gap filling, `BinaryStateBin` packing and clamping,
         `SlotManager` LRU eviction, `LevelStack` (on-demand levels, in-place reset and
         storage reuse, reference stability, slot release on erase), and the script engine's
-        invariants on `FakeResource` (diff recording, movie fallback, Execute/Modify/Test/ad-hoc
+        invariants on `MockResource` (diff recording, movie fallback, Execute/Modify/Test/ad-hoc
         semantics, exact restore on `Load`, bit-identical replays, hierarchy input resolution,
         `Rollback`, cache invalidation after rewriting a frame, a child's saves surviving
         `Modify`, and state trackers: recursive metrics, queries ahead of the cursor computed
@@ -355,8 +355,11 @@ Goal: the core's implicit invariants become explicit and enforced.
       and will carry some guard against invalid memory access. Do not design it piecemeal.
       Known remaining direct access to fold in: the drift
       test (`test_libsm64_pyramid.cpp`) drives a locally constructed `PyramidUpdate` from inside a
-      script instead of going through `ImportSave<PyramidUpdateMem>`, and `SlotHandle` holds a
-      public resource pointer.
+      script instead of going through `ImportSave<PyramidUpdateMem>`, `SlotHandle` holds a
+      public resource pointer, and `SlotManager` is all-public: `test_slots.cpp` and the Tier B
+      benchmarks set `_saveMemLimit`, `_maxPooledStates` and `_pooledMem` directly (maintainer,
+      2026-09-14: not ideal, wants better encapsulation; an accessor over a public member is not
+      the answer, the surface is).
 - [x] **3.3 PyramidUpdate drift test.** `test_libsm64_pyramid.cpp` imports `PyramidUpdateMem` from
       the DLL before each of 240 frames (Mario walks to the pyramid's centre, then it settles;
       91 frames move the normal), advances both, and requires the normal to match
@@ -397,11 +400,30 @@ Goal: the core's implicit invariants become explicit and enforced.
       things had to change to get here, both in docs/libsm64.md: the decomp renamed the
       pyramid behaviors, now bridged by `LibSm64SymbolAliases`, and doctest's `<ciso646>`
       include is a `#warning` under Clang 21 (docs/compilers.md).
-- [ ] **3.5 Savestate memory budget.** The 8 GB cap is per resource, so 16 threads can address
-      128 GB. Make it a global budget in `Configuration`.
-- [ ] **3.6 Unify timing instrumentation.** `ExecuteAdhocBase` records milliseconds via
-      `std::chrono` while everything else is rdtsc cycles. Pick one unit, expose the counters
-      as a struct the perf suite can read, and print them consistently.
+- [x] **3.5 Savestate memory budget.** Done 2026-09-14. The 8 GB cap was per resource, so
+      16 threads could address 128 GB. Now `SlotBudget` in `Resource.hpp` is a process-wide
+      budget and its balance: a resource subtracts its limit from the balance when it is
+      created (the one argument of `Resource`'s constructor; `LibSm64Config::savestateBudgetBytes`,
+      16 MB for `PyramidUpdate`, 64 MB for the mock), or throws if the balance is too low,
+      and adds it back when it dies. Whether it uses the memory does not matter. Nothing on
+      the save or load path changed; no script and no run touches a resource for it. The
+      application sets the budget: the pipeline from `resources.savestateBudgetMB` (default
+      8192, what one thread alone was allowed before), giving each thread's game resource
+      an equal share less the 16 MB a script's `PyramidUpdate` takes per thread. The
+      maintainer's framing (2026-09-14): an application-wide budget and balance across all
+      active resources, each subtracting its configured limit in full, and nothing more;
+      not a scattershot setting, and not usage accounting. What the pipeline holds, from
+      the slot line 3.6 added: at most 3 savestates per thread with the cost model off and
+      25 to 27 with it on (35 to 38 MB of `fixed` slices), zero evictions in every run, so
+      no count changed at the default; the checks are in docs/performance-changelog.md.
+- [x] **3.6 Unify timing instrumentation.** Done 2026-09-13. `Resource::work`
+      (`ResourceWork`, docs/performance.md "Existing instrumentation") holds the counts,
+      their rdtsc cycles and the slot manager's high-water marks, pool reuses and evictions;
+      every duration is rdtsc cycles, `ExecuteAdhocBase` included (it alone had recorded
+      milliseconds through `std::chrono`, and the cheaper clock reads on the empty ad-hoc
+      row as -15%); the Tier C benchmarks and `bitfs-turn` read the struct instead of
+      copying fields, and the stage summary prints the slot line. Every gated count
+      identical; the delta table is in docs/performance-changelog.md.
 - [ ] **3.7 Remove known non-zero-cost spots**, each gated by the suite. Done 2026-09-07:
       `Resource::setInputs()` with cached `gControllerPads`/`sm64_update`/`gGlobalTimer`
       pointers in `LibSm64` (measured within noise: `GetProcAddress` is 62 ns here); the six
@@ -440,25 +462,26 @@ Goal: the core's implicit invariants become explicit and enforced.
       satisfied"). No caller changed: every BitFS script passes generic lambdas of the right
       shape. `test_script_compare.cpp` pins it with static_asserts on each concept and on
       the `Compare` and `CompareAdhoc` calls themselves, and holds the first runtime tests
-      of the family on the fake resource. `-Wno-missing-requires` is gone from
+      of the family on the mock resource. `-Wno-missing-requires` is gone from
       `add_optimization_flags`, so GCC's warning is live again. Verified as the "Done when"
       asks with MSVC, clang-cl, GCC 13 and 15 and Clang 17 and 21, warnings as errors;
       compile-time only, so the machine code is the same instruction for instruction
       (docs/performance-changelog.md).
-- [ ] **3.11 Pluggable savestate policy.** `shouldSave`/`shouldLoad` (replay-versus-load by
-      measured average cost) and the LRU slot manager are one policy for every resource, and
-      a naive one. The right policy depends on the resource: a full-game DLL with slow loads
-      wants something different from a custom state machine where a load costs about a frame.
-      Abstract the policy behind the resource (a policy type chosen per resource, resolved at
-      compile time like everything else) so alternatives can be measured against each other
-      on Tier B and C. Two known weaknesses of the current one, both measured while fixing
-      4.5: the `shouldLoad` branch in `LoadBase` never fires (the lookup only returns saves at
-      or before the target), and every scattershot pellet starts with empty frame counters at
-      its level, so the same rewind-and-replay stretch is paid several times per pellet before
-      an automatic save appears (about +10% frame advances and saves against the old, wrong
-      reuse; docs/performance.md, 2026-09-08). *Done when:* the current policy is one
-      implementation of the abstraction with identical counts, and a second policy exists and
-      is compared.
+- [x] **3.11 Pluggable savestate policy.** Closed 2026-09-14: analysed and moved to Phase 5
+      ("A savestate policy the run chooses", where the design discussion is recorded); nothing
+      of it remains in this phase. The item as first
+      written was wrong on one point, corrected by the maintainer: the policy is the
+      scenario's, not the resource's. What stood on its own was done instead. The
+      `shouldLoad` branch that never fired was a regression: `Load` and the revert path
+      both compared the found save's frame with the target when the branch was written
+      (2022-03-22), `Load` was corrected to compare with the cursor on 2022-04-09, and the
+      2022-06-14 refactor that folded `Load` into the revert path kept the wrong one, which
+      `LongLoad` copied in August 2022. Fixed 2026-09-13 in both; the counts and times are
+      in docs/performance-changelog.md. The other weakness noted here, every scattershot
+      pellet starting with empty frame counters, is ownership, not a bug: a pellet's
+      counters belong to its ad-hoc level and die with it, so only a different policy can
+      change what a rewound stretch costs. The counters and timings became one struct
+      (3.6) and the budget is 3.5.
 
 - [x] **3.12 Sixteen-thread hang under CPU pinning.** Found 2026-09-12 while pinning the
       perf suite to the performance cores: with the `^BM_LibSm64Scaling` family (16 threads,
@@ -505,6 +528,14 @@ Goal: the core's implicit invariants become explicit and enforced.
       family and the throughput run unpinned, now by choice rather than necessity: 16
       threads on the 8 performance cores' SMT siblings is not the pipeline's shape
       (docs/performance.md).
+- [ ] **3.13 Scattershot on the mock resource.** No test runs a scattershot without the DLL:
+      `test_scattershot_hash.cpp` covers the hash and the block table, and the search itself
+      is exercised only by Tier D. A `ScattershotThread` on `MockResource` (a tiny state
+      bin, a movement that writes a frame) would pin in milliseconds, deterministically,
+      what only the CI-sized Tier D pins today: that a seed reproduces its search, the
+      slot line's counts under a tight cap (3.5), and the validation-failure diagnostics of
+      4.5. Identified 2026-09-14 when 3.5 went in with the pipeline-config test, the slot
+      tests and the Tier D slot line as its only checks.
 
 ## Phase 4: the squish-cancel brute forcer
 
@@ -536,7 +567,7 @@ Goal: finish the thing the framework was built for.
       after such a save restored a state made with reverted inputs (ARCHITECTURE.md,
       "Savestate ownership"). Dated 2022-06-18. Automatic savestates made it visible because
       they fill child banks; explicit saves alone rarely hit the pattern. Fixed in `Revert`
-      and pinned by a fake-resource test. Verified on the three 400-shot deterministic runs
+      and pinned by a mock-resource test. Verified on the three 400-shot deterministic runs
       (1 and 4 threads, lightweight and full saves): zero failures, at a wall-time cost
       recorded in docs/performance.md, since the old speed came partly from loading wrong
       saves instead of replaying. The Tier D deterministic run (1.3) does not exist yet;
@@ -584,3 +615,43 @@ Not scheduled. Listed so decisions in earlier phases do not paint us into a corn
   hacks a special input type the framework applies at a frame like any other input, so they
   are part of the diff, replayed on decode and reverted with the sandbox. Design not yet
   discussed; nothing should assume inputs are only controller states.
+- **A savestate policy the run chooses** (3.11, tabled here 2026-09-13). What the design
+  discussion settled before tabling it:
+  - The policy is a property of the scenario, not of the resource type. It is configured
+    per run at the top-level script, `UseSavePolicy()` on `TopLevelScriptBuilder` and the
+    scattershot builders, with the agnostic policy and today's parameters when nothing is
+    said; the resource only supplies what it measured (`ResourceWork`). Not a template
+    parameter of `TopLevelScript` (that welds the rule to the script class, so one workload
+    under two policies is two instantiations and the pipeline cannot choose from
+    config.json) and not one of `Script` (every reusable script would carry the scenario's
+    rule): the run holds the policy and the root keeps a type-erased view of it.
+  - The per-frame decision stays static. The root caches the policy's terms and refreshes
+    them through the view at cold points only (the start of the run, after a save, after a
+    load); the replay loop compares a counter with a cached number, no call.
+  - Two policies were named. *Agnostic*, today's: it assumes nothing about the search and
+    saves once a replayed stretch has proven hot, its thresholds derived from the measured
+    save, load and advance cost (a save when the stretch's replay history has cost one
+    save, a jump to a save ahead when the frames it skips cost one load), with given
+    thresholds as an option of the same policy: a never case replaces `costModel: false`,
+    and a given threshold makes automatic saves timing-independent, which is what an exact
+    gate or a test needs. *Interval*: save whenever the cursor lands on a multiple of N
+    unless a save already exists there, keep at most M, evicting the earliest frame's
+    (the slot manager would have to learn frames for that; it orders by touch and by
+    creation today); replays never earn a save. A separate "fixed thresholds" policy was
+    rejected as too similar to the agnostic one to be a type.
+  - A preemptive policy built from a profile of a test run was considered and judged
+    harder than it looks: in a scattershot a frame's replay heat says little about a save's
+    worth there, since the next rewind-and-write invalidates the save before a load can
+    use it, so a profile would have to measure what a save served before it died, not how
+    often its frame was passed.
+  - Why it is tabled: the engine's per-level bookkeeping is not policy-neutral. The diff,
+    the save bank, the two lookup caches and the load tracker serve any policy (they are
+    how a save is found, owned and invalidated), but `frameCounter`, its increment per
+    replayed frame, its erasure at every write site, the state-owner accounting that
+    says whose counter is charged, and `OptionalSave` are the agnostic model's own state,
+    which an interval policy would carry for nothing. A real abstraction lets a policy
+    own its state and has the engine report events to it (a frame replayed under an
+    owner, writes erased from a frame, a level popped), with that state following the
+    script hierarchy the way `LevelStack` does. That is the same shape question as 3.2 and
+    the console-agnostic resource above, decided once, with a second workload in hand.
+    Until then `useCostModel` stays on the resource and the pipeline sets it there.

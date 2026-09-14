@@ -286,14 +286,14 @@ namespace
 		void Run()
 		{
 			// Only the frames of this play count: VerifyLayout advanced its own on the way to <frame>.
-			uint64_t framesBefore = resource->nFrameAdvances;
+			uint64_t framesBefore = resource->work.frameAdvances;
 			auto start = std::chrono::steady_clock::now();
 			if (_results.dirtyReplay)
 				DirtyReplay();
 			else
 				PlayFrames(*resource, *_m64, _frame);
 			_results.playMicros = MicrosecondsSince(start);
-			_results.framesAdvanced = resource->nFrameAdvances - framesBefore;
+			_results.framesAdvanced = resource->work.frameAdvances - framesBefore;
 			_results.frameReached = resource->getCurrentFrame();
 
 			if (_results.saveMode == LibSm64SaveMode::Fixed)

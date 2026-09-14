@@ -2,16 +2,16 @@
 #include "measure.hpp"
 #include <vector>
 
-#include <tasfw/testing/FakeResource.hpp>
+#include <tasfw/testing/MockResource.hpp>
 
 // SlotManager bookkeeping (three std::maps per slot) at different live-slot counts.
-// The fake state is 256 bytes, so the copy itself is negligible. Fixed iteration counts keep
+// The mock state is 256 bytes, so the copy itself is negligible. Fixed iteration counts keep
 // the heap state deterministic across runs (see bench_script.cpp).
 
 static void BM_SlotManager_CreateErase(benchmark::State& state)
 {
 	const int live = int(state.range(0));
-	FakeResource resource;
+	MockResource resource;
 	auto& slots = resource.slotManager;
 	for (int i = 0; i < live; i++)
 		slots.CreateSlot();
@@ -29,7 +29,7 @@ BENCHMARK(BM_SlotManager_CreateErase)->Arg(100)->Arg(1000)->Arg(10000)->Iteratio
 static void BM_SlotManager_LoadSlot(benchmark::State& state)
 {
 	const int live = int(state.range(0));
-	FakeResource resource;
+	MockResource resource;
 	auto& slots = resource.slotManager;
 	std::vector<int64_t> ids;
 	ids.reserve(live);
@@ -51,9 +51,9 @@ BENCHMARK(BM_SlotManager_LoadSlot)->Arg(100)->Arg(1000)->Arg(10000)->Iterations(
 static void BM_SlotManager_CreateAtCap(benchmark::State& state)
 {
 	const int live = int(state.range(0));
-	FakeResource resource;
+	MockResource resource;
 	auto& slots = resource.slotManager;
-	slots._saveMemLimit = int64_t(live + 1) * int64_t(sizeof(FakeState));
+	slots._saveMemLimit = int64_t(live + 1) * int64_t(sizeof(MockState));
 	for (int i = 0; i < live; i++)
 		slots.CreateSlot();
 
@@ -69,7 +69,7 @@ BENCHMARK(BM_SlotManager_CreateAtCap)->Arg(100)->Arg(1000)->Arg(10000)->Iteratio
 // Resource-level wrappers add rdtsc timing and counters on top of the slot manager.
 static void BM_Resource_SaveLoadState(benchmark::State& state)
 {
-	FakeResource resource;
+	MockResource resource;
 	tasfw_perf::Measurement m0 = tasfw_perf::BeginMeasure();
 	for (auto _ : state)
 	{

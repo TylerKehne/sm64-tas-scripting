@@ -9,7 +9,7 @@
 // hierarchy, savestate slots, caches, tracking) rather than memcpy or the game DLL, and tests
 // use its rolling checksum to prove "state is a pure function of (start save, inputs)".
 // The state is 256 bytes so save/load are real copies but negligible.
-struct FakeState
+struct MockState
 {
 	uint32_t frame = 0;
 	uint16_t buttons = 0;
@@ -17,18 +17,21 @@ struct FakeState
 	int8_t stickY = 0;
 	uint64_t checksum = 0;
 	std::array<uint8_t, 240> payload {};
+
+	// The slot manager's dispose() hook, counted so a test can see it fire (tasfw/Resource.hpp).
+	static inline int disposed = 0;
+	void dispose() { disposed++; }
 };
 
-class FakeResource : public Resource<FakeState>
+class MockResource : public Resource<MockState>
 {
 public:
-	FakeResource()
-	{
-		slotManager._saveMemLimit = int64_t(1) << 40;
-	}
+	// 64 MB: a quarter of a million of these states, so nothing evicts unless a test or
+	// benchmark lowers the limit itself; small enough to sit under a test's process budget.
+	MockResource() : Resource(int64_t(64) << 20) { }
 
-	void save(FakeState& state) const override { state = _state; }
-	void load(const FakeState& state) override { _state = state; }
+	void save(MockState& state) const override { state = _state; }
+	void load(const MockState& state) override { _state = state; }
 
 	void advance() override
 	{
@@ -51,11 +54,11 @@ public:
 	// tests that want to poke it the way a script would.
 	void* addr(const char*) const override { return const_cast<Pad*>(&_pad); }
 
-	std::size_t getStateSize(const FakeState&) const override { return sizeof(FakeState); }
+	std::size_t getStateSize(const MockState&) const override { return sizeof(MockState); }
 	uint32_t getCurrentFrame() const override { return _state.frame; }
 
 	uint64_t checksum() const { return _state.checksum; }
-	const FakeState& state() const { return _state; }
+	const MockState& state() const { return _state; }
 
 private:
 	struct Pad
@@ -66,5 +69,5 @@ private:
 	};
 
 	Pad _pad {};
-	FakeState _state {};
+	MockState _state {};
 };

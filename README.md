@@ -87,7 +87,9 @@ last time, so a long pipeline can be advanced one stage at a time. Stages with
 `"export": true` also write one movie per solution under `<outputDirectory>/m64/<stage>/`.
 Scattershot CSVs and the `error.m64` dump go to `<outputDirectory>` as well. The stage
 summary prints wall time and the frame advances, saves and loads summed over threads, which
-are the fixed-workload numbers a performance change has to report (AGENTS.md, hard rule 8).
+are the fixed-workload numbers a performance change has to report (AGENTS.md, hard rule 8),
+then the slot manager's line: the most savestates and bytes any thread held at once, and the
+evictions and pool reuses (what the per-thread memory cap is up against; ROADMAP 3.5).
 
 # Configuration
 
@@ -122,9 +124,15 @@ One JSON file. Relative paths resolve against the file's own directory, unless t
   header names, `jp` or `us`, so the DLLs follow the movie; `{}` the thread index, one copy
   per thread), the thread count, the save mode (`saveMode`: `full`, `fixed` or `dirty`;
   `dirty` when absent, `fixed` in the committed config because it measures faster for this
-  search; docs/libsm64.md, "Savestates"), and `costModel` (default
+  search; docs/libsm64.md, "Savestates"), `costModel` (default
   true; false disables the replay-versus-load cost model so a run is timing-independent,
-  for diagnosis).
+  for diagnosis), and `savestateBudgetMB` (default 8192), the process budget for savestate
+  memory: a resource subtracts its limit from the balance when it is created, whether it
+  ever uses it or not, or fails if the balance is too low. The pipeline gives each thread's
+  game resource an equal share of the budget less the 16 MB a script's `PyramidUpdate`
+  takes per thread. The default is what one thread alone was allowed before the budget
+  existed; the BitFS stages hold at most 27 savestates per thread (38 MB of `fixed`
+  slices), and the stage summary's slot line shows the high-water mark and any eviction.
 - `scattershot`: defaults for every stage, in the field names of `Configuration`
   (`pelletMaxScripts`, `pelletMaxFrameDistance`, `maxBlocks`, `maxShots`, `pelletsPerShot`,
   `shotsPerUpdate`, `startFromRootEveryNShots`, `maxConsecutiveFailedPellets`,

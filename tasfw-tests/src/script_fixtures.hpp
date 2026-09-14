@@ -1,26 +1,26 @@
 #pragma once
 #include <tasfw/Script.hpp>
-#include <tasfw/testing/FakeResource.hpp>
+#include <tasfw/testing/MockResource.hpp>
 
 #include <cstdint>
 
 // Fixtures shared by the script engine tests (test_script_*.cpp), which pin its invariants
-// on the deterministic fake resource:
+// on the deterministic mock resource:
 //   * game state is a pure function of (start save, resolved inputs);
 //   * Execute reverts, Modify persists, ad-hoc scripts sandbox the same way;
 //   * loads restore exact state and replays are bit-identical;
 //   * inputs resolve through the hierarchy and fall back to the movie;
 //   * state trackers compute per-frame state on demand without moving the cursor.
-// FakeResource::checksum() folds every applied input into a rolling hash, so "same
+// MockResource::checksum() folds every applied input into a rolling hash, so "same
 // checksum" means "same inputs were applied in the same order".
 namespace tasfw::tests
 {
 	// Root script that exposes the protected Script API to a test body.
-	template <class Body, class TTracker = DefaultStateTracker<FakeResource>>
-	class TestRoot : public TopLevelScript<FakeResource, TTracker>
+	template <class Body, class TTracker = DefaultStateTracker<MockResource>>
+	class TestRoot : public TopLevelScript<MockResource, TTracker>
 	{
 	public:
-		using Base = TopLevelScript<FakeResource, TTracker>;
+		using Base = TopLevelScript<MockResource, TTracker>;
 		using Base::AdvanceFrameWrite;
 		using Base::Compare;
 		using Base::CompareAdhoc;
@@ -64,8 +64,8 @@ namespace tasfw::tests
 		Body _body;
 	};
 
-	template <class TTracker = DefaultStateTracker<FakeResource>, class Body>
-	void RunRoot(FakeResource& resource, M64& m64, Body body)
+	template <class TTracker = DefaultStateTracker<MockResource>, class Body>
+	void RunRoot(MockResource& resource, M64& m64, Body body)
 	{
 		TopLevelScriptBuilder<TestRoot<Body, TTracker>>::Build(m64).ImportResource(&resource).Run(body);
 	}
@@ -76,7 +76,7 @@ namespace tasfw::tests
 		return Inputs(uint16_t(i * 7 + 1), int8_t(i * 5), int8_t(-3 * i));
 	}
 
-	class WriteFrames : public Script<FakeResource>
+	class WriteFrames : public Script<MockResource>
 	{
 	public:
 		class CustomScriptStatus
@@ -103,7 +103,7 @@ namespace tasfw::tests
 		int _seed;
 	};
 
-	class FailingScript : public Script<FakeResource>
+	class FailingScript : public Script<MockResource>
 	{
 	public:
 		class CustomScriptStatus {};
@@ -118,7 +118,7 @@ namespace tasfw::tests
 		bool assertion() override { return false; } // never accepted
 	};
 
-	class RecursiveTracker : public Script<FakeResource>
+	class RecursiveTracker : public Script<MockResource>
 	{
 	public:
 		class CustomScriptStatus
@@ -143,7 +143,7 @@ namespace tasfw::tests
 	};
 
 	// Writes two frames, saves, writes two more.
-	class SaveInTheMiddle : public Script<FakeResource>
+	class SaveInTheMiddle : public Script<MockResource>
 	{
 	public:
 		class CustomScriptStatus
@@ -168,7 +168,7 @@ namespace tasfw::tests
 	};
 
 	// A tracker type the test roots never install; used to check the type guard.
-	class OtherTracker : public Script<FakeResource>
+	class OtherTracker : public Script<MockResource>
 	{
 	public:
 		class CustomScriptStatus
@@ -184,7 +184,7 @@ namespace tasfw::tests
 	};
 
 	// Asserts only on even frames, so odd frames have no accepted state.
-	class EvenFramesTracker : public Script<FakeResource>
+	class EvenFramesTracker : public Script<MockResource>
 	{
 	public:
 		class CustomScriptStatus
