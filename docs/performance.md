@@ -47,10 +47,12 @@ Places where the code pays (or paid) for an abstraction it should not, gated by 
 - Block segments are `std::shared_ptr<Segment>` chains, touched on every decode.
 - Tracker scripts are constructed per tracked frame: three lifecycle sandboxes and a
   `CustomStatus` move (with `std::vector`s in the real trackers). The per-level containers
-  are now created on first use (ROADMAP 3.7), but Tier C still counts 29 heap allocations
-  per frame in the `StateTracker_BitfsDr` sweep and about 9 per frame advanced in the
-  nested-script pyramid oscillation (2026-09-08), which is what ROADMAP 3.7's remainder and
-  3.8 are for.
+  are created on first use and, with `M64Diff::frames`, are `FrameMap`s (ROADMAP 3.7,
+  2026-09-14): a sandbox allocates nothing, a tracked frame 3 times instead of 14, and
+  Tier C counts 17 heap allocations per tracked frame in the `StateTracker_BitfsDr` sweep
+  (29 before), 5 per frame advanced in the nested-script pyramid oscillation (9) and 42
+  per downhill-angle call (56); what remains is the trackers' own `CustomStatus` contents
+  and the node per tracked state (performance-changelog.md).
 
 ## What costs what
 
@@ -195,11 +197,12 @@ families play the movie to `TASFW_FRAME` (default 3330) once, then measure:
   process grew by per slot, slot-map nodes included: within 0.2% of `stateBytes` at both
   counts, so a live slot costs its state and nothing else.
 - `Addr` (`fixed` family only): one `addr()` lookup, cycling through the four names the
-  BitFS scripts ask for at the top of every `validation()` and `execution()`.
+  BitFS scripts ask for at the top of every `validation()` and `execution()`. Single
+  thread on purpose: a 16 ns lookup's per-thread time on 16 unpinned threads is the
+  scheduler's, not the code's (it moved 20% between runs of one binary), and the loader
+  lock it once contended on is gone (performance-changelog.md, 2026-09-14).
 
-`^BM_LibSm64Scaling` runs `FrameAdvance` and `SaveErase` on 1, 2, 4, 8 and 16 threads
-(and `Addr` on 1 and 16 only: a 16 ns lookup's per-thread rate at 4 or 8 unpinned threads
-is the scheduler's, and the efficiency gate would read its swings as regressions),
+`^BM_LibSm64Scaling` runs `FrameAdvance` and `SaveErase` on 1, 2, 4, 8 and 16 threads,
 each thread on its own DLL copy with `dirty` saves, as the search runs (thread i loads
 the copy whose trailing index is i + 1, `res\sm64_jp_1.dll` onward; the family skips
 without those copies). `perf.ps1` does not pin this family: 16 threads on the 8
@@ -352,7 +355,10 @@ otherwise; the resource's own advance, save and load take 76% of it and the rest
    frame is 2.3% on its own), and about 3.5% of heap time for the framework's own
    allocations: `BaseScriptStatus` per sandbox, `Script::Run`, the inputs-cache, save-cache,
    load-tracker and tracked-state nodes, `LevelStack::Grow`. Together the remainder of
-   ROADMAP 3.7, about 9%.
+   ROADMAP 3.7, about 9%. Fixed the same day by `FrameMap` (ARCHITECTURE.md, "Script
+   hierarchy"): the throughput run's CPU outside the resource went from 22.7% to 19.2%
+   and its wall time -2.9%, the deterministic run's wall time -4.1%, with every count
+   identical (performance-changelog.md).
 6. Console output under the `print` critical section every shot: 0.
 7. Barriers per script in `Deterministic` mode: 58% of the deterministic run's CPU time is
    the spin-wait in `_vcomp::PartialBarrierN::Block` (vcomp spins through `SwitchToThread`

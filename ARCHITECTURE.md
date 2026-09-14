@@ -155,8 +155,21 @@ and a `loadTracker`. Each is a `LevelStack<T>` (`tasfw/LevelStack.hpp`): levels 
 and popped in stack order, every level (including 0) is constructed on first use, and a
 popped level is reset in place (`clear()`, or `BaseScriptStatus::Reset()`) and its storage
 reused. Entering or leaving an ad-hoc level therefore neither hashes nor allocates, and a
-script that never saves never constructs a save bank (MSVC's `std::map` allocates a head
-node per construction, which is what made child scripts and trackers expensive).
+script that never saves never constructs a save bank. The containers themselves, and
+`M64Diff::frames` (so every diff and the source movie), are `FrameMap`s
+(`tasfw/FrameMap.hpp`, ROADMAP 3.7; the load tracker a `FrameSet`): a vector sorted by
+frame with the subset of `std::map`'s interface the framework uses and the same meanings,
+which allocates nothing until its first entry and keeps its storage across `clear()`.
+Entries arrive at increasing frames, are cut as a suffix after a write and are found by a
+frame or the nearest frame below one, which a sorted vector does with a binary search, an
+append and a resize; a `std::map` did it with a node per entry and, on MSVC, a head node
+allocated whenever a map was constructed or move-constructed, which is what made child
+scripts and trackers expensive (11 allocations for an empty child script, all of them
+head nodes of the `M64Diff` a status object carries through the sandboxes). What differs
+from a map: an insert or erase invalidates iterators and references into the container,
+so nothing holds one across a call that can insert (the tracked states stay a node
+container for that reason: a tracker reads its previous states by reference while it may
+track another frame).
 
 Input resolution (`GetInputsMetadata`): to find the inputs for frame *f*, walk the current
 script's ad-hoc levels from innermost outward, then the parent chain, then the source `M64`,
@@ -397,9 +410,9 @@ hundred floating-point operations where only the platform matters.
 Design intent is zero-cost abstraction: resource, tracker and state-bin types are template
 parameters constrained by concepts; `if constexpr` compiles state tracking out when the
 tracker is `DefaultStateTracker`; LTO is on for every configuration. Where the code falls
-short today (scripts resolving symbols by name per execution, virtual per-frame calls on
-`Resource`, `shared_ptr` segment chains, one `std::map` node per cached frame in the
-bookkeeping) is listed in the performance doc and on the roadmap.
+short today (virtual per-frame calls on `Resource`, measured at nothing separable from
+noise; `shared_ptr` segment chains; one `std::map` node per tracked state) is listed in
+the performance doc and on the roadmap.
 
 Instrumentation already in the code: `Resource::work` (counts, rdtsc cycles and the slot
 manager's marks), per-script durations and counts in `BaseScriptStatus`, and the

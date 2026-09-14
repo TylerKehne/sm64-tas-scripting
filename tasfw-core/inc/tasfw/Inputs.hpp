@@ -1,7 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <filesystem>
-#include <map>
+#include <tasfw/FrameMap.hpp>
 #include <tasfw/SharedLib.hpp>
 
 #ifndef INPUTS_H
@@ -105,7 +105,7 @@ public:
 class M64Base
 {
 public:
-	std::map<uint64_t, Inputs> frames;
+	FrameMap<uint64_t, Inputs> frames;
 
 	M64Base() = default;
 };

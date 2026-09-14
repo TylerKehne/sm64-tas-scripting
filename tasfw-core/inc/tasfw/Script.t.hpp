@@ -165,7 +165,7 @@ void Script<TResource>::Apply(const M64Diff& m64Diff)
 }
 
 template <derived_from_specialization_of<Resource> TResource>
-void Script<TResource>::ApplyChildDiff(const BaseScriptStatus& status, std::map<int64_t, SlotHandle<TResource>>* childSaveBank, int64_t initialFrame, Script<TResource>* childScript)
+void Script<TResource>::ApplyChildDiff(const BaseScriptStatus& status, FrameMap<int64_t, SlotHandle<TResource>>* childSaveBank, int64_t initialFrame, Script<TResource>* childScript)
 {
 	//Revert if script was unsuccessful
 	if (!status.asserted)
@@ -634,7 +634,7 @@ void Script<TResource>::LoadBase(uint64_t frame, bool desync)
 
 // Load method specifically for Script.Execute() and Script.Modify(), checks for desyncs
 template <derived_from_specialization_of<Resource> TResource>
-void Script<TResource>::Revert(uint64_t frame, const M64Diff& m64, std::map<int64_t, SlotHandle<TResource>>* childSaveBank, Script<TResource>* childScript)
+void Script<TResource>::Revert(uint64_t frame, const M64Diff& m64, FrameMap<int64_t, SlotHandle<TResource>>* childSaveBank, Script<TResource>* childScript)
 {
 	// Check if script altered state
 	bool desync = (!m64.frames.empty()) && (m64.frames.begin()->first < GetCurrentFrame());

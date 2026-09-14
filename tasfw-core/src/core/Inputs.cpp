@@ -1,4 +1,5 @@
 #include <tasfw/Inputs.hpp>
+#include <map>
 #include <sys/types.h>
 #include <ios>
 #include <system_error>

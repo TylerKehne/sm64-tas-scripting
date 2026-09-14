@@ -17,12 +17,14 @@
 // empty ExecuteAdhoc, per tasfw-perf).
 //
 // Every level, including level 0, is constructed on first access: a script that never
-// touches a container pays nothing for it, which matters because MSVC's std::map allocates
-// its head node in the constructor and a Script has six such containers. Higher levels are
+// touches a container pays nothing for it (the per-level containers are FrameMaps, which
+// allocate nothing until their first entry; when they were std::maps, MSVC allocated a
+// head node per construction). Higher levels are
 // heap-allocated once and then reused: erase() resets a level's contents in place (clear()
-// for containers, Reset() for BaseScriptStatus) and lowers the size, and the next push at
-// that level reuses the storage without allocating. References to a level stay valid across
-// pushes and pops of other levels (a level is never moved), which Script relies on.
+// for containers, which keeps their storage, Reset() for BaseScriptStatus) and lowers the
+// size, and the next push at that level reuses the storage without allocating. References
+// to a level stay valid across pushes and pops of other levels (a level is never moved),
+// which Script relies on.
 template <class T>
 class LevelStack
 {

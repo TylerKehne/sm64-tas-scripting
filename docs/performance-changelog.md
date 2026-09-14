@@ -4,6 +4,67 @@ Every hot-path change records its delta table here, newest first; the policy, th
 how to run it are in [performance.md](performance.md). The first measurements (2026-09-07),
 which everything since is compared against, are at the bottom.
 
+## 2026-09-14: the frame-keyed containers as sorted vectors (ROADMAP 3.7)
+
+`M64Base::frames` (the source movie and every diff) and `Script`'s five per-level
+containers (`inputsCache`, `saveCache`, `frameCounter`, `saveBank`, `loadTracker`) are
+`FrameMap`s and a `FrameSet` (`tasfw/FrameMap.hpp`): a vector sorted by frame with the
+subset of `std::map`'s interface the framework uses and the same meanings, no allocation
+until the first entry, storage kept across `clear()`. The 3.8 census had found that every
+one of the 11 allocations of an empty child script and both of an empty ad-hoc call were
+`std::map` sentinel nodes, which MSVC allocates whenever a map is constructed or
+move-constructed, and a status object carries an `M64Diff` map through every sandbox,
+`Run` and result. The tracked states stay a `std::map` per owner and level: a tracker
+reads its previous states by reference while it may track another frame, which a vector's
+reallocation would break, and their node is 0.24% of the run. Design presented under hard
+rule 10, prototyped on a branch at the maintainer's request and accepted on these numbers.
+`test_framemap.cpp` pins the map meanings kept (ordered by key, insert and emplace do not
+overwrite, `operator[]` default-constructs, erase by key, position and range, the ordered
+lookups, `std::insert_iterator`, equality by contents).
+
+The suite, MSVC Release, reference 5238d9b interleaved (machine factor 1.00): 0 regressions
+on 74 rows, 21 rows faster, every count identical (Tier C frame advances, saves and loads;
+Tier D shots, scripts, blocks, solutions, frame advances, saves, loads), allocations down on
+every row that touches a map. Against the same day's `hotspots` head (the symbol table in,
+this change alone; fastest of three, single-thread rows pinned):
+
+| Row | Before | After | Allocations |
+|---|---|---|---|
+| `Script_AdvanceFrameWrite` | 151 ns | 50 ns | 2 -> 0 |
+| `Script_AdvanceFrameRead` | 253 ns | 86 ns | 1 -> 0 |
+| `Script_AdvanceFrameWrite_Save` | 765 ns | 441 ns | 7 -> 3 |
+| `Script_Write_RewindOne` (a write into the middle of the diff) | 172 ns | 129 ns | 3 -> 1 |
+| `Script_ExecuteAdhoc_Empty` | 73 ns | 25 ns | 2 -> 0 |
+| `Script_ModifyAdhoc_OneFrame` | 302 ns | 127 ns | 5 -> 1 |
+| `Script_Execute_ChildEmpty` | 424 ns | 197 ns | 11 -> 2 |
+| `Script_Execute_ChildOneFrame` / `Modify_ChildOneFrame` | 995 ns / 1.07 us | 626 / 550 ns | 31 -> 14 / 13 |
+| `Script_GetInputs_Uncached_Depth` 1 / 4 / 16 | 143 / 171 / 299 ns | 47 / 76 / 208 ns | 1 -> 0 |
+| `Script_LongLoad_RewindToRoot_Depth` 1 / 4 / 16 | 204 / 204 / 217 ns | 212 / 210 / 212 ns | unchanged |
+| `Script_AdvanceFrameWrite_TrivialTracker` / `RecursiveTracker` | 745 / 952 ns | 452 / 590 ns | 14 -> 3 / 19 -> 6 |
+| `M64_Load_10k` / `M64_Save_10k` | 1.1 / 2.1 ms | 0.6 / 2.0 ms | 10,004 -> 27 / 0 |
+| `Scattershot_UpsertBlock` novel (50k) / redundant / improve | 6.4 ms / 65 / 93 ns | 3.7 ms / 28 / 55 ns | 150,005 -> 50,005 / 2 -> 0 / 3 -> 1 |
+| `Framework_PyramidOscillation` (42,923 frames) | 692 ms | 674 ms | 404,555 -> 229,042 |
+| `Framework_DownhillAngle_PyramidUpdate` (1,000 calls) | 2.4 ms | 2.1 ms | 56,018 -> 42,006 |
+| `Framework_TrackerSweep` (500 tracked frames) | 7.3 ms | 7.1 ms | 14,548 -> 8,541 |
+| `TierD_Deterministic` (counts identical) | 128.4 s | 123.1 s | |
+| `TierD_Throughput` | 67.8 s | 65.8 s | |
+
+`UpsertBlock` and the movie's load were not targets: a `ScattershotSolution` carries a diff,
+so every block insert constructed one, and the movie's 10,000 frames were 10,000 nodes.
+The `LongLoad` rows are the one place the ancestor walk touches every level's containers
+without a lookup that the vectors speed up; they read +3 to +4%, under the gate and within
+what those rows move between runs. The throughput run's `CPU time` line reads 66.4%
+advance, 0.7% save, 13.7% load, 19.2% outside the resource (22.7% after the symbol table,
+24.0% before it); the deterministic run's CPU time 970 s against 1,052 s that afternoon.
+
+Also removed in the same change: the 16-thread `LibSm64Scaling_Addr` row added earlier the
+same day. Between two runs of one binary it read 48.9 and 59.6 ns, which the 10% time gate
+would have called a regression once the row was baselined: a 16 ns lookup's per-thread
+time on 16 unpinned threads is the hybrid scheduler's, and the contention the row was
+added to show is gone with the loader lock. `LibSm64Fixed_Addr`, pinned and single-thread,
+stays (14 to 16 ns across the day's runs). Baselines are not re-saved here: the allocation
+decreases are the reviewer's to confirm and re-baseline (performance.md, "Reporting and gating").
+
 ## 2026-09-14: `LibSm64::addr` answers from its own table (ROADMAP 3.7)
 
 The scripts ask for `gMarioState`, `gCamera`, `gObjectPool` and the pyramid behavior at the

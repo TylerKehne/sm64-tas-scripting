@@ -119,7 +119,7 @@ TEST_CASE("References to a level survive pushes and pops of other levels")
 TEST_CASE("Erasing a level destroys its contents: slot handles release their slots")
 {
 	MockResource resource;
-	LevelStack<std::map<int64_t, SlotHandle<MockResource>>> saveBank;
+	LevelStack<FrameMap<int64_t, SlotHandle<MockResource>>> saveBank;
 
 	int64_t slot = resource.slotManager.CreateSlot();
 	saveBank[1].emplace(5, SlotHandle<MockResource>(&resource, slot));

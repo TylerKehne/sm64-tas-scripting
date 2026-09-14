@@ -26,6 +26,7 @@ add_executable(tasfw-tests
 	"src/test_scattershot_mock.cpp"
 	"src/test_slots.cpp"
 	"src/test_levelstack.cpp"
+	"src/test_framemap.cpp"
 	"src/test_script_lifecycle.cpp"
 	"src/test_script_saves.cpp"
 	"src/test_script_trackers.cpp"

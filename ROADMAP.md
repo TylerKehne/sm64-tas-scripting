@@ -425,7 +425,7 @@ Goal: the core's implicit invariants become explicit and enforced.
       row as -15%); the Tier C benchmarks and `bitfs-turn` read the struct instead of
       copying fields, and the stage summary prints the slot line. Every gated count
       identical; the delta table is in docs/performance-changelog.md.
-- [ ] **3.7 Remove known non-zero-cost spots**, each gated by the suite. Done 2026-09-07:
+- [x] **3.7 Remove known non-zero-cost spots**, each gated by the suite. Done 2026-09-07:
       `Resource::setInputs()` with cached `gControllerPads`/`sm64_update`/`gGlobalTimer`
       pointers in `LibSm64` (measured within noise: `GetProcAddress` is 62 ns here); the six
       per-level `unordered_map`s in `Script` replaced by `LevelStack` (ad-hoc overhead -56%,
@@ -443,13 +443,22 @@ Goal: the core's implicit invariants become explicit and enforced.
       the loader lock, the new Tier B `Addr` rows), and virtual dispatch on `Resource` per
       frame, measured and closed: `LibSm64::advance` and `setInputs` together are 0.02%
       of the throughput run's samples, so the virtual call is not separable from noise.
-      Remaining: the `std::map` head node MSVC allocates for each container a script
-      actually touches, and one map node per cached frame (a flat or pooled container,
-      measured): every one of the 11 allocations of an empty child script and most of the
-      14 of a tracked frame are sentinel nodes of `M64Diff`'s and the per-level caches'
-      maps, constructed and moved per status object and per level; about 9% of the
-      throughput run's CPU with the map code (3.8). Its design is the flat-container
-      proposal hard rule 10 asks for, pending the maintainer.
+      Last done 2026-09-14: the `std::map` head node MSVC allocates for each container a
+      script touches, and one map node per cached frame. Every one of the 11 allocations
+      of an empty child script and most of the 14 of a tracked frame were sentinel nodes
+      of `M64Diff`'s and the per-level caches' maps, constructed and moved per status
+      object and per level, about 9% of the throughput run's CPU with the map code (3.8).
+      `FrameMap` and `FrameSet` (`tasfw/FrameMap.hpp`, ARCHITECTURE.md "Script
+      hierarchy", pinned by `test_framemap.cpp`) now hold `M64Base::frames` and the five
+      per-level containers; the tracked states stay a node container because a tracker
+      reads its previous states by reference while it may track another frame. Design
+      presented under hard rule 10, prototyped at the maintainer's request and accepted on
+      its numbers (2026-09-14): an empty sandbox 73 -> 25 ns and 2 -> 0 allocations, an
+      empty child script 408 -> 197 ns and 11 -> 2, a tracked frame 753 -> 452 ns and
+      14 -> 3, the movie's load 10,004 -> 27 allocations, `UpsertBlock` -42 to -57% (a
+      solution carries a diff); Tier D deterministic -4.1% and throughput -2.9% in wall
+      time against the same day's binary, every count identical, 0 regressions in the
+      suite (docs/performance-changelog.md). Closed with it: nothing of this item remains.
 - [ ] **3.8 Hotspot investigations.** Work through the "known hotspots" list in
       docs/performance.md, measurement first, one PR each, with the Tier C/D delta table.
       Measured 2026-09-14 (docs/performance-changelog.md, "where the Tier D CPU time goes";

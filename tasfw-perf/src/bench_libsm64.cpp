@@ -331,9 +331,12 @@ namespace
 	}
 
 	// Symbol lookup, the names the BitFS scripts ask for at the top of every validation()
-	// and execution() (ROADMAP 3.7). Through the OS loader this is GetProcAddress under the
-	// loader lock, which the threads of a search contend on (docs/performance-changelog.md,
-	// 2026-09-14); the scaling row shows the contention.
+	// and execution() (ROADMAP 3.7). Through the OS loader this was GetProcAddress under the
+	// loader lock, which the threads of a search contended on: 5.6 us per call at 16 threads
+	// against 61 ns alone; LibSm64::addr's table ended that (docs/performance-changelog.md,
+	// 2026-09-14). One pinned thread here: a 16 ns lookup's per-thread time on 16 unpinned
+	// threads is the hybrid scheduler's (it moved 20% between runs of one binary) and the
+	// contention it would show is gone by construction, there being no shared lock.
 	constexpr const char* ScriptSymbols[] = { "gMarioState", "gCamera", "gObjectPool", "bhvBitfsTiltingInvertedPyramid" };
 
 	template <class TGame>
@@ -352,7 +355,6 @@ namespace
 	}
 
 	void Addr(benchmark::State& state, LibSm64SaveMode mode) { AddrLoop(state, LoadGame(mode, state)); }
-	void ScalingAddr(benchmark::State& state) { AddrLoop(state, LoadThreadGame(state)); }
 }
 
 static void BM_LibSm64Full_SaveErase(benchmark::State& state) { SaveErase(state, LibSm64SaveMode::Full); }
@@ -392,11 +394,5 @@ BENCHMARK(BM_LibSm64Dirty_FrameAdvance)->Unit(benchmark::kMicrosecond)->Iteratio
 
 static void BM_LibSm64Scaling_FrameAdvance(benchmark::State& state) { ScalingFrameAdvance(state); }
 static void BM_LibSm64Scaling_SaveErase(benchmark::State& state) { ScalingSaveErase(state); }
-static void BM_LibSm64Scaling_Addr(benchmark::State& state) { ScalingAddr(state); }
 BENCHMARK(BM_LibSm64Scaling_SaveErase)->Unit(benchmark::kMicrosecond)->Iterations(2000)->UseRealTime()->ThreadRange(1, 16);
-// 1 and 16 threads only: the row exists to show contention (or its absence) at the search's
-// thread count, and a 16 ns lookup's per-thread rate at 4 or 8 unpinned threads is the
-// hybrid scheduler's (it moved 20 points between two runs of one binary), which the
-// efficiency gate would read as a regression.
-BENCHMARK(BM_LibSm64Scaling_Addr)->Unit(benchmark::kNanosecond)->Iterations(100000)->UseRealTime()->Threads(1)->Threads(16);
 BENCHMARK(BM_LibSm64Scaling_FrameAdvance)->Unit(benchmark::kMicrosecond)->Iterations(3000)->UseRealTime()->ThreadRange(1, 16);
