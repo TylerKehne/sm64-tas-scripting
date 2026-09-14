@@ -467,8 +467,9 @@ Goal: the core's implicit invariants become explicit and enforced.
       asks with MSVC, clang-cl, GCC 13 and 15 and Clang 17 and 21, warnings as errors;
       compile-time only, so the machine code is the same instruction for instruction
       (docs/performance-changelog.md).
-- [ ] **3.11 Pluggable savestate policy.** Tabled to Phase 5 on 2026-09-13 ("A savestate
-      policy the run chooses", where the design discussion is recorded). The item as first
+- [x] **3.11 Pluggable savestate policy.** Closed 2026-09-14: analysed and moved to Phase 5
+      ("A savestate policy the run chooses", where the design discussion is recorded); nothing
+      of it remains in this phase. The item as first
       written was wrong on one point, corrected by the maintainer: the policy is the
       scenario's, not the resource's. What stood on its own was done instead. The
       `shouldLoad` branch that never fired was a regression: `Load` and the revert path
