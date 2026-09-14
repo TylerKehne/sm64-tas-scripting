@@ -4,6 +4,113 @@ Every hot-path change records its delta table here, newest first; the policy, th
 how to run it are in [performance.md](performance.md). The first measurements (2026-09-07),
 which everything since is compared against, are at the bottom.
 
+## 2026-09-14: where the Tier D CPU time goes (ROADMAP 3.8)
+
+No hot path changed. `bitfs-turn`'s stage summary gained the `CPU time` line (the resource's
+advance, save and load as shares of the process CPU time over the stage; performance.md,
+"Existing instrumentation"), and both Tier D workloads were sampled with the Windows
+Performance Toolkit (`xperf -on PROC_THREAD+LOADER+PROFILE -stackwalk Profile`, 4 ms, every
+CPU) on a Release-codegen build with debug information (`RelWithDebInfo` preset with
+`/O2 /Ob2 /Zi` and `/debug /OPT:REF /OPT:ICF /INCREMENTAL:NO`; 1,274,368 bytes against
+Release's 1,273,856, counts identical, wall 133.2 s against 133.7 s). The dump's stacks were
+aggregated by module, by function and by inclusive bucket (a sample counts once per bucket
+whose regex matches any frame of its stack). Machine as for the suite: High performance plan,
+High priority, the deterministic run pinned to `0x5555`, the throughput run unpinned.
+
+| | Deterministic: 8 threads, cost model off, 600 shots | Throughput: 16 threads, cost model on, 1,200 shots |
+|---|---|---|
+| Wall, CPU time | 133.7 s, 1,052 s | 72.9 s, 1,151 s |
+| Scripts, frame advances, saves, loads | 520,052; 18,014,927; 608; 1,038,084 | 1,031,571; 35,768,962; 68,287; 2,072,761 |
+| CPU per script | 2.02 ms | 1.12 ms |
+| Frame advance (`advance`, the game) | 26.5%, 15.5 us each, 34.6 per script | 61.7%, 19.9 us each, 34.7 per script |
+| Load (`fixed` slices, 1.5 MB) | 4.6%, 46.7 us each, 2.0 per script | 13.3%, 74.0 us each, 2.0 per script |
+| Save | 0.0%, 77 us each | 0.6%, 108 us each |
+| Outside the resource | 68.9% | 24.3% |
+| of which OpenMP barrier spin-wait (`_vcomp::PartialBarrierN::Block` and its `NtDelayExecution` / `SwitchToThread` calls) | 58.5% (55.9% at the per-script `QueueThreadById`, 2.1% in decode, 0.4% at the exit) | 0.2% |
+| of which heap allocation and free (`RtlpLowFragHeapAllocFromContext`, `RtlFreeHeap`, ...) | 4.5% | 11.1% |
+| of which `std::map` and `std::_Tree` code | 2.1% | 5.0% |
+| of which `GetInputsMetadata` (inclusive) | 1.5% | 3.3% |
+| of which symbol resolution (`LdrpResolveProcedureAddress`, the loader lock, `RtlBackoff`) | 0.6% | 1.5% |
+| `bitfs-turn.exe` code, exclusive | 4.5% | 10.4% |
+| Block decode (`DecodeBaseBlockDiffAndApply`, inclusive) | 3.0% | 2.3% |
+| `UpsertBlock`, `PrintStatus` | 0.02%, 0 | 0.04%, 0 |
+
+What the two runs say together:
+
+- **The per-script cost outside the resource is the same in both runs**, about 0.26 ms
+  (deterministic: 2.02 ms less 1.18 ms of barrier wait, 0.54 ms of game and 0.09 ms of
+  loads; throughput: 1.12 ms less 0.69 ms of game, 0.15 ms of loads and 0.01 ms of saves).
+  The deterministic run's 69% outside the resource is 58 points of waiting: `QueueThreadById`
+  puts a barrier and then one barrier per thread around every script's `UpsertBlock`, and
+  every thread waits for the slowest one each time, spinning (vcomp spins through
+  `SwitchToThread` and `NtDelayExecution`, so the wait is CPU time and shows in the
+  `process cycles` row). The wait is the variance of a script's cost, not the barriers'
+  own cost; the gate run's cycles measure waiting, and the throughput run is the one whose
+  outside share is work.
+- **Replays are the game time.** `AdvanceFrameRead` holds 68% of the throughput run's CPU
+  against 3.7% for `AdvanceFrameWrite`: about 95% of the frame advances replay known inputs.
+  The replay is the search's evaluation: after each script `TiltTargetShot` runs the game to
+  the pyramid's equilibrium through `GetEquilibriumTrackedState` (`Load(frame + 1)` frame by
+  frame, up to 200, each tracked by `TiltTargetShotMetrics`), 67% of the CPU inclusive,
+  plus the rewinds `ApplyMovement` makes, which replay from the shot's base save (cost model
+  off) or the nearest automatic save (on). The later calls of the same lookahead in
+  `ValidateState`, `GetStateBin` and `GetStateFitness` find the tracked states cached (1.4%,
+  2.8%, 0.6%), so the framework's caching holds across the sandboxes; the cost is the first
+  evaluation, about 33 game frames per script, and only fewer or cheaper evaluation frames
+  change it (ROADMAP 4.3, and `PyramidUpdate` as the stand-in it was written to be).
+  Decoding the base block from the root, the list's first suspect, is 2 to 3%.
+- **The tracker's status object is the heap.** Of the 11.1% in the heap on the throughput
+  run, 7.0% is `TiltTargetShotMetrics::CustomScriptStatus`: thirteen `std::vector` members
+  for three-element arrays, constructed per tracked frame and copied whole wherever a
+  `GetTrackedState` result is taken by value (its constructor alone 4.2%, `CheckEquilibrium`
+  0.8%, `GetEquilibriumTrackedState` 0.7%, the destructor and `operator=` 0.9%,
+  `execution` 0.4%). `std::vector` code is another 8.9% inclusive, mostly the same copies.
+  That is the stage script, not the framework. The framework's own allocations are about
+  3.5%: `BaseScriptStatus` per sandbox (0.6%), `Script::Run` (0.5%), `GetInputsMetadata`'s
+  cache nodes (0.4%), `~Script` (0.3%), `LoadBase`'s save-cache and load-tracker nodes
+  (0.3%), `LevelStack::Grow` (0.3%), the tracked-state map nodes (0.5%), which with the
+  5.0% of map code is the remainder of ROADMAP 3.7 with a number on it: about 9% of the
+  production run.
+- **`resource->addr()` per call is 1.5%** on 16 threads, and not only the 62 ns
+  `GetProcAddress`: `LdrGetProcedureAddressForCaller` takes the loader lock, so the threads
+  contend on it (`RtlEnterCriticalSection`, `RtlAcquireSRWLockShared`, `RtlBackoff` in the
+  profile). The scripts resolve `gMarioState`, `gCamera` and the pyramid behavior at the
+  top of every `validation()`, `execution()` and helper (performance.md, the non-zero-cost
+  list; ROADMAP 3.2's access contract).
+- **Loads are memory bandwidth.** The `fixed` load is one `memcpy` of 1.5 MB: 41 us alone,
+  46.7 us with 8 threads on the performance cores, 74 us with 16 threads on every core.
+  Two loads per script in both runs.
+- Not hotspots on this workload: `UpsertBlock` and the `blocks` critical section
+  (0.04%), console output under the `print` section (0), `GetHash` (0.01%),
+  `M64Diff`/`Inputs` (0.2%), the slot manager (no eviction, 3 or 28 slots live).
+
+The Tier C family under the same profiler (1 ms, one performance-core CPU): the family is
+the nested-script pyramid oscillation (96% of its samples; 718 ms, 42,923 frame advances
+for 20 output frames, a replay ratio of 2,146), which is 91% game, 74% of it on the replay
+path (`AdvanceFrameRead` 74% against `AdvanceFrameWrite` 17%), with the `PyramidUpdateMem`
+import at 2.5%, `GetMinimumDownhillWalkingAngle` at 1.6% and the heap at 2.7%; its
+`overheadPct` reads 5.3. The other two rows, sampled at 0.12 ms over 40 repetitions: the
+downhill-angle call is 3.2 us and 56 allocations, of which the `PyramidUpdateMem`
+construction itself (reading and transforming the surfaces out of the DLL state) is about
+30%, the stand-in's own physics 5%, and the rest the `TopLevelScript`, `Resource` and
+`SlotManager` the call builds and tears down around that one frame, with `Script::Run`'s
+sandboxes and their `BaseScriptStatus` (heap 17% of the trace's samples, `Sm64Object::operator=`,
+`LoadSurfaces`, `MainFromSave`, the resource and script constructors and destructors the
+owners). The tracker sweep is 15.7 us and 29 allocations per tracked frame at 12.4%
+overhead: 91% the game frame (14.3 us here, Tier B's number for this point of the movie),
+1.4 us in `ExecuteStateTracker`, of which about 0.9 us is allocation (`BaseScriptStatus`,
+`LevelStack::Grow`, the tracker's `CustomScriptStatus` vectors, `Script::Run`), the 3.7
+remainder again. It never crosses (500 frames, 500 advances; `CalculateOscillations`
+0.1%), so the list's third item is not measured by any workload in the suite and needs the
+`dr-oscillations` stage.
+
+Method notes for the next investigation: the aggregation script and the trace commands are
+not in the repository (a session's scratch); `perf.ps1`'s pinning and priority were
+reproduced by hand, and xperf's default dump symbolizes every process in the trace, so a
+warm symbol cache (`_NT_SYMCACHE_PATH`) is worth keeping between runs. LTO folds identical
+functions under `/OPT:ICF`, so a `std::_Tree` node insert can carry the name of an unrelated
+map's instantiation; read those as "map insert".
+
 ## 2026-09-14: a saved state's lifecycle has two ends
 
 A state's contents live from `Resource::save` until its slot is erased. A state type that

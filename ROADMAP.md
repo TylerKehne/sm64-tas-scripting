@@ -443,6 +443,28 @@ Goal: the core's implicit invariants become explicit and enforced.
       on `Resource` per frame if measurement says it matters.
 - [ ] **3.8 Hotspot investigations.** Work through the "known hotspots" list in
       docs/performance.md, measurement first, one PR each, with the Tier C/D delta table.
+      Measured 2026-09-14 (docs/performance-changelog.md, "where the Tier D CPU time goes";
+      the list in docs/performance.md now carries the numbers): `bitfs-turn`'s stage
+      summary prints a `CPU time` line, the resource's advance, save and load as shares of
+      the process CPU time over the stage, and a sampled profile of both Tier D workloads
+      and the Tier C family attributed the rest. On the throughput run, the pipeline's
+      shape, the resource takes 76% of the CPU (game 62%, `fixed` loads 13%, saves 1%) and
+      the 24% outside it is 11% heap (7% of it the tilt-target tracker's `std::vector`
+      status, copied per tracked frame), 5% map code, 3% `GetInputsMetadata`, 1.5% symbol
+      resolution under the loader lock, and the search's own code; 95% of the frame
+      advances are replays, the evaluation to the pyramid's equilibrium after each script.
+      The deterministic gate run is 58% barrier spin-wait, the spread of a script's cost
+      under `QueueThreadById`'s barriers, so its `process cycles` row measures waiting.
+      Block decoding is 2 to 3%; `UpsertBlock`, the `print` section and the slot budget are
+      nothing. Remaining, one PR each, in the order of the numbers: the tracker status in
+      `TiltTargetShot.hpp` (arrays and references instead of vectors and copies; a stage
+      script, gated by the Tier D throughput row); the framework's per-sandbox and
+      per-frame allocations and map nodes (3.7's remainder, about 9%); `addr` per call
+      (with 3.2's access contract); a profile of the `dr-oscillations` stage for the
+      `PyramidUpdateMem` import and `CalculateOscillations`, which the tilt-target workload
+      never runs; whether a thread-ordered ticket instead of N+1 barriers per script moves
+      the deterministic run's wall time; and the Tier D row carrying the outside share
+      once its run-to-run spread is known (reported, not gated, until then).
 - [x] **3.9 Pool savestate buffers.** Done 2026-09-07: `SlotManager` keeps erased and evicted
       states in a bounded pool (32) that the next `CreateSlot` reuses, so a save into a
       recycled state is one copy. `dllcheck`: full save 1561 -> 191 us against a 222 us load,

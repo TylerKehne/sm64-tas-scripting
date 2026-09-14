@@ -314,8 +314,11 @@ namespace
 
 			std::printf("\n=== stage %s (%s, frame %lld) ===\n", stage.name.c_str(), stage.type.c_str(), (long long)stage.startFrame);
 			auto start = std::chrono::steady_clock::now();
+			uint64_t tscStart = get_time();
 			uint64_t cyclesBefore = 0;
 			bool haveCycles = ProcessCycles(cyclesBefore);
+			double cpuBefore = 0;
+			bool haveCpu = ProcessCpuSeconds(cpuBefore);
 			ResourceCounters before = CountResourceWork(resources);
 
 			StageContext context { pipeline, stage, resources, input };
@@ -326,6 +329,7 @@ namespace
 				ExportSolutionSet(context, output);
 
 			double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+			uint64_t tscElapsed = get_time() - tscStart;
 			ResourceCounters counters = CountResourceWork(resources) - before;
 			const ResourceWork& work = counters.work;
 			std::printf("=== stage %s: %llu solution(s) in %.1f s, written to %s ===\n", stage.name.c_str(),
@@ -338,6 +342,25 @@ namespace
 			uint64_t cyclesAfter = 0;
 			if (haveCycles && ProcessCycles(cyclesAfter))
 				std::printf("    process cycles %llu\n", (unsigned long long)(cyclesAfter - cyclesBefore));
+			// Where the threads' CPU time went: the resource's own advance, save and load (rdtsc
+			// cycles, converted with the TSC rate this stage's wall clock measured) against the
+			// process CPU time over the stage (user and kernel, every thread; spin-waits at
+			// barriers count). The rest is the framework, the scripts and the search, the share
+			// ROADMAP 3.8 attributes (docs/performance.md, "Tier D").
+			double cpuAfter = 0;
+			if (haveCpu && ProcessCpuSeconds(cpuAfter) && seconds > 0 && tscElapsed > 0)
+			{
+				double tscPerSecond = double(tscElapsed) / seconds;
+				double cpu = cpuAfter - cpuBefore;
+				double advance = double(work.advanceCycles) / tscPerSecond;
+				double save = double(work.saveCycles) / tscPerSecond;
+				double load = double(work.loadCycles) / tscPerSecond;
+				auto share = [cpu](double s) { return cpu > 0 ? 100.0 * s / cpu : 0.0; };
+				auto each = [](double s, uint64_t n) { return n ? 1e6 * s / double(n) : 0.0; };
+				std::printf("    CPU time %.1f s: advance %.1f%% (%.1f us each), save %.1f%% (%.1f us each), load %.1f%% (%.1f us each), outside the resource %.1f%%\n",
+					cpu, share(advance), each(advance, work.frameAdvances), share(save), each(save, work.saves),
+					share(load), each(load, work.loads), share(cpu - advance - save - load));
+			}
 			// The slot manager: what the per-thread memory cap is up against (ROADMAP 3.5). The
 			// high-water marks are the run's so far, not the stage's.
 			std::printf("    slots: up to %llu live per thread (%llu MB), %llu evictions, %llu pool reuses\n",
