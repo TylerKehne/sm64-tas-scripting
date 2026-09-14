@@ -287,7 +287,13 @@ reference `bitfs-turn.exe` on each workload before the current one (`-Alternatio
 pairs, default 1, fastest of each); the time gate is current against reference, while the
 exact counts still gate against the committed baseline. Both rows carry `cycles`, the
 process's CPU cycles over every thread, next to the wall time (spin-waits at the
-deterministic run's barriers count).
+deterministic run's barriers count), and `overheadPct`, the share of the process CPU time
+outside the resource from the stage summary's `CPU time` line, gated like Tier C's at
+`--overhead-tolerance` points (default 2) against the anchor: the framework's share of a
+run, which a change to it moves and the machine's day does not (two runs of one binary
+read 24.0 and 24.3%, 19.1 and 19.2%, 68.9 and 68.8% on 2026-09-14). For the
+deterministic run the share includes the barrier spin-wait (about 58 points of it), so a
+change that alters the spread of a script's cost moves it too.
 
 The deterministic run has the cost model off because automatic savestates depend on measured
 timings: with it on the search outcome is still identical (ROADMAP 4.5), but `frameAdvances`

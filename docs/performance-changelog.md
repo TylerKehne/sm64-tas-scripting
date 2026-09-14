@@ -4,6 +4,17 @@ Every hot-path change records its delta table here, newest first; the policy, th
 how to run it are in [performance.md](performance.md). The first measurements (2026-09-07),
 which everything since is compared against, are at the bottom.
 
+## 2026-09-14: the Tier D rows carry the share outside the resource (ROADMAP 3.8)
+
+`perf_compare.py tierd` reads the stage summary's `CPU time` line into the row as
+`overheadPct`, the share of the process CPU time outside the resource, and the compare
+gates it as it gates Tier C's: an increase over `--overhead-tolerance` points (2) against
+the anchor is a regression. Reported once the 3.8 profile made the number the one to watch;
+gated now that its spread is known: on 2026-09-14, runs of one binary read 24.0 and 24.3%
+(throughput, morning), 19.1 and 19.2% (after the FrameMap), 68.9 and 68.8% (deterministic),
+while the day's three changes moved it 24.0 -> 22.7 -> 19.2 -> 10.7%. Baselines saved before
+this lack the counter, so the compare reports it without a gate until they are re-saved.
+
 ## 2026-09-14: where the `dr-oscillations` stage's CPU time goes (ROADMAP 3.8)
 
 The two suspects on the hotspot list that no suite workload runs, the `PyramidUpdateMem`

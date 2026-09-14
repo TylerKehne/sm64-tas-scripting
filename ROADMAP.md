@@ -490,11 +490,12 @@ Goal: the core's implicit invariants become explicit and enforced.
       `std::map<MovementOption, double>` `AddRandomMovementOption` takes by value and
       every DR script builds from a braced list (4.1% of that stage with the
       `movementOptions` set reassigned per script), whose parameter shape is a
-      `ScattershotThread` change under hard rule 10, to be designed; whether a
+      `ScattershotThread` change under hard rule 10, to be designed; and whether a
       thread-ordered ticket instead of N+1 barriers per script moves the deterministic
-      run's wall time; and the Tier D row carrying the outside share once its run-to-run
-      spread is known (reported, not gated, until then). Block decoding at 8.4% of the
-      `dr` stage is 4.3's.
+      run's wall time. Done the same day: the Tier D rows carry `overheadPct`, the share
+      of CPU time outside the resource, gated at 2 points like Tier C's (its same-binary
+      spread that day was under 0.3 points; docs/performance.md, "Tier D"). Block decoding
+      at 8.4% of the `dr` stage is 4.3's.
 - [x] **3.9 Pool savestate buffers.** Done 2026-09-07: `SlotManager` keeps erased and evicted
       states in a bounded pool (32) that the next `CreateSlot` reuses, so a save into a
       recycled state is one copy. `dllcheck`: full save 1561 -> 191 us against a 222 us load,
