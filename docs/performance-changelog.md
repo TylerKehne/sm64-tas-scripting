@@ -4,6 +4,50 @@ Every hot-path change records its delta table here, newest first; the policy, th
 how to run it are in [performance.md](performance.md). The first measurements (2026-09-07),
 which everything since is compared against, are at the bottom.
 
+## 2026-09-14: the deterministic queue as a ticket (ROADMAP 3.8)
+
+Designed under hard rule 10, prototyped on a branch and accepted by the maintainer on the
+numbers below, with the implementation in `ScattershotThread.t.hpp` and a four- and
+three-thread reproduction added to the mock test. Deterministic mode
+ran every script's upsert through `QueueThreadById`, a barrier and then one barrier per
+thread, so every thread waited for the slowest at every round: 58% of the deterministic
+Tier D run's CPU was that spin-wait (the 3.8 profile). The prototype replaces the barriers
+with a ticket: each thread numbers its calls, call k of thread i is ticket k·N+i, one
+shared turn serves tickets in order, and a thread waits only for its own turn, so its next
+script runs while others are still on the previous round. Base-block selection and the
+end-of-shot counts take tickets too, since they read the block table and the solution
+count, and a thread retires from the queue under its turn when its shots are done, which
+replaces the barrier loop `MultiThread` ran at the exit. The upserts keep the barriers'
+total order; what changes is the table a thread sees when it selects a block, the one at
+its ticket rather than the one after a lockstep round, so the deterministic workloads
+follow a different path and their counts change once.
+
+Measured on the deterministic Tier D workload (8 threads pinned, cost model off, MSVC
+Release, the same hour as the barrier version's 112.1 s and 867 s of CPU):
+
+| | Barriers | Ticket, run 1 | Ticket, run 2 |
+|---|---|---|---|
+| Wall | 112.1 s | 92.1 s | 91.9 s |
+| CPU time, outside the resource | 867 s, 62.8% | 725 s, 55.8% | 725 s, 55.9% |
+| Solutions, blocks, scripts | 55; 109,958; 520,052 | 52; 111,860; 524,380 | the same |
+| Frame advances, saves, loads | 18,014,927; 608; 1,038,084 | 17,800,136; 608; 1,045,094 | the same |
+
+Two runs agree to the last count, which is the property the mode exists for; the mock
+test's two-, three- and four-thread reproductions pass; the throughput workload is
+untouched (not deterministic). The deterministic counts changed once with it:
+`perf/baselines/tierd-ci.json` was regenerated from the CI-sized workload through
+`perf_compare.py tierd` (the new counts are in docs/performance.md, "Tier D"), and the
+perf baselines' `TierD_Deterministic` row reads as a count change until the next
+`-SaveBaseline`. The suite (`perf.ps1`, MSVC Release, reference 5238d9b interleaved):
+0 time regressions on 74 rows, 24 rows faster, allocations identical, `TierD_Deterministic`
+130.1 -> 91.7 s against the reference (-29.5%) with exactly the count change above flagged,
+`TierD_Throughput` 70.9 -> 60.9 s; the CI-sized workload reads the same counts in `fixed`
+and `dirty` mode (2,948,886 frame advances, 12 solutions) and on two builds. Not changed by it:
+deterministic mode with piped-in inputs (open, above), and the CSV export, whose sampling
+and row order were never in the queue in either scheme (`AddCsvRow` runs outside it, under
+its own critical sections, in arrival order); the solutions a stage exports come from the
+upserts and are in the queue in both.
+
 ## 2026-09-14: the movement-option weights as lists, the options as a bit mask (ROADMAP 3.8)
 
 `AddRandomMovementOption` took a `std::map<MovementOption, double>` by value and every one

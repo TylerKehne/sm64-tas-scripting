@@ -300,8 +300,16 @@ Vocabulary:
   capped at `MaxSolutions`; solved blocks are never chosen as base blocks.
 - **Piping**: `PipeFrom(solutions)` seeds the next stage's root blocks with each solution's
   diff. Their segments carry `pipedDiff1Index` so decoding applies the diff instead of scripts.
-- **Determinism**: `Configuration::Deterministic` serialises all upserts by thread id with
-  barriers (`QueueThreadById`), so a run is reproducible for a given `Seed` and thread count.
+- **Determinism**: `Configuration::Deterministic` serialises every read and write of the
+  shared search state (a block's upsert, the base-block selection, the shot and solution
+  counts a thread stops on) through a ticket queue (`QueueThreadById`): a thread's k-th
+  call is served after every thread's (k-1)-th and after the lower thread ids' k-th, the
+  order a barrier per round gave until 2026-09-14, but a thread waits only for its own
+  turn, so its next script runs while others finish the round; a thread retires from the
+  queue when its shots end. A run is reproducible for a given `Seed` and thread count.
+  Not in the queue, and not reproducible: the CSV rows (sampled and written in arrival
+  order), and a run with piped-in input solutions, whose `Initialize` loop leaves the
+  threads with different call counts (ROADMAP 3.14).
 - **CSV**: every `CsvSamplePeriod`-th novel block per thread is written as a row; the R script
   in `analysis/` plots them. `CsvRows` is printed so plotting can run mid-search.
 
@@ -411,7 +419,12 @@ mechanism above exists for that: savestates avoid replays, the cost model in
 short-circuit ancestor lookups, and `PyramidUpdate` replaces full game frames with a few
 hundred floating-point operations where only the platform matters.
 
-Design intent is zero-cost abstraction: resource, tracker and state-bin types are template
+Design intent is zero-cost abstraction with the complexity kept inside the framework: the
+script author, a person or agent comfortable with coding but not necessarily with C++,
+writes a class with three lifecycle methods and a status, or a resource with a save, a
+load and an advance, and everything else (savestates, replays, the hierarchy, the search's
+synchronization) happens without their knowledge (AGENTS.md, "Who it is for"). Resource,
+tracker and state-bin types are template
 parameters constrained by concepts; `if constexpr` compiles state tracking out when the
 tracker is `DefaultStateTracker`; LTO is on for every configuration. Where the code falls
 short today (virtual per-frame calls on `Resource`, measured at nothing separable from

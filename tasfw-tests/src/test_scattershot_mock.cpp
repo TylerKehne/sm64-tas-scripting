@@ -213,6 +213,25 @@ TEST_CASE("Two threads in deterministic mode reproduce their search too")
 	CHECK(first.loads == again.loads);
 }
 
+// The deterministic queue serves every thread's k-th call in thread order (ROADMAP 3.8);
+// with more threads than two and enough shots for them to finish at different times, the
+// retirements come in a timing-dependent order that must not reach the search.
+TEST_CASE("Four threads in deterministic mode reproduce their search, over several shots each")
+{
+	Run first = RunSearch(4, 3, true, 96);
+	Run again = RunSearch(4, 3, true, 96);
+	REQUIRE(first.counts.shots > 48);
+	REQUIRE(first.counts.scripts > 0);
+	CheckSameSearch(first, again);
+	CHECK(first.frameAdvances == again.frameAdvances);
+	CHECK(first.loads == again.loads);
+
+	Run three = RunSearch(3, 3, true, 96);
+	Run threeAgain = RunSearch(3, 3, true, 96);
+	CheckSameSearch(three, threeAgain);
+	CHECK(three.frameAdvances == threeAgain.frameAdvances);
+}
+
 TEST_CASE("A tight savestate limit evicts and replays, and changes nothing about the search")
 {
 	Run roomy = RunSearch(1, 3, true);

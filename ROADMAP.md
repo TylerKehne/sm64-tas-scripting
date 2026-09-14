@@ -459,7 +459,7 @@ Goal: the core's implicit invariants become explicit and enforced.
       solution carries a diff); Tier D deterministic -4.1% and throughput -2.9% in wall
       time against the same day's binary, every count identical, 0 regressions in the
       suite (docs/performance-changelog.md). Closed with it: nothing of this item remains.
-- [ ] **3.8 Hotspot investigations.** Work through the "known hotspots" list in
+- [x] **3.8 Hotspot investigations.** Work through the "known hotspots" list in
       docs/performance.md, measurement first, one PR each, with the Tier C/D delta table.
       Measured 2026-09-14 (docs/performance-changelog.md, "where the Tier D CPU time goes";
       the list in docs/performance.md now carries the numbers): `bitfs-turn`'s stage
@@ -494,18 +494,24 @@ Goal: the core's implicit invariants become explicit and enforced.
       maintainer's decision:
       the draw is the same (the `dr` stage's first pass identical in deterministic mode,
       3.17 M scripts), wall -14% on that stage (docs/performance-changelog.md).
-      Remaining: whether a thread-ordered ticket instead of N+1 barriers per script moves
-      the deterministic run's wall time (prototyped the same day, see the changelog).
-      Found on the way, open: **deterministic mode does not reproduce with piped-in input
-      solutions** (the `dr` stage's second pass differs between two runs of one binary);
-      `Initialize` hands the inputs out one per thread per iteration with one queue call
-      each, so a count that is not a multiple of the thread count leaves the threads with
-      different call counts and the barriers pairing across the boundary in timing order;
-      no committed stage runs deterministic with inputs, and hard rule 3 wants it fixed
-      before one does. Done the same day: the Tier D rows carry `overheadPct`, the share
-      of CPU time outside the resource, gated at 2 points like Tier C's (its same-binary
-      spread that day was under 0.3 points; docs/performance.md, "Tier D"). Block decoding
-      at 8.4% of the `dr` stage is 4.3's.
+      The last item, the barriers of `Deterministic` mode, closed the same day: every call
+      of `QueueThreadById` takes a ticket (call k of thread i is k·N+i) served in that
+      order by a shared turn, so the upserts keep the order the barriers gave them while a
+      thread waits only for its own turn; base-block selection and the end-of-shot
+      counts take tickets too, since they read shared state, and a thread retires from
+      the queue when its shots end. Designed under hard rule 10, prototyped on a branch,
+      accepted by the maintainer on its numbers with the implementation in the `.t.hpp`
+      and a four-thread reproduction added to the mock test: the deterministic Tier D
+      run 112 -> 92 s, reproducible to the last count on two runs, on a different path
+      than the barriers' (a thread selects its block at its ticket, not after a lockstep
+      round), so the deterministic counts changed once and `perf/baselines/tierd-ci.json`
+      was regenerated; the perf baselines' `TierD_Deterministic` row is re-saved with
+      the next `-SaveBaseline` (docs/performance-changelog.md). Also done the same day:
+      the Tier D rows carry `overheadPct`, the share of CPU time outside the resource,
+      gated at 2 points like Tier C's (its same-binary spread that day was under 0.3
+      points; docs/performance.md, "Tier D"). Block decoding at 8.4% of the `dr` stage
+      is 4.3's. Found on the way and left as 3.14: deterministic mode with piped-in
+      input solutions does not reproduce.
 - [x] **3.9 Pool savestate buffers.** Done 2026-09-07: `SlotManager` keeps erased and evicted
       states in a bounded pool (32) that the next `CreateSlot` reuses, so a save into a
       recycled state is one copy. `dllcheck`: full save 1561 -> 191 us against a 222 us load,
@@ -597,7 +603,7 @@ Goal: the core's implicit invariants become explicit and enforced.
       checksum byte, a movement that writes one random-stick frame, the cost model off so
       every count is exact) in well under a second, and pins what only the CI-sized Tier D
       pinned before: a seed reproduces its search, shots, scripts, blocks, solutions and the
-      resource's work alike, single-threaded and on two threads in deterministic mode, and
+      resource's work alike, single-threaded and on two, three and four threads in deterministic mode, and
       another seed does not; a limit of one slot evicts and replays without changing the
       search; and a bin that is not a function of state (it counts its own calls) fails the
       base-block validation of 4.5 and is counted, with the diagnostics' `error.m64`
@@ -606,6 +612,20 @@ Goal: the core's implicit invariants become explicit and enforced.
       total diff, undefined when the failing base block is the root with nothing applied;
       guarded. Identified 2026-09-14 when 3.5 went in with the pipeline-config test, the
       slot tests and the Tier D slot line as its only checks.
+- [ ] **3.14 Deterministic mode with piped-in input solutions.** Found 2026-09-14 (3.8): the
+      `dr` stage's second pass, which starts from the solutions its first pass piped in,
+      differs between two runs of one binary in deterministic mode (8,334 and 7,788
+      scripts on the same seed), while a first pass with no inputs reproduces to the last
+      count. `ScattershotThread::Initialize` hands the input solutions out one per thread
+      per iteration, each thread making one queue call per iteration, so an input count
+      that is not a multiple of the thread count leaves the threads with different call
+      counts and their later calls pairing across that boundary in timing order; the
+      ticket queue of 3.8 inherits it unchanged. No committed stage runs deterministic
+      with inputs (`tilt-x` has none), and hard rule 3 wants it fixed before one does.
+      *Done when:* the loop makes the same number of queue calls on every thread (the
+      inputs handed out in rounds every thread takes part in), the `dr` stage's second
+      pass reproduces in deterministic mode, and the mock test pins a piped-in run on
+      three threads with two inputs.
 
 ## Phase 4: the squish-cancel brute forcer
 
@@ -680,6 +700,17 @@ Not scheduled. Listed so decisions in earlier phases do not paint us into a corn
   game, decide this once: a game module derived from a declared source (a DWARF layout, a
   decomp revision), or an access contract that needs no copies (3.2, the `addr` replacement
   hard rule 9 waits for), and the copies go.
+- **Generators for new scripts and resources.** The end user (AGENTS.md, "Who it is for")
+  should be able to start a script or a resource from a working skeleton and tweak it,
+  rather than from the templates' declarations: a script class with its
+  `CustomScriptStatus` and the three lifecycle methods, a scattershot thread with the
+  overrides it must provide, a resource with `save`, `load`, `advance`, `setInputs`,
+  `addr`, `getStateSize` and `getCurrentFrame` over a state type, each placed in the
+  right directory and added to its CMake target so it builds at once. Cross-platform is a
+  requirement (the maintainer, 2026-09-14); the repository's tooling of that kind is
+  already Python (`scripts/unlock_libsm64.py`, `perf_compare.py`, the DLL scripts), so a
+  `scripts/new_script.py` and `new_resource.py` are the natural shape, with the skeletons
+  kept as templates the generator fills in, not as strings in the script.
 - **Per-scenario movement options.** `MovementOption` is one enum for every scenario's
   scripted moves plus the framework's three input groups (stick magnitude, direction,
   buttons, which `RandomInputs` reads), a compromise the maintainer would rather not keep

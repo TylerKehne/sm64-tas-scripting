@@ -76,8 +76,11 @@ Ordered by how much they dominate a typical scattershot run:
 5. **Script bookkeeping.** `GetInputsMetadata`, `GetLatestSave`, the per-level caches and
    tracked-state maps are `std::map` operations per frame, per hierarchy level (the per-level
    containers themselves are a `LevelStack` and cost nothing to enter).
-6. **Synchronization.** Named `omp critical` sections in scattershot; `Deterministic` mode adds
-   a barrier per script through `QueueThreadById`.
+6. **Synchronization.** Named `omp critical` sections in scattershot; `Deterministic` mode
+   serves every script's upsert, and each shot's block selection and stop check, in thread
+   order through a ticket queue (`QueueThreadById`), so a thread waits for its own turn
+   rather than for every thread at every round (the barriers it replaced were 58% of the
+   deterministic Tier D run's CPU; the queue's wait is about 50%).
 7. **`PyramidUpdate` construction.** `ImportSave<PyramidUpdateMem>` reads and transforms every
    pyramid surface out of the DLL each time it is called, which is once per frame in
    `RunDownhill` and once per crossing in the trackers.
@@ -269,10 +272,13 @@ A third config, `tierd-ci.json` (and `tierd-ci-linux.json` with the `.so` patter
 `dirty` saves), is the deterministic workload cut to 100 shots on 4 threads for CI, where
 only its exact counts gate (`perf/baselines/tierd-ci.json`; docs/libsm64.md, "Continuous
 integration"). `perf.ps1` does not run it. Its counts are the same in `fixed` and `dirty`
-mode, on every compiler and on both game builds: 2,981,801 frame advances, 104 saves,
-184,344 loads, 36,347 blocks, 93,774 scripts and 10 solutions from 100 shots
-(2026-09-13; the first Linux run read differently until scattershot's hash stopped going
-through `std::hash`, docs/compilers.md). The stage log of any Tier D run becomes a
+mode, on every compiler and on both game builds: 2,948,886 frame advances, 104 saves,
+174,384 loads, 34,241 blocks, 88,778 scripts and 12 solutions from 100 shots since the
+deterministic queue became a ticket on 2026-09-14 (`perf/baselines/tierd-ci.json`, regenerated
+from that run through `perf_compare.py tierd`; before it 2,981,801 frame advances, 104
+saves, 184,344 loads, 36,347 blocks, 93,774 scripts and 10 solutions, the counts the
+2026-09-13 Linux runs matched once scattershot's hash stopped going through `std::hash`,
+docs/compilers.md). The stage log of any Tier D run becomes a
 benchmark row through `perf_compare.py tierd`, which both `perf.ps1` and CI use.
 
 Both run at High priority. The deterministic run is pinned to one logical CPU per
@@ -286,14 +292,15 @@ exposed the savestate race of ROADMAP 3.12 in the scaling family (Tier B), fixed
 reference `bitfs-turn.exe` on each workload before the current one (`-Alternations`
 pairs, default 1, fastest of each); the time gate is current against reference, while the
 exact counts still gate against the committed baseline. Both rows carry `cycles`, the
-process's CPU cycles over every thread, next to the wall time (spin-waits at the
-deterministic run's barriers count), and `overheadPct`, the share of the process CPU time
+process's CPU cycles over every thread, next to the wall time (spin-waits in the
+deterministic run's queue count), and `overheadPct`, the share of the process CPU time
 outside the resource from the stage summary's `CPU time` line, gated like Tier C's at
 `--overhead-tolerance` points (default 2) against the anchor: the framework's share of a
 run, which a change to it moves and the machine's day does not (two runs of one binary
 read 24.0 and 24.3%, 19.1 and 19.2%, 68.9 and 68.8% on 2026-09-14). For the
-deterministic run the share includes the barrier spin-wait (about 58 points of it), so a
-change that alters the spread of a script's cost moves it too.
+deterministic run the share includes the queue's spin-wait (about 50 points of it; 58
+with the barriers it replaced), so a change that alters the spread of a script's cost
+moves it too.
 
 The deterministic run has the cost model off because automatic savestates depend on measured
 timings: with it on the search outcome is still identical (ROADMAP 4.5), but `frameAdvances`
@@ -379,13 +386,15 @@ otherwise; the resource's own advance, save and load take 76% of it and the rest
    and its wall time -2.9%, the deterministic run's wall time -4.1%, with every count
    identical (performance-changelog.md).
 6. Console output under the `print` critical section every shot: 0.
-7. Barriers per script in `Deterministic` mode: 58% of the deterministic run's CPU time is
+7. Barriers per script in `Deterministic` mode: 58% of the deterministic run's CPU time was
    the spin-wait in `_vcomp::PartialBarrierN::Block` (vcomp spins through `SwitchToThread`
    and `NtDelayExecution`, so it counts as CPU and as `process cycles`). `QueueThreadById`
-   is one barrier and then one per thread around every script's `UpsertBlock`, and every
-   thread waits for the slowest each time; the wait is the spread of a script's cost. The
-   gate run's cycles measure waiting; a ticket in thread order instead of N+1 barriers would
-   cut the crossings but not the wait, and has not been measured.
+   was one barrier and then one per thread around every script's `UpsertBlock`, and every
+   thread waited for the slowest each time. Replaced the same day by a ticket queue in
+   thread order, where a thread waits only for its own turn and computes its next script
+   meanwhile: the deterministic Tier D run 112 -> 92 s, its CPU outside the resource 63
+   -> 56%, the search reproducible on a different path (performance-changelog.md). The
+   gate run's cycles still measure waiting, now the queue's.
 8. The slot budget (`resources.savestateBudgetMB`, the process budget the threads' resources
    subtract their limits from) and the eviction pattern under memory pressure. Measured 2026-09-13 through the stage summary's slot
    line: the tilt-target stage never holds more than 27 savestates per thread (38 MB) and

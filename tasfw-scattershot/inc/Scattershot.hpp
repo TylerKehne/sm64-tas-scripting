@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <array>
+#include <atomic>
 #include <initializer_list>
 #include <map>
 #include <memory>
@@ -13,6 +14,8 @@
 #include <tasfw/Script.hpp>
 #include <tasfw/SharedLib.hpp>
 #include <omp.h>
+#include <immintrin.h>
+#include <thread>
 #include <vector>
 #include <filesystem>
 #include <set>
@@ -226,7 +229,14 @@ public:
 
 private:
     // Global State
-    std::unordered_set<int> ActiveThreads;
+    // The deterministic mode's queue (ROADMAP 3.8). Every thread numbers its calls of
+    // QueueThreadById; call k of thread i is ticket k * threads + i, and QueueTurn is the
+    // ticket being served, so the calls run in the same total order the barriers gave them
+    // (round by round, threads in order) but a thread only waits at its own upsert, not for
+    // every other thread to finish its script first. Only the holder of the turn writes it.
+    // A thread that has no more calls retires under its turn; holders skip retired threads.
+    std::atomic<uint64_t> QueueTurn { 0 };
+    std::vector<char> QueueRetired;
     std::vector<Block<TState>> Blocks;
     std::vector<int> BlockIndices; // Indexed by state bin hash
     std::map<int, ScattershotSolution<TOutputState>> Solutions;
@@ -458,6 +468,7 @@ protected:
 private:
     Scattershot<TState, TResource, TStateTracker, TOutputState>& scattershot;
     int Id;
+    uint64_t QueueCalls = 0; // tickets taken so far (deterministic mode)
     uint64_t RngHash = 0;
     uint64_t RngHashTemp = 0;
     TState BaseBlockStateBin;
@@ -509,29 +520,17 @@ private:
         return;
     }
 
+    // The deterministic mode's queue (ROADMAP 3.8): in deterministic mode func runs in this
+    // thread's turn (Scattershot::QueueTurn), the same total order per seed on every run
+    // whatever the threads' timing; otherwise it runs at once. A thread takes a ticket per
+    // call, waits for its turn, and passes the turn on, skipping retired threads; it retires
+    // when its shots are done.
     template <typename F>
-    static void QueueThreadById(bool deterministic, F func)
-    {
-        if (!deterministic)
-        {
-            func();
-            return;
-        }
-
-        #pragma omp barrier
-
-        int nThreads = omp_get_num_threads();
-        for (int i = 0; i < nThreads; i++)
-        {
-            if (omp_get_thread_num() == i)
-                func();
-
-            #pragma omp barrier
-            continue;
-        }
-
-        return;
-    }
+    void QueueThreadById(bool deterministic, F func);
+    uint64_t TakeTicket();
+    void WaitForTurn(uint64_t ticket);
+    void PassTurn(uint64_t next);
+    void RetireFromQueue();
 
     bool ValidateCourseAndArea();
     bool ChooseScriptAndApply();

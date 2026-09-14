@@ -32,11 +32,15 @@ bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::executio
     uint64_t totalShots = 0;
     for (int shot = 0; totalShots <= uint64_t(config.MaxShots); shot++)
     {
-        // Pick a block to "fire a shot" at
-        #pragma omp critical (blocks)
-        {
-            SelectBaseBlock(shot);
-        }
+        // Pick a block to "fire a shot" at. In deterministic mode this is a turn of the queue
+        // like an upsert, so the table it reads is the same on every run.
+        QueueThreadById(config.Deterministic, [&]()
+            {
+                #pragma omp critical (blocks)
+                {
+                    SelectBaseBlock(shot);
+                }
+            });
 
         auto status = ExecuteAdhoc([&]()
             {
@@ -108,34 +112,39 @@ bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::executio
 
         size_t nSolutions = 0;
         bool maxShotsReached = false;
-        #pragma omp critical (print)
-        {
-            //const char* x = "solutions";
-            #pragma omp critical (solutions)
+        // The shot count and the solution count decide when this thread stops: read in a
+        // turn of the queue for the same reason.
+        QueueThreadById(config.Deterministic, [&]()
             {
-                nSolutions = scattershot.Solutions.size();
-            }
+                #pragma omp critical (print)
+                {
+                    //const char* x = "solutions";
+                    #pragma omp critical (solutions)
+                    {
+                        nSolutions = scattershot.Solutions.size();
+                    }
 
-            //ThreadLock(x, [&]() { nSolutions = scattershot.Solutions.size(); });
-            //ThreadLock(CriticalRegions::Solutions, [&]() { nSolutions = scattershot.Solutions.size(); });
-            #pragma omp critical (totalshots)
-            {
-                totalShots = ++scattershot.TotalShots;
-                if (totalShots + omp_get_num_threads() - 1 >= uint64_t(config.MaxShots))
-                    maxShotsReached = true;
-            }
+                    //ThreadLock(x, [&]() { nSolutions = scattershot.Solutions.size(); });
+                    //ThreadLock(CriticalRegions::Solutions, [&]() { nSolutions = scattershot.Solutions.size(); });
+                    #pragma omp critical (totalshots)
+                    {
+                        totalShots = ++scattershot.TotalShots;
+                        if (totalShots + omp_get_num_threads() - 1 >= uint64_t(config.MaxShots))
+                            maxShotsReached = true;
+                    }
 
-            // Periodically print progress to console
-            if (totalShots % config.ShotsPerUpdate == 0)
-                scattershot.PrintStatus();
-        }
-
-        //printf("%d %d %d %d\n", status.nLoads, status.nSaves, status.nFrameAdvances, status.executionDuration);
+                    // Periodically print progress to console
+                    if (totalShots % config.ShotsPerUpdate == 0)
+                        scattershot.PrintStatus();
+                }
+            });
 
         if (maxShotsReached || (config.MaxSolutions > 0 && nSolutions >= size_t(config.MaxSolutions)))
-            return true;
+            break;
     }
 
+    if (config.Deterministic)
+        RetireFromQueue();
     return true;
 }
 
@@ -658,6 +667,76 @@ uint64_t ScattershotThread<TState, TResource, TStateTracker, TOutputState>::GetH
         hashValue ^= HashByte(data[i]) + 0x9e3779b97f4a7c15ull + (hashValue << 6) + (hashValue >> 2);
 
     return hashValue;
+}
+
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+template <typename F>
+void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::QueueThreadById(bool deterministic, F func)
+{
+    if (!deterministic)
+    {
+        func();
+        return;
+    }
+
+    uint64_t ticket = TakeTicket();
+    WaitForTurn(ticket);
+    func();
+    PassTurn(ticket + 1);
+}
+
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+uint64_t ScattershotThread<TState, TResource, TStateTracker, TOutputState>::TakeTicket()
+{
+    // Call k of thread i is ticket k * threads + i: round by round, threads in order, the
+    // order the barriers gave the calls.
+    return QueueCalls++ * uint64_t(omp_get_num_threads()) + uint64_t(Id);
+}
+
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::WaitForTurn(uint64_t ticket)
+{
+    // A spin: the handoff is on the critical path of every script, so a wake through the
+    // kernel would cost more than the wait. The barriers spun too (through SwitchToThread).
+    uint64_t spins = 0;
+    while (scattershot.QueueTurn.load(std::memory_order_acquire) != ticket)
+    {
+        _mm_pause();
+        if ((++spins & 0x3FF) == 0)
+            std::this_thread::yield();
+    }
+}
+
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::PassTurn(uint64_t next)
+{
+    // Only the holder of the turn writes it. Retired threads' tickets are skipped; the loop
+    // is bounded so that once every thread has retired the turn just moves on.
+    uint64_t threads = uint64_t(omp_get_num_threads());
+    for (uint64_t skipped = 0; skipped < threads && scattershot.QueueRetired[size_t(next % threads)]; skipped++)
+        next++;
+    scattershot.QueueTurn.store(next, std::memory_order_release);
+}
+
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::RetireFromQueue()
+{
+    // Taken under this thread's own turn, so no holder is passing to it at that moment and
+    // every later pass skips it.
+    uint64_t ticket = TakeTicket();
+    WaitForTurn(ticket);
+    scattershot.QueueRetired[size_t(Id)] = 1;
+    PassTurn(ticket + 1);
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,

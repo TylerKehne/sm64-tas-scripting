@@ -417,8 +417,10 @@ locally"); the repository is mounted at `/src`, so `res/sm64_jp_0.so` is
   Windows DLL, save/load determinism, drift test max |diff| = 0 over 240 frames.
 - **The search is the same search.** The `.so` is jgcodes2020's build of a newer decomp
   than the DLLs (2026 against 2022), and the CI-sized Tier D search (`perf/tierd-ci-linux.json`,
-  100 shots, seed 3) reaches the DLL's exact counts on it, 2,981,801 frame advances and
-  10 solutions, with GCC 15 and Clang 21 (2026-09-13). It did not at first: the search
+  100 shots, seed 3) reaches the DLL's exact counts on it, with GCC 15 and Clang 21
+  (2026-09-13: 2,981,801 frame advances and 10 solutions; since the deterministic queue
+  became a ticket on 2026-09-14 the counts are 2,948,886 and 12, `perf/baselines/tierd-ci.json`,
+  which the Linux jobs gate on the same way). It did not at first: the search
   read 2,867,262 frame advances and 11 solutions on Linux, identically in `dirty` and
   `full` mode and on both compilers, and the cause was the framework, not the game:
   scattershot's hashes went through `std::hash<std::byte>`, which libstdc++ and MSVC's

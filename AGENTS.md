@@ -17,6 +17,20 @@ The concrete goal driving the code today is a brute forcer for the squish-cancel
 the BitFS tilting pyramid. The framework is intended to become game- and console-agnostic
 later.
 
+## Who it is for
+
+The end user is a person, or an agent, who writes scripts and resources and runs them:
+reasonably comfortable with coding, not necessarily a C++ expert. The domain is
+complex on its own, and the framework exists to hide as much of that complexity as it can
+in its internals, so that creating a script or a resource and running it is smooth and
+intuitive. This drives design decisions (the maintainer, 2026-09-14): between a base class
+that is harder to write and a script that is harder to write, take the harder base class.
+A design that puts a template argument, a wrapper, a new call or a new concept in front of
+the script author to buy something internal is the wrong design, even when it is the
+easier one to implement; hard rules 9 and 10 below are this principle applied to the
+resource and to the framework's surface, and the `MovementOption` discussion in
+ROADMAP.md (Phase 5) is a worked example.
+
 ## Performance is a correctness requirement
 
 This project is in C++ because it has to push millions of game frames through a search.
