@@ -114,8 +114,9 @@ script and the drift test threw "procedure not found" on anything newer than the
 Scripts keep using the pinned names. `LibSm64::addr` tries the name it is given and only
 when that lookup fails consults `LibSm64SymbolAliases` (`LibSm64.hpp`) for the other
 spelling, in either direction. The pinned DLL therefore pays nothing; a newer build pays one
-extra failed lookup per `addr()` call, which is never per frame (`Resource::addr`). Add a
-pair there when the decomp renames something else the framework uses.
+extra failed lookup the first time a name is asked for, since `LibSm64::addr` resolves a
+name once and answers from its own table after (`_symbols`; docs/performance.md, ROADMAP
+3.7). Add a pair there when the decomp renames something else the framework uses.
 `sm64_update_and_render` exists in the pinned and the v0.8.5 builds but not in wafel's
 2022-08-07 one; nothing
 here calls it.

@@ -4,6 +4,51 @@ Every hot-path change records its delta table here, newest first; the policy, th
 how to run it are in [performance.md](performance.md). The first measurements (2026-09-07),
 which everything since is compared against, are at the bottom.
 
+## 2026-09-14: `LibSm64::addr` answers from its own table (ROADMAP 3.7)
+
+The scripts ask for `gMarioState`, `gCamera`, `gObjectPool` and the pyramid behavior at the
+top of every `validation()`, `execution()` and helper, and `addr()` went to the OS loader
+each time. `GetProcAddress` is 61 ns alone, but `LdrGetProcedureAddressForCaller` takes the
+loader lock, and the threads of a search queue on it: the 3.8 profile read 1.5% of the
+throughput run's CPU in the loader, its lock and `RtlBackoff`. `LibSm64::addr` now resolves
+a name once (the loader, then the alias table, as before) and keeps it in a table looked up
+by `string_view` (a name is copied when first seen, never after; a resource belongs to one
+thread, so no lock). `Resource::addr`'s contract note follows: a script may ask per
+execution; one that needs a symbol every frame still caches the pointer. Two Tier B rows
+were added to measure it, `LibSm64Fixed_Addr` (one thread, pinned) and `LibSm64Scaling_Addr`
+(1 to 16 threads, one DLL copy each, unpinned), cycling through the four names; MSVC
+Release, five repetitions, means:
+
+| `addr()` per call | Through the loader | From the table |
+|---|---|---|
+| 1 thread | 61.1 ns (scaling row 69.1 ns) | 16.6 ns (16.6 ns) |
+| 2 threads | 167 ns | 16.2 ns |
+| 4 threads | 362 ns | 20.7 ns |
+| 8 threads | 995 ns | 24.1 ns |
+| 16 threads | 5,628 ns | 45.0 ns |
+
+The throughput Tier D workload (16 threads, cost model on; not deterministic, so its rates
+and the `CPU time` line compare, not its counts), MSVC Release, the same hour, High
+performance plan, unpinned: 14,485 scripts/s and 493 k frame advances/s with 24.0% of the
+CPU outside the resource before; 14,507 scripts/s and 507 k frame advances/s with 22.7%
+outside after. The CPU outside the resource per script went from 0.263 to 0.248 ms, the
+1.5% the profile had attributed to the loader; the wall time of this workload moves more
+than that between runs of the same binary. The deterministic workload's counts cannot
+change (no frame advance, save or load is involved).
+
+The suite (`perf.ps1`, MSVC Release, reference 5238d9b interleaved, machine factor 1.00):
+0 regressions on 74 rows, allocations and counts identical, efficiency within 5 points.
+Rows that moved: `Framework_DownhillAngle_PyramidUpdate` 2.7 -> 2.4 ms (-13%, the only
+row past the gate's 10%: the `PyramidUpdateMem` import asked for its symbols on every
+call), `Framework_TrackerSweep` 7.8 -> 7.3 ms (-5.8%: `StateTracker_BitfsDr` asks per
+tracked frame), `TierD_Deterministic` 132.3 -> 128.4 s (-2.9%; counts identical),
+`TierD_Throughput` 68.0 -> 67.8 s (-0.3%). Everything else within noise, the largest
+`ModifyAdhoc_OneFrame` +5.0% (288 -> 302 ns, a row that touches nothing changed; the
+2026-09-08 note on code layout). The scaling `Addr` row was then cut to 1 and 16 threads:
+at 8 unpinned threads its efficiency read 69% in one run and 47% in the next for the same
+binary (80% both times at 4), the hybrid scheduler's doing on a 16 ns lookup, which the
+efficiency gate would have called a regression once the row was baselined.
+
 ## 2026-09-14: where the Tier D CPU time goes (ROADMAP 3.8)
 
 No hot path changed. `bitfs-turn`'s stage summary gained the `CPU time` line (the resource's

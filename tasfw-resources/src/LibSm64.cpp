@@ -7,6 +7,7 @@
 #include <mutex>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <sm64/Camera.hpp>
 #include <sm64/ObjectFields.hpp>
 #include <sm64/Types.hpp>
@@ -584,6 +585,16 @@ void LibSm64::setInputs(const Inputs& inputs)
 }
 
 void* LibSm64::addr(const char* symbol) const
+{
+	std::string_view name(symbol);
+	if (auto found = _symbols.find(name); found != _symbols.end())
+		return found->second;
+	void* p = resolve(symbol);
+	_symbols.emplace(name, p);
+	return p;
+}
+
+void* LibSm64::resolve(const char* symbol) const
 {
 	if (void* p = dll.tryGet(symbol))
 		return p;

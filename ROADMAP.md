@@ -437,10 +437,19 @@ Goal: the core's implicit invariants become explicit and enforced.
       scripts and `GetTrackedState` returning a reference; and a `SlotHandle` move that
       copied the slot id, so every save a child handed to its parent on `Modify` was erased
       by the child's bank and replayed later (now pinned by a test). Allocation counts and
-      timings are in docs/performance-changelog.md. Remaining: scripts resolving symbols per execution; the
-      `std::map` head node MSVC allocates for each container a script actually touches, and
-      one map node per cached frame (a flat or pooled container, measured); virtual dispatch
-      on `Resource` per frame if measurement says it matters.
+      timings are in docs/performance-changelog.md. Done 2026-09-14, from the 3.8 profile:
+      scripts resolving symbols per execution (`LibSm64::addr` keeps a table of the names
+      it resolved; 17 ns alone and 45 ns at 16 threads against 61 ns and 5.6 us through
+      the loader lock, the new Tier B `Addr` rows), and virtual dispatch on `Resource` per
+      frame, measured and closed: `LibSm64::advance` and `setInputs` together are 0.02%
+      of the throughput run's samples, so the virtual call is not separable from noise.
+      Remaining: the `std::map` head node MSVC allocates for each container a script
+      actually touches, and one map node per cached frame (a flat or pooled container,
+      measured): every one of the 11 allocations of an empty child script and most of the
+      14 of a tracked frame are sentinel nodes of `M64Diff`'s and the per-level caches'
+      maps, constructed and moved per status object and per level; about 9% of the
+      throughput run's CPU with the map code (3.8). Its design is the flat-container
+      proposal hard rule 10 asks for, pending the maintainer.
 - [ ] **3.8 Hotspot investigations.** Work through the "known hotspots" list in
       docs/performance.md, measurement first, one PR each, with the Tier C/D delta table.
       Measured 2026-09-14 (docs/performance-changelog.md, "where the Tier D CPU time goes";

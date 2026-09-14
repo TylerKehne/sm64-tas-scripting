@@ -33,10 +33,13 @@ Places where the code pays (or paid) for an abstraction it should not, gated by 
   `GetProcAddress`.~~ Fixed: `Resource::setInputs()` and cached pointers (performance-changelog.md).
 - ~~`Script` bookkeeping was `unordered_map<int64_t, std::map<...>>` per ad-hoc level with
   `operator[]` default-inserts on the hot path.~~ Fixed: `LevelStack` (performance-changelog.md).
-- Scripts re-resolve `gMarioState`, `gCamera`, behaviors and the object pool by string at
+- ~~Scripts re-resolve `gMarioState`, `gCamera`, behaviors and the object pool by string at
   the top of every `validation()` / `execution()` (62 ns each on this DLL; 1.5% of the
-  throughput Tier D run's CPU on 16 threads, with the loader lock contended,
-  performance-changelog.md 2026-09-14).
+  throughput Tier D run's CPU on 16 threads, with the loader lock contended).~~ Fixed:
+  `LibSm64::addr` resolves a name once and answers from its own table after, 17 ns alone
+  and 45 ns at 16 threads against 61 ns and 5.6 us through the loader (the `Addr` rows of
+  Tier B; performance-changelog.md 2026-09-14). The scripts still ask per execution, which
+  is now what the contract allows (`Resource::addr`).
 - ~~`Script::GetTrackedState` performs a `dynamic_cast` on the root script per call.~~ Fixed:
   a per-type tag compare (ROADMAP 3.7). Tracking still goes through virtual hooks on
   `_rootScript` on every frame advance.
@@ -191,8 +194,12 @@ families play the movie to `TASFW_FRAME` (default 3330) once, then measure:
   baseline (about 500,000 at the anchor) on the pinned DLL. `rssPerSlot` is what the
   process grew by per slot, slot-map nodes included: within 0.2% of `stateBytes` at both
   counts, so a live slot costs its state and nothing else.
+- `Addr` (`fixed` family only): one `addr()` lookup, cycling through the four names the
+  BitFS scripts ask for at the top of every `validation()` and `execution()`.
 
-`^BM_LibSm64Scaling` runs `FrameAdvance` and `SaveErase` on 1, 2, 4, 8 and 16 threads,
+`^BM_LibSm64Scaling` runs `FrameAdvance` and `SaveErase` on 1, 2, 4, 8 and 16 threads
+(and `Addr` on 1 and 16 only: a 16 ns lookup's per-thread rate at 4 or 8 unpinned threads
+is the scheduler's, and the efficiency gate would read its swings as regressions),
 each thread on its own DLL copy with `dirty` saves, as the search runs (thread i loads
 the copy whose trailing index is i + 1, `res\sm64_jp_1.dll` onward; the family skips
 without those copies). `perf.ps1` does not pin this family: 16 threads on the 8
@@ -375,7 +382,10 @@ Found by the profile rather than suspected:
     in the allocator alone (11.1% is heap in total), and most of the 8.9% in `std::vector`
     code. A stage-script change, not a framework one.
 11. **`resource->addr()` per call**: 1.5%, and `LdrGetProcedureAddressForCaller` takes the
-    loader lock, so 16 threads contend on it (`RtlEnterCriticalSection`, `RtlBackoff`).
+    loader lock, so 16 threads contend on it (`RtlEnterCriticalSection`, `RtlBackoff`):
+    5.6 us per call at 16 threads against 61 ns alone. Fixed the same day: `LibSm64::addr`
+    keeps a table of the names it resolved, 17 ns alone and 45 ns at 16 threads (ROADMAP
+    3.7, performance-changelog.md).
 12. **Loads are memory bandwidth**: the `fixed` load is one 1.5 MB `memcpy`, 41 us alone,
     47 us with 8 threads on the performance cores, 74 us with 16 threads on every core; two
     per script, 13.3% of the CPU.

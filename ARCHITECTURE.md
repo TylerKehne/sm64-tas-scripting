@@ -338,7 +338,8 @@ Everything below assumes the pinned DLL in `res/` (see `docs/libsm64.md`):
   Each is a copy of an n64decomp/sm64 file at a pinned commit (docs/decomp.md), and the
   seven structs the code reads through are checked against the pinned DLL's DWARF by
   `test_sm64_layout.cpp` on every run of the tests (docs/libsm64.md, "Struct layouts").
-- Symbols resolved by name through `GetProcAddress` (`dlsym` on Linux): `gMarioState`,
+- Symbols resolved by name through `GetProcAddress` (`dlsym` on Linux), once per name and
+  resource, `LibSm64::addr` answering from its own table after: `gMarioState`,
   `gMarioStates`, `gMarioObject`, `gObjectPool`, `gCamera`, `gControllerPads`,
   `gGlobalTimer`, `gCurrCourseNum`, `gCurrAreaIndex`, `bhvLllTiltingInvertedPyramid`,
   `bhvBitfsTiltingInvertedPyramid`, `sm64_init`, `sm64_update`. The two behavior names are

@@ -329,6 +329,30 @@ namespace
 		}
 		state.SetItemsProcessed(state.iterations());
 	}
+
+	// Symbol lookup, the names the BitFS scripts ask for at the top of every validation()
+	// and execution() (ROADMAP 3.7). Through the OS loader this is GetProcAddress under the
+	// loader lock, which the threads of a search contend on (docs/performance-changelog.md,
+	// 2026-09-14); the scaling row shows the contention.
+	constexpr const char* ScriptSymbols[] = { "gMarioState", "gCamera", "gObjectPool", "bhvBitfsTiltingInvertedPyramid" };
+
+	template <class TGame>
+	void AddrLoop(benchmark::State& state, TGame* game)
+	{
+		if (!game)
+			return;
+		LibSm64& resource = *game->resource;
+		size_t i = 0;
+		for (auto _ : state)
+		{
+			benchmark::DoNotOptimize(resource.addr(ScriptSymbols[i]));
+			i = (i + 1) % std::size(ScriptSymbols);
+		}
+		state.SetItemsProcessed(state.iterations());
+	}
+
+	void Addr(benchmark::State& state, LibSm64SaveMode mode) { AddrLoop(state, LoadGame(mode, state)); }
+	void ScalingAddr(benchmark::State& state) { AddrLoop(state, LoadThreadGame(state)); }
 }
 
 static void BM_LibSm64Full_SaveErase(benchmark::State& state) { SaveErase(state, LibSm64SaveMode::Full); }
@@ -351,6 +375,8 @@ BENCHMARK(BM_LibSm64Fixed_SaveFresh)->Unit(benchmark::kMicrosecond)->Iterations(
 BENCHMARK(BM_LibSm64Fixed_Load)->Unit(benchmark::kMicrosecond);
 static void BM_LibSm64Fixed_ResidentPerSlot(benchmark::State& state) { ResidentPerSlot(state, LibSm64SaveMode::Fixed); }
 BENCHMARK(BM_LibSm64Fixed_ResidentPerSlot)->Unit(benchmark::kMillisecond)->Arg(100)->Arg(1000)->Iterations(1);
+static void BM_LibSm64Fixed_Addr(benchmark::State& state) { Addr(state, LibSm64SaveMode::Fixed); }
+BENCHMARK(BM_LibSm64Fixed_Addr)->Unit(benchmark::kNanosecond)->Iterations(200000);
 BENCHMARK(BM_LibSm64Fixed_FrameAdvance)->Unit(benchmark::kMicrosecond)->Iterations(3000);
 
 static void BM_LibSm64Dirty_SaveErase(benchmark::State& state) { SaveErase(state, LibSm64SaveMode::Dirty); }
@@ -366,5 +392,11 @@ BENCHMARK(BM_LibSm64Dirty_FrameAdvance)->Unit(benchmark::kMicrosecond)->Iteratio
 
 static void BM_LibSm64Scaling_FrameAdvance(benchmark::State& state) { ScalingFrameAdvance(state); }
 static void BM_LibSm64Scaling_SaveErase(benchmark::State& state) { ScalingSaveErase(state); }
+static void BM_LibSm64Scaling_Addr(benchmark::State& state) { ScalingAddr(state); }
 BENCHMARK(BM_LibSm64Scaling_SaveErase)->Unit(benchmark::kMicrosecond)->Iterations(2000)->UseRealTime()->ThreadRange(1, 16);
+// 1 and 16 threads only: the row exists to show contention (or its absence) at the search's
+// thread count, and a 16 ns lookup's per-thread rate at 4 or 8 unpinned threads is the
+// hybrid scheduler's (it moved 20 points between two runs of one binary), which the
+// efficiency gate would read as a regression.
+BENCHMARK(BM_LibSm64Scaling_Addr)->Unit(benchmark::kNanosecond)->Iterations(100000)->UseRealTime()->Threads(1)->Threads(16);
 BENCHMARK(BM_LibSm64Scaling_FrameAdvance)->Unit(benchmark::kMicrosecond)->Iterations(3000)->UseRealTime()->ThreadRange(1, 16);

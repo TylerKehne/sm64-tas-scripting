@@ -1,8 +1,11 @@
 #pragma once
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <string>
+#include <string_view>
+#include <unordered_map>
 #include <vector>
 #include "tasfw/Resource.hpp"
 #include <tasfw/Inputs.hpp>
@@ -47,8 +50,8 @@ constexpr int pagesize = 4096;
 // Exported names the decomp has changed since the pinned build (docs/libsm64.md).
 // LibSm64::addr tries the name it was given first, so the pinned DLL never pays for this
 // table; only when that lookup fails does it try the other spelling. A newer build therefore
-// costs one extra failed lookup per addr() call, which callers must not make per frame
-// anyway (Resource::addr).
+// costs one extra failed lookup the first time a name is asked for; after that addr()
+// answers from its own table (_symbols).
 struct LibSm64SymbolAlias
 {
 	const char* pinned;  // exported by the pinned build (wafel v0.8.1's libsm64)
@@ -269,6 +272,22 @@ private:
 	UpdateFn _sm64Update = nullptr;
 	uint8_t* _controllerPads = nullptr; // gControllerPads: u16 button, s8 stick_x, s8 stick_y
 	const uint32_t* _globalTimer = nullptr;
+
+	// Every name addr() was asked for, resolved once (resolve(): the loader, then the alias
+	// table). The scripts ask for gMarioState, gCamera and the pyramid behavior at the top
+	// of every validation() and execution(), and GetProcAddress takes the loader lock, so
+	// the threads of a search queued on it: 61 ns alone, 5.6 us per call at 16 threads,
+	// 1.5% of the throughput Tier D run before this table (ROADMAP 3.7,
+	// docs/performance-changelog.md 2026-09-14). A resource belongs to one thread, so the
+	// table has no lock; a name is copied once, when it is first seen, and looked up by
+	// string_view after.
+	struct SymbolNameHash
+	{
+		using is_transparent = void;
+		size_t operator()(std::string_view name) const noexcept { return std::hash<std::string_view>{}(name); }
+	};
+	mutable std::unordered_map<std::string, void*, SymbolNameHash, std::equal_to<>> _symbols;
+	void* resolve(const char* symbol) const;
 
 	// The game's bytes of .data (0) and .bss (1) as the save modes copy them (LibSm64GameBytes;
 	// the whole section when the build is unknown), and the fixed slices cut to them.
