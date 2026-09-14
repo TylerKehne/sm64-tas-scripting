@@ -362,9 +362,12 @@ otherwise; the resource's own advance, save and load take 76% of it and the rest
    the `dr-oscillations` stage it is 0.01% of the CPU, the whole DR tracker 2.1%. Not a
    hotspot. What that stage pays for instead is per script, since its scripts are one frame
    each: `SelectMovementOptions` 4.1% (the `std::map<MovementOption, double>` of weights
-   `AddRandomMovementOption` takes by value, built from a braced list per call, and the
-   `movementOptions` set reassigned per script), loads 16.5% (one per ten scripts, the
-   `REWIND` option and the decode replays), and block decoding 8.4% (item 1).
+   `AddRandomMovementOption` took by value, built from a braced list per call, and the
+   `movementOptions` set reassigned per script; both fixed the same day, the weights an
+   `initializer_list` walked in key order and the options a bit mask, the stage's first
+   pass identical and its wall time -14%, performance-changelog.md), loads 16.5% (one per
+   ten scripts, the `REWIND` option and the decode replays), and block decoding 8.4%
+   (item 1).
 4. `UpsertBlock` hashing and probing while holding the `blocks` critical section: 0.04%.
 5. `std::map` bookkeeping in `Script`: 5.0% in map code, 3.3% inclusive in
    `GetInputsMetadata` (the root's lookup in the movie's map per replayed and tracked

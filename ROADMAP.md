@@ -486,13 +486,23 @@ Goal: the core's implicit invariants become explicit and enforced.
       rarely for what the search advances), so the list's items 2 and 3 close as
       measured; what the stage pays for is per script, its scripts being one frame each
       (docs/performance-changelog.md, "where the `dr-oscillations` stage's CPU time
-      goes"). Remaining, one PR each: the movement-option weights, a
-      `std::map<MovementOption, double>` `AddRandomMovementOption` takes by value and
-      every DR script builds from a braced list (4.1% of that stage with the
-      `movementOptions` set reassigned per script), whose parameter shape is a
-      `ScattershotThread` change under hard rule 10, to be designed; and whether a
-      thread-ordered ticket instead of N+1 barriers per script moves the deterministic
-      run's wall time. Done the same day: the Tier D rows carry `overheadPct`, the share
+      goes"). The movement-option weights, a `std::map<MovementOption, double>`
+      `AddRandomMovementOption` took by value and every DR script built from a braced
+      list (4.1% of that stage with the `movementOptions` set reassigned per script), are
+      `initializer_list`s walked in key order and the options a bit vector that grows with
+      the enum since the same day, designed under hard rule 10 and prototyped for the
+      maintainer's decision:
+      the draw is the same (the `dr` stage's first pass identical in deterministic mode,
+      3.17 M scripts), wall -14% on that stage (docs/performance-changelog.md).
+      Remaining: whether a thread-ordered ticket instead of N+1 barriers per script moves
+      the deterministic run's wall time (prototyped the same day, see the changelog).
+      Found on the way, open: **deterministic mode does not reproduce with piped-in input
+      solutions** (the `dr` stage's second pass differs between two runs of one binary);
+      `Initialize` hands the inputs out one per thread per iteration with one queue call
+      each, so a count that is not a multiple of the thread count leaves the threads with
+      different call counts and the barriers pairing across the boundary in timing order;
+      no committed stage runs deterministic with inputs, and hard rule 3 wants it fixed
+      before one does. Done the same day: the Tier D rows carry `overheadPct`, the share
       of CPU time outside the resource, gated at 2 points like Tier C's (its same-binary
       spread that day was under 0.3 points; docs/performance.md, "Tier D"). Block decoding
       at 8.4% of the `dr` stage is 4.3's.
@@ -670,6 +680,24 @@ Not scheduled. Listed so decisions in earlier phases do not paint us into a corn
   game, decide this once: a game module derived from a declared source (a DWARF layout, a
   decomp revision), or an access contract that needs no copies (3.2, the `addr` replacement
   hard rule 9 waits for), and the copies go.
+- **Per-scenario movement options.** `MovementOption` is one enum for every scenario's
+  scripted moves plus the framework's three input groups (stick magnitude, direction,
+  buttons, which `RandomInputs` reads), a compromise the maintainer would rather not keep
+  as scenarios add moves (2026-09-14). The script author's side is what must stay plain:
+  `AddRandomMovementOption({{X, 4}, {Y, 1}})`. A member function template deducing the
+  enum from that call fails, since the inner braces are a non-deduced context for
+  `std::pair<T, double>`, which is the snag an earlier attempt hit; a fifth thread
+  template parameter for the enum threads it through every type that names the thread,
+  and a deducible entry type costs a word per entry, neither of which a script author
+  should have to know. The shape that asks nothing of the author: the three calls take
+  an `OptionId`, a value plus a tag for the enum it came from, with a converting
+  constructor from any enum, so `{Move::X, 5}` converts to `std::pair<OptionId, double>`
+  by implicit conversion and nothing is deduced; a scenario declares `enum class Move`
+  nested in its own class and writes today's syntax, the framework's input groups stay
+  in `MovementOption` through the same calls, and the selected set is a handful of ids
+  compared by tag and value, so enums never collide. The list walk of 3.8 is already
+  keyed on the option's value. Rule 10 design when wanted, a follow-up of that change's
+  size.
 - **Hacks as a kind of input.** Today a direct write into game memory (`//! UNSAFE`) cannot
   be replayed from a savestate, which is why hard rule 1 forbids it. The intent is to make
   hacks a special input type the framework applies at a frame like any other input, so they

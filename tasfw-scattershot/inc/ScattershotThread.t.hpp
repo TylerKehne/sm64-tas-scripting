@@ -444,7 +444,7 @@ template <class TState, derived_from_specialization_of<Resource> TResource,
     class TOutputState>
 bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::ChooseScriptAndApply()
 {
-    movementOptions = std::unordered_set<MovementOption>();
+    std::fill(movementOptions.begin(), movementOptions.end(), false);
 
     ExecuteAdhoc([&]()
         {
@@ -663,18 +663,65 @@ uint64_t ScattershotThread<TState, TResource, TStateTracker, TOutputState>::GetH
 template <class TState, derived_from_specialization_of<Resource> TResource,
     std::derived_from<Script<TResource>> TStateTracker,
     class TOutputState>
-void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::AddRandomMovementOption(std::map<MovementOption, double> weightedOptions)
+void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::SelectOption(MovementOption option)
 {
-    if (weightedOptions.empty())
+    std::size_t index = std::size_t(option);
+    if (index >= movementOptions.size())
+        movementOptions.resize(index + 1, false);
+    movementOptions[index] = true;
+}
+
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::OptionSelected(MovementOption option) const
+{
+    std::size_t index = std::size_t(option);
+    return index < movementOptions.size() && movementOptions[index];
+}
+
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+template <class TKey>
+std::size_t ScattershotThread<TState, TResource, TStateTracker, TOutputState>::SortedByKey(
+    std::initializer_list<std::pair<TKey, double>> list, std::array<std::pair<TKey, double>, MaxWeightedEntries>& out)
+{
+    std::size_t count = 0;
+    for (const auto& entry : list)
+    {
+        bool duplicate = false;
+        for (std::size_t j = 0; j < count && !duplicate; j++)
+            duplicate = out[j].first == entry.first;
+        if (duplicate)
+            continue;
+        if (count == MaxWeightedEntries)
+            throw std::length_error("more weighted entries than a scattershot script can hold");
+        std::size_t i = count++;
+        for (; i > 0 && entry.first < out[i - 1].first; i--)
+            out[i] = out[i - 1];
+        out[i] = entry;
+    }
+    return count;
+}
+
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::AddRandomMovementOption(std::initializer_list<std::pair<MovementOption, double>> weightedOptions)
+{
+    std::array<std::pair<MovementOption, double>, MaxWeightedEntries> options;
+    std::size_t count = SortedByKey(weightedOptions, options);
+    if (count == 0)
         return;
 
     double maxRng = 65536.0;
 
     double totalWeight = 0;
-    for (const auto& pair : weightedOptions)
+    for (std::size_t i = 0; i < count; i++)
     {
-        if (pair.second > 0)
-            totalWeight += pair.second;
+        if (options[i].second > 0)
+            totalWeight += options[i].second;
     }
 
     if (totalWeight == 0)
@@ -682,22 +729,22 @@ void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::AddRando
 
     double rng = double(GetTempRng() % (int)maxRng);
     double rngRangeMin = 0;
-    for (const auto& pair : weightedOptions)
+    for (std::size_t i = 0; i < count; i++)
     {
-        if (pair.second <= 0)
+        if (options[i].second <= 0)
             continue;
 
-        double rngRangeMax = rngRangeMin + pair.second * maxRng / totalWeight;
+        double rngRangeMax = rngRangeMin + options[i].second * maxRng / totalWeight;
         if (rng >= rngRangeMin && rng < rngRangeMax)
         {
-            movementOptions.insert(pair.first);
+            SelectOption(options[i].first);
             return;
         }
 
         rngRangeMin = rngRangeMax;
     }
 
-    movementOptions.insert(weightedOptions.rbegin()->first);
+    SelectOption(options[count - 1].first);
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
@@ -709,7 +756,7 @@ void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::AddMovem
         return;
 
     if (probability >= 1.0 || GetTempRng() % 65536 <= uint64_t(int(probability / 65535.0)))
-        movementOptions.insert(movementOption);
+        SelectOption(movementOption);
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
@@ -717,14 +764,16 @@ template <class TState, derived_from_specialization_of<Resource> TResource,
     class TOutputState>
 bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::CheckMovementOptions(MovementOption movementOption)
 {
-    return movementOptions.contains(movementOption);
+    return OptionSelected(movementOption);
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
     std::derived_from<Script<TResource>> TStateTracker,
     class TOutputState>
-Inputs ScattershotThread<TState, TResource, TStateTracker, TOutputState>::RandomInputs(std::map<Buttons, double> buttonProbabilities)
+Inputs ScattershotThread<TState, TResource, TStateTracker, TOutputState>::RandomInputs(std::initializer_list<std::pair<Buttons, double>> buttonProbabilities)
 {
+    std::array<std::pair<Buttons, double>, MaxWeightedEntries> probabilities;
+    std::size_t count = SortedByKey(buttonProbabilities, probabilities);
     Inputs inputs;
 
     ExecuteAdhoc([&]()
@@ -762,8 +811,9 @@ Inputs ScattershotThread<TState, TResource, TStateTracker, TOutputState>::Random
                 buttons = 0;
             else if (CheckMovementOptions(MovementOption::RANDOM_BUTTONS))
             {
-                for (const auto& pair : buttonProbabilities)
+                for (std::size_t i = 0; i < count; i++)
                 {
+                    const auto& pair = probabilities[i];
                     if (pair.second <= 0)
                         continue;
 

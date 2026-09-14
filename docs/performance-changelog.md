@@ -4,6 +4,43 @@ Every hot-path change records its delta table here, newest first; the policy, th
 how to run it are in [performance.md](performance.md). The first measurements (2026-09-07),
 which everything since is compared against, are at the bottom.
 
+## 2026-09-14: the movement-option weights as lists, the options as a bit mask (ROADMAP 3.8)
+
+`AddRandomMovementOption` took a `std::map<MovementOption, double>` by value and every one
+of its 33 call sites passed a braced list of three or four pairs, so every call built a map
+(a node per entry) and freed it; `RandomInputs` took its button probabilities the same way;
+and `movementOptions` was an `unordered_set` reassigned per script. On the `dr` stage, whose
+scripts are one frame each, that was 4.1% of the CPU. Both take an
+`std::initializer_list<std::pair<..., double>>` now, which the same braced lists initialize
+with nothing allocated, walked in key order after a four-element insertion sort with a
+duplicate key keeping its first weight, which is the order and the meaning the map had, so
+the draw consumes the RNG exactly as before; the options are one bit each in a
+`std::vector<bool>` that grows to the largest option a script on the thread ever selects
+(a handful of times in a run) and is cleared in place per script, so no size is assumed of
+an enum that grows with every scenario and no script allocates for it. A single weighted
+list is walked from a stack array of 64 entries, a bound on one draw's candidates, not on
+the enum. Call sites unchanged. That the search is the same was checked on the `dr` stage in
+deterministic mode (8 threads pinned, 3,000 first shots from one tilt-target solution): the
+first pass, 3,172,883 scripts with a weighted draw in each, reached the same 62 solutions
+and 226,173 blocks before and after, and on a second run after. Wall 28.6 -> 24.5 s (-14%),
+CPU 223 -> 195 s, outside the resource 68.3 -> 64.3% (the mode's barrier wait included).
+The suite (`perf.ps1`, MSVC Release, reference 5238d9b interleaved), run twice: 0
+regressions on 74 rows, 23 rows faster, counts and allocations identical to the previous
+change's; the tilt-target workloads use no weighted option, and read `TierD_Deterministic`
+112.1 s and `TierD_Throughput` 57.2 s against the reference's 129.3 and 68.7 s, the day's
+drift. The first pass had flagged the 16-thread `LibSm64Scaling_SaveErase` row at +21%
+against the reference and read `Script_Execute_ChildOneFrame` at 826 ns; the second read
+them at +6% and 619 ns, a noisy unpinned row and the heap-layout flip performance.md
+describes, neither reached by this change.
+
+Found on the way, not fixed: the stage's second pass, which starts from the 62 solutions
+piped in from the first, does not reproduce between two runs of one binary in deterministic
+mode (8,334 and 7,788 scripts). `Initialize` hands the input solutions out one per thread
+per iteration and each thread makes one queue call per iteration, so with a solution count
+that is not a multiple of the thread count the threads leave the loop after different
+numbers of calls and the barriers pair up across the boundary in timing order. No committed
+stage runs deterministic with inputs (`tilt-x` has none); ROADMAP 3.8 carries it.
+
 ## 2026-09-14: the Tier D rows carry the share outside the resource (ROADMAP 3.8)
 
 `perf_compare.py tierd` reads the stage summary's `CPU time` line into the row as

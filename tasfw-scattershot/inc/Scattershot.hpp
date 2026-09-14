@@ -3,6 +3,8 @@
 #include <concepts>
 #include <cstdint>
 #include <cstdio>
+#include <array>
+#include <initializer_list>
 #include <map>
 #include <memory>
 #include <stdexcept>
@@ -443,10 +445,15 @@ protected:
 
     uint64_t GetTempRng();
 
-    void AddRandomMovementOption(std::map<MovementOption, double> weightedOptions);
+    // The weights are a braced list of {option, weight} pairs, walked in MovementOption order
+    // whatever order the list gives them (the std::map this once took by value walked its keys
+    // in that order; a duplicate option keeps its first weight, as the map's insert did), so
+    // the draw is the same and nothing is allocated (ROADMAP 3.8). RandomInputs takes its
+    // button probabilities the same way.
+    void AddRandomMovementOption(std::initializer_list<std::pair<MovementOption, double>> weightedOptions);
     void AddMovementOption(MovementOption movementOption, double probability = 1.0);
     bool CheckMovementOptions(MovementOption movementOption);
-    Inputs RandomInputs(std::map<Buttons, double> buttonProbabilities);
+    Inputs RandomInputs(std::initializer_list<std::pair<Buttons, double>> buttonProbabilities);
 
 private:
     Scattershot<TState, TResource, TStateTracker, TOutputState>& scattershot;
@@ -460,7 +467,20 @@ private:
     bool LastValidationFailed = false;
     TState LastDecodedBin;
     M64Diff LastDecodedDiff;
-    std::unordered_set<MovementOption> movementOptions;
+    
+    // The options selected for the current script, one bit per MovementOption. The enum
+    // grows with every scenario and no size is assumed: the vector grows to the largest
+    // option a script on this thread ever selects (a handful of times in a run) and is
+    // cleared in place per script, so no script allocates for it.
+    std::vector<bool> movementOptions;
+    void SelectOption(MovementOption option);
+    bool OptionSelected(MovementOption option) const;
+
+    // The entries of a braced list in key order, the first of any duplicate key kept: the
+    // order and the meaning a std::map built from the same list had. Returns the count.
+    static constexpr std::size_t MaxWeightedEntries = 64; // one draw's candidates, not the enum
+    template <class TKey>
+    static std::size_t SortedByKey(std::initializer_list<std::pair<TKey, double>> list, std::array<std::pair<TKey, double>, MaxWeightedEntries>& out);
 
     short startCourse;
     short startArea;

@@ -271,7 +271,11 @@ are going, not only by where they are.
 `ScattershotThread<...>` is a `TopLevelScript` that each OpenMP thread runs. A concrete
 search subclasses `ScattershotThread` and implements:
 
-- `SelectMovementOptions()`: choose weighted `MovementOption`s using `AddRandomMovementOption`.
+- `SelectMovementOptions()`: choose weighted `MovementOption`s using `AddRandomMovementOption`,
+  one draw per decision (stick magnitude, stick direction, buttons, which scripted move) from
+  a braced list of `{option, weight}` pairs that is walked in `MovementOption` order whatever
+  order it is written in; the options selected for the script are one bit each in a vector
+  that grows with the enum, cleared per script, and read back with `CheckMovementOptions`.
 - `ApplyMovement()`: turn those options into frames (random inputs or a scripted move).
 - `GetStateBin()`: quantise the game state into a `TState` (a `BinaryStateBin<16>` in practice).
 - `ValidateState()`, `GetStateFitness()`, `IsSolution()`, `GetSolutionState()`.
