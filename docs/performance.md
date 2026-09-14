@@ -340,16 +340,25 @@ otherwise; the resource's own advance, save and load take 76% of it and the rest
 
 1. Block decoding replaying from the root on every shot (ROADMAP 4.3): 2.3% (3.0% on the
    deterministic run). Chains are short at 600 to 1,200 shots; the replays that matter are
-   item 9.
+   item 9. On the `dr-oscillations` stage it is 8.4% at 281,650 blocks after 30,000 shots,
+   and grows with the run: that stage is where 4.3 pays.
 2. `PyramidUpdateMem` construction copying and transforming all surfaces per call: not on
-   the tilt-target workload. The Tier C row says 3.2 us and 56 allocations per
-   `GetMinimumDownhillWalkingAngle` call, which the downhill scripts make once per frame:
-   about 30% the construction itself, 5% the stand-in's physics, the rest the
-   `TopLevelScript`, resource and slot manager built and torn down around one frame, much
-   of it allocation.
+   the tilt-target workload. The Tier C row says 3.2 us and 42 allocations per
+   `GetMinimumDownhillWalkingAngle` call (56 before the FrameMap), which the downhill
+   scripts make once per frame: about 30% the construction itself, 5% the stand-in's
+   physics, the rest the `TopLevelScript`, resource and slot manager built and torn down
+   around one frame. On the `dr-oscillations` stage, where the DR tracker imports it per
+   frame of its crossing lookahead, it is below one sample in 25,000 (performance-changelog.md,
+   "where the `dr-oscillations` stage's CPU time goes"): the stage crosses rarely for what
+   it advances. Not a hotspot on any workload measured.
 3. `CalculateOscillations` advancing up to 50 frames inside a tracker evaluation: not on the
-   tilt-target workload, and the Tier C sweep never crosses (500 frames, 500 advances). It
-   needs the `dr-oscillations` stage profiled.
+   tilt-target workload, the Tier C sweep never crosses (500 frames, 500 advances), and on
+   the `dr-oscillations` stage it is 0.01% of the CPU, the whole DR tracker 2.1%. Not a
+   hotspot. What that stage pays for instead is per script, since its scripts are one frame
+   each: `SelectMovementOptions` 4.1% (the `std::map<MovementOption, double>` of weights
+   `AddRandomMovementOption` takes by value, built from a braced list per call, and the
+   `movementOptions` set reassigned per script), loads 16.5% (one per ten scripts, the
+   `REWIND` option and the decode replays), and block decoding 8.4% (item 1).
 4. `UpsertBlock` hashing and probing while holding the `blocks` critical section: 0.04%.
 5. `std::map` bookkeeping in `Script`: 5.0% in map code, 3.3% inclusive in
    `GetInputsMetadata` (the root's lookup in the movie's map per replayed and tracked

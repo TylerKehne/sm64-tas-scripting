@@ -4,6 +4,43 @@ Every hot-path change records its delta table here, newest first; the policy, th
 how to run it are in [performance.md](performance.md). The first measurements (2026-09-07),
 which everything since is compared against, are at the bottom.
 
+## 2026-09-14: where the `dr-oscillations` stage's CPU time goes (ROADMAP 3.8)
+
+The two suspects on the hotspot list that no suite workload runs, the `PyramidUpdateMem`
+import and `CalculateOscillations`, live in `StateTracker_BitfsDr`, the `dr` stage's
+tracker. No code changed. The stage was profiled the way the Tier D workloads were (xperf,
+20 ms, the symbolized build of `bd598ca`, 16 threads unpinned, High performance plan) on a
+scratch configuration: the committed `dr` stage fed one tilt-target solution of the
+deterministic Tier D run in place of `tilt-range`'s (its equilibrium frame 3347), with
+`firstShots` 30,000 instead of 50,000 and the later oscillations cut to 3,000 shots. The
+first pass is the sample: 30,000 shots in 31.8 s, 13,870,041 scripts, 304 solutions,
+281,650 blocks; the second pass found nothing at oscillation 1 and the stage stopped. The
+`CPU time` line: 506 s, advance 64.9% (20.7 us each), save 0.6%, load 16.9% (63.4 us
+each, 1,352,165 loads), outside the resource 17.6%.
+
+- **Items 2 and 3 of the list are nothing here.** `CalculateOscillations` 0.01% of the
+  samples, `CalculatePhase` 0.02%, `GetMinimumDownhillWalkingAngle` 0.02%, the
+  `PyramidUpdateMem` import below one sample in 25,478: the crossing path, with its
+  up-to-50-frame lookahead and one import per frame of it, runs at crossings, and the
+  search crosses rarely for what it advances. The whole tracker is 2.1% inclusive, 3.3%
+  with `ExecuteStateTracker`.
+- **The DR scripts are one frame each** (15.9 M frame advances for 13.9 M scripts), so
+  the per-script costs weigh more than in tilt-target: `ChooseScriptAndApply` 73% inclusive,
+  of which `SelectMovementOptions` 4.1% (2.7% of the CPU in the allocator under it: every
+  `AddRandomMovementOption` call takes its `std::map<MovementOption, double>` of weights by
+  value, constructed from a braced list per call, a node per option), `movementOptions`
+  reassigned as a fresh `std::unordered_set` per script 0.5%, `RandomInputs` 1.3% and
+  `GetClosestInputByYawHau` 0.9% exclusive.
+- **Loads are second to the game**: 16.5% in `LibSm64::load`'s `memcpy`, one load per ten
+  scripts from the `REWIND` movement option and the decode replays, against two per script
+  in tilt-target but for scripts thirty times longer.
+- **Block decoding is 8.4%** inclusive at 281,650 blocks after 30,000 shots, against 2 to
+  3% on the tilt-target workloads; the list's first item (ROADMAP 4.3) is this stage's,
+  and grows with the run.
+- Heap 6.4%, map code 5.3% (the weight maps, the tracked-state nodes, `GetInputsMetadata`
+  1.7%), `UpsertBlock` 0.6%, barriers 0.3% (the stage is not deterministic), the tracker's
+  `crossingData` vector copies below the threshold.
+
 ## 2026-09-14: the trackers' status objects as arrays (ROADMAP 3.8)
 
 The 3.8 profile's largest item outside the framework: `TiltTargetShotMetrics::CustomScriptStatus`
