@@ -197,8 +197,17 @@ jobs:
           for f in configure.log build.log tierc-compare.log tierd-compare.log; do
             if [ -f "$f" ]; then
               echo "::group::$f (errors)"
-              grep -inE '\berror\b|fatal error|FAILED|REGRESSION|regression[(]s[)]' "$f" | head -40 | while IFS= read -r line; do
+              grep -inE '\berror\b|fatal error|FAILED|Traceback|REGRESSION|regression[(]s[)]' "$f" | head -40 | while IFS= read -r line; do
                 echo "::error title=$f::${line//%/%25}"
+              done
+              echo "::endgroup::"
+            fi
+          done
+          for f in tierc-compare.log tierd-compare.log; do
+            if [ -f "$f" ]; then
+              echo "::group::$f (tail)"
+              tail -12 "$f" | while IFS= read -r line; do
+                echo "::error title=$f tail::${line//%/%25}"
               done
               echo "::endgroup::"
             fi
@@ -299,7 +308,7 @@ jobs:
           for f in configure.log build.log tierc-compare.log tierd-compare.log; do
             if [ -f "$f" ]; then
               echo "::group::$f (errors)"
-              grep -inE '\berror\b|fatal error|FAILED|REGRESSION|regression[(]s[)]' "$f" | head -40 | while IFS= read -r line; do
+              grep -inE '\berror\b|fatal error|FAILED|Traceback|REGRESSION|regression[(]s[)]' "$f" | head -40 | while IFS= read -r line; do
                 echo "::error title=$f::${line//%/%25}"
               done
               echo "::endgroup::"
