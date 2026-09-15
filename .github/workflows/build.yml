@@ -180,7 +180,7 @@ jobs:
         shell: bash
         run: |
           ${{ matrix.bindir }}/out/tasfw-perf --benchmark_filter='^BM_Framework' --benchmark_repetitions=3 --benchmark_out=tierc.json --benchmark_out_format=json
-          python scripts/perf_compare.py compare ${{ matrix.baseline }} tierc.json --counts-only | grep -v MISSING | tee tierc-compare.log
+          python scripts/perf_compare.py compare ${{ matrix.baseline }} tierc.json --counts-only 2>&1 | grep -v MISSING | tee tierc-compare.log
 
       - name: Tier D exact counts (CI-sized workload) against the committed baseline
         if: runner.os == 'Windows' && env.LIBSM64_KEY != ''
@@ -188,7 +188,7 @@ jobs:
         run: |
           ${{ matrix.bindir }}/out/bitfs-turn --config perf/tierd-ci.json | tee tierd-ci.log
           python scripts/perf_compare.py tierd tierd-ci.log -o tierd-ci.json --name TierD_CI --exact
-          python scripts/perf_compare.py compare perf/baselines/tierd-ci.json tierd-ci.json --counts-only | tee tierd-compare.log
+          python scripts/perf_compare.py compare perf/baselines/tierd-ci.json tierd-ci.json --counts-only 2>&1 | tee tierd-compare.log
 
       - name: Report failure details as annotations
         if: failure()
@@ -198,7 +198,7 @@ jobs:
             if [ -f "$f" ]; then
               echo "::group::$f (errors)"
               grep -inE '\berror\b|fatal error|FAILED|REGRESSION|regression[(]s[)]' "$f" | head -40 | while IFS= read -r line; do
-                echo "::error title=$f::${line}"
+                echo "::error title=$f::${line//%/%25}"
               done
               echo "::endgroup::"
             fi
@@ -283,7 +283,7 @@ jobs:
         shell: bash
         run: |
           ${{ matrix.bindir }}/out/tasfw-perf --benchmark_filter='^BM_Framework' --benchmark_repetitions=3 --benchmark_out=tierc.json --benchmark_out_format=json
-          python3 scripts/perf_compare.py compare perf/baselines/tyler-desktop tierc.json --counts-only | grep -v MISSING | tee tierc-compare.log
+          python3 scripts/perf_compare.py compare perf/baselines/tyler-desktop tierc.json --counts-only 2>&1 | grep -v MISSING | tee tierc-compare.log
 
       - name: Tier D exact counts (CI-sized workload) against the committed baseline
         if: env.LIBSM64_KEY != ''
@@ -291,7 +291,7 @@ jobs:
         run: |
           ${{ matrix.bindir }}/out/bitfs-turn --config perf/tierd-ci-linux.json | tee tierd-ci.log
           python3 scripts/perf_compare.py tierd tierd-ci.log -o tierd-ci.json --name TierD_CI --exact
-          python3 scripts/perf_compare.py compare perf/baselines/tierd-ci.json tierd-ci.json --counts-only | tee tierd-compare.log
+          python3 scripts/perf_compare.py compare perf/baselines/tierd-ci.json tierd-ci.json --counts-only 2>&1 | tee tierd-compare.log
 
       - name: Report failure details as annotations
         if: failure()
@@ -300,7 +300,7 @@ jobs:
             if [ -f "$f" ]; then
               echo "::group::$f (errors)"
               grep -inE '\berror\b|fatal error|FAILED|REGRESSION|regression[(]s[)]' "$f" | head -40 | while IFS= read -r line; do
-                echo "::error title=$f::${line}"
+                echo "::error title=$f::${line//%/%25}"
               done
               echo "::endgroup::"
             fi
