@@ -13,11 +13,31 @@ bool ProcessCycles(uint64_t& cycles)
 	return true;
 }
 
+bool ProcessCpuSeconds(double& seconds)
+{
+	FILETIME creation, exit, kernel, user;
+	if (!GetProcessTimes(GetCurrentProcess(), &creation, &exit, &kernel, &user))
+		return false;
+	auto ticks = [](const FILETIME& t) { return (uint64_t(t.dwHighDateTime) << 32) | t.dwLowDateTime; };
+	seconds = double(ticks(kernel) + ticks(user)) / 1e7; // 100 ns units
+	return true;
+}
+
 #elif defined(__linux__)
 #include <cstring>
+#include <ctime>
 #include <linux/perf_event.h>
 #include <sys/syscall.h>
 #include <unistd.h>
+
+bool ProcessCpuSeconds(double& seconds)
+{
+	timespec t;
+	if (clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &t) != 0)
+		return false;
+	seconds = double(t.tv_sec) + double(t.tv_nsec) / 1e9;
+	return true;
+}
 
 namespace
 {
@@ -54,6 +74,11 @@ bool ProcessCycles(uint64_t& cycles)
 #else
 
 bool ProcessCycles(uint64_t&)
+{
+	return false;
+}
+
+bool ProcessCpuSeconds(double&)
 {
 	return false;
 }

@@ -329,6 +329,32 @@ namespace
 		}
 		state.SetItemsProcessed(state.iterations());
 	}
+
+	// Symbol lookup, the names the BitFS scripts ask for at the top of every validation()
+	// and execution() (ROADMAP 3.7). Through the OS loader this was GetProcAddress under the
+	// loader lock, which the threads of a search contended on: 5.6 us per call at 16 threads
+	// against 61 ns alone; LibSm64::addr's table ended that (docs/performance-changelog.md,
+	// 2026-09-14). One pinned thread here: a 16 ns lookup's per-thread time on 16 unpinned
+	// threads is the hybrid scheduler's (it moved 20% between runs of one binary) and the
+	// contention it would show is gone by construction, there being no shared lock.
+	constexpr const char* ScriptSymbols[] = { "gMarioState", "gCamera", "gObjectPool", "bhvBitfsTiltingInvertedPyramid" };
+
+	template <class TGame>
+	void AddrLoop(benchmark::State& state, TGame* game)
+	{
+		if (!game)
+			return;
+		LibSm64& resource = *game->resource;
+		size_t i = 0;
+		for (auto _ : state)
+		{
+			benchmark::DoNotOptimize(resource.addr(ScriptSymbols[i]));
+			i = (i + 1) % std::size(ScriptSymbols);
+		}
+		state.SetItemsProcessed(state.iterations());
+	}
+
+	void Addr(benchmark::State& state, LibSm64SaveMode mode) { AddrLoop(state, LoadGame(mode, state)); }
 }
 
 static void BM_LibSm64Full_SaveErase(benchmark::State& state) { SaveErase(state, LibSm64SaveMode::Full); }
@@ -351,6 +377,8 @@ BENCHMARK(BM_LibSm64Fixed_SaveFresh)->Unit(benchmark::kMicrosecond)->Iterations(
 BENCHMARK(BM_LibSm64Fixed_Load)->Unit(benchmark::kMicrosecond);
 static void BM_LibSm64Fixed_ResidentPerSlot(benchmark::State& state) { ResidentPerSlot(state, LibSm64SaveMode::Fixed); }
 BENCHMARK(BM_LibSm64Fixed_ResidentPerSlot)->Unit(benchmark::kMillisecond)->Arg(100)->Arg(1000)->Iterations(1);
+static void BM_LibSm64Fixed_Addr(benchmark::State& state) { Addr(state, LibSm64SaveMode::Fixed); }
+BENCHMARK(BM_LibSm64Fixed_Addr)->Unit(benchmark::kNanosecond)->Iterations(200000);
 BENCHMARK(BM_LibSm64Fixed_FrameAdvance)->Unit(benchmark::kMicrosecond)->Iterations(3000);
 
 static void BM_LibSm64Dirty_SaveErase(benchmark::State& state) { SaveErase(state, LibSm64SaveMode::Dirty); }

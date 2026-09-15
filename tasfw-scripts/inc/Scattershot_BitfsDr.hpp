@@ -1,4 +1,5 @@
 #pragma once
+#include <array>
 #include <Scattershot.hpp>
 #include <BitFSPyramidOscillation.hpp>
 #include <cmath>
@@ -18,7 +19,7 @@ public:
     float xzSum = 0;
     int currentOscillation = 0;
     int16_t roughTargetAngle = 0;
-    std::vector<int> incrementFrames = { -1, -1, -1 };
+    std::array<int, 3> incrementFrames = { -1, -1, -1 };
 };
 
 class NormalSpecsDto
@@ -82,8 +83,8 @@ public:
         int16_t roughTargetAngle = 8192; 
         Phase phase = Phase::INITIAL;
         bool facingRoughTargetAngle = false;
-        std::vector<float> adjustedRemainderError = { INFINITY, INFINITY, INFINITY };
-        std::vector<int> incrementFrames = { -1, -1, -1 };
+        std::array<float, 3> adjustedRemainderError = { INFINITY, INFINITY, INFINITY };
+        std::array<int, 3> incrementFrames = { -1, -1, -1 };
         int64_t frame = -1;
     };
     CustomScriptStatus CustomStatus = CustomScriptStatus();
@@ -113,7 +114,7 @@ private:
     int minOscillationFrames = 15;
     NormalSpecsDto normalSpecsDto;
     int64_t initialFrame = 0;
-    std::vector<float> targetNormal = { INFINITY, INFINITY, INFINITY };
+    std::array<float, 3> targetNormal = { INFINITY, INFINITY, INFINITY };
 
     void SetStateVariables(MarioState* marioState, Object* pyramid);
     void CalculateOscillations(CustomScriptStatus lastFrameState, MarioState* marioState, Object* pyramid);
@@ -127,6 +128,9 @@ using Alias_Scattershot_BitfsDr = Scattershot<BinaryStateBin<16>, LibSm64, State
 class Scattershot_BitfsDr : public Alias_ScattershotThread_BitfsDr
 {
 public:
+    // This search's moves; the draw walks a list in this order.
+    enum class CustomMoves { NO_SCRIPT, PBD, RUN_DOWNHILL, RUN_DOWNHILL_MIN, REWIND, TURN_UPHILL, RUN_FORWARD, TURN_AROUND, QUICKTURN };
+
     Scattershot_BitfsDr(Alias_Scattershot_BitfsDr& scattershot, int targetOscillation, NormalSpecsDto normalSpecsDto)
         : Alias_ScattershotThread_BitfsDr(scattershot), _targetOscillation(targetOscillation), _normalSpecsDto(normalSpecsDto) {}
 

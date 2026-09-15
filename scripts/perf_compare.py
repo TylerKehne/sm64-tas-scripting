@@ -66,8 +66,9 @@ baseline is read, a directory in this layout and a single result file are both a
 `tierd` turns one bitfs-turn stage log into a benchmark row the compare understands
 (scripts/perf.ps1 and CI both use it): wall time from the stage summary, the exact counts
 (shots, scripts, blocks, solutions, validationFailures, frameAdvances, saves, loads) with
---exact, else the rates the throughput workload reports, and the process cycles where the
-platform printed them.
+--exact, else the rates the throughput workload reports, the process cycles where the
+platform printed them, and overheadPct, the share of the process CPU time outside the
+resource from the summary's `CPU time` line (gated like Tier C's, in points).
 
   perf_compare.py tierd STAGE.log -o ROW.json --name TierD_Deterministic [--exact] [--peak-mb N]
 
@@ -396,7 +397,8 @@ def cmd_compare(args):
         elif changes:
             status += " (counts down, re-baseline after review)"
 
-        # Tier C overhead: the share of wall time outside the resource, gated in points.
+        # Overhead: the share of time outside the resource (Tier C: of the wall time on one
+        # thread; Tier D: of the process CPU time over every thread), gated in points.
         bo, co = anchor.get("overheadPct"), c.get("overheadPct")
         if not args.counts_only and bo is not None and co is not None and float(co) - float(bo) > args.overhead_tolerance:
             status = "OVERHEAD REGRESSION" if "REGRESSION" not in status else status + " + OVERHEAD"
@@ -440,11 +442,12 @@ TIERD_FOUND_RE = re.compile(r"^Found (\d+) solutions in (\d+) shots, (\d+) block
 TIERD_STAGE_RE = re.compile(r"^=== stage \S+: \d+ solution\(s\) in ([\d.]+) s")
 TIERD_WORK_RE = re.compile(r"frame advances (\d+), saves (\d+), loads (\d+)")
 TIERD_CYCLES_RE = re.compile(r"^\s*process cycles (\d+)")
+TIERD_CPU_RE = re.compile(r"^\s*CPU time [\d.]+ s: .*outside the resource ([\d.]+)%")
 
 
 def tierd_row(lines, name, exact, peak_mb=None):
     """One benchmark row from a bitfs-turn stage log (the last stage in it)."""
-    found = stage = work = cycles = None
+    found = stage = work = cycles = cpu = None
     for line in lines:
         m = TIERD_FOUND_RE.match(line)
         if m:
@@ -458,6 +461,9 @@ def tierd_row(lines, name, exact, peak_mb=None):
         m = TIERD_CYCLES_RE.match(line)
         if m:
             cycles = m
+        m = TIERD_CPU_RE.match(line)
+        if m:
+            cpu = m
     if found is None:
         raise SystemExit("%s: no 'Found ... solutions' summary in the log" % name)
     if stage is None:
@@ -480,6 +486,8 @@ def tierd_row(lines, name, exact, peak_mb=None):
                    frameAdvancesPerSecond=round(advances / seconds, 2))
     if cycles is not None:
         row["cycles"] = float(cycles.group(1))
+    if cpu is not None:
+        row["overheadPct"] = float(cpu.group(1))
     if peak_mb is not None:
         row["peakResidentMB"] = peak_mb
     return row
@@ -521,7 +529,7 @@ def main(argv):
     cp.add_argument("--stat", default="min", choices=["min", "median"],
                     help="which repetition to compare (default min)")
     cp.add_argument("--overhead-tolerance", type=float, default=2.0,
-                    help="allowed increase of the Tier C overheadPct counter, in percentage points")
+                    help="allowed increase of the overheadPct counter (Tier C and D), in percentage points")
     cp.add_argument("--efficiency-tolerance", type=float, default=5.0,
                     help="allowed drop of thread-scaling efficiency (per-thread rate at N threads over the "
                          "single-thread rate), in percentage points")

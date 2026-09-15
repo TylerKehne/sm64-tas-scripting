@@ -13,7 +13,7 @@ add_library(tasfw-bitfs-pipeline STATIC
 )
 target_include_directories(tasfw-bitfs-pipeline PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_link_libraries(tasfw-bitfs-pipeline PUBLIC tasfw::core tasfw::resources tasfw::scattershot nlohmann_json::nlohmann_json)
-target_compile_features(tasfw-bitfs-pipeline PUBLIC cxx_std_20)
+target_compile_features(tasfw-bitfs-pipeline PUBLIC cxx_std_23)
 add_library(tasfw::bitfs_pipeline ALIAS tasfw-bitfs-pipeline)
 add_optimization_flags(tasfw-bitfs-pipeline)
 
@@ -29,7 +29,7 @@ add_executable(tasfw-bitfs-turnaround
 	"src/TiltTargetShot.hpp"
 	"src/BitfsOscFinal.hpp"
 )
-target_compile_features(tasfw-bitfs-turnaround PRIVATE cxx_std_20)
+target_compile_features(tasfw-bitfs-turnaround PRIVATE cxx_std_23)
 target_link_libraries(tasfw-bitfs-turnaround PRIVATE
 	tasfw::bitfs_pipeline
 	tasfw::core

@@ -1,6 +1,8 @@
 #pragma once
 
-enum class MovementOption
+// The framework's input groups, which RandomInputs reads. A search's own moves are its
+// public nested `enum class CustomMoves` (Scattershot.hpp), through the same three calls.
+enum class BasicMoves
 {
     // Joystick mag
     MAX_MAGNITUDE,
@@ -17,17 +19,5 @@ enum class MovementOption
     // Buttons
     SAME_BUTTONS,
     NO_BUTTONS,
-    RANDOM_BUTTONS,
-
-    // Scripts
-    NO_SCRIPT,
-    PBD,
-    RUN_DOWNHILL,
-    RUN_DOWNHILL_MIN,
-    REWIND,
-    TURN_UPHILL,
-    RUN_FORWARD,
-    TURN_AROUND,
-    QUICKTURN,
-    C_UP_TRICK
+    RANDOM_BUTTONS
 };

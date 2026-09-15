@@ -4,6 +4,521 @@ Every hot-path change records its delta table here, newest first; the policy, th
 how to run it are in [performance.md](performance.md). The first measurements (2026-09-07),
 which everything since is compared against, are at the bottom.
 
+## 2026-09-14: the ticket wait blocks past a bounded spin (ROADMAP 3.15)
+
+Designed under hard rule 10 and agreed the same evening. `WaitForTurn` spun with
+`_mm_pause` and a yield every 1,024 spins; on clang-cl's libomp that burned a core per
+waiting thread where the barriers it replaced had slept (the clang-cl suite's deterministic
+Tier D: wall -40% against the pre-branch binaries, process cycles +57%). It now spins for
+`SpinBudget` (4,096) pauses, about a turn of typical length, and then waits on the turn
+counter (`std::atomic::wait`), which `PassTurn` notifies after its store; no new state, the
+same order of turns, so the counts are unchanged. Deterministic Tier D, Tier D alone, each
+compiler's Release built by the perf script against its interleaved pre-branch reference:
+
+| | Reference | Spin (before) | Spin, then wait |
+|---|---|---|---|
+| MSVC wall | 130.4 s | 92.3 s | 93.8 s |
+| MSVC cycles against the reference | | -29% | -59% |
+| MSVC CPU time, outside the resource | | 725 s, 55.8% | 426 s, 24.0% |
+| clang-cl wall | 144.9 s | 89.9 s | 93.9 s |
+| clang-cl cycles against the reference | | +57% | -5% |
+| clang-cl CPU time, outside the resource | | | 430 s, 24.6% |
+| throughput wall (no queue), MSVC / clang-cl | 110.3 / 105.8 s | 89.1 / 89.7 s | 91.6 / 87.4 s |
+
+A budget of 16,384 pauses was measured too, on clang-cl: wall 92.4 s, cycles +14% against
+the reference, 524 s of CPU with 38.8% outside the resource, so 1.5 s of wall for 22% more
+CPU; not taken. Counts on both compilers: 52 solutions, 111,860 blocks, 524,380 scripts,
+17,800,136 frame advances, 608 saves, 1,045,094 loads, the ticket queue's to the number.
+
+## 2026-09-14: `M64::save` walks its frames once (ROADMAP 3.16)
+
+An xperf profile of `BM_M64_Save_10k` on clang-cl builds with symbols (Release codegen),
+current tree against the FrameMap commit's parent: 34.7% of the current build's samples in
+`FrameMap<unsigned long long, Inputs>::operator[]`, a call per lookup that clang-cl does not
+inline into the save loop (`contains` and three `frames[i]` per frame), against 0% in the
+parent, whose `std::map` lookups were inlined into `M64::save` (40% of its samples there);
+MSVC inlines both, which is why its row had gained. The loop now walks the sorted frames
+once, a zero input for every frame not in it, behind the unchanged `save` (the round-trip,
+gap-filling and libsm64 identity tests check the file):
+
+| Row | Reference (5238d9b) | This change |
+|---|---|---|
+| BM_M64_Save_10k, clang-cl | 1.4 ms | 0.8 ms |
+| BM_M64_Save_10k, MSVC | 2.1 ms | 0.8 ms |
+| BM_M64_Load_10k, both | unchanged from the branch (0.6 ms) | |
+
+The same walk, one write per frame and one write per 4 KB chunk had each read as "no
+change" earlier the same day: `perf.ps1 -NoBuild` after `test.ps1`, which builds only the
+tests target, measured the previous perf binary every time.
+
+## 2026-09-14: the piped-in inputs handed out in rounds (ROADMAP 3.14)
+
+A determinism fix in `ScattershotThread::Initialize`, behind the unchanged interface: the
+input solutions of a piped-in run go to the threads in rounds keyed on the thread id, one
+queue call per thread per round, instead of through a shared index in timing order that
+left the threads with different call counts (the second pass of the dr stage differed run
+to run and could hang). No hot-path change: the hand-out is a few calls per run. Counts of
+stages with inputs change once (the dr scratch stage's first pass, 9 solutions, 212,436
+blocks and 2,910,119 scripts, is now 148, 211,753 and 2,983,279, and its second pass
+1,004 blocks and 15,047 scripts on every run and build); the no-input workloads keep theirs
+(CI-sized Tier D: every count identical).
+
+## 2026-09-14: a search's own movement options (C++23, ROADMAP Phase 5)
+
+Designed under hard rule 10 and prototyped on a branch for the maintainer's decision. The
+three movement-option calls gain overloads on the search's own nested
+`enum class CustomMoves`, taken from the object through a C++23 explicit object
+parameter; the selected options go in a second per-thread bit vector, and the weighted
+draw of 3.8 is one template over either enum (`DrawOption`), which the `BasicMoves`
+overloads now call. Nothing on the hot path changes shape: the `BasicMoves` calls do
+what they did through the same helpers, the second vector is cleared per script like the
+first (a fill over an empty vector in a search without the enum), and no scenario's
+script changed, so every count is expected identical and was checked exactly (MSVC
+Release, the ticket-queue commit a9c14a9 against this change):
+
+| Workload | a9c14a9 | This change |
+|---|---|---|
+| CI-sized Tier D (`perf/tierd-ci.json`: 4 threads, deterministic, 100 shots) | 88,778 scripts, 34,241 blocks, 12 solutions, 2,948,886 advances, 104 saves, 174,384 loads | identical |
+| dr scratch stage (8 threads pinned, deterministic, 3,000 shots) | 9 solutions, 212,436 blocks, 2,910,119 scripts | identical |
+
+The names are the maintainer's: the framework's enum `MovementOption` became `BasicMoves`
+and the magic name `CustomMoves`, the three calls unchanged, every entry keeping its
+spelling. The five searches then moved their moves out of `BasicMoves` into their own `CustomMoves`
+(`Scattershot_BitfsDr`, `Scattershot_BitfsDrApproach`, `Scattershot_BitfsDrRecover`,
+`BitfsOscFinal`; `TiltTargetShot` only ever added `NO_SCRIPT` and never checked it, so that
+line is gone and it declares none), each enum listing its moves in the order they had in
+`BasicMoves`. The weighted draw walks a list in enum order, so every draw maps the RNG
+to the same choice as before, and `BasicMoves` is the three input groups only. Checked
+exactly on the same two workloads (the CI-sized Tier D and the dr scratch stage, whose
+search is the DR script): every count identical.
+
+The Linux builds of the same change (GCC 14 and 15, Clang 18 and 21, warnings as errors;
+docs/compilers.md) rejected an unused copy of the tracked state in
+`TiltTargetShot::SelectRandomInputs`, a leftover that became a warning when that status
+turned into arrays (3.7). The copy primed the tracker's cache for a frame nothing read
+there and is removed, which changes nothing the search decides: the CI-sized Tier D workload, whose stage is that script, repeats every count above
+to the frame advance, save and load (the lookup was a cache hit every time).
+
+The perf suite (MSVC Release, three processes, the reference being the 5238d9b binaries
+interleaved, the branch's only reference; the deltas are the branch's and are logged per
+change above) shows no regression: 0 over 10%, 24 improvements, 0 allocation increases.
+The rows this change could touch:
+
+| Row | Reference (5238d9b) | This branch | Allocs |
+|---|---|---|---|
+| BM_Scattershot_UpsertBlock_Redundant | 64.5 ns | 27.6 ns | 2 to 0 |
+| BM_Scattershot_UpsertBlock_Improve | 92.3 ns | 54.4 ns | 3 to 1 |
+| BM_Scattershot_UpsertBlock_Novel/50000 | 6.2 ms | 3.7 ms | 150,005 to 50,003 |
+| BM_Scattershot_GetHash/0 | 20.9 ns | 20.6 ns | 0 |
+| BM_Script_AdvanceFrameWrite | 145.9 ns | 49.8 ns | 2 to 0 |
+| BM_Framework_PyramidOscillation | 680.7 ms | 669.0 ms | 404,555 to 229,042 |
+| TierD_Deterministic (wall) | 129.1 s | 91.7 s | |
+| TierD_Throughput (wall) | 105.7 s | 87.6 s | |
+
+The one count flag is the deterministic Tier D row against the pre-branch baseline: its
+counts (52 solutions, 111,860 blocks, 524,380 scripts, 17,800,136 advances, 608 saves,
+1,045,094 loads) are the ticket queue's to the number, so the baseline is what moves at
+the merge (`-SaveBaseline`). Tier D alone, rerun on the tree with the searches migrated:
+deterministic 92.3 s against the reference's 130.2 s with the same counts, throughput 89.1 s
+against 107.5 s. The one efficiency flag, the
+DLL's frame advance at 8 threads (97.0 to 91.6 points), is not this change's code and did
+not reproduce: the family rerun alone put the row within a point of the reference (94.1 to
+93.4) with no flag. 
+
+The clang-cl suite (same shape, the `tyler-desktop-clang` reference) passed the same
+gates with one time flag that reproduced on two family reruns: `BM_M64_Save_10k`, 1.4 to
+1.7 ms (MSVC's build of the same row is 16% faster than its reference). Bisected over the
+branch's clang-cl builds run as the reference against this tree: the FrameMap commit
+0fb3aaf has the slow row (1.8 ms), its parent 54e52e7 the fast one (1.4 ms). Resolved as
+ROADMAP 3.16, below. (The entry first said that rewrites of the frame loop changed nothing;
+those were measured on a stale perf binary, see 3.16.) Its
+efficiency flag (frame advance at 2 threads) did not reproduce on the family rerun, and
+the 16-thread `SaveErase` row, a save path nothing here touches, read +0.9% in the suite
+and +14.9% on that rerun, the 16-thread noise seen all day. The deterministic row's counts
+are the ticket queue's on this compiler too; its process cycles rose 57% against the
+pre-branch binaries while wall time fell 40%, the ticket wait spinning where libomp's
+barriers slept (ROADMAP 3.15). Tier D alone on the migrated tree, clang-cl: deterministic
+89.9 s against the reference's 144.5 s with the same counts, throughput 89.7 s against
+104.0 s.
+
+## 2026-09-14: the deterministic queue as a ticket (ROADMAP 3.8)
+
+Designed under hard rule 10, prototyped on a branch and accepted by the maintainer on the
+numbers below, with the implementation in `ScattershotThread.t.hpp` and a four- and
+three-thread reproduction added to the mock test. Deterministic mode
+ran every script's upsert through `QueueThreadById`, a barrier and then one barrier per
+thread, so every thread waited for the slowest at every round: 58% of the deterministic
+Tier D run's CPU was that spin-wait (the 3.8 profile). The prototype replaces the barriers
+with a ticket: each thread numbers its calls, call k of thread i is ticket k·N+i, one
+shared turn serves tickets in order, and a thread waits only for its own turn, so its next
+script runs while others are still on the previous round. Base-block selection and the
+end-of-shot counts take tickets too, since they read the block table and the solution
+count, and a thread retires from the queue under its turn when its shots are done, which
+replaces the barrier loop `MultiThread` ran at the exit. The upserts keep the barriers'
+total order; what changes is the table a thread sees when it selects a block, the one at
+its ticket rather than the one after a lockstep round, so the deterministic workloads
+follow a different path and their counts change once.
+
+Measured on the deterministic Tier D workload (8 threads pinned, cost model off, MSVC
+Release, the same hour as the barrier version's 112.1 s and 867 s of CPU):
+
+| | Barriers | Ticket, run 1 | Ticket, run 2 |
+|---|---|---|---|
+| Wall | 112.1 s | 92.1 s | 91.9 s |
+| CPU time, outside the resource | 867 s, 62.8% | 725 s, 55.8% | 725 s, 55.9% |
+| Solutions, blocks, scripts | 55; 109,958; 520,052 | 52; 111,860; 524,380 | the same |
+| Frame advances, saves, loads | 18,014,927; 608; 1,038,084 | 17,800,136; 608; 1,045,094 | the same |
+
+Two runs agree to the last count, which is the property the mode exists for; the mock
+test's two-, three- and four-thread reproductions pass; the throughput workload is
+untouched (not deterministic). The deterministic counts changed once with it:
+`perf/baselines/tierd-ci.json` was regenerated from the CI-sized workload through
+`perf_compare.py tierd` (the new counts are in docs/performance.md, "Tier D"), and the
+perf baselines' `TierD_Deterministic` row reads as a count change until the next
+`-SaveBaseline`. The suite (`perf.ps1`, MSVC Release, reference 5238d9b interleaved):
+0 time regressions on 74 rows, 24 rows faster, allocations identical, `TierD_Deterministic`
+130.1 -> 91.7 s against the reference (-29.5%) with exactly the count change above flagged,
+`TierD_Throughput` 70.9 -> 60.9 s; the CI-sized workload reads the same counts in `fixed`
+and `dirty` mode (2,948,886 frame advances, 12 solutions) and on two builds. Not changed by it:
+deterministic mode with piped-in inputs (open, above), and the CSV export, whose sampling
+and row order were never in the queue in either scheme (`AddCsvRow` runs outside it, under
+its own critical sections, in arrival order); the solutions a stage exports come from the
+upserts and are in the queue in both.
+
+## 2026-09-14: the movement-option weights as lists, the options as a bit mask (ROADMAP 3.8)
+
+`AddRandomMovementOption` took a `std::map<MovementOption, double>` by value and every one
+of its 33 call sites passed a braced list of three or four pairs, so every call built a map
+(a node per entry) and freed it; `RandomInputs` took its button probabilities the same way;
+and `movementOptions` was an `unordered_set` reassigned per script. On the `dr` stage, whose
+scripts are one frame each, that was 4.1% of the CPU. Both take an
+`std::initializer_list<std::pair<..., double>>` now, which the same braced lists initialize
+with nothing allocated, walked in key order after a four-element insertion sort with a
+duplicate key keeping its first weight, which is the order and the meaning the map had, so
+the draw consumes the RNG exactly as before; the options are one bit each in a
+`std::vector<bool>` that grows to the largest option a script on the thread ever selects
+(a handful of times in a run) and is cleared in place per script, so no size is assumed of
+an enum that grows with every scenario and no script allocates for it. A single weighted
+list is walked from a stack array of 64 entries, a bound on one draw's candidates, not on
+the enum. Call sites unchanged. That the search is the same was checked on the `dr` stage in
+deterministic mode (8 threads pinned, 3,000 first shots from one tilt-target solution): the
+first pass, 3,172,883 scripts with a weighted draw in each, reached the same 62 solutions
+and 226,173 blocks before and after, and on a second run after. Wall 28.6 -> 24.5 s (-14%),
+CPU 223 -> 195 s, outside the resource 68.3 -> 64.3% (the mode's barrier wait included).
+The suite (`perf.ps1`, MSVC Release, reference 5238d9b interleaved), run twice: 0
+regressions on 74 rows, 23 rows faster, counts and allocations identical to the previous
+change's; the tilt-target workloads use no weighted option, and read `TierD_Deterministic`
+112.1 s and `TierD_Throughput` 57.2 s against the reference's 129.3 and 68.7 s, the day's
+drift. The first pass had flagged the 16-thread `LibSm64Scaling_SaveErase` row at +21%
+against the reference and read `Script_Execute_ChildOneFrame` at 826 ns; the second read
+them at +6% and 619 ns, a noisy unpinned row and the heap-layout flip performance.md
+describes, neither reached by this change.
+
+Found on the way, not fixed: the stage's second pass, which starts from the 62 solutions
+piped in from the first, does not reproduce between two runs of one binary in deterministic
+mode (8,334 and 7,788 scripts). `Initialize` hands the input solutions out one per thread
+per iteration and each thread makes one queue call per iteration, so with a solution count
+that is not a multiple of the thread count the threads leave the loop after different
+numbers of calls and the barriers pair up across the boundary in timing order. No committed
+stage runs deterministic with inputs (`tilt-x` has none); ROADMAP 3.8 carries it.
+
+## 2026-09-14: the Tier D rows carry the share outside the resource (ROADMAP 3.8)
+
+`perf_compare.py tierd` reads the stage summary's `CPU time` line into the row as
+`overheadPct`, the share of the process CPU time outside the resource, and the compare
+gates it as it gates Tier C's: an increase over `--overhead-tolerance` points (2) against
+the anchor is a regression. Reported once the 3.8 profile made the number the one to watch;
+gated now that its spread is known: on 2026-09-14, runs of one binary read 24.0 and 24.3%
+(throughput, morning), 19.1 and 19.2% (after the FrameMap), 68.9 and 68.8% (deterministic),
+while the day's three changes moved it 24.0 -> 22.7 -> 19.2 -> 10.7%. Baselines saved before
+this lack the counter, so the compare reports it without a gate until they are re-saved.
+
+## 2026-09-14: where the `dr-oscillations` stage's CPU time goes (ROADMAP 3.8)
+
+The two suspects on the hotspot list that no suite workload runs, the `PyramidUpdateMem`
+import and `CalculateOscillations`, live in `StateTracker_BitfsDr`, the `dr` stage's
+tracker. No code changed. The stage was profiled the way the Tier D workloads were (xperf,
+20 ms, the symbolized build of `bd598ca`, 16 threads unpinned, High performance plan) on a
+scratch configuration: the committed `dr` stage fed one tilt-target solution of the
+deterministic Tier D run in place of `tilt-range`'s (its equilibrium frame 3347), with
+`firstShots` 30,000 instead of 50,000 and the later oscillations cut to 3,000 shots. The
+first pass is the sample: 30,000 shots in 31.8 s, 13,870,041 scripts, 304 solutions,
+281,650 blocks; the second pass found nothing at oscillation 1 and the stage stopped. The
+`CPU time` line: 506 s, advance 64.9% (20.7 us each), save 0.6%, load 16.9% (63.4 us
+each, 1,352,165 loads), outside the resource 17.6%.
+
+- **Items 2 and 3 of the list are nothing here.** `CalculateOscillations` 0.01% of the
+  samples, `CalculatePhase` 0.02%, `GetMinimumDownhillWalkingAngle` 0.02%, the
+  `PyramidUpdateMem` import below one sample in 25,478: the crossing path, with its
+  up-to-50-frame lookahead and one import per frame of it, runs at crossings, and the
+  search crosses rarely for what it advances. The whole tracker is 2.1% inclusive, 3.3%
+  with `ExecuteStateTracker`.
+- **The DR scripts are one frame each** (15.9 M frame advances for 13.9 M scripts), so
+  the per-script costs weigh more than in tilt-target: `ChooseScriptAndApply` 73% inclusive,
+  of which `SelectMovementOptions` 4.1% (2.7% of the CPU in the allocator under it: every
+  `AddRandomMovementOption` call takes its `std::map<MovementOption, double>` of weights by
+  value, constructed from a braced list per call, a node per option), `movementOptions`
+  reassigned as a fresh `std::unordered_set` per script 0.5%, `RandomInputs` 1.3% and
+  `GetClosestInputByYawHau` 0.9% exclusive.
+- **Loads are second to the game**: 16.5% in `LibSm64::load`'s `memcpy`, one load per ten
+  scripts from the `REWIND` movement option and the decode replays, against two per script
+  in tilt-target but for scripts thirty times longer.
+- **Block decoding is 8.4%** inclusive at 281,650 blocks after 30,000 shots, against 2 to
+  3% on the tilt-target workloads; the list's first item (ROADMAP 4.3) is this stage's,
+  and grows with the run.
+- Heap 6.4%, map code 5.3% (the weight maps, the tracked-state nodes, `GetInputsMetadata`
+  1.7%), `UpsertBlock` 0.6%, barriers 0.3% (the stage is not deterministic), the tracker's
+  `crossingData` vector copies below the threshold.
+
+## 2026-09-14: the trackers' status objects as arrays (ROADMAP 3.8)
+
+The 3.8 profile's largest item outside the framework: `TiltTargetShotMetrics::CustomScriptStatus`
+held thirteen `std::vector`s for three-element values, constructed per tracked frame and
+copied whole wherever a `GetTrackedState` result was taken by value, 7.0% of the throughput
+run's CPU in the allocator and most of its 8.9% in `std::vector` code. The per-axis values
+are `std::array<float, 3>` and `std::array<int, 3>` now, in that tracker, in
+`BitfsOscFinalMetrics`, in `StateTracker_BitfsDr` and `Scattershot_BitfsDr`, and in their
+solutions (`Stages.cpp`'s metrics writer takes any per-axis range), and the tilt-target
+tracker reads its previous states by reference (`const auto&`), which the tracked states'
+node container keeps valid across the other frames it may track meanwhile. Stage scripts
+only; no framework header changed. MSVC Release, High performance plan, the same hour,
+before and after this change alone:
+
+| | Before | After |
+|---|---|---|
+| Throughput: wall, scripts/s, frame advances/s | 64.7 s, 15.8 k, 532 k | 59.1 s, 17.2 k, 601 k |
+| Throughput: CPU outside the resource | 19.1% (0.191 ms per script) | 10.7% (0.098 ms per script) |
+| Deterministic: wall, CPU time (counts identical) | 123.1 s, 970 s | 109.5 s, 867 s |
+
+The deterministic run's counts are the baseline's to the last frame advance (18,014,927;
+608 saves; 1,038,084 loads; 109,958 blocks; 55 solutions; 520,052 scripts). Over the
+day's three changes the throughput run went from 69.8 s and 24.0% outside the resource
+to 59.1 s and 10.7%, the deterministic run from 133.7 s to 109.5 s.
+
+The suite (`perf.ps1`, MSVC Release, reference 5238d9b interleaved): 0 regressions on 74
+rows, 23 rows faster, counts identical, allocations down where this change reaches:
+`Framework_TrackerSweep` 14,548 -> 3,034 allocations for 500 tracked frames (6 per frame,
+from 17 after the FrameMap and 29 at the start of the day) at 7.5 -> 7.0 ms;
+`TierD_Deterministic` 129.7 -> 109.3 s (-15.7%) and `TierD_Throughput` 67.9 -> 58.0 s
+(-14.6%) against the reference, of which this change is -11.2% and -11.9% against the
+FrameMap head's result of an hour earlier. In that last compare, without an interleaved
+reference, `LibSm64Fixed_Load` read 38.3 -> 42.3 us; the row is a 1.5 MB `memcpy` this
+change does not reach, it read 42.0, 38.3 and 42.3 us across the day's three suite runs,
+and the reference-interleaved gate has it within noise.
+
+## 2026-09-14: the frame-keyed containers as sorted vectors (ROADMAP 3.7)
+
+`M64Base::frames` (the source movie and every diff) and `Script`'s five per-level
+containers (`inputsCache`, `saveCache`, `frameCounter`, `saveBank`, `loadTracker`) are
+`FrameMap`s and a `FrameSet` (`tasfw/FrameMap.hpp`): a vector sorted by frame with the
+subset of `std::map`'s interface the framework uses and the same meanings, no allocation
+until the first entry, storage kept across `clear()`. The 3.8 census had found that every
+one of the 11 allocations of an empty child script and both of an empty ad-hoc call were
+`std::map` sentinel nodes, which MSVC allocates whenever a map is constructed or
+move-constructed, and a status object carries an `M64Diff` map through every sandbox,
+`Run` and result. The tracked states stay a `std::map` per owner and level: a tracker
+reads its previous states by reference while it may track another frame, which a vector's
+reallocation would break, and their node is 0.24% of the run. Design presented under hard
+rule 10, prototyped on a branch at the maintainer's request and accepted on these numbers.
+`test_framemap.cpp` pins the map meanings kept (ordered by key, insert and emplace do not
+overwrite, `operator[]` default-constructs, erase by key, position and range, the ordered
+lookups, `std::insert_iterator`, equality by contents).
+
+The suite, MSVC Release, reference 5238d9b interleaved (machine factor 1.00): 0 regressions
+on 74 rows, 21 rows faster, every count identical (Tier C frame advances, saves and loads;
+Tier D shots, scripts, blocks, solutions, frame advances, saves, loads), allocations down on
+every row that touches a map. Against the same day's `hotspots` head (the symbol table in,
+this change alone; fastest of three, single-thread rows pinned):
+
+| Row | Before | After | Allocations |
+|---|---|---|---|
+| `Script_AdvanceFrameWrite` | 151 ns | 50 ns | 2 -> 0 |
+| `Script_AdvanceFrameRead` | 253 ns | 86 ns | 1 -> 0 |
+| `Script_AdvanceFrameWrite_Save` | 765 ns | 441 ns | 7 -> 3 |
+| `Script_Write_RewindOne` (a write into the middle of the diff) | 172 ns | 129 ns | 3 -> 1 |
+| `Script_ExecuteAdhoc_Empty` | 73 ns | 25 ns | 2 -> 0 |
+| `Script_ModifyAdhoc_OneFrame` | 302 ns | 127 ns | 5 -> 1 |
+| `Script_Execute_ChildEmpty` | 424 ns | 197 ns | 11 -> 2 |
+| `Script_Execute_ChildOneFrame` / `Modify_ChildOneFrame` | 995 ns / 1.07 us | 626 / 550 ns | 31 -> 14 / 13 |
+| `Script_GetInputs_Uncached_Depth` 1 / 4 / 16 | 143 / 171 / 299 ns | 47 / 76 / 208 ns | 1 -> 0 |
+| `Script_LongLoad_RewindToRoot_Depth` 1 / 4 / 16 | 204 / 204 / 217 ns | 212 / 210 / 212 ns | unchanged |
+| `Script_AdvanceFrameWrite_TrivialTracker` / `RecursiveTracker` | 745 / 952 ns | 452 / 590 ns | 14 -> 3 / 19 -> 6 |
+| `M64_Load_10k` / `M64_Save_10k` | 1.1 / 2.1 ms | 0.6 / 2.0 ms | 10,004 -> 27 / 0 |
+| `Scattershot_UpsertBlock` novel (50k) / redundant / improve | 6.4 ms / 65 / 93 ns | 3.7 ms / 28 / 55 ns | 150,005 -> 50,005 / 2 -> 0 / 3 -> 1 |
+| `Framework_PyramidOscillation` (42,923 frames) | 692 ms | 674 ms | 404,555 -> 229,042 |
+| `Framework_DownhillAngle_PyramidUpdate` (1,000 calls) | 2.4 ms | 2.1 ms | 56,018 -> 42,006 |
+| `Framework_TrackerSweep` (500 tracked frames) | 7.3 ms | 7.1 ms | 14,548 -> 8,541 |
+| `TierD_Deterministic` (counts identical) | 128.4 s | 123.1 s | |
+| `TierD_Throughput` | 67.8 s | 65.8 s | |
+
+`UpsertBlock` and the movie's load were not targets: a `ScattershotSolution` carries a diff,
+so every block insert constructed one, and the movie's 10,000 frames were 10,000 nodes.
+The `LongLoad` rows are the one place the ancestor walk touches every level's containers
+without a lookup that the vectors speed up; they read +3 to +4%, under the gate and within
+what those rows move between runs. The throughput run's `CPU time` line reads 66.4%
+advance, 0.7% save, 13.7% load, 19.2% outside the resource (22.7% after the symbol table,
+24.0% before it); the deterministic run's CPU time 970 s against 1,052 s that afternoon.
+
+Also removed in the same change: the 16-thread `LibSm64Scaling_Addr` row added earlier the
+same day. Between two runs of one binary it read 48.9 and 59.6 ns, which the 10% time gate
+would have called a regression once the row was baselined: a 16 ns lookup's per-thread
+time on 16 unpinned threads is the hybrid scheduler's, and the contention the row was
+added to show is gone with the loader lock. `LibSm64Fixed_Addr`, pinned and single-thread,
+stays (14 to 16 ns across the day's runs). Baselines are not re-saved here: the allocation
+decreases are the reviewer's to confirm and re-baseline (performance.md, "Reporting and gating").
+
+## 2026-09-14: `LibSm64::addr` answers from its own table (ROADMAP 3.7)
+
+The scripts ask for `gMarioState`, `gCamera`, `gObjectPool` and the pyramid behavior at the
+top of every `validation()`, `execution()` and helper, and `addr()` went to the OS loader
+each time. `GetProcAddress` is 61 ns alone, but `LdrGetProcedureAddressForCaller` takes the
+loader lock, and the threads of a search queue on it: the 3.8 profile read 1.5% of the
+throughput run's CPU in the loader, its lock and `RtlBackoff`. `LibSm64::addr` now resolves
+a name once (the loader, then the alias table, as before) and keeps it in a table looked up
+by `string_view` (a name is copied when first seen, never after; a resource belongs to one
+thread, so no lock). `Resource::addr`'s contract note follows: a script may ask per
+execution; one that needs a symbol every frame still caches the pointer. Two Tier B rows
+were added to measure it, `LibSm64Fixed_Addr` (one thread, pinned) and `LibSm64Scaling_Addr`
+(1 to 16 threads, one DLL copy each, unpinned), cycling through the four names; MSVC
+Release, five repetitions, means:
+
+| `addr()` per call | Through the loader | From the table |
+|---|---|---|
+| 1 thread | 61.1 ns (scaling row 69.1 ns) | 16.6 ns (16.6 ns) |
+| 2 threads | 167 ns | 16.2 ns |
+| 4 threads | 362 ns | 20.7 ns |
+| 8 threads | 995 ns | 24.1 ns |
+| 16 threads | 5,628 ns | 45.0 ns |
+
+The throughput Tier D workload (16 threads, cost model on; not deterministic, so its rates
+and the `CPU time` line compare, not its counts), MSVC Release, the same hour, High
+performance plan, unpinned: 14,485 scripts/s and 493 k frame advances/s with 24.0% of the
+CPU outside the resource before; 14,507 scripts/s and 507 k frame advances/s with 22.7%
+outside after. The CPU outside the resource per script went from 0.263 to 0.248 ms, the
+1.5% the profile had attributed to the loader; the wall time of this workload moves more
+than that between runs of the same binary. The deterministic workload's counts cannot
+change (no frame advance, save or load is involved).
+
+The suite (`perf.ps1`, MSVC Release, reference 5238d9b interleaved, machine factor 1.00):
+0 regressions on 74 rows, allocations and counts identical, efficiency within 5 points.
+Rows that moved: `Framework_DownhillAngle_PyramidUpdate` 2.7 -> 2.4 ms (-13%, the only
+row past the gate's 10%: the `PyramidUpdateMem` import asked for its symbols on every
+call), `Framework_TrackerSweep` 7.8 -> 7.3 ms (-5.8%: `StateTracker_BitfsDr` asks per
+tracked frame), `TierD_Deterministic` 132.3 -> 128.4 s (-2.9%; counts identical),
+`TierD_Throughput` 68.0 -> 67.8 s (-0.3%). Everything else within noise, the largest
+`ModifyAdhoc_OneFrame` +5.0% (288 -> 302 ns, a row that touches nothing changed; the
+2026-09-08 note on code layout). The scaling `Addr` row was then cut to 1 and 16 threads:
+at 8 unpinned threads its efficiency read 69% in one run and 47% in the next for the same
+binary (80% both times at 4), the hybrid scheduler's doing on a 16 ns lookup, which the
+efficiency gate would have called a regression once the row was baselined.
+
+## 2026-09-14: where the Tier D CPU time goes (ROADMAP 3.8)
+
+No hot path changed. `bitfs-turn`'s stage summary gained the `CPU time` line (the resource's
+advance, save and load as shares of the process CPU time over the stage; performance.md,
+"Existing instrumentation"), and both Tier D workloads were sampled with the Windows
+Performance Toolkit (`xperf -on PROC_THREAD+LOADER+PROFILE -stackwalk Profile`, 4 ms, every
+CPU) on a Release-codegen build with debug information (`RelWithDebInfo` preset with
+`/O2 /Ob2 /Zi` and `/debug /OPT:REF /OPT:ICF /INCREMENTAL:NO`; 1,274,368 bytes against
+Release's 1,273,856, counts identical, wall 133.2 s against 133.7 s). The dump's stacks were
+aggregated by module, by function and by inclusive bucket (a sample counts once per bucket
+whose regex matches any frame of its stack). Machine as for the suite: High performance plan,
+High priority, the deterministic run pinned to `0x5555`, the throughput run unpinned.
+
+| | Deterministic: 8 threads, cost model off, 600 shots | Throughput: 16 threads, cost model on, 1,200 shots |
+|---|---|---|
+| Wall, CPU time | 133.7 s, 1,052 s | 72.9 s, 1,151 s |
+| Scripts, frame advances, saves, loads | 520,052; 18,014,927; 608; 1,038,084 | 1,031,571; 35,768,962; 68,287; 2,072,761 |
+| CPU per script | 2.02 ms | 1.12 ms |
+| Frame advance (`advance`, the game) | 26.5%, 15.5 us each, 34.6 per script | 61.7%, 19.9 us each, 34.7 per script |
+| Load (`fixed` slices, 1.5 MB) | 4.6%, 46.7 us each, 2.0 per script | 13.3%, 74.0 us each, 2.0 per script |
+| Save | 0.0%, 77 us each | 0.6%, 108 us each |
+| Outside the resource | 68.9% | 24.3% |
+| of which OpenMP barrier spin-wait (`_vcomp::PartialBarrierN::Block` and its `NtDelayExecution` / `SwitchToThread` calls) | 58.5% (55.9% at the per-script `QueueThreadById`, 2.1% in decode, 0.4% at the exit) | 0.2% |
+| of which heap allocation and free (`RtlpLowFragHeapAllocFromContext`, `RtlFreeHeap`, ...) | 4.5% | 11.1% |
+| of which `std::map` and `std::_Tree` code | 2.1% | 5.0% |
+| of which `GetInputsMetadata` (inclusive) | 1.5% | 3.3% |
+| of which symbol resolution (`LdrpResolveProcedureAddress`, the loader lock, `RtlBackoff`) | 0.6% | 1.5% |
+| `bitfs-turn.exe` code, exclusive | 4.5% | 10.4% |
+| Block decode (`DecodeBaseBlockDiffAndApply`, inclusive) | 3.0% | 2.3% |
+| `UpsertBlock`, `PrintStatus` | 0.02%, 0 | 0.04%, 0 |
+
+What the two runs say together:
+
+- **The per-script cost outside the resource is the same in both runs**, about 0.26 ms
+  (deterministic: 2.02 ms less 1.18 ms of barrier wait, 0.54 ms of game and 0.09 ms of
+  loads; throughput: 1.12 ms less 0.69 ms of game, 0.15 ms of loads and 0.01 ms of saves).
+  The deterministic run's 69% outside the resource is 58 points of waiting: `QueueThreadById`
+  puts a barrier and then one barrier per thread around every script's `UpsertBlock`, and
+  every thread waits for the slowest one each time, spinning (vcomp spins through
+  `SwitchToThread` and `NtDelayExecution`, so the wait is CPU time and shows in the
+  `process cycles` row). The wait is the variance of a script's cost, not the barriers'
+  own cost; the gate run's cycles measure waiting, and the throughput run is the one whose
+  outside share is work.
+- **Replays are the game time.** `AdvanceFrameRead` holds 68% of the throughput run's CPU
+  against 3.7% for `AdvanceFrameWrite`: about 95% of the frame advances replay known inputs.
+  The replay is the search's evaluation: after each script `TiltTargetShot` runs the game to
+  the pyramid's equilibrium through `GetEquilibriumTrackedState` (`Load(frame + 1)` frame by
+  frame, up to 200, each tracked by `TiltTargetShotMetrics`), 67% of the CPU inclusive,
+  plus the rewinds `ApplyMovement` makes, which replay from the shot's base save (cost model
+  off) or the nearest automatic save (on). The later calls of the same lookahead in
+  `ValidateState`, `GetStateBin` and `GetStateFitness` find the tracked states cached (1.4%,
+  2.8%, 0.6%), so the framework's caching holds across the sandboxes; the cost is the first
+  evaluation, about 33 game frames per script, and only fewer or cheaper evaluation frames
+  change it (ROADMAP 4.3, and `PyramidUpdate` as the stand-in it was written to be).
+  Decoding the base block from the root, the list's first suspect, is 2 to 3%.
+- **The tracker's status object is the heap.** Of the 11.1% in the heap on the throughput
+  run, 7.0% is `TiltTargetShotMetrics::CustomScriptStatus`: thirteen `std::vector` members
+  for three-element arrays, constructed per tracked frame and copied whole wherever a
+  `GetTrackedState` result is taken by value (its constructor alone 4.2%, `CheckEquilibrium`
+  0.8%, `GetEquilibriumTrackedState` 0.7%, the destructor and `operator=` 0.9%,
+  `execution` 0.4%). `std::vector` code is another 8.9% inclusive, mostly the same copies.
+  That is the stage script, not the framework. The framework's own allocations are about
+  3.5%: `BaseScriptStatus` per sandbox (0.6%), `Script::Run` (0.5%), `GetInputsMetadata`'s
+  cache nodes (0.4%), `~Script` (0.3%), `LoadBase`'s save-cache and load-tracker nodes
+  (0.3%), `LevelStack::Grow` (0.3%), the tracked-state map nodes (0.5%), which with the
+  5.0% of map code is the remainder of ROADMAP 3.7 with a number on it: about 9% of the
+  production run.
+- **`resource->addr()` per call is 1.5%** on 16 threads, and not only the 62 ns
+  `GetProcAddress`: `LdrGetProcedureAddressForCaller` takes the loader lock, so the threads
+  contend on it (`RtlEnterCriticalSection`, `RtlAcquireSRWLockShared`, `RtlBackoff` in the
+  profile). The scripts resolve `gMarioState`, `gCamera` and the pyramid behavior at the
+  top of every `validation()`, `execution()` and helper (performance.md, the non-zero-cost
+  list; ROADMAP 3.2's access contract).
+- **Loads are memory bandwidth.** The `fixed` load is one `memcpy` of 1.5 MB: 41 us alone,
+  46.7 us with 8 threads on the performance cores, 74 us with 16 threads on every core.
+  Two loads per script in both runs.
+- Not hotspots on this workload: `UpsertBlock` and the `blocks` critical section
+  (0.04%), console output under the `print` section (0), `GetHash` (0.01%),
+  `M64Diff`/`Inputs` (0.2%), the slot manager (no eviction, 3 or 28 slots live).
+
+The Tier C family under the same profiler (1 ms, one performance-core CPU): the family is
+the nested-script pyramid oscillation (96% of its samples; 718 ms, 42,923 frame advances
+for 20 output frames, a replay ratio of 2,146), which is 91% game, 74% of it on the replay
+path (`AdvanceFrameRead` 74% against `AdvanceFrameWrite` 17%), with the `PyramidUpdateMem`
+import at 2.5%, `GetMinimumDownhillWalkingAngle` at 1.6% and the heap at 2.7%; its
+`overheadPct` reads 5.3. The other two rows, sampled at 0.12 ms over 40 repetitions: the
+downhill-angle call is 3.2 us and 56 allocations, of which the `PyramidUpdateMem`
+construction itself (reading and transforming the surfaces out of the DLL state) is about
+30%, the stand-in's own physics 5%, and the rest the `TopLevelScript`, `Resource` and
+`SlotManager` the call builds and tears down around that one frame, with `Script::Run`'s
+sandboxes and their `BaseScriptStatus` (heap 17% of the trace's samples, `Sm64Object::operator=`,
+`LoadSurfaces`, `MainFromSave`, the resource and script constructors and destructors the
+owners). The tracker sweep is 15.7 us and 29 allocations per tracked frame at 12.4%
+overhead: 91% the game frame (14.3 us here, Tier B's number for this point of the movie),
+1.4 us in `ExecuteStateTracker`, of which about 0.9 us is allocation (`BaseScriptStatus`,
+`LevelStack::Grow`, the tracker's `CustomScriptStatus` vectors, `Script::Run`), the 3.7
+remainder again. It never crosses (500 frames, 500 advances; `CalculateOscillations`
+0.1%), so the list's third item is not measured by any workload in the suite and needs the
+`dr-oscillations` stage.
+
+Method notes for the next investigation: the aggregation script and the trace commands are
+not in the repository (a session's scratch); `perf.ps1`'s pinning and priority were
+reproduced by hand, and xperf's default dump symbolizes every process in the trace, so a
+warm symbol cache (`_NT_SYMCACHE_PATH`) is worth keeping between runs. LTO folds identical
+functions under `/OPT:ICF`, so a `std::_Tree` node insert can carry the name of an unrelated
+map's instantiation; read those as "map insert".
+
 ## 2026-09-14: a saved state's lifecycle has two ends
 
 A state's contents live from `Resource::save` until its slot is erased. A state type that

@@ -425,7 +425,7 @@ Goal: the core's implicit invariants become explicit and enforced.
       row as -15%); the Tier C benchmarks and `bitfs-turn` read the struct instead of
       copying fields, and the stage summary prints the slot line. Every gated count
       identical; the delta table is in docs/performance-changelog.md.
-- [ ] **3.7 Remove known non-zero-cost spots**, each gated by the suite. Done 2026-09-07:
+- [x] **3.7 Remove known non-zero-cost spots**, each gated by the suite. Done 2026-09-07:
       `Resource::setInputs()` with cached `gControllerPads`/`sm64_update`/`gGlobalTimer`
       pointers in `LibSm64` (measured within noise: `GetProcAddress` is 62 ns here); the six
       per-level `unordered_map`s in `Script` replaced by `LevelStack` (ad-hoc overhead -56%,
@@ -437,12 +437,81 @@ Goal: the core's implicit invariants become explicit and enforced.
       scripts and `GetTrackedState` returning a reference; and a `SlotHandle` move that
       copied the slot id, so every save a child handed to its parent on `Modify` was erased
       by the child's bank and replayed later (now pinned by a test). Allocation counts and
-      timings are in docs/performance-changelog.md. Remaining: scripts resolving symbols per execution; the
-      `std::map` head node MSVC allocates for each container a script actually touches, and
-      one map node per cached frame (a flat or pooled container, measured); virtual dispatch
-      on `Resource` per frame if measurement says it matters.
-- [ ] **3.8 Hotspot investigations.** Work through the "known hotspots" list in
+      timings are in docs/performance-changelog.md. Done 2026-09-14, from the 3.8 profile:
+      scripts resolving symbols per execution (`LibSm64::addr` keeps a table of the names
+      it resolved; 17 ns alone and 45 ns at 16 threads against 61 ns and 5.6 us through
+      the loader lock, the new Tier B `Addr` rows), and virtual dispatch on `Resource` per
+      frame, measured and closed: `LibSm64::advance` and `setInputs` together are 0.02%
+      of the throughput run's samples, so the virtual call is not separable from noise.
+      Last done 2026-09-14: the `std::map` head node MSVC allocates for each container a
+      script touches, and one map node per cached frame. Every one of the 11 allocations
+      of an empty child script and most of the 14 of a tracked frame were sentinel nodes
+      of `M64Diff`'s and the per-level caches' maps, constructed and moved per status
+      object and per level, about 9% of the throughput run's CPU with the map code (3.8).
+      `FrameMap` and `FrameSet` (`tasfw/FrameMap.hpp`, ARCHITECTURE.md "Script
+      hierarchy", pinned by `test_framemap.cpp`) now hold `M64Base::frames` and the five
+      per-level containers; the tracked states stay a node container because a tracker
+      reads its previous states by reference while it may track another frame. Design
+      presented under hard rule 10, prototyped at the maintainer's request and accepted on
+      its numbers (2026-09-14): an empty sandbox 73 -> 25 ns and 2 -> 0 allocations, an
+      empty child script 408 -> 197 ns and 11 -> 2, a tracked frame 753 -> 452 ns and
+      14 -> 3, the movie's load 10,004 -> 27 allocations, `UpsertBlock` -42 to -57% (a
+      solution carries a diff); Tier D deterministic -4.1% and throughput -2.9% in wall
+      time against the same day's binary, every count identical, 0 regressions in the
+      suite (docs/performance-changelog.md). Closed with it: nothing of this item remains.
+- [x] **3.8 Hotspot investigations.** Work through the "known hotspots" list in
       docs/performance.md, measurement first, one PR each, with the Tier C/D delta table.
+      Measured 2026-09-14 (docs/performance-changelog.md, "where the Tier D CPU time goes";
+      the list in docs/performance.md now carries the numbers): `bitfs-turn`'s stage
+      summary prints a `CPU time` line, the resource's advance, save and load as shares of
+      the process CPU time over the stage, and a sampled profile of both Tier D workloads
+      and the Tier C family attributed the rest. On the throughput run, the pipeline's
+      shape, the resource takes 76% of the CPU (game 62%, `fixed` loads 13%, saves 1%) and
+      the 24% outside it is 11% heap (7% of it the tilt-target tracker's `std::vector`
+      status, copied per tracked frame), 5% map code, 3% `GetInputsMetadata`, 1.5% symbol
+      resolution under the loader lock, and the search's own code; 95% of the frame
+      advances are replays, the evaluation to the pyramid's equilibrium after each script.
+      The deterministic gate run is 58% barrier spin-wait, the spread of a script's cost
+      under `QueueThreadById`'s barriers, so its `process cycles` row measures waiting.
+      Block decoding is 2 to 3%; `UpsertBlock`, the `print` section and the slot budget are
+      nothing. Done from that list the same day: the framework's per-sandbox and
+      per-frame allocations and map nodes (3.7, `FrameMap`), `addr` per call (3.7, the
+      table), and the trackers' status objects (`std::array`s instead of `std::vector`s
+      for the per-axis values in the tilt-target, osc-final and DR trackers and their
+      solutions, the tilt-target tracker reading its previous states by reference; a
+      stage-script change, measured in docs/performance-changelog.md). The
+      `dr-oscillations` stage was profiled the same day for the two suspects the
+      tilt-target workload never runs: the `PyramidUpdateMem` import and
+      `CalculateOscillations` are below 0.02% of that stage's CPU (the crossing path runs
+      rarely for what the search advances), so the list's items 2 and 3 close as
+      measured; what the stage pays for is per script, its scripts being one frame each
+      (docs/performance-changelog.md, "where the `dr-oscillations` stage's CPU time
+      goes"). The movement-option weights, a `std::map<MovementOption, double>`
+      `AddRandomMovementOption` took by value and every DR script built from a braced
+      list (4.1% of that stage with the `movementOptions` set reassigned per script), are
+      `initializer_list`s walked in key order and the options a bit vector that grows with
+      the enum since the same day, designed under hard rule 10 and prototyped for the
+      maintainer's decision:
+      the draw is the same (the `dr` stage's first pass identical in deterministic mode,
+      3.17 M scripts), wall -14% on that stage (docs/performance-changelog.md).
+      The last item, the barriers of `Deterministic` mode, closed the same day: every call
+      of `QueueThreadById` takes a ticket (call k of thread i is k·N+i) served in that
+      order by a shared turn, so the upserts keep the order the barriers gave them while a
+      thread waits only for its own turn; base-block selection and the end-of-shot
+      counts take tickets too, since they read shared state, and a thread retires from
+      the queue when its shots end. Designed under hard rule 10, prototyped on a branch,
+      accepted by the maintainer on its numbers with the implementation in the `.t.hpp`
+      and a four-thread reproduction added to the mock test: the deterministic Tier D
+      run 112 -> 92 s, reproducible to the last count on two runs, on a different path
+      than the barriers' (a thread selects its block at its ticket, not after a lockstep
+      round), so the deterministic counts changed once and `perf/baselines/tierd-ci.json`
+      was regenerated; the perf baselines' `TierD_Deterministic` row is re-saved with
+      the next `-SaveBaseline` (docs/performance-changelog.md). Also done the same day:
+      the Tier D rows carry `overheadPct`, the share of CPU time outside the resource,
+      gated at 2 points like Tier C's (its same-binary spread that day was under 0.3
+      points; docs/performance.md, "Tier D"). Block decoding at 8.4% of the `dr` stage
+      is 4.3's. Found on the way and left as 3.14: deterministic mode with piped-in
+      input solutions does not reproduce.
 - [x] **3.9 Pool savestate buffers.** Done 2026-09-07: `SlotManager` keeps erased and evicted
       states in a bounded pool (32) that the next `CreateSlot` reuses, so a save into a
       recycled state is one copy. `dllcheck`: full save 1561 -> 191 us against a 222 us load,
@@ -534,7 +603,7 @@ Goal: the core's implicit invariants become explicit and enforced.
       checksum byte, a movement that writes one random-stick frame, the cost model off so
       every count is exact) in well under a second, and pins what only the CI-sized Tier D
       pinned before: a seed reproduces its search, shots, scripts, blocks, solutions and the
-      resource's work alike, single-threaded and on two threads in deterministic mode, and
+      resource's work alike, single-threaded and on two, three and four threads in deterministic mode, and
       another seed does not; a limit of one slot evicts and replays without changing the
       search; and a bin that is not a function of state (it counts its own calls) fails the
       base-block validation of 4.5 and is counted, with the diagnostics' `error.m64`
@@ -543,6 +612,66 @@ Goal: the core's implicit invariants become explicit and enforced.
       total diff, undefined when the failing base block is the root with nothing applied;
       guarded. Identified 2026-09-14 when 3.5 went in with the pipeline-config test, the
       slot tests and the Tier D slot line as its only checks.
+- [x] **3.14 Deterministic mode with piped-in input solutions.** Done 2026-09-14 (branch
+      `queue-fixes`). Found the same day (3.8): the `dr` stage's second pass, which starts
+      from the solutions its first pass piped in, differed between two runs of one binary
+      in deterministic mode (8,334 and 7,788 scripts on the same seed) and, under CPU
+      contention, hung with every thread spinning in `WaitForTurn` for a turn passed to a
+      ticket no thread takes, while a first pass with no inputs reproduced to the last
+      count. `Initialize` handed the input solutions out through a shared index, so which
+      thread applied which input was timing order, and an input count that is not a
+      multiple of the thread count left the threads with different queue-call counts and
+      their later calls pairing across that boundary. Now the inputs go out in rounds
+      keyed on the thread id: in round r thread i applies input r * threads + i when there
+      is one and makes its queue call either way, so every thread makes the same number of
+      calls (the shared index and its critical section are gone). Verified: the dr stage's
+      second pass reproduces run to run and between a Release and a RelWithDebInfo build
+      (1,004 blocks, 15,047 scripts), the mock test pins piped-in runs on three threads
+      with two inputs and on two threads with three, and the no-input workloads keep their
+      counts (the CI-sized Tier D). The counts of a stage with inputs change once, as they
+      must: the dr scratch stage's first pass went from 9 to 148 solutions. A day of
+      chasing a "build-dependent" divergence on the way was a stale binary: `test.ps1`
+      builds only the tests target, so `bitfs-turn.exe` stays at whatever `build.ps1` last
+      made (AGENTS.md, "Build and run").
+
+- [x] **3.15 The ticket wait spins on libomp.** Done 2026-09-14 (branch `queue-fixes`).
+      Seen in the clang-cl perf suite: the deterministic Tier D run's wall time fell 40%
+      against the pre-branch binaries while its process cycles rose 57%, where the MSVC
+      run's cycles fell with its wall time; `WaitForTurn` (3.8) spun until its ticket came
+      up, and libomp's barriers had slept after their spin budget where vcomp's spun.
+      `WaitForTurn` now spins for `SpinBudget` (4,096) pauses and then waits on the turn
+      counter (`std::atomic::wait`), which `PassTurn` notifies after its store. Measured
+      on both runtimes (docs/performance-changelog.md): cycles -59% (MSVC) and -5%
+      (clang-cl) against the references where the spin read -29% and +57%, CPU outside the
+      resource 24% where it was 56%, wall within 2% (MSVC) and 5% (clang-cl) of the spin
+      version and 28 to 35% under the references, counts unchanged; a four-times-larger
+      budget bought 1.5 s of wall for 22% more CPU and was not taken.
+
+- [x] **3.16 `BM_M64_Save_10k` is 20% slower on clang-cl since the FrameMap commit.** Done
+      2026-09-14 (branch `queue-fixes`). Seen in the clang-cl perf suite (1.4 to 1.7 ms;
+      MSVC's build of the row went the other way, 2.1 to 1.8 ms) and bisected to 0fb3aaf,
+      the sorted-vector containers of 3.7, with its parent still fast. An xperf profile of
+      the benchmark on both builds (clang-cl, Release codegen with symbols) named it: a
+      third of the samples in `FrameMap<uint64_t, Inputs>::operator[]`, a call per lookup
+      that clang-cl does not inline into `M64::save`'s loop (four lookups per frame), where
+      the map's lookups had been inlined and MSVC inlines both. `M64::save` walks the sorted
+      frames once instead: 0.8 ms on both compilers (clang-cl -41% and MSVC -61% against
+      their pre-branch references). Three rewrites of the loop had "changed nothing" the
+      same day because they were measured with `perf.ps1 -NoBuild` after `test.ps1`, which
+      builds only the tests: the perf binary was the old one every time (AGENTS.md, "Build
+      and run").
+
+- [ ] **3.17 Agent instructions for TASing with the framework.** Added 2026-09-14 (the
+      maintainer): guidelines, for an agent or a person, on how to TAS with the framework
+      once the pieces above are settled, so that Phase 4 starts from an agreed way of
+      working rather than from the code alone: which tool to reach for (an ad-hoc attempt,
+      a script class, a state tracker, a scattershot stage), how a goal turns into a script
+      and a run, how a result is checked (counts, reproduction, exports) and which of the
+      hard rules bite while TASing. Not complicated, the maintainer's words; to be written
+      after 3.2, whose encapsulation the guidelines should describe as settled, and before
+      Phase 4. Shape (a docs page or a section of AGENTS.md) to be decided then.
+      *Done when:* the guidelines exist and an agent given the repository and them can
+      create, run and check a new script without further instruction.
 
 ## Phase 4: the squish-cancel brute forcer
 
@@ -617,6 +746,41 @@ Not scheduled. Listed so decisions in earlier phases do not paint us into a corn
   game, decide this once: a game module derived from a declared source (a DWARF layout, a
   decomp revision), or an access contract that needs no copies (3.2, the `addr` replacement
   hard rule 9 waits for), and the copies go.
+- **Generators for new scripts and resources.** The end user (AGENTS.md, "Who it is for")
+  should be able to start a script or a resource from a working skeleton and tweak it,
+  rather than from the templates' declarations: a script class with its
+  `CustomScriptStatus` and the three lifecycle methods, a scattershot thread with the
+  overrides it must provide, a resource with `save`, `load`, `advance`, `setInputs`,
+  `addr`, `getStateSize` and `getCurrentFrame` over a state type, each placed in the
+  right directory and added to its CMake target so it builds at once. Cross-platform is a
+  requirement (the maintainer, 2026-09-14); the repository's tooling of that kind is
+  already Python (`scripts/unlock_libsm64.py`, `perf_compare.py`, the DLL scripts), so a
+  `scripts/new_script.py` and `new_resource.py` are the natural shape, with the skeletons
+  kept as templates the generator fills in, not as strings in the script.
+- **Per-scenario movement options** (done 2026-09-14: `CustomMoves`, on C++23).
+  `BasicMoves` (then `MovementOption`) was one enum for every scenario's scripted moves plus the framework's
+  three input groups (stick magnitude, direction, buttons, which `RandomInputs` reads), a
+  compromise the maintainer would rather not keep as scenarios add moves. The script
+  author's side had to stay plain, `AddRandomMovementOption({{X, 4}, {Y, 1}})`, and no
+  C++20 shape managed it: a member function template deducing the enum from that call
+  fails (the inner braces are a non-deduced context for `std::pair<T, double>`, the snag
+  the first attempt hit), a fifth thread template parameter threads the enum through every
+  type that names the thread, and a deducible entry type or an id with a converting
+  constructor costs a word or a concept per entry. C++23's explicit object parameter is
+  the missing piece: the three calls have an overload taking `this Self&`, constrained on
+  `Self::CustomMoves` being an enum, so the enum is known from the object before
+  the braced list is considered and nothing is deduced from it. A search declares
+  a public `enum class CustomMoves` nested in its class, the magic name the way
+  `CustomScriptStatus` is one (and public like it), and writes today's syntax; a foreign enum does not compile;
+  the framework's input groups stay in `BasicMoves` through the same calls. The
+  selected options are a second bit vector, and the draw is the 3.8 list walk over either
+  enum (`DrawOption`). The cost is the toolchain floor (GCC 14, Clang 18, MSVC 17.2; CI
+  moved to GCC 14 and Clang 18), none at run time: the deterministic Tier D and dr counts
+  are identical (docs/performance-changelog.md), and `test_scattershot_mock.cpp` runs a
+  search on its own enum and pins the typing with static assertions. The five searches
+  moved their moves out of `BasicMoves` the same day, each `CustomMoves` listing them in the
+  order they had, so every draw walks the same order and every count is identical
+  (docs/performance-changelog.md); `BasicMoves` is the three input groups only.
 - **Hacks as a kind of input.** Today a direct write into game memory (`//! UNSAFE`) cannot
   be replayed from a savestate, which is why hard rule 1 forbids it. The intent is to make
   hacks a special input type the framework applies at a frame like any other input, so they

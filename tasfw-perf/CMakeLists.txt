@@ -55,7 +55,7 @@ target_link_libraries(tasfw-perf PRIVATE
 	tasfw-scripts-scattershot-bitfs-dr
 	benchmark::benchmark
 )
-target_compile_features(tasfw-perf PRIVATE cxx_std_20)
+target_compile_features(tasfw-perf PRIVATE cxx_std_23)
 set_target_properties(tasfw-perf PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/out")
 
 add_optimization_flags(tasfw-perf)

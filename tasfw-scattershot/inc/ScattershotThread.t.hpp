@@ -32,11 +32,15 @@ bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::executio
     uint64_t totalShots = 0;
     for (int shot = 0; totalShots <= uint64_t(config.MaxShots); shot++)
     {
-        // Pick a block to "fire a shot" at
-        #pragma omp critical (blocks)
-        {
-            SelectBaseBlock(shot);
-        }
+        // Pick a block to "fire a shot" at. In deterministic mode this is a turn of the queue
+        // like an upsert, so the table it reads is the same on every run.
+        QueueThreadById(config.Deterministic, [&]()
+            {
+                #pragma omp critical (blocks)
+                {
+                    SelectBaseBlock(shot);
+                }
+            });
 
         auto status = ExecuteAdhoc([&]()
             {
@@ -108,34 +112,39 @@ bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::executio
 
         size_t nSolutions = 0;
         bool maxShotsReached = false;
-        #pragma omp critical (print)
-        {
-            //const char* x = "solutions";
-            #pragma omp critical (solutions)
+        // The shot count and the solution count decide when this thread stops: read in a
+        // turn of the queue for the same reason.
+        QueueThreadById(config.Deterministic, [&]()
             {
-                nSolutions = scattershot.Solutions.size();
-            }
+                #pragma omp critical (print)
+                {
+                    //const char* x = "solutions";
+                    #pragma omp critical (solutions)
+                    {
+                        nSolutions = scattershot.Solutions.size();
+                    }
 
-            //ThreadLock(x, [&]() { nSolutions = scattershot.Solutions.size(); });
-            //ThreadLock(CriticalRegions::Solutions, [&]() { nSolutions = scattershot.Solutions.size(); });
-            #pragma omp critical (totalshots)
-            {
-                totalShots = ++scattershot.TotalShots;
-                if (totalShots + omp_get_num_threads() - 1 >= uint64_t(config.MaxShots))
-                    maxShotsReached = true;
-            }
+                    //ThreadLock(x, [&]() { nSolutions = scattershot.Solutions.size(); });
+                    //ThreadLock(CriticalRegions::Solutions, [&]() { nSolutions = scattershot.Solutions.size(); });
+                    #pragma omp critical (totalshots)
+                    {
+                        totalShots = ++scattershot.TotalShots;
+                        if (totalShots + omp_get_num_threads() - 1 >= uint64_t(config.MaxShots))
+                            maxShotsReached = true;
+                    }
 
-            // Periodically print progress to console
-            if (totalShots % config.ShotsPerUpdate == 0)
-                scattershot.PrintStatus();
-        }
-
-        //printf("%d %d %d %d\n", status.nLoads, status.nSaves, status.nFrameAdvances, status.executionDuration);
+                    // Periodically print progress to console
+                    if (totalShots % config.ShotsPerUpdate == 0)
+                        scattershot.PrintStatus();
+                }
+            });
 
         if (maxShotsReached || (config.MaxSolutions > 0 && nSolutions >= size_t(config.MaxSolutions)))
-            return true;
+            break;
     }
 
+    if (config.Deterministic)
+        RetireFromQueue();
     return true;
 }
 
@@ -146,46 +155,43 @@ void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::Initiali
 {
     LongLoad(config.StartFrame);
 
-    // Load piped-in diffs as root blocks
+    // Load piped-in diffs as root blocks, in rounds every thread takes part in: in round r
+    // thread i applies input r * threads + i when there is one and makes its queue call
+    // either way, so every thread makes the same number of calls and the tickets of 3.8 stay
+    // paired (ROADMAP 3.14: a shared index handed the inputs out in timing order and left
+    // the threads with different call counts, which paired later calls across threads and
+    // could hang). The block's piped-diff index is 16 bits, hence the cap.
     if (!scattershot.InputSolutions.empty())
     {
-        bool finishedProcessingDiffs = false;
-        uint16_t inputSolutionsIndex = 0;
         // (parent, seed, nScripts, pipedDiff1Index). Root segments are never decoded, so the
         // values are informational; the old call passed RngHash as nScripts (truncated to 8 bits).
         std::shared_ptr<Segment> rootSegment = std::make_shared<Segment>(nullptr, RngHash, uint8_t(0), uint16_t(0));
-        while (true)
+        uint64_t threads = uint64_t(omp_get_num_threads());
+        uint64_t inputs = std::min<uint64_t>(scattershot.InputSolutions.size(), 65534);
+        uint64_t rounds = (inputs + threads - 1) / threads;
+        for (uint64_t round = 0; round < rounds; round++)
         {
-            #pragma omp critical (inputsolutions)
-            {
-                inputSolutionsIndex = scattershot.InputSolutionsIndex++;
-                finishedProcessingDiffs = inputSolutionsIndex >= scattershot.InputSolutions.size() || inputSolutionsIndex >= 65534;
-            }
-
-            // Execute diff and save block
+            uint64_t index = round * threads + uint64_t(Id);
             ExecuteAdhoc([&]()
                 {
-                    if (finishedProcessingDiffs)
+                    if (index >= inputs)
                     {
                         QueueThreadById(config.Deterministic, [&]() {});
                         return true;
                     }
 
-                    this->Apply(scattershot.InputSolutions[inputSolutionsIndex].m64Diff);
+                    this->Apply(scattershot.InputSolutions[size_t(index)].m64Diff);
                     QueueThreadById(config.Deterministic, [&]()
                         {
                             #pragma omp critical (blocks)
                             {
                                 scattershot.UpsertBlock(GetStateBinSafe(), false, ScattershotSolution<TOutputState>(),
-                                    GetStateFitnessSafe(), rootSegment, 1, GetRng(), inputSolutionsIndex + 1);
+                                    GetStateFitnessSafe(), rootSegment, 1, GetRng(), uint16_t(index + 1));
                             }
                         });
 
                     return true;
                 });
-
-            if (finishedProcessingDiffs)
-                break;
         }
     }
 
@@ -444,7 +450,8 @@ template <class TState, derived_from_specialization_of<Resource> TResource,
     class TOutputState>
 bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::ChooseScriptAndApply()
 {
-    movementOptions = std::unordered_set<MovementOption>();
+    std::fill(basicMoves.begin(), basicMoves.end(), false);
+    std::fill(customMoves.begin(), customMoves.end(), false);
 
     ExecuteAdhoc([&]()
         {
@@ -576,7 +583,7 @@ AdhocBaseScriptStatus ScattershotThread<TState, TResource, TStateTracker, TOutpu
                             if (validated)
                                 novelScript = scattershot.UpsertBlock(newStateBin, isSolution, solution, fitness, BaseBlockTailSegment, n + 1, baseRngHash, 0);
                         }
-                    });
+                            });
 
                 // Update script result count
                 #pragma omp critical (scriptcounters)
@@ -663,18 +670,144 @@ uint64_t ScattershotThread<TState, TResource, TStateTracker, TOutputState>::GetH
 template <class TState, derived_from_specialization_of<Resource> TResource,
     std::derived_from<Script<TResource>> TStateTracker,
     class TOutputState>
-void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::AddRandomMovementOption(std::map<MovementOption, double> weightedOptions)
+template <typename F>
+void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::QueueThreadById(bool deterministic, F func)
 {
-    if (weightedOptions.empty())
+    if (!deterministic)
+    {
+        func();
+        return;
+    }
+
+    uint64_t ticket = TakeTicket();
+    WaitForTurn(ticket);
+    func();
+    PassTurn(ticket + 1);
+}
+
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+uint64_t ScattershotThread<TState, TResource, TStateTracker, TOutputState>::TakeTicket()
+{
+    // Call k of thread i is ticket k * threads + i: round by round, threads in order, the
+    // order the barriers gave the calls.
+    return QueueCalls++ * uint64_t(omp_get_num_threads()) + uint64_t(Id);
+}
+
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::WaitForTurn(uint64_t ticket)
+{
+    // A bounded spin, then a wait on the turn itself. The handoff is on the critical path
+    // of every script, so the spin covers a turn of typical length and a wake through the
+    // kernel is paid only past it; a waiter past it blocks instead of burning its core
+    // (ROADMAP 3.15: libomp's barriers slept where the spin did not).
+    uint64_t spins = 0;
+    for (uint64_t turn; (turn = scattershot.QueueTurn.load(std::memory_order_acquire)) != ticket;)
+    {
+        if (spins++ < SpinBudget)
+            _mm_pause();
+        else
+            scattershot.QueueTurn.wait(turn, std::memory_order_acquire);
+    }
+}
+
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::PassTurn(uint64_t next)
+{
+    // Only the holder of the turn writes it. Retired threads' tickets are skipped; the loop
+    // is bounded so that once every thread has retired the turn just moves on.
+    uint64_t threads = uint64_t(omp_get_num_threads());
+    for (uint64_t skipped = 0; skipped < threads && scattershot.QueueRetired[size_t(next % threads)]; skipped++)
+        next++;
+    scattershot.QueueTurn.store(next, std::memory_order_release);
+    scattershot.QueueTurn.notify_all();
+}
+
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::RetireFromQueue()
+{
+    // Taken under this thread's own turn, so no holder is passing to it at that moment and
+    // every later pass skips it.
+    uint64_t ticket = TakeTicket();
+    WaitForTurn(ticket);
+    scattershot.QueueRetired[size_t(Id)] = 1;
+    PassTurn(ticket + 1);
+}
+
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::AddOption(std::size_t index, double probability, std::vector<bool>& set)
+{
+    if (probability <= 0.0)
+        return;
+
+    if (probability >= 1.0 || GetTempRng() % 65536 <= uint64_t(int(probability / 65535.0)))
+    {
+        if (index >= set.size())
+            set.resize(index + 1, false);
+        set[index] = true;
+    }
+}
+
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::OptionSelected(std::size_t index, const std::vector<bool>& set)
+{
+    return index < set.size() && set[index];
+}
+
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+template <class TKey>
+std::size_t ScattershotThread<TState, TResource, TStateTracker, TOutputState>::SortedByKey(
+    std::initializer_list<std::pair<TKey, double>> list, std::array<std::pair<TKey, double>, MaxWeightedEntries>& out)
+{
+    std::size_t count = 0;
+    for (const auto& entry : list)
+    {
+        bool duplicate = false;
+        for (std::size_t j = 0; j < count && !duplicate; j++)
+            duplicate = out[j].first == entry.first;
+        if (duplicate)
+            continue;
+        if (count == MaxWeightedEntries)
+            throw std::length_error("more weighted entries than a scattershot script can hold");
+        std::size_t i = count++;
+        for (; i > 0 && entry.first < out[i - 1].first; i--)
+            out[i] = out[i - 1];
+        out[i] = entry;
+    }
+    return count;
+}
+
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+template <class TOption>
+void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::DrawOption(std::initializer_list<std::pair<TOption, double>> weightedOptions, std::vector<bool>& set)
+{
+    std::array<std::pair<TOption, double>, MaxWeightedEntries> options;
+    std::size_t count = SortedByKey(weightedOptions, options);
+    if (count == 0)
         return;
 
     double maxRng = 65536.0;
 
     double totalWeight = 0;
-    for (const auto& pair : weightedOptions)
+    for (std::size_t i = 0; i < count; i++)
     {
-        if (pair.second > 0)
-            totalWeight += pair.second;
+        if (options[i].second > 0)
+            totalWeight += options[i].second;
     }
 
     if (totalWeight == 0)
@@ -682,49 +815,55 @@ void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::AddRando
 
     double rng = double(GetTempRng() % (int)maxRng);
     double rngRangeMin = 0;
-    for (const auto& pair : weightedOptions)
+    for (std::size_t i = 0; i < count; i++)
     {
-        if (pair.second <= 0)
+        if (options[i].second <= 0)
             continue;
 
-        double rngRangeMax = rngRangeMin + pair.second * maxRng / totalWeight;
+        double rngRangeMax = rngRangeMin + options[i].second * maxRng / totalWeight;
         if (rng >= rngRangeMin && rng < rngRangeMax)
         {
-            movementOptions.insert(pair.first);
+            AddOption(std::size_t(options[i].first), 1.0, set);
             return;
         }
 
         rngRangeMin = rngRangeMax;
     }
 
-    movementOptions.insert(weightedOptions.rbegin()->first);
+    AddOption(std::size_t(options[count - 1].first), 1.0, set);
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
     std::derived_from<Script<TResource>> TStateTracker,
     class TOutputState>
-void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::AddMovementOption(MovementOption movementOption, double probability)
+void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::AddRandomMovementOption(std::initializer_list<std::pair<BasicMoves, double>> weightedOptions)
 {
-    if (probability <= 0.0)
-        return;
-
-    if (probability >= 1.0 || GetTempRng() % 65536 <= uint64_t(int(probability / 65535.0)))
-        movementOptions.insert(movementOption);
+    DrawOption(weightedOptions, basicMoves);
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
     std::derived_from<Script<TResource>> TStateTracker,
     class TOutputState>
-bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::CheckMovementOptions(MovementOption movementOption)
+void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::AddMovementOption(BasicMoves movementOption, double probability)
 {
-    return movementOptions.contains(movementOption);
+    AddOption(std::size_t(movementOption), probability, basicMoves);
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
     std::derived_from<Script<TResource>> TStateTracker,
     class TOutputState>
-Inputs ScattershotThread<TState, TResource, TStateTracker, TOutputState>::RandomInputs(std::map<Buttons, double> buttonProbabilities)
+bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::CheckMovementOptions(BasicMoves movementOption)
 {
+    return OptionSelected(std::size_t(movementOption), basicMoves);
+}
+
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+Inputs ScattershotThread<TState, TResource, TStateTracker, TOutputState>::RandomInputs(std::initializer_list<std::pair<Buttons, double>> buttonProbabilities)
+{
+    std::array<std::pair<Buttons, double>, MaxWeightedEntries> probabilities;
+    std::size_t count = SortedByKey(buttonProbabilities, probabilities);
     Inputs inputs;
 
     ExecuteAdhoc([&]()
@@ -734,36 +873,37 @@ Inputs ScattershotThread<TState, TResource, TStateTracker, TOutputState>::Random
 
             // stick mag
             float intendedMag = 0;
-            if (CheckMovementOptions(MovementOption::MAX_MAGNITUDE))
+            if (CheckMovementOptions(BasicMoves::MAX_MAGNITUDE))
                 intendedMag = 32.0f;
-            else if (CheckMovementOptions(MovementOption::ZERO_MAGNITUDE))
+            else if (CheckMovementOptions(BasicMoves::ZERO_MAGNITUDE))
                 intendedMag = 0;
-            else if (CheckMovementOptions(MovementOption::SAME_MAGNITUDE))
+            else if (CheckMovementOptions(BasicMoves::SAME_MAGNITUDE))
                 intendedMag = marioState->intendedMag;
-            else if (CheckMovementOptions(MovementOption::RANDOM_MAGNITUDE))
+            else if (CheckMovementOptions(BasicMoves::RANDOM_MAGNITUDE))
                 intendedMag = (GetTempRng() % 1024) / 32.0f;
 
             // Intended yaw
             int16_t intendedYaw = 0;
-            if (CheckMovementOptions(MovementOption::MATCH_FACING_YAW))
+            if (CheckMovementOptions(BasicMoves::MATCH_FACING_YAW))
                 intendedYaw = marioState->faceAngle[1];
-            else if (CheckMovementOptions(MovementOption::ANTI_FACING_YAW))
+            else if (CheckMovementOptions(BasicMoves::ANTI_FACING_YAW))
                 intendedYaw = marioState->faceAngle[1] + 0x8000;
-            else if (CheckMovementOptions(MovementOption::SAME_YAW))
+            else if (CheckMovementOptions(BasicMoves::SAME_YAW))
                 intendedYaw = marioState->intendedYaw;
-            else if (CheckMovementOptions(MovementOption::RANDOM_YAW))
+            else if (CheckMovementOptions(BasicMoves::RANDOM_YAW))
                 intendedYaw = int16_t(GetTempRng());
 
             // Buttons
             uint16_t buttons = 0;
-            if (CheckMovementOptions(MovementOption::SAME_BUTTONS))
+            if (CheckMovementOptions(BasicMoves::SAME_BUTTONS))
                 buttons = this->GetInputs(this->GetCurrentFrame() - 1).buttons;
-            else if (CheckMovementOptions(MovementOption::NO_BUTTONS))
+            else if (CheckMovementOptions(BasicMoves::NO_BUTTONS))
                 buttons = 0;
-            else if (CheckMovementOptions(MovementOption::RANDOM_BUTTONS))
+            else if (CheckMovementOptions(BasicMoves::RANDOM_BUTTONS))
             {
-                for (const auto& pair : buttonProbabilities)
+                for (std::size_t i = 0; i < count; i++)
                 {
+                    const auto& pair = probabilities[i];
                     if (pair.second <= 0)
                         continue;
 

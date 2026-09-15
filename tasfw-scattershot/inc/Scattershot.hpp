@@ -3,6 +3,9 @@
 #include <concepts>
 #include <cstdint>
 #include <cstdio>
+#include <array>
+#include <atomic>
+#include <initializer_list>
 #include <map>
 #include <memory>
 #include <stdexcept>
@@ -11,15 +14,17 @@
 #include <tasfw/Script.hpp>
 #include <tasfw/SharedLib.hpp>
 #include <omp.h>
+#include <immintrin.h>
 #include <vector>
 #include <filesystem>
 #include <set>
+#include <type_traits>
 #include <unordered_set>
 #include <chrono>
 #include <iostream>
 #include <fstream>
 #include <string>
-#include <MovementOption.hpp>
+#include <BasicMoves.hpp>
 #include <algorithm>
 #include <functional>
 
@@ -50,7 +55,6 @@ public:
     inline static const char* Blocks = "blocks";
     inline static const char* CsvCounters = "csvcounters";
     inline static const char* CsvExport = "csvexport";
-    inline static const char* InputSolutions = "inputsolutions";
     inline static const char* ScriptCounters = "scriptcounters";
 };
 
@@ -224,12 +228,18 @@ public:
 
 private:
     // Global State
-    std::unordered_set<int> ActiveThreads;
+    // The deterministic mode's queue (ROADMAP 3.8). Every thread numbers its calls of
+    // QueueThreadById; call k of thread i is ticket k * threads + i, and QueueTurn is the
+    // ticket being served, so the calls run in the same total order the barriers gave them
+    // (round by round, threads in order) but a thread only waits at its own upsert, not for
+    // every other thread to finish its script first. Only the holder of the turn writes it.
+    // A thread that has no more calls retires under its turn; holders skip retired threads.
+    std::atomic<uint64_t> QueueTurn { 0 };
+    std::vector<char> QueueRetired;
     std::vector<Block<TState>> Blocks;
     std::vector<int> BlockIndices; // Indexed by state bin hash
     std::map<int, ScattershotSolution<TOutputState>> Solutions;
     const std::vector<ScattershotSolution<TOutputState>>& InputSolutions;
-    uint16_t InputSolutionsIndex = 0;
 
     std::string CsvFileName;
     std::ofstream Csv;
@@ -376,6 +386,12 @@ private:
 
 
 
+// A scattershot script's own moves: a public nested `enum class CustomMoves` in the script class,
+// the magic name the way `CustomScriptStatus` is one.
+template <class T>
+concept HasCustomMoves = requires { typename T::CustomMoves; }
+    && std::is_enum_v<typename T::CustomMoves>;
+
 template <class TState, derived_from_specialization_of<Resource> TResource,
     std::derived_from<Script<TResource>> TStateTracker = DefaultStateTracker<TResource>,
     class TOutputState = DefaultState>
@@ -443,14 +459,49 @@ protected:
 
     uint64_t GetTempRng();
 
-    void AddRandomMovementOption(std::map<MovementOption, double> weightedOptions);
-    void AddMovementOption(MovementOption movementOption, double probability = 1.0);
-    bool CheckMovementOptions(MovementOption movementOption);
-    Inputs RandomInputs(std::map<Buttons, double> buttonProbabilities);
+    // The weights are a braced list of {option, weight} pairs, walked in BasicMoves order
+    // whatever order the list gives them (the std::map this once took by value walked its keys
+    // in that order; a duplicate option keeps its first weight, as the map's insert did), so
+    // the draw is the same and nothing is allocated (ROADMAP 3.8). RandomInputs takes its
+    // button probabilities the same way.
+    void AddRandomMovementOption(std::initializer_list<std::pair<BasicMoves, double>> weightedOptions);
+    void AddMovementOption(BasicMoves movementOption, double probability = 1.0);
+    bool CheckMovementOptions(BasicMoves movementOption);
+    Inputs RandomInputs(std::initializer_list<std::pair<Buttons, double>> buttonProbabilities);
+
+    // The same three calls for a script's own moves, a public nested `enum class CustomMoves` in
+    // the script class (HasCustomMoves above). Each takes the script's class from the object it is
+    // called on (an explicit object parameter, C++23), so the element type of a braced list
+    // is the script's enum before the braces are considered, a foreign enum does not
+    // compile, and a script without the enum has only the BasicMoves overloads above.
+    // The framework's own input groups (stick magnitude, direction, buttons) stay in
+    // BasicMoves, which RandomInputs reads. Defined in-class: constrained member
+    // templates are (docs/compilers.md).
+    template <class Self> requires HasCustomMoves<Self>
+    void AddRandomMovementOption(this Self& self, std::initializer_list<std::pair<typename Self::CustomMoves, double>> weightedOptions)
+    {
+        ScattershotThread& thread = self;
+        thread.DrawOption(weightedOptions, thread.customMoves);
+    }
+
+    template <class Self> requires HasCustomMoves<Self>
+    void AddMovementOption(this Self& self, typename Self::CustomMoves option, double probability = 1.0)
+    {
+        ScattershotThread& thread = self;
+        thread.AddOption(std::size_t(option), probability, thread.customMoves);
+    }
+
+    template <class Self> requires HasCustomMoves<Self>
+    bool CheckMovementOptions(this const Self& self, typename Self::CustomMoves option)
+    {
+        const ScattershotThread& thread = self;
+        return OptionSelected(std::size_t(option), thread.customMoves);
+    }
 
 private:
     Scattershot<TState, TResource, TStateTracker, TOutputState>& scattershot;
     int Id;
+    uint64_t QueueCalls = 0; // tickets taken so far (deterministic mode)
     uint64_t RngHash = 0;
     uint64_t RngHashTemp = 0;
     TState BaseBlockStateBin;
@@ -460,7 +511,24 @@ private:
     bool LastValidationFailed = false;
     TState LastDecodedBin;
     M64Diff LastDecodedDiff;
-    std::unordered_set<MovementOption> movementOptions;
+    
+    // The options selected for the current script, one bit per BasicMoves. The enum
+    // grows with every scenario and no size is assumed: the vector grows to the largest
+    // option a script on this thread ever selects (a handful of times in a run) and is
+    // cleared in place per script, so no script allocates for it.
+    std::vector<bool> basicMoves;       // BasicMoves, the framework's enum
+    std::vector<bool> customMoves;           // the script's own CustomMoves
+    void AddOption(std::size_t index, double probability, std::vector<bool>& set);
+    static bool OptionSelected(std::size_t index, const std::vector<bool>& set);
+    template <class TOption>
+    void DrawOption(std::initializer_list<std::pair<TOption, double>> weightedOptions, std::vector<bool>& set);
+
+    // The entries of a braced list in key order, the first of any duplicate key kept: the
+    // order and the meaning a std::map built from the same list had. Returns the count.
+    static constexpr std::size_t MaxWeightedEntries = 64;
+    static constexpr uint64_t SpinBudget = 4096; // pauses before a waiter blocks on the turn (ROADMAP 3.15) // one draw's candidates, not the enum
+    template <class TKey>
+    static std::size_t SortedByKey(std::initializer_list<std::pair<TKey, double>> list, std::array<std::pair<TKey, double>, MaxWeightedEntries>& out);
 
     short startCourse;
     short startArea;
@@ -489,29 +557,17 @@ private:
         return;
     }
 
+    // The deterministic mode's queue (ROADMAP 3.8): in deterministic mode func runs in this
+    // thread's turn (Scattershot::QueueTurn), the same total order per seed on every run
+    // whatever the threads' timing; otherwise it runs at once. A thread takes a ticket per
+    // call, waits for its turn, and passes the turn on, skipping retired threads; it retires
+    // when its shots are done.
     template <typename F>
-    static void QueueThreadById(bool deterministic, F func)
-    {
-        if (!deterministic)
-        {
-            func();
-            return;
-        }
-
-        #pragma omp barrier
-
-        int nThreads = omp_get_num_threads();
-        for (int i = 0; i < nThreads; i++)
-        {
-            if (omp_get_thread_num() == i)
-                func();
-
-            #pragma omp barrier
-            continue;
-        }
-
-        return;
-    }
+    void QueueThreadById(bool deterministic, F func);
+    uint64_t TakeTicket();
+    void WaitForTurn(uint64_t ticket);
+    void PassTurn(uint64_t next);
+    void RetireFromQueue();
 
     bool ValidateCourseAndArea();
     bool ChooseScriptAndApply();

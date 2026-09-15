@@ -38,27 +38,13 @@ template <typename F>
 void Scattershot<TState, TResource, TStateTracker, TOutputState>::MultiThread(int nThreads, F func)
 {
     omp_set_num_threads(nThreads);
+    QueueTurn.store(0);
+    QueueRetired.assign(size_t(nThreads), 0);
     #pragma omp parallel
     {
-        int threadId = omp_get_thread_num();
-        #pragma omp critical
-        {
-            ActiveThreads.insert(threadId);
-        }
-
+        // A thread that finishes retires from the deterministic queue at the end of its
+        // execution(), so the others never wait for it.
         func();
-
-        // Since threads can exit at different times, this ensures the remaining threads will not get stuck at barrier directives
-        while (!ActiveThreads.empty())
-        {
-            #pragma omp critical
-            {
-                ActiveThreads.erase(threadId);
-            }
-
-            #pragma omp barrier
-            continue;
-        }
     }
 
     return;

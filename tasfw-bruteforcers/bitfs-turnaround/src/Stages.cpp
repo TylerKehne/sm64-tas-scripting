@@ -30,13 +30,9 @@ namespace
 {
 	// --- Solution data as named numbers ---------------------------------------------------
 
-	void PutVector(std::map<std::string, double>& metrics, const char* prefix, const std::vector<float>& values)
-	{
-		for (size_t i = 0; i < values.size(); i++)
-			metrics[prefix + std::to_string(i)] = values[i];
-	}
-
-	void PutVector(std::map<std::string, double>& metrics, const char* prefix, const std::vector<int>& values)
+	// A solution's per-axis values (std::array<float, 3> or std::array<int, 3>) as prefix0..2.
+	template <class Values>
+	void PutVector(std::map<std::string, double>& metrics, const char* prefix, const Values& values)
 	{
 		for (size_t i = 0; i < values.size(); i++)
 			metrics[prefix + std::to_string(i)] = values[i];

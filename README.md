@@ -1,5 +1,5 @@
 # sm64-tas-scripting
-A C++20 framework for scripting and brute-forcing Super Mario 64 TAS inputs. The game runs
+A C++23 framework for scripting and brute-forcing Super Mario 64 TAS inputs. The game runs
 inside a native x64 DLL (wafel's libsm64); scripts drive it with savestates and frame
 advances, and a multithreaded "scattershot" search explores input space on top of that.
 The current driver is a squish-cancel setup brute forcer for the BitFS tilting pyramid.
@@ -18,7 +18,7 @@ These files are kept current by design: a Claude Code hook in [.claude/](.claude
 them after every change (see AGENTS.md, "Documentation must match the repository").
 
 # Building instructions
-CMake 3.22+ and a C++20 compiler with OpenMP. The dependencies (nlohmann/json; doctest and
+CMake 3.22+ and a C++23 compiler with OpenMP (MSVC 2022, GCC 14 or Clang 18 and newer). The dependencies (nlohmann/json; doctest and
 Google Benchmark for the tests and benchmarks) are downloaded by CMake, verified by hash and
 cached in `build\downloads`, so later builds work offline; no vcpkg needed.
 
@@ -40,7 +40,7 @@ CI build.
 Tests: `powershell -ExecutionPolicy Bypass -File scripts\test.ps1`. Benchmarks:
 `scripts\perf.ps1`. Both accept `-Compiler clang` for the clang-cl build.
 
-**Linux** (builds and passes the DLL-free tests in CI with GCC 13 and Clang 17; the game
+**Linux** (builds and passes the DLL-free tests in CI with GCC 14 and Clang 18; the game
 path passes the smoke test against a Linux libsm64 `.so` on Ubuntu 26.04, which the `.so`
 needs for its glibc, see [docs/libsm64.md](docs/libsm64.md); there is no macOS preset)
 
@@ -89,7 +89,10 @@ Scattershot CSVs and the `error.m64` dump go to `<outputDirectory>` as well. The
 summary prints wall time and the frame advances, saves and loads summed over threads, which
 are the fixed-workload numbers a performance change has to report (AGENTS.md, hard rule 8),
 then the slot manager's line: the most savestates and bytes any thread held at once, and the
-evictions and pool reuses (what the per-thread memory cap is up against; ROADMAP 3.5).
+evictions and pool reuses (what the per-thread memory cap is up against; ROADMAP 3.5), and
+where the threads' CPU time went: the resource's own advance, save and load as shares of
+the process CPU time over the stage, with the cost of each, and the share outside the
+resource, which is the framework, the scripts and the search (docs/performance.md, "Tier D").
 
 # Configuration
 

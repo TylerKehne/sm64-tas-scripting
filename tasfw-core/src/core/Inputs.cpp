@@ -1,4 +1,5 @@
 #include <tasfw/Inputs.hpp>
+#include <map>
 #include <sys/types.h>
 #include <ios>
 #include <system_error>
@@ -462,19 +463,23 @@ int M64::save(long initFrame)
 		f.write(reinterpret_cast<char*>(&bigEndianRom), sizeof(uint32_t));
 		f.write(reinterpret_cast<char*>(&bigEndianCountry), sizeof(uint16_t));
 
-		// Write frames
+		// Write frames: one walk over the sorted frames, a zero input for every frame not in
+		// it. A lookup per frame was four binary searches, which clang-cl does not inline into
+		// this loop (a third of the save's samples, ROADMAP 3.16).
 		f.seekp(0x400 + 4 * initFrame, std::ios_base::beg);
+		auto next = frames.begin();
 		for (uint64_t i = 0; i <= lastFrame; i++)
 		{
 			uint16_t bigEndianButtons = 0;
 			int8_t stickX = 0;
 			int8_t stickY = 0;
 
-			if (frames.contains(i))
+			if (next != frames.end() && next->first == i)
 			{
-				bigEndianButtons = byteswap(frames[i].buttons);
-				stickX = frames[i].stick_x;
-				stickY = frames[i].stick_y;
+				bigEndianButtons = byteswap(next->second.buttons);
+				stickX = next->second.stick_x;
+				stickY = next->second.stick_y;
+				++next;
 			}
 
 			f.write(reinterpret_cast<char*>(&bigEndianButtons), sizeof(uint16_t));

@@ -7,7 +7,7 @@ add_library(tasfw-core STATIC
 )
 target_include_directories(tasfw-core PUBLIC inc)
 target_link_libraries(tasfw-core PUBLIC ${CMAKE_DL_LIBS})
-target_compile_features(tasfw-core PUBLIC cxx_std_20)
+target_compile_features(tasfw-core PUBLIC cxx_std_23)
 
 add_optimization_flags(tasfw-core)
 

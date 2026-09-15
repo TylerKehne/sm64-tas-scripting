@@ -9,6 +9,7 @@
 #include <typeinfo>
 #include <unordered_map>
 #include <utility>
+#include <tasfw/FrameMap.hpp>
 #include <tasfw/LevelStack.hpp>
 #include <tasfw/Resource.hpp>
 #include <tasfw/Inputs.hpp>
@@ -683,11 +684,11 @@ private:
 	int64_t _initialFrame = 0;
 	// One entry per ad-hoc level (see LevelStack.hpp); level 0 is the script itself.
 	LevelStack<BaseScriptStatus> BaseStatus;
-	LevelStack<std::map<int64_t, SlotHandle<TResource>>> saveBank;// contains handles to savestates
-	LevelStack<std::map<int64_t, uint64_t>> frameCounter;// tracks opportunity cost of having to frame advance from an earlier save
-	LevelStack<std::map<int64_t, SaveMetadata<TResource>>> saveCache;// stores metadata of ancestor saves to save recursion time
-	LevelStack<std::map<int64_t, InputsMetadata<TResource>>> inputsCache;// caches ancestor inputs to save recursion time
-	LevelStack<std::set<int64_t>> loadTracker;// track past loads to know whether a cached save is optimal
+	LevelStack<FrameMap<int64_t, SlotHandle<TResource>>> saveBank;// contains handles to savestates
+	LevelStack<FrameMap<int64_t, uint64_t>> frameCounter;// tracks opportunity cost of having to frame advance from an earlier save
+	LevelStack<FrameMap<int64_t, SaveMetadata<TResource>>> saveCache;// stores metadata of ancestor saves to save recursion time
+	LevelStack<FrameMap<int64_t, InputsMetadata<TResource>>> inputsCache;// caches ancestor inputs to save recursion time
+	LevelStack<FrameSet<int64_t>> loadTracker;// track past loads to know whether a cached save is optimal
 	Script* _parentScript;
 	Script* _rootScript;
 	// Set by TopLevelScript on the root; see StateTrackerTag.
@@ -704,18 +705,18 @@ private:
 	InputsMetadata<TResource> GetInputsMetadataAndCache(int64_t frame);
 	void DeleteSave(int64_t frame, int64_t adhocLevel);
 	void SetInputs(Inputs inputs);
-	void Revert(uint64_t frame, const M64Diff& m64, std::map<int64_t, SlotHandle<TResource>>* childSaveBank, Script<TResource>* childScript);
+	void Revert(uint64_t frame, const M64Diff& m64, FrameMap<int64_t, SlotHandle<TResource>>* childSaveBank, Script<TResource>* childScript);
 	void AdvanceFrameRead(uint64_t& counter);
 	uint64_t GetFrameCounter(InputsMetadata<TResource> cachedInputs);
 	uint64_t IncrementFrameCounter(InputsMetadata<TResource> cachedInputs);
-	void ApplyChildDiff(const BaseScriptStatus& status, std::map<int64_t, SlotHandle<TResource>>* childSaveBank, int64_t initialFrame, Script<TResource>* childScript);
+	void ApplyChildDiff(const BaseScriptStatus& status, FrameMap<int64_t, SlotHandle<TResource>>* childSaveBank, int64_t initialFrame, Script<TResource>* childScript);
 	SaveMetadata<TResource> Save(int64_t adhocLevel);
 	void LoadBase(uint64_t frame, bool desync);
 
 	// A child's save bank at `adhocLevel`, or nullptr if the child never saved (the level was
 	// never created). Reverting through a pointer avoids constructing an empty map just to
 	// find out it is empty.
-	static std::map<int64_t, SlotHandle<TResource>>* SaveBankIfCreated(Script<TResource>& script, int64_t adhocLevel)
+	static FrameMap<int64_t, SlotHandle<TResource>>* SaveBankIfCreated(Script<TResource>& script, int64_t adhocLevel)
 	{
 		return script.saveBank.contains(adhocLevel) ? &script.saveBank[adhocLevel] : nullptr;
 	}
@@ -829,7 +830,7 @@ public:
 		return script->BaseStatus;
 	}
 
-	static LevelStack<std::map<int64_t, InputsMetadata<TResource>>>& GetInputsCache(Script<TResource>* script)
+	static LevelStack<FrameMap<int64_t, InputsMetadata<TResource>>>& GetInputsCache(Script<TResource>* script)
 	{
 		return script->inputsCache;
 	}

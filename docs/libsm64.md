@@ -114,8 +114,9 @@ script and the drift test threw "procedure not found" on anything newer than the
 Scripts keep using the pinned names. `LibSm64::addr` tries the name it is given and only
 when that lookup fails consults `LibSm64SymbolAliases` (`LibSm64.hpp`) for the other
 spelling, in either direction. The pinned DLL therefore pays nothing; a newer build pays one
-extra failed lookup per `addr()` call, which is never per frame (`Resource::addr`). Add a
-pair there when the decomp renames something else the framework uses.
+extra failed lookup the first time a name is asked for, since `LibSm64::addr` resolves a
+name once and answers from its own table after (`_symbols`; docs/performance.md, ROADMAP
+3.7). Add a pair there when the decomp renames something else the framework uses.
 `sm64_update_and_render` exists in the pinned and the v0.8.5 builds but not in wafel's
 2022-08-07 one; nothing
 here calls it.
@@ -416,8 +417,10 @@ locally"); the repository is mounted at `/src`, so `res/sm64_jp_0.so` is
   Windows DLL, save/load determinism, drift test max |diff| = 0 over 240 frames.
 - **The search is the same search.** The `.so` is jgcodes2020's build of a newer decomp
   than the DLLs (2026 against 2022), and the CI-sized Tier D search (`perf/tierd-ci-linux.json`,
-  100 shots, seed 3) reaches the DLL's exact counts on it, 2,981,801 frame advances and
-  10 solutions, with GCC 15 and Clang 21 (2026-09-13). It did not at first: the search
+  100 shots, seed 3) reaches the DLL's exact counts on it, with GCC 15 and Clang 21
+  (2026-09-13: 2,981,801 frame advances and 10 solutions; since the deterministic queue
+  became a ticket on 2026-09-14 the counts are 2,948,886 and 12, `perf/baselines/tierd-ci.json`,
+  which the Linux jobs gate on the same way). It did not at first: the search
   read 2,867,262 frame advances and 11 solutions on Linux, identically in `dirty` and
   `full` mode and on both compilers, and the cause was the framework, not the game:
   scattershot's hashes went through `std::hash<std::byte>`, which libstdc++ and MSVC's

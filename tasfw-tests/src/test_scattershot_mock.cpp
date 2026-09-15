@@ -55,7 +55,7 @@ namespace
 			return true;
 		}
 
-		void SelectMovementOptions() override { AddMovementOption(MovementOption::RANDOM_YAW); }
+		void SelectMovementOptions() override { AddMovementOption(BasicMoves::RANDOM_YAW); }
 
 		// One frame of a stick from the pellet's RNG. Buttons stay zero: ValidateCourseAndArea
 		// reads two symbols through addr, which the mock answers with its pad, so a button
@@ -88,6 +88,62 @@ namespace
 		bool _binDependsOnHistory;
 		uint32_t _calls = 0;
 	};
+
+	// A script with moves of its own: a public nested `enum class CustomMoves`, the magic name,
+	// goes through the same three calls as BasicMoves and is typed to this class
+	// (ROADMAP 3.8, Phase 5 "Per-scenario movement options").
+	class CustomShot : public MockShot
+	{
+	public:
+		using MockShot::MockShot;
+
+		enum class CustomMoves
+		{
+			DASH,
+			WAIT
+		};
+
+		void SelectMovementOptions() override
+		{
+			AddMovementOption(BasicMoves::RANDOM_YAW);
+			AddRandomMovementOption({ { CustomMoves::DASH, 3 }, { CustomMoves::WAIT, 1 } });
+		}
+
+		bool ApplyMovement() override
+		{
+			uint64_t r = GetTempRng();
+			if (CheckMovementOptions(CustomMoves::DASH))
+				AdvanceFrameWrite(Inputs(0, int8_t(int(r % 121) - 60), int8_t(int((r >> 8) % 121) - 60)));
+			else
+				AdvanceFrameWrite(Inputs(0, int8_t(int(r % 11) - 5), int8_t(int((r >> 8) % 11) - 5)));
+			return true;
+		}
+	};
+
+	enum class ForeignOption
+	{
+		Other
+	};
+
+	// The calls are typed to the script's own enum: another script's enum, or an enum of a
+	// script that has none, is a compile error rather than a silent mismatch. Checked from
+	// a class derived from the script, where scripts make the calls (they are protected;
+	// a requires-expression outside a template is also ill-formed when its call is).
+	template <class TShot>
+	struct Probe : TShot
+	{
+		template <class TOption>
+		static constexpr bool Checks = requires(Probe& s, TOption option) { s.CheckMovementOptions(option); };
+		template <class TOption>
+		static constexpr bool Draws = requires(Probe& s, TOption option) { s.AddRandomMovementOption({ { option, 1.0 } }); };
+	};
+
+	static_assert(Probe<CustomShot>::Checks<CustomShot::CustomMoves>);
+	static_assert(Probe<CustomShot>::Checks<BasicMoves>);
+	static_assert(!Probe<CustomShot>::Checks<ForeignOption>);
+	static_assert(!Probe<MockShot>::Checks<CustomShot::CustomMoves>);
+	static_assert(Probe<CustomShot>::Draws<CustomShot::CustomMoves>);
+	static_assert(!Probe<CustomShot>::Draws<ForeignOption>);
 
 	struct Run
 	{
@@ -139,7 +195,9 @@ namespace
 		return cfg;
 	}
 
-	Run RunSearch(int threads, int seed, bool deterministic, long long maxShots = 24, bool binDependsOnHistory = false, int64_t slotLimitBytes = 0)
+	template <class TShot = MockShot>
+	Run RunSearch(int threads, int seed, bool deterministic, long long maxShots = 24, bool binDependsOnHistory = false, int64_t slotLimitBytes = 0,
+		const std::vector<Solution>* inputs = nullptr)
 	{
 		Configuration cfg = MakeConfig(threads, seed, deterministic, maxShots);
 		std::vector<MockResource> resources(static_cast<size_t>(threads));
@@ -151,9 +209,10 @@ namespace
 		}
 
 		Run run;
-		run.solutions = MockShot::ConfigureScattershot(cfg)
+		auto builder = inputs ? TShot::ConfigureScattershot(cfg).PipeFrom(*inputs) : TShot::ConfigureScattershot(cfg);
+		run.solutions = builder
 			.ImportResourcePerThread([&](int threadId) { return &resources[size_t(threadId)]; })
-			.Run<MockShot>(run.counts, binDependsOnHistory);
+			.template Run<TShot>(run.counts, binDependsOnHistory); // `template`: dependent object (docs/compilers.md)
 		for (const MockResource& resource : resources)
 		{
 			run.frameAdvances += resource.work.frameAdvances;
@@ -211,6 +270,72 @@ TEST_CASE("Two threads in deterministic mode reproduce their search too")
 	CheckSameSearch(first, again);
 	CHECK(first.frameAdvances == again.frameAdvances);
 	CHECK(first.loads == again.loads);
+}
+
+// The deterministic queue serves every thread's k-th call in thread order (ROADMAP 3.8);
+// with more threads than two and enough shots for them to finish at different times, the
+// retirements come in a timing-dependent order that must not reach the search.
+TEST_CASE("Four threads in deterministic mode reproduce their search, over several shots each")
+{
+	Run first = RunSearch(4, 3, true, 96);
+	Run again = RunSearch(4, 3, true, 96);
+	REQUIRE(first.counts.shots > 48);
+	REQUIRE(first.counts.scripts > 0);
+	CheckSameSearch(first, again);
+	CHECK(first.frameAdvances == again.frameAdvances);
+	CHECK(first.loads == again.loads);
+
+	Run three = RunSearch(3, 3, true, 96);
+	Run threeAgain = RunSearch(3, 3, true, 96);
+	CheckSameSearch(three, threeAgain);
+	CHECK(three.frameAdvances == threeAgain.frameAdvances);
+}
+
+TEST_CASE("A script's own CustomMoves enum goes through the same calls and its search reproduces")
+{
+	Run first = RunSearch<CustomShot>(1, 3, true);
+	Run again = RunSearch<CustomShot>(1, 3, true);
+	REQUIRE(first.counts.scripts > 0);
+	CheckSameSearch(first, again);
+	CHECK(first.frameAdvances == again.frameAdvances);
+
+	// The custom draw changes the search: the same seed without it is a different search.
+	Run plain = RunSearch<MockShot>(1, 3, true);
+	CHECK((plain.counts.scripts != first.counts.scripts || plain.counts.blocks != first.counts.blocks
+		|| !SameSolutions(plain.solutions, first.solutions)));
+
+	Run four = RunSearch<CustomShot>(4, 3, true, 96);
+	Run fourAgain = RunSearch<CustomShot>(4, 3, true, 96);
+	CheckSameSearch(four, fourAgain);
+	CHECK(four.frameAdvances == fourAgain.frameAdvances);
+}
+
+TEST_CASE("Piped-in solutions reproduce in deterministic mode, on three threads with two inputs")
+{
+	// The inputs are solutions of a single-thread search. They are handed out in rounds every
+	// thread takes part in, so every thread makes the same number of queue calls and the
+	// tickets pair up thread by thread (ROADMAP 3.14); with two inputs on three threads one
+	// thread has none in the only round, with three on two threads the second round is short.
+	Run source = RunSearch(1, 3, true, 96);
+	REQUIRE(source.solutions.size() >= 3);
+	std::vector<Solution> two(source.solutions.begin(), source.solutions.begin() + 2);
+	std::vector<Solution> three(source.solutions.begin(), source.solutions.begin() + 3);
+
+	Run first = RunSearch(3, 5, true, 24, false, 0, &two);
+	Run again = RunSearch(3, 5, true, 24, false, 0, &two);
+	REQUIRE(first.counts.scripts > 0);
+	CheckSameSearch(first, again);
+	CHECK(first.frameAdvances == again.frameAdvances);
+
+	// The inputs change the search: the same seed without them is a different search.
+	Run plain = RunSearch(3, 5, true);
+	CHECK((plain.counts.blocks != first.counts.blocks || plain.counts.scripts != first.counts.scripts
+		|| !SameSolutions(plain.solutions, first.solutions)));
+
+	Run more = RunSearch(2, 5, true, 24, false, 0, &three);
+	Run moreAgain = RunSearch(2, 5, true, 24, false, 0, &three);
+	CheckSameSearch(more, moreAgain);
+	CHECK(more.frameAdvances == moreAgain.frameAdvances);
 }
 
 TEST_CASE("A tight savestate limit evicts and replays, and changes nothing about the search")
