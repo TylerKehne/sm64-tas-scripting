@@ -4,6 +4,32 @@ Every hot-path change records its delta table here, newest first; the policy, th
 how to run it are in [performance.md](performance.md). The first measurements (2026-09-07),
 which everything since is compared against, are at the bottom.
 
+## 2026-09-14: the ticket wait blocks past a bounded spin (ROADMAP 3.15)
+
+Designed under hard rule 10 and agreed the same evening. `WaitForTurn` spun with
+`_mm_pause` and a yield every 1,024 spins; on clang-cl's libomp that burned a core per
+waiting thread where the barriers it replaced had slept (the clang-cl suite's deterministic
+Tier D: wall -40% against the pre-branch binaries, process cycles +57%). It now spins for
+`SpinBudget` (4,096) pauses, about a turn of typical length, and then waits on the turn
+counter (`std::atomic::wait`), which `PassTurn` notifies after its store; no new state, the
+same order of turns, so the counts are unchanged. Deterministic Tier D, Tier D alone, each
+compiler's Release built by the perf script against its interleaved pre-branch reference:
+
+| | Reference | Spin (before) | Spin, then wait |
+|---|---|---|---|
+| MSVC wall | 130.4 s | 92.3 s | 93.8 s |
+| MSVC cycles against the reference | | -29% | -59% |
+| MSVC CPU time, outside the resource | | 725 s, 55.8% | 426 s, 24.0% |
+| clang-cl wall | 144.9 s | 89.9 s | 93.9 s |
+| clang-cl cycles against the reference | | +57% | -5% |
+| clang-cl CPU time, outside the resource | | | 430 s, 24.6% |
+| throughput wall (no queue), MSVC / clang-cl | 110.3 / 105.8 s | 89.1 / 89.7 s | 91.6 / 87.4 s |
+
+A budget of 16,384 pauses was measured too, on clang-cl: wall 92.4 s, cycles +14% against
+the reference, 524 s of CPU with 38.8% outside the resource, so 1.5 s of wall for 22% more
+CPU; not taken. Counts on both compilers: 52 solutions, 111,860 blocks, 524,380 scripts,
+17,800,136 frame advances, 608 saves, 1,045,094 loads, the ticket queue's to the number.
+
 ## 2026-09-14: `M64::save` walks its frames once (ROADMAP 3.16)
 
 An xperf profile of `BM_M64_Save_10k` on clang-cl builds with symbols (Release codegen),

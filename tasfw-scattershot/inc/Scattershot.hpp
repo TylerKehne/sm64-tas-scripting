@@ -15,7 +15,6 @@
 #include <tasfw/SharedLib.hpp>
 #include <omp.h>
 #include <immintrin.h>
-#include <thread>
 #include <vector>
 #include <filesystem>
 #include <set>
@@ -526,7 +525,8 @@ private:
 
     // The entries of a braced list in key order, the first of any duplicate key kept: the
     // order and the meaning a std::map built from the same list had. Returns the count.
-    static constexpr std::size_t MaxWeightedEntries = 64; // one draw's candidates, not the enum
+    static constexpr std::size_t MaxWeightedEntries = 64;
+    static constexpr uint64_t SpinBudget = 4096; // pauses before a waiter blocks on the turn (ROADMAP 3.15) // one draw's candidates, not the enum
     template <class TKey>
     static std::size_t SortedByKey(std::initializer_list<std::pair<TKey, double>> list, std::array<std::pair<TKey, double>, MaxWeightedEntries>& out);
 

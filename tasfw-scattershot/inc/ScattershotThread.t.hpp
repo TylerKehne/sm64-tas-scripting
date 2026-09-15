@@ -700,14 +700,17 @@ template <class TState, derived_from_specialization_of<Resource> TResource,
     class TOutputState>
 void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::WaitForTurn(uint64_t ticket)
 {
-    // A spin: the handoff is on the critical path of every script, so a wake through the
-    // kernel would cost more than the wait. The barriers spun too (through SwitchToThread).
+    // A bounded spin, then a wait on the turn itself. The handoff is on the critical path
+    // of every script, so the spin covers a turn of typical length and a wake through the
+    // kernel is paid only past it; a waiter past it blocks instead of burning its core
+    // (ROADMAP 3.15: libomp's barriers slept where the spin did not).
     uint64_t spins = 0;
-    while (scattershot.QueueTurn.load(std::memory_order_acquire) != ticket)
+    for (uint64_t turn; (turn = scattershot.QueueTurn.load(std::memory_order_acquire)) != ticket;)
     {
-        _mm_pause();
-        if ((++spins & 0x3FF) == 0)
-            std::this_thread::yield();
+        if (spins++ < SpinBudget)
+            _mm_pause();
+        else
+            scattershot.QueueTurn.wait(turn, std::memory_order_acquire);
     }
 }
 
@@ -722,6 +725,7 @@ void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::PassTurn
     for (uint64_t skipped = 0; skipped < threads && scattershot.QueueRetired[size_t(next % threads)]; skipped++)
         next++;
     scattershot.QueueTurn.store(next, std::memory_order_release);
+    scattershot.QueueTurn.notify_all();
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,

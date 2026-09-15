@@ -310,11 +310,12 @@ Vocabulary:
   counts a thread stops on) through a ticket queue (`QueueThreadById`): a thread's k-th
   call is served after every thread's (k-1)-th and after the lower thread ids' k-th, the
   order a barrier per round gave until 2026-09-14, but a thread waits only for its own
-  turn, so its next script runs while others finish the round; a thread retires from the
-  queue when its shots end. A run is reproducible for a given `Seed` and thread count.
-  Not in the queue, and not reproducible: the CSV rows (sampled and written in arrival
-  order), and a run with piped-in input solutions, whose `Initialize` loop leaves the
-  threads with different call counts (ROADMAP 3.14).
+  turn (a bounded spin, then a wait on the turn counter that the holder wakes when it
+  passes the turn), so its next script runs while others finish the round; a thread
+  retires from the queue when its shots end. Piped-in input solutions go to the threads in
+  rounds keyed on the thread id, one queue call per thread per round, so a run with them
+  is in the queue too. A run is reproducible for a given `Seed` and thread count. Not in
+  the queue, and not reproducible: the CSV rows (sampled and written in arrival order).
 - **CSV**: every `CsvSamplePeriod`-th novel block per thread is written as a row; the R script
   in `analysis/` plots them. `CsvRows` is printed so plotting can run mid-search.
 

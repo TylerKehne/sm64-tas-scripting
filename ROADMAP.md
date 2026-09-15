@@ -634,18 +634,18 @@ Goal: the core's implicit invariants become explicit and enforced.
       builds only the tests target, so `bitfs-turn.exe` stays at whatever `build.ps1` last
       made (AGENTS.md, "Build and run").
 
-- [ ] **3.15 The ticket wait spins on libomp.** Seen 2026-09-14 in the clang-cl perf suite:
-      the deterministic Tier D run's wall time fell 40% against the pre-branch binaries
-      (151.5 to 90.4 s) while its process cycles rose 57%, where the MSVC run's cycles fell
-      with its wall time (129.1 to 91.7 s, cycles -29%). `WaitForTurn` (3.8) spins with
-      `_mm_pause` until its ticket comes up; libomp's barriers block after their spin budget
-      (`KMP_BLOCKTIME`), which is presumably the idle time the old cycles left out, while
-      vcomp's spun, so on clang-cl the ticket queue trades the barrier's idle time for
-      busy CPU. Counts are identical on both compilers and nothing is gated
-      on cycles, so this is a cost, not a defect. *Done when:* the wait yields after a
-      bounded spin (or waits on the turn counter), measured on both runtimes: the clang-cl
-      run's cycles back near its wall time times the thread count without a wall-time
-      regression on either compiler, and the counts unchanged.
+- [x] **3.15 The ticket wait spins on libomp.** Done 2026-09-14 (branch `queue-fixes`).
+      Seen in the clang-cl perf suite: the deterministic Tier D run's wall time fell 40%
+      against the pre-branch binaries while its process cycles rose 57%, where the MSVC
+      run's cycles fell with its wall time; `WaitForTurn` (3.8) spun until its ticket came
+      up, and libomp's barriers had slept after their spin budget where vcomp's spun.
+      `WaitForTurn` now spins for `SpinBudget` (4,096) pauses and then waits on the turn
+      counter (`std::atomic::wait`), which `PassTurn` notifies after its store. Measured
+      on both runtimes (docs/performance-changelog.md): cycles -59% (MSVC) and -5%
+      (clang-cl) against the references where the spin read -29% and +57%, CPU outside the
+      resource 24% where it was 56%, wall within 2% (MSVC) and 5% (clang-cl) of the spin
+      version and 28 to 35% under the references, counts unchanged; a four-times-larger
+      budget bought 1.5 s of wall for 22% more CPU and was not taken.
 
 - [x] **3.16 `BM_M64_Save_10k` is 20% slower on clang-cl since the FrameMap commit.** Done
       2026-09-14 (branch `queue-fixes`). Seen in the clang-cl perf suite (1.4 to 1.7 ms;

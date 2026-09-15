@@ -79,8 +79,10 @@ Ordered by how much they dominate a typical scattershot run:
 6. **Synchronization.** Named `omp critical` sections in scattershot; `Deterministic` mode
    serves every script's upsert, and each shot's block selection and stop check, in thread
    order through a ticket queue (`QueueThreadById`), so a thread waits for its own turn
-   rather than for every thread at every round (the barriers it replaced were 58% of the
-   deterministic Tier D run's CPU; the queue's wait is about 50%).
+   rather than for every thread at every round, spinning for a bounded budget and then
+   blocking on the turn counter (the barriers it replaced were 58% of the deterministic
+   Tier D run's CPU, the spinning queue about 50%; with the wait blocking, the run's CPU
+   outside the resource is about 24%, ROADMAP 3.15).
 7. **`PyramidUpdate` construction.** `ImportSave<PyramidUpdateMem>` reads and transforms every
    pyramid surface out of the DLL each time it is called, which is once per frame in
    `RunDownhill` and once per crossing in the trackers.
@@ -298,9 +300,9 @@ outside the resource from the stage summary's `CPU time` line, gated like Tier C
 `--overhead-tolerance` points (default 2) against the anchor: the framework's share of a
 run, which a change to it moves and the machine's day does not (two runs of one binary
 read 24.0 and 24.3%, 19.1 and 19.2%, 68.9 and 68.8% on 2026-09-14). For the
-deterministic run the share includes the queue's spin-wait (about 50 points of it; 58
-with the barriers it replaced), so a change that alters the spread of a script's cost
-moves it too.
+deterministic run the share includes the queue's wait (about 13 points of it since the
+wait blocks past a bounded spin; 50 while it spun, 58 with the barriers it replaced), so a
+change that alters the spread of a script's cost moves it too.
 
 The deterministic run has the cost model off because automatic savestates depend on measured
 timings: with it on the search outcome is still identical (ROADMAP 4.5), but `frameAdvances`
