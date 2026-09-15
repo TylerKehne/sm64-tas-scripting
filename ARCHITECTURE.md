@@ -173,7 +173,11 @@ track another frame).
 
 Input resolution (`GetInputsMetadata`): to find the inputs for frame *f*, walk the current
 script's ad-hoc levels from innermost outward, then the parent chain, then the source `M64`,
-then default to neutral. Along the way the first level whose diff starts before *f* becomes
+then default to neutral. The root has its own copy of the walk
+(`TopLevelScript::GetInputsMetadata`), ending in the movie instead of a parent; one walk
+for both, ending in a private virtual the root overrides for the movie, measured slower on
+MSVC and was dropped (docs/performance-changelog.md, 2026-09-15).
+Along the way the first level whose diff starts before *f* becomes
 the frame's "state owner"; its frame counter is the one charged for replays through *f*.
 
 Loading (`LoadBase`): find the latest usable save at or before the target across levels and

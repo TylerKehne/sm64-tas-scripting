@@ -45,9 +45,6 @@ class TopLevelScriptBuilderImported;
 template <derived_from_specialization_of<Script> TStateTracker>
 class StateTrackerFactoryBase;
 
-template <derived_from_specialization_of<Resource> TResource>
-class ScriptFriend;
-
 // Identity of a state-tracker type without RTTI: `&StateTrackerTag<T>::value` is one
 // address per T for the whole program. TopLevelScript stores its tracker's tag in the root
 // and GetTrackedState compares against it instead of a dynamic_cast on every lookup.
@@ -154,9 +151,8 @@ public:
 	class CustomScriptStatus {};
 	CustomScriptStatus CustomStatus = {};
 
-	// TODO: make private
+	// TODO: make private (ROADMAP 3.2: the access contract that replaces resource->addr)
 	TResource* resource = nullptr;
-	SlotHandle<TResource> startSaveHandle = SlotHandle<TResource>(nullptr, -1);
 
 	Script() = default;
 
@@ -675,11 +671,18 @@ protected:
 	virtual bool assertion() = 0;
 
 private:
-	friend class ScriptFriend<TResource>;
+	// TopLevelScript is the root of every hierarchy: it starts the lifecycle from outside it
+	// (InitializeAndRun), stores its tracker's tag, and runs the state tracker as a child of
+	// whichever script asked for a state. The template-head repeats the primary's,
+	// constraints included; MSVC and Clang reject an unconstrained one (docs/compilers.md).
+	template <derived_from_specialization_of<Resource> R, std::derived_from<Script<R>> T>
+	friend class TopLevelScript;
+	
 	friend class SaveMetadata<TResource>;
 	friend class InputsMetadata<TResource>;
 	friend class ScriptCompareHelper<TResource>;
 
+	SlotHandle<TResource> startSaveHandle = SlotHandle<TResource>(nullptr, -1);
 	int64_t _adhocLevel = 0;
 	int64_t _initialFrame = 0;
 	// One entry per ad-hoc level (see LevelStack.hpp); level 0 is the script itself.
@@ -813,73 +816,6 @@ private:
 	std::shared_ptr<std::tuple<TStateTrackerParams...>> _stateTrackerParams;
 };
 
-// DO NOT EVER USE THESE METHODS OUTSIDE OF THE TOPLEVELSCRIPT BASE CLASS
-// MSVC's casual relationship with the C++ standard necessitates this class to access certain Script private members.
-// Preferably we could just declare a friend class template for TopLevelScript like we're supposed to be able to do.
-template <derived_from_specialization_of<Resource> TResource>
-class ScriptFriend
-{
-public:
-	static int64_t GetAdhocLevel(Script<TResource>* script)
-	{
-		return script->_adhocLevel;
-	}
-
-	static LevelStack<BaseScriptStatus>& GetBaseStatus(Script<TResource>* script)
-	{
-		return script->BaseStatus;
-	}
-
-	static LevelStack<FrameMap<int64_t, InputsMetadata<TResource>>>& GetInputsCache(Script<TResource>* script)
-	{
-		return script->inputsCache;
-	}
-
-	static void DisposeSlotHandles(Script<TResource>* script)
-	{
-		script->saveBank[0].erase(script->saveBank[0].begin(), script->saveBank[0].end());
-	}
-
-	static void Initialize(Script<TResource>* script, Script<TResource>* parentScript)
-	{
-		script->Initialize(parentScript);
-	}
-
-	static bool Run(Script<TResource>* script)
-	{
-		return script->Run();
-	}
-
-	static Script<TResource>* GetParentScript(Script<TResource>* script)
-	{
-		return script->_parentScript;
-	}
-
-	static bool IsStateTracker(Script<TResource>* script)
-	{
-		return script->isStateTracker;
-	}
-
-	static void SetStateTrackerTag(Script<TResource>* script, const void* tag)
-	{
-		script->_stateTrackerTag = tag;
-	}
-
-	template <derived_from_specialization_of<Script> TStateTracker>
-	static ScriptStatus<TStateTracker> ExecuteStateTracker(
-		int64_t frame, Script<TResource>* script, std::shared_ptr<StateTrackerFactoryBase<TStateTracker>> stateTrackerFactory)
-	{
-		// `template` is required: `script` has a dependent type, so without it GCC and Clang
-		// parse `<` as less-than. MSVC accepts the omission (docs/compilers.md).
-		return script->template ExecuteStateTracker<TStateTracker>(frame, stateTrackerFactory);
-	}
-
-	static uint64_t GetCurrentFrame(Script<TResource>* script)
-	{
-		return script->GetCurrentFrame();
-	}
-};
-
 template <derived_from_specialization_of<Resource> TResource>
 class DefaultStateTracker : public Script<TResource>
 {
@@ -898,7 +834,7 @@ class TopLevelScript : public Script<TResource>
 public:
 	TopLevelScript()
 	{
-		ScriptFriend<TResource>::SetStateTrackerTag(this, &StateTrackerTag<TStateTracker>::value);
+		this->_stateTrackerTag = &StateTrackerTag<TStateTracker>::value;
 	}
 
 	template <derived_from_specialization_of<TopLevelScript> TTopLevelScript, typename... TStateTrackerParams, typename... Ts>
@@ -995,12 +931,16 @@ public:
 	virtual bool execution() override = 0;
 	virtual bool assertion() override = 0;
 
-protected:
-	M64* _m64 = nullptr;
-
 private:
 	friend class Script<TResource>;
+	M64* _m64 = nullptr;
 	M64Metadata GetM64Metadata() const override;
+	// The root's walk over its own levels, then the movie. The same walk as Script's, and it
+	// stays a copy on purpose: one walk for both, ending in a private virtual the root
+	// overrides for the movie (the GetM64Metadata shape), measured 7 to 18 ns more per
+	// uncached lookup on MSVC 19.51 in three forms, with the root's own walk flat
+	// (docs/performance-changelog.md, 2026-09-15).
+	InputsMetadata<TResource> GetInputsMetadata(int64_t frame) override;
 	// (No self-friend declaration: a class is always its own friend, and GCC warns about it.)
 
 	// Data: trackedStates[script][adhocLevel][frame] = state;
@@ -1014,33 +954,34 @@ private:
 	void EraseTrackedStates(Script<TResource>* currentScript, int64_t adhocLevel, int64_t firstFrame) override;
 	const typename TStateTracker::CustomScriptStatus& GetTrackedStateInternal(Script<TResource>* currentScript, const InputsMetadata<TResource>& inputsMetadata);
 
-	InputsMetadata<TResource> GetInputsMetadata(int64_t frame) override;
-
 	template <std::derived_from<TopLevelScript<TResource, TStateTracker>> TTopLevelScript>
 	static ScriptStatus<TTopLevelScript> InitializeAndRun(M64& m64, TTopLevelScript& script, TResource* resource)
 	{
+		// Script's names through the base, where nothing a TTopLevelScript declares hides them
+		// (ScattershotThread has an Initialize() of its own).
+		Script<TResource>& base = script;
 		script._m64 = &m64;
-		script.resource = resource;
-		ScriptFriend<TResource>::Initialize(&script, nullptr);
+		base.resource = resource;
+		base.Initialize(nullptr);
 
-		script.TrackState(&script, script.GetInputsMetadata(ScriptFriend<TResource>::GetCurrentFrame(&script)));
+		base.TrackState(&base, base.GetInputsMetadata(base.GetCurrentFrame()));
 
 		uint64_t loadCyclesStart = resource->work.loadCycles;
 		uint64_t saveCyclesStart = resource->work.saveCycles;
 		uint64_t advanceCyclesStart = resource->work.advanceCycles;
 
 		uint64_t start = get_time();
-		ScriptFriend<TResource>::Run(&script);
+		base.Run();
 		uint64_t finish = get_time();
 
-		auto& baseStatus = ScriptFriend<TResource>::GetBaseStatus(&script)[0];
+		auto& baseStatus = base.BaseStatus[0];
 		baseStatus.loadDuration = resource->work.loadCycles - loadCyclesStart;
 		baseStatus.saveDuration = resource->work.saveCycles - saveCyclesStart;
 		baseStatus.advanceFrameDuration = resource->work.advanceCycles - advanceCyclesStart;
 		baseStatus.totalDuration = finish - start;
 
 		//Dispose of slot handles before resource goes out of scope because they trigger destructor events in the resource.
-		ScriptFriend<TResource>::DisposeSlotHandles(&script);
+		base.saveBank[0].erase(base.saveBank[0].begin(), base.saveBank[0].end());
 
 		return ScriptStatus<TTopLevelScript>(std::move(baseStatus), std::move(script.CustomStatus));
 	}

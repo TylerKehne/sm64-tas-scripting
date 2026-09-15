@@ -1,9 +1,9 @@
 # Roadmap
 
-Status as of 2026-09-15: Phases 1 and 2 are done; of Phase 3 only 3.2 (encapsulation) and
-3.17 (guidelines for TASing with the framework, after 3.2) remain, the rest landed in #94
-and #95; Phase 4 has 4.1 and 4.5 done; Phase 5 has its first item, per-scenario movement
-options, done. Items are ordered; each phase makes the next one safe to do with an AI
+Status as of 2026-09-15: Phases 1 and 2 are done; of Phase 3 only 3.2 (encapsulation),
+3.17 (guidelines for TASing with the framework, after 3.2) and 3.18 (perf baselines on the
+Visual Studio 2026 toolset) remain, the rest landed in #94 and #95; Phase 4 has 4.1 and
+4.5 done; Phase 5 has its first item, per-scenario movement options, done. Items are ordered; each phase makes the next one safe to do with an AI
 agent. Check boxes as work lands and keep "Done when" honest.
 
 **Cross-cutting rules:**
@@ -341,7 +341,8 @@ Goal: the DLL becomes a reproducible, swappable artifact instead of a mystery bi
 ## Phase 3: framework hardening
 
 Goal: the core's implicit invariants become explicit and enforced. Status 2026-09-15: every
-item is done except 3.2, which comes next, and 3.17, which follows it; then Phase 4.
+item is done except 3.2, which comes next, 3.17, which follows it, and 3.18, the baselines
+on the toolset the build script now picks; then Phase 4.
 
 - [x] **3.1 Frame cursor semantics.** Decided by the maintainer 2026-09-08: `Modify` leaves the
       cursor at the end of the child's diff on purpose, because the common case is to keep
@@ -353,7 +354,19 @@ item is done except 3.2, which comes next, and 3.17, which follows it; then Phas
       MSVC accepts the friend template. Mark `resource` and `startSaveHandle` private. Note
       from the maintainer: MSVC and Visual Studio IntelliSense disagree about such
       declarations and one or the other kept failing, which is why `ScriptFriend` exists;
-      retiring it means checking both, not just the build. The rule this enforces is already
+      retiring it means checking both, not just the build. Progress 2026-09-15: `ScriptFriend`
+      is retired. `Script` befriends `TopLevelScript` with the primary's constrained
+      template-head, which MSVC 19.44 and 19.51 and clang-cl 19 and 22 accept
+      (docs/compilers.md has the forms that do not); the IntelliSense check in Visual Studio
+      2026 is the maintainer's. The root's copy of the level walk in `GetInputsMetadata`
+      stays: one walk for both, ending in a private virtual the root overrides for the movie
+      (the `GetM64Metadata` shape), was tried in three forms and each cost 7 to 18 ns per
+      uncached lookup on MSVC 19.51 against the root's own walk, which is flat
+      (docs/performance-changelog.md), so the override reads its levels through the friend
+      instead of the accessors. A tracker's own frames skip the root's `TrackState` at the
+      call site instead of being asked, a virtual call per tracker frame; the root sets its
+      tag itself. `startSaveHandle` and `TopLevelScript::_m64` are private; `resource` stays
+      public until the access contract below. The rule this enforces is already
       in force by convention (AGENTS.md, hard rule 9, 2026-09-12): scripts touch the resource
       only through `resource->addr()` until a better access contract exists, and that
       contract is part of this item. Its shape is not settled (maintainer, 2026-09-12): it is
@@ -677,6 +690,40 @@ item is done except 3.2, which comes next, and 3.17, which follows it; then Phas
       Phase 4. Shape (a docs page or a section of AGENTS.md) to be decided then.
       *Done when:* the guidelines exist and an agent given the repository and them can
       create, run and check a new script without further instruction.
+- [ ] **3.18 Perf baselines on the Visual Studio 2026 toolset.** Found 2026-09-15: with
+      Visual Studio 2026 installed, `scripts\build.ps1` (vswhere, latest install) builds with
+      its MSVC 19.51 and clang-cl 22, and `perf\baselines\tyler-desktop*` and the reference
+      binaries under `perf\reference\` are 19.44's and clang-cl 19's. Against them 19.51 reads
+      most of the Script family 14 to 35% slower, the child-script rows 9 to 12% faster and
+      the throughput Tier D 12% faster, so a compare's "vs base" column reads the toolset
+      until the baselines are re-saved on it (`-SaveBaseline`, both compilers; the
+      maintainer's call). Until then a change is measured against master built with the
+      same toolset and passed with `-Reference`, as 3.2's tables were
+      (docs/performance-changelog.md, 2026-09-15). The same day the uncached `GetInputs`
+      rows proved placement-sensitive on 19.51 beyond the gate: master with one unrelated
+      benchmark appended read them 15 to 28% over master's own binary, and the counters
+      showed byte-identical code retiring the same instructions, mispredicts and misses in
+      more cycles (a front-end effect of where the code lands; the change log has the
+      table). What to do with those rows (a wider tolerance for them, aligning the loop, or
+      a benchmark less sensitive to placement) is decided with the baselines; 3.19 would
+      shrink the sensitivity at its source. *Done when:* both baselines and both references
+      are saved on the toolset the build script picks, and the placement-sensitive rows have
+      a stated rule.
+- [ ] **3.19 The input walk's front-end cost.** Found 2026-09-15 while root-causing 3.2's
+      perf rows (docs/performance-changelog.md): on MSVC 19.51 `LevelStack::operator[]` is
+      not inlined into `Script::GetInputsMetadata`, a call per container per level, twelve
+      per uncached lookup at depth 1 and 22% of the loop's samples, although the accessor
+      was shaped to inline (LevelStack.hpp) and 19.44 did; the likely cause of the 14 to
+      35% the 19.51 reference reads over the 19.44 baseline on the Script family, to be
+      confirmed on a symbolized 19.44 build. And the walk returns its 40-byte
+      `InputsMetadata` by copying a local it assembled after the parent's answer, since its
+      several returns defeat MSVC's named return value optimization: 34% of the walk's
+      samples sit on the instruction after that copy. Both are measured optimizations
+      behind an unchanged interface (hard rule 10 does not apply), each to ship with the
+      suite's table; the second changes no behavior and the first none either, so the
+      engine tests cover them. *Done when:* the accessor inlines on every compiler the
+      suite runs, the copy is gone, and the uncached `GetInputs` rows read at or under the
+      19.44 baseline on 19.51.
 
 ## Phase 4: the squish-cancel brute forcer
 
