@@ -151,6 +151,8 @@ Workaround in this codebase: keep the definition's template-head in the exact sa
 the declaration, and when in doubt define the member inside the class body. Watch the
 `ExecuteAdhoc` / `ModifyAdhoc` / `TestAdhoc` family in `Script.hpp` and `Script.t.hpp`,
 which mixes abbreviated (`AdhocScript auto`) and explicit template forms for this reason.
+The compare family's 32 entry points stay in the class body for the same reason: they are
+`Script.compare.inc`, a member include, rather than definitions in `Script.t.hpp`.
 
 ### MSVC and IntelliSense: friend class template for `TopLevelScript`
 
@@ -196,7 +198,7 @@ result nowhere: seven calls per level in `Script::GetInputsMetadata`, fifteen pe
 `AdvanceFrameWrite`, and the Script family 14 to 35% slower than the 19.44 baseline. The
 fix is `TAS_FW_NOINLINE` on `Grow()` (`__declspec(noinline)` on MSVC and clang-cl,
 `__attribute__((noinline))` elsewhere, defined in LevelStack.hpp): a compiler keyword for
-an inlining decision, not a language feature, like the rdtsc header fork in Resource.t.hpp.
+an inlining decision, not a language feature, like the rdtsc header fork in ResourceWork.hpp.
 With it the accessor is 23 instructions and inlines everywhere
 (docs/performance-changelog.md, 2026-09-15, ROADMAP 3.19).
 
@@ -440,7 +442,7 @@ constraint itself (`concept C = std::same_as<...>;`, what `AdhocScript` in
 `ScriptStatus.hpp` always did) or a nested requirement (`requires std::same_as<...>;`).
 
 A second form of the same mistake unpacked a tuple: `AdhocCompareScript` there and
-`constructible_from_tuple` in `SharedLib.hpp` were `requires { std::apply(check, tuple); }`
+`constructible_from_tuple` (`SharedLib.hpp` then, `Concepts.hpp` now) were `requires { std::apply(check, tuple); }`
 with `check` a generic lambda carrying a `static_assert`. A requires-expression never
 instantiates the lambda's body, so the assert never fired and every tuple passed; and
 `std::apply`'s deduced return type makes a non-tuple argument a hard error inside
@@ -518,4 +520,4 @@ without any `/arch` flag while clang-cl got `-march=native`. Fixed 2026-09-07; a
   turns it off for a toolchain whose LTO is broken (GCC 14, below).
 - `-march=native` is accepted by clang-cl and detected as such; MSVC gets an `/arch` flag
   from a configure-time probe.
-- `__rdtsc` comes from `<intrin.h>` on MSVC and `<x86intrin.h>` elsewhere (`Resource.t.hpp`).
+- `__rdtsc` comes from `<intrin.h>` on MSVC and `<x86intrin.h>` elsewhere (`ResourceWork.hpp`).

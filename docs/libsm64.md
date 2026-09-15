@@ -448,7 +448,7 @@ making these derived instead of hardcoded.
    by decision (ROADMAP 2.4) and declared with behavior and home in
    `tasfw-scripts/inc/BitFsObjects.hpp`; the `VerifyLayout` script verifies them inside the
    level before the pipeline's first stage, so a shift fails start-up loudly.
-4. **ROM/country codes** in `Inputs.hpp` (`Rom`, `CountryCode`: the JP and US values). `M64`
+4. **ROM/country codes** in `M64.hpp` (`Rom`, `CountryCode`: the JP and US values). `M64`
    reads them from a movie's header and writes them back, and `LibSm64::CheckMovie` compares
    a movie's with the game a DLL was declared to be (its file name, `--version`, or the
    movie itself in the pipeline). A build of another version is a new pair of values.

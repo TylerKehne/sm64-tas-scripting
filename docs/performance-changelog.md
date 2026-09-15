@@ -4,6 +4,21 @@ Every hot-path change records its delta table here, newest first; the policy, th
 how to run it are in [performance.md](performance.md). The first measurements (2026-09-07),
 which everything since is compared against, are at the bottom.
 
+## 2026-09-15: the core's file layout (ROADMAP 3.20)
+
+No functional change, measured because tasfw-core moved: one header per concept, one member
+order per class with the `.t.hpp` files in the header's order, and the compare family's entry
+points as a member include (`Script.compare.inc`). Every declaration's text is what it was;
+only the order in which the compiler meets definitions changed, which moves code placement.
+MSVC 19.51, Release, against the reference saved from 35ebcc8: 0 regressions, every Tier C
+and D count identical, the deterministic Tier D run +0.0%, `Resource_SaveLoadState` -0.1%,
+`SlotManager_*` within 5%. The Script family swings within 6% either way and not the same
+way twice (`AdvanceFrameRead` +6.4% in the full run, -4.1% in a rerun of the family;
+`GetInputs_Uncached_Depth/16` +2.1% then +5.7%): placement, as the day's other rows. The two
+rows the compare calls improvements are the access contract's (`Framework_DownhillAngle_PyramidUpdate`,
+which the 35ebcc8 reference predates) and the throughput Tier D run's reference reading 82 s
+against a 58 s baseline and a 58 s current run, the machine busy during it.
+
 ## 2026-09-15: the access contract; `resource` private (ROADMAP 3.2, third stage)
 
 `ReadState("symbol")` on `Script` replaces the 203 `resource->addr()` reads in script code

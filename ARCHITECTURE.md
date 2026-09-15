@@ -135,7 +135,7 @@ Running children:
 | `Modify<T>(args...)` | If asserted, child's diff is merged into the parent's diff and the cursor moves to the frame after the diff's last frame. Otherwise reverted. |
 | `Test<T>(args...)` | `Execute` with the diff removed from the returned status. |
 | `ExecuteAdhoc` / `ModifyAdhoc` / `TestAdhoc` | Same three semantics for a lambda returning bool, run on the *same* script object at `_adhocLevel + 1`. |
-| `Compare<T>` family | Run `T` for each parameter tuple, keep the best by a comparator, optionally stop early. Lives in `ScriptCompareHelper.hpp`; its comparator, terminator, parameter generator and ad-hoc candidate are concepts on the call's result type, so a callable of the wrong shape leaves no viable overload at the call site. |
+| `Compare<T>` family | Run `T` for each parameter tuple, keep the best by a comparator, optionally stop early. Its 32 entry points are `Script.compare.inc`, a member include of `Script`, each forwarding to `ScriptCompareHelper.hpp`, where its comparator, terminator, parameter generator and ad-hoc candidate are concepts on the call's result type, so a callable of the wrong shape leaves no viable overload at the call site. |
 
 Both forms manage savestates, reverts, the input diff and tracked-state coherence
 automatically; the author never touches a slot, and never touches the resource: every
@@ -412,7 +412,7 @@ Everything below assumes the pinned DLL in `res/` (see `docs/libsm64.md`):
   itself has no layout concept.
 - `PyramidUpdate` re-implements physics from the decomp.
 - `M64` reads the game a movie is for from its header (the ROM CRC and country code, `Rom`
-  and `CountryCode` in `Inputs.hpp`) and writes it back; `ExportM64` marks an export with
+  and `CountryCode` in `M64.hpp`) and writes it back; `ExportM64` marks an export with
   its source movie's. Whether a movie and a DLL are the same game is libsm64's question, not
   the framework's (`LibSm64::CheckMovie`, asked by the pipeline before its first stage, the
   tests and `dllcheck`); the pipeline's `dllPattern` picks the DLLs by the movie's game

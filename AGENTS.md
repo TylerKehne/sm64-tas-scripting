@@ -69,7 +69,7 @@ its place with numbers, and "it is cleaner" is not a number.
 
 | Path | What it is |
 |---|---|
-| `tasfw-core/` | Engine: `Script`, `TopLevelScript`, `Resource`, savestate slots, m64 I/O, input math. Header-heavy templates. |
+| `tasfw-core/` | Engine: `Script`, `TopLevelScript`, `Resource`, savestate slots, m64 I/O, input math. Header-heavy templates, one header per concept under `inc/tasfw/`; `<tasfw/Script.hpp>` is a script's one include, it pulls in the root and the builders at its bottom. |
 | `tasfw-core/inc/sm64/` | Hand-copied decomp structs, enums and trig tables. Must match the DLL's x64 layout. |
 | `tasfw-resources/` | `LibSm64` (drives the game DLL) and `PyramidUpdate` (standalone reimplementation of pyramid tilt physics used as a fast stand-in). |
 | `tasfw-scattershot/` | Header-only OpenMP brute-force search (blocks, segments, solutions, CSV export). |
@@ -234,7 +234,14 @@ its place with numbers, and "it is cleaner" is not a number.
   newer bruteforcer headers use four spaces instead. Match the file you are in; do not
   reformat files wholesale in a functional change.
 - Templates are header-only: declarations in `Foo.hpp`, definitions in `Foo.t.hpp` included at
-  the bottom of the `.hpp`. Keep that split.
+  the bottom of the `.hpp`. Keep that split. One header per concept (`SlotManager.hpp`,
+  `TopLevelScript.hpp`, `M64.hpp`), each with its own `.t.hpp` where it has definitions; a
+  file that only completes another (`TopLevelScript.hpp`, `TopLevelScriptBuilder.hpp`,
+  `Script.compare.inc`, the compare family's entry points as a member include of `Script`)
+  refuses to be included first. A class declares its members in one order: nested types,
+  construction, the lifecycle the author implements, the runners, the cursor and the
+  inputs, saves and loads, state; then friends, data, and the internals grouped by concern,
+  a one-line comment naming each group; the `.t.hpp` defines in that order.
 - A script is `class X : public Script<LibSm64>` with a nested `CustomScriptStatus` and the
   three lifecycle methods. Child scripts are run with `Execute<X>` (revert), `Modify<X>`
   (keep diff if asserted) or `Test<X>` (revert and drop the diff from the status).
