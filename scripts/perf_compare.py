@@ -59,8 +59,7 @@ keeps the context of the first file, plus every --context KEY=VALUE given.
 file per benchmark family, named after it (Script.json, LibSm64Fixed.json, TierD.json, ...),
 holding that family's repetition rows one per line, and context.json with the run's context
 and the family order. Google Benchmark's aggregate rows (mean, median, stddev, cv) are
-dropped: the compare takes the fastest repetition (its allocation count the minimum over the
-repetitions, the warm one), and --stat median the median of them, so
+dropped: the compare takes the fastest repetition, and --stat median the median of them, so
 nothing the compare reads is lost, and a family can be read or diffed on its own. Wherever a
 baseline is read, a directory in this layout and a single result file are both accepted.
 
@@ -168,14 +167,7 @@ def rows_of(data, stat="min", metric="real_time"):
     rows = {}
     for name, rs in reps.items():
         rs = sorted(rs, key=lambda r: float(r[metric]))
-        row = dict(rs[0] if stat == "min" else rs[len(rs) // 2])
-        # Allocations per iteration are the warm count, the minimum over the repetitions
-        # whichever was fastest: the first repetition pays lazy caches (LibSm64::addr's
-        # symbol table), the gate is exact, and the fastest repetition is sometimes the first.
-        allocs = [float(r["allocs"]) for r in rs if r.get("allocs") is not None]
-        if allocs:
-            row["allocs"] = min(allocs)
-        rows[name] = row
+        rows[name] = rs[0] if stat == "min" else rs[len(rs) // 2]
     if not rows:
         return medians
     return rows

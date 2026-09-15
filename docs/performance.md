@@ -522,11 +522,9 @@ Noise control, learned the hard way while setting this up:
 - Each benchmark runs three repetitions in each of three fresh processes, and the comparison
   uses the **fastest** of the nine. External noise only ever adds time,
   so the minimum is the best estimate of intrinsic cost. Medians of three drifted 15 to 35%
-  between runs of the same binary on a busy desktop. The allocation count of a row is the
-  minimum over its repetitions whichever was fastest: the first repetition pays the symbol
-  table `LibSm64::addr` fills on first use, the gate is exact, and the fastest repetition
-  is sometimes the first (CI's Tier C gate tripped on that, 2026-09-15). CI's Tier C gate
-  runs three repetitions too, so the warm count exists there as well.
+  between runs of the same binary on a busy desktop. CI's Tier C gate runs three repetitions
+  too: the first repetition's allocation count includes the symbol table `LibSm64::addr`
+  fills on first use, the baseline holds the warm count, and the allocation gate is exact.
 - The benchmark process runs at High priority pinned to one logical CPU (`-Affinity`, default
   `0x10`), so other processes and the scheduler contribute less.
 - Each benchmark family runs in its own process, several times. One slot benchmark measured
