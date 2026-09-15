@@ -112,40 +112,6 @@ bool TopLevelScript<TResource, TStateTracker>::TrackedStateExistsInternal(Script
 }
 
 template <derived_from_specialization_of<Resource> TResource, std::derived_from<Script<TResource>> TStateTracker>
-const typename TStateTracker::CustomScriptStatus& TopLevelScript<TResource, TStateTracker>
-	::GetTrackedStateInternal(Script<TResource>* currentScript, const InputsMetadata<TResource>& inputsMetadata)
-{
-	if constexpr (std::is_same<TStateTracker, DefaultStateTracker<TResource>>::value)
-	{
-		static const typename TStateTracker::CustomScriptStatus none {};
-		return none;
-	}
-	else
-	{
-		{
-			auto& states = trackedStates[inputsMetadata.stateOwner][inputsMetadata.stateOwnerAdhocLevel];
-			auto found = states.find(inputsMetadata.frame);
-			if (found != states.end())
-				return found->second;
-		}
-
-		// `template` is required: `currentScript` has a dependent type, so without it GCC and
-		// Clang parse `<` as less-than. MSVC accepts the omission (docs/compilers.md).
-		auto status = currentScript->template ExecuteStateTracker<TStateTracker>(inputsMetadata.frame, stateTrackerFactory);
-
-		// Looked up again: the tracker may have tracked other frames meanwhile. A state that
-		// was not asserted is stored as a default so it is not recomputed.
-		auto& state = trackedStates[inputsMetadata.stateOwner][inputsMetadata.stateOwnerAdhocLevel][inputsMetadata.frame];
-		if (status.asserted)
-			state = std::move(static_cast<typename TStateTracker::CustomScriptStatus&>(status));
-		else
-			state = typename TStateTracker::CustomScriptStatus();
-
-		return state;
-	}
-}
-
-template <derived_from_specialization_of<Resource> TResource, std::derived_from<Script<TResource>> TStateTracker>
 void TopLevelScript<TResource, TStateTracker>::PopTrackedStatesContainer(Script<TResource>* currentScript, int64_t adhocLevel)
 {
 	if constexpr (std::is_same<TStateTracker, DefaultStateTracker<TResource>>::value)
@@ -198,6 +164,40 @@ void TopLevelScript<TResource, TStateTracker>::EraseTrackedStates(Script<TResour
 
 	auto& states = owner->second[adhocLevel];
 	states.erase(states.upper_bound(firstFrame), states.end());
+}
+
+template <derived_from_specialization_of<Resource> TResource, std::derived_from<Script<TResource>> TStateTracker>
+const typename TStateTracker::CustomScriptStatus& TopLevelScript<TResource, TStateTracker>
+	::GetTrackedStateInternal(Script<TResource>* currentScript, const InputsMetadata<TResource>& inputsMetadata)
+{
+	if constexpr (std::is_same<TStateTracker, DefaultStateTracker<TResource>>::value)
+	{
+		static const typename TStateTracker::CustomScriptStatus none {};
+		return none;
+	}
+	else
+	{
+		{
+			auto& states = trackedStates[inputsMetadata.stateOwner][inputsMetadata.stateOwnerAdhocLevel];
+			auto found = states.find(inputsMetadata.frame);
+			if (found != states.end())
+				return found->second;
+		}
+
+		// `template` is required: `currentScript` has a dependent type, so without it GCC and
+		// Clang parse `<` as less-than. MSVC accepts the omission (docs/compilers.md).
+		auto status = currentScript->template ExecuteStateTracker<TStateTracker>(inputsMetadata.frame, stateTrackerFactory);
+
+		// Looked up again: the tracker may have tracked other frames meanwhile. A state that
+		// was not asserted is stored as a default so it is not recomputed.
+		auto& state = trackedStates[inputsMetadata.stateOwner][inputsMetadata.stateOwnerAdhocLevel][inputsMetadata.frame];
+		if (status.asserted)
+			state = std::move(static_cast<typename TStateTracker::CustomScriptStatus&>(status));
+		else
+			state = typename TStateTracker::CustomScriptStatus();
+
+		return state;
+	}
 }
 
 #endif

@@ -4,55 +4,71 @@
 #else
 
 template <derived_from_specialization_of<Resource> TResource>
-void Script<TResource>::Initialize(Script<TResource>* parentScript)
+AdhocBaseScriptStatus Script<TResource>::ExecuteAdhoc(AdhocScript auto adhocScript)
 {
-	_parentScript = parentScript;
+	int64_t initialFrame = GetCurrentFrame();
 
-	// Per-level containers (BaseStatus, saveBank, caches) are created on first use; see
-	// LevelStack. A script that never saves never constructs a save bank.
-	if (_parentScript)
-	{
-		resource = _parentScript->resource;
-		_rootScript = _parentScript->_rootScript;
-	}
-	else
-		_rootScript = this;
+	BaseScriptStatus status = ExecuteAdhocBase(adhocScript);
+	Revert(initialFrame, status.m64Diff, SaveBankIfCreated(*this, _adhocLevel + 1), this);
 
-	startSaveHandle = SlotHandle<TResource>(resource, -1);
-	_initialFrame = int64_t(GetCurrentFrame());
+	return AdhocBaseScriptStatus(std::move(status));
 }
 
 template <derived_from_specialization_of<Resource> TResource>
-bool Script<TResource>::Run()
+template <class TAdhocCustomScriptStatus, AdhocCustomStatusScript<TAdhocCustomScriptStatus> F>
+AdhocScriptStatus<TAdhocCustomScriptStatus> Script<TResource>::ExecuteAdhoc(F adhocScript)
 {
-	// Validate
-	auto start = get_time();
-	BaseStatus[_adhocLevel].validated = ExecuteAdhoc([&] { return validation(); }).executed;
-	auto finish = get_time();
+	int64_t initialFrame = GetCurrentFrame();
 
-	BaseStatus[_adhocLevel].validationDuration = finish - start;
+	TAdhocCustomScriptStatus customStatus = TAdhocCustomScriptStatus();
+	BaseScriptStatus baseStatus = ExecuteAdhocBase([&]() { return adhocScript(customStatus); });
+	Revert(initialFrame, baseStatus.m64Diff, SaveBankIfCreated(*this, _adhocLevel + 1), this);
 
-	if (!BaseStatus[_adhocLevel].validated)
-		return false;
+	return AdhocScriptStatus<TAdhocCustomScriptStatus>(std::move(baseStatus), std::move(customStatus));
+}
 
-	// Execute
-	start = get_time();
-	BaseStatus[_adhocLevel].executed = ModifyAdhoc([&] { return execution(); }).executed;
-	finish = get_time();
+template <derived_from_specialization_of<Resource> TResource>
+AdhocBaseScriptStatus Script<TResource>::ModifyAdhoc(AdhocScript auto adhocScript)
+{
+	int64_t initialFrame = GetCurrentFrame();
 
-	BaseStatus[_adhocLevel].executionDuration = finish - start;
+	auto status = ExecuteAdhocBase(adhocScript);
+	ApplyChildDiff(status, SaveBankIfCreated(*this, _adhocLevel + 1), initialFrame, this);
 
-	if (!BaseStatus[_adhocLevel].executed)
-		return false;
+	return AdhocBaseScriptStatus(std::move(status));
+}
 
-	// Assert
-	start = get_time();
-	BaseStatus[_adhocLevel].asserted = ExecuteAdhoc([&] { return assertion(); }).executed;
-	finish = get_time();
+template <derived_from_specialization_of<Resource> TResource>
+template <class TAdhocCustomScriptStatus, AdhocCustomStatusScript<TAdhocCustomScriptStatus> F>
+AdhocScriptStatus<TAdhocCustomScriptStatus> Script<TResource>::ModifyAdhoc(F adhocScript)
+{
+	int64_t initialFrame = GetCurrentFrame();
 
-	BaseStatus[_adhocLevel].assertionDuration = finish - start;
+	TAdhocCustomScriptStatus customStatus = TAdhocCustomScriptStatus();
+	BaseScriptStatus baseStatus = ExecuteAdhocBase([&]() { return adhocScript(customStatus); });
+	ApplyChildDiff(baseStatus, SaveBankIfCreated(*this, _adhocLevel + 1), initialFrame, this);
 
-	return BaseStatus[_adhocLevel].asserted;
+	return AdhocScriptStatus<TAdhocCustomScriptStatus>(std::move(baseStatus), std::move(customStatus));
+}
+
+template <derived_from_specialization_of<Resource> TResource>
+template <AdhocScript TAdhocScript>
+AdhocBaseScriptStatus Script<TResource>::TestAdhoc(TAdhocScript&& adhocScript)
+{
+	auto status = ExecuteAdhoc(std::forward<TAdhocScript>(adhocScript));
+	status.m64Diff = M64Diff();
+
+	return status;
+}
+
+template <derived_from_specialization_of<Resource> TResource>
+template <class TAdhocCustomScriptStatus, AdhocCustomStatusScript<TAdhocCustomScriptStatus> F>
+AdhocScriptStatus<TAdhocCustomScriptStatus> Script<TResource>::TestAdhoc(F&& adhocScript)
+{
+	auto status = ExecuteAdhoc<TAdhocCustomScriptStatus>(std::forward<F>(adhocScript));
+	status.m64Diff = M64Diff();
+
+	return status;
 }
 
 template <derived_from_specialization_of<Resource> TResource>
@@ -102,6 +118,62 @@ void Script<TResource>::AdvanceFrameWrite(Inputs inputs)
 }
 
 template <derived_from_specialization_of<Resource> TResource>
+Inputs Script<TResource>::GetInputs(int64_t frame)
+{
+	return GetInputsMetadataAndCache(frame).inputs;
+}
+
+template <derived_from_specialization_of<Resource> TResource>
+M64Diff Script<TResource>::GetInputs(int64_t firstFrame, int64_t lastFrame)
+{
+	M64Diff diff;
+	for (int64_t frame = firstFrame; frame <= lastFrame; frame++)
+		diff.frames[frame] = GetInputsMetadata(frame).inputs;
+
+	return diff;
+}
+
+// Only checks base diff, i.e. ad-hoc level 0
+template <derived_from_specialization_of<Resource> TResource>
+bool Script<TResource>::IsDiffEmpty()
+{
+	return BaseStatus[0].m64Diff.frames.empty();
+}
+
+template <derived_from_specialization_of<Resource> TResource>
+M64Diff Script<TResource>::GetDiff()
+{
+	return BaseStatus[_adhocLevel].m64Diff;
+}
+
+// Useful for exporting current output of script hieerarchy without terminating it
+template <derived_from_specialization_of<Resource> TResource>
+M64Diff Script<TResource>::GetTotalDiff()
+{
+	M64Diff totalDiff;
+	for (Script<TResource>* script = this; script != nullptr; script = script->_parentScript)
+	{
+		for (int64_t adhocLevel = script->_adhocLevel; adhocLevel >= 0; adhocLevel--)
+		{
+			for (auto input : script->BaseStatus[adhocLevel].m64Diff.frames)
+			{
+				if (!totalDiff.frames.contains(input.first))
+					totalDiff.frames[input.first] = input.second;
+			}
+		}
+	}
+	
+	return totalDiff;
+}
+
+// TODO: Deprecate
+template <derived_from_specialization_of<Resource> TResource>
+M64Diff Script<TResource>::GetBaseDiff()
+{
+	return BaseStatus[0].m64Diff;
+}
+
+template <derived_from_specialization_of<Resource> TResource>
 void Script<TResource>::Apply(const M64Diff& m64Diff)
 {
 	if (m64Diff.frames.empty())
@@ -142,70 +214,6 @@ void Script<TResource>::Apply(const M64Diff& m64Diff)
 }
 
 template <derived_from_specialization_of<Resource> TResource>
-void Script<TResource>::ApplyChildDiff(const BaseScriptStatus& status, FrameMap<int64_t, SlotHandle<TResource>>* childSaveBank, int64_t initialFrame, Script<TResource>* childScript)
-{
-	//Revert if script was unsuccessful
-	if (!status.asserted)
-	{
-		Revert(initialFrame, status.m64Diff, childSaveBank, childScript);
-		return;
-	}	
-
-	uint64_t firstFrame = 0;
-	uint64_t lastFrame = 0;
-	if (!status.m64Diff.frames.empty())
-	{
-		firstFrame = status.m64Diff.frames.begin()->first;
-		lastFrame = status.m64Diff.frames.rbegin()->first;
-
-		// Erase all saves, cached saves, and frame counters after this point
-		inputsCache[_adhocLevel].erase(inputsCache[_adhocLevel].lower_bound(firstFrame), inputsCache[_adhocLevel].end());
-		frameCounter[_adhocLevel].erase(frameCounter[_adhocLevel].upper_bound(firstFrame), frameCounter[_adhocLevel].end());
-		saveBank[_adhocLevel].erase(saveBank[_adhocLevel].upper_bound(firstFrame), saveBank[_adhocLevel].end());
-		saveCache[_adhocLevel].erase(saveCache[_adhocLevel].upper_bound(firstFrame), saveCache[_adhocLevel].end());
-		_rootScript->EraseTrackedStates(this, _adhocLevel, firstFrame);
-
-		//Apply diff. State is already synced from child script, so no need to update it
-		for (uint64_t frame = firstFrame; frame <= lastFrame; frame++)
-		{
-			if (status.m64Diff.frames.count(frame))
-				BaseStatus[_adhocLevel].m64Diff.frames[frame] = status.m64Diff.frames.at(frame);
-		}
-	}
-
-	//Move child saves to parent because they are still synced
-	//If child is ad-hoc script, pop the save bank
-	if (childSaveBank && !childSaveBank->empty())
-		std::move(childSaveBank->begin(), childSaveBank->end(), std::insert_iterator(saveBank[_adhocLevel], saveBank[_adhocLevel].end()));
-	if (saveBank.contains(_adhocLevel + 1))
-		saveBank.erase(_adhocLevel + 1);
-
-	int64_t childAdhocLevel = this == childScript ? _adhocLevel + 1 : 0; // Ad-hoc script vs. regular script
-	_rootScript->MoveSyncedTrackedStates(childScript, childAdhocLevel, this, _adhocLevel);
-
-	if (!status.m64Diff.frames.empty())
-		Load(lastFrame + 1); //Forward state to end of diff
-	else
-		Load(initialFrame);
-}
-
-template <derived_from_specialization_of<Resource> TResource>
-Inputs Script<TResource>::GetInputs(int64_t frame)
-{
-	return GetInputsMetadataAndCache(frame).inputs;
-}
-
-template <derived_from_specialization_of<Resource> TResource>
-M64Diff Script<TResource>::GetInputs(int64_t firstFrame, int64_t lastFrame)
-{
-	M64Diff diff;
-	for (int64_t frame = firstFrame; frame <= lastFrame; frame++)
-		diff.frames[frame] = GetInputsMetadata(frame).inputs;
-
-	return diff;
-}
-
-template <derived_from_specialization_of<Resource> TResource>
 bool Script<TResource>::ExportM64(std::filesystem::path fileName)
 {
 	return ExportM64(fileName, GetCurrentFrame());
@@ -227,10 +235,267 @@ bool Script<TResource>::ExportM64(std::filesystem::path fileName, int64_t maxFra
 	return (bool)outM64.save();
 }
 
+//Do a cost-benefit analysis to decide whether a save should be created
+//CBA is only for creating a save in the current script on tthe current frame
 template <derived_from_specialization_of<Resource> TResource>
-M64Metadata Script<TResource>::GetM64Metadata() const
+void Script<TResource>::OptionalSave()
 {
-	return _rootScript->GetM64Metadata(); // the root is a TopLevelScript, whose override answers from its movie
+	//Integrate frame counter, saving only if threshold is reached
+	int64_t currentFrame = GetCurrentFrame();
+	int64_t latestSaveFrame = GetLatestSaveAndCache(currentFrame).frame;
+	uint64_t frameCounter = 0;
+	for (int64_t frame = latestSaveFrame + 1; frame <= currentFrame; frame++)
+	{
+		auto cachedInputs = GetInputsMetadataAndCache(frame);
+		frameCounter += GetFrameCounter(cachedInputs);
+
+		if (resource->shouldSave(frameCounter / 2))
+		{
+			//Create save at the current frame in current frame state owner
+			SaveMetadata<TResource> cachedSave = cachedInputs.stateOwner->Save(cachedInputs.stateOwnerAdhocLevel);
+			saveCache[_adhocLevel][currentFrame] = cachedSave;
+			break;
+		}
+	}
+}
+
+template <derived_from_specialization_of<Resource> TResource>
+void Script<TResource>::Save()
+{
+	int64_t currentFrame = GetCurrentFrame();
+	auto inputsMetadata = GetInputsMetadata(currentFrame);
+	saveCache[_adhocLevel][currentFrame] = inputsMetadata.stateOwner->Save(inputsMetadata.stateOwnerAdhocLevel);
+}
+
+template <derived_from_specialization_of<Resource> TResource>
+void Script<TResource>::Load(uint64_t frame)
+{
+	LoadBase(frame, false);
+}
+
+template <derived_from_specialization_of<Resource> TResource>
+void Script<TResource>::LongLoad(int64_t frame)
+{
+	int64_t currentFrame = static_cast<int64_t>(GetCurrentFrame());
+	if (currentFrame == frame)
+		return;
+
+	// Load most recent save at or before frame. Check child saves before
+	// parent. If target frame is in future and a save lies between the cursor and it, check
+	// if faster to frame advance or load (see LoadBase for the history of this condition).
+	// Also, don't cache as it is unlikely the save will be needed again.
+	auto latestSave = GetLatestSave(frame);
+	if (frame < currentFrame)
+	{
+		resource->LoadState(latestSave.GetSlotHandle()->slotId);
+		BaseStatus[_adhocLevel].nLoads++;
+	}
+	else if (latestSave.frame > currentFrame && resource->shouldLoad(latestSave.frame - currentFrame))
+	{
+		resource->LoadState(latestSave.GetSlotHandle()->slotId);
+		BaseStatus[_adhocLevel].nLoads++;
+	}
+
+	// If save is before target frame, play back until frame is reached
+	currentFrame = GetCurrentFrame();
+	while (currentFrame < frame)
+	{
+		// Advance frame
+		SetInputs(GetInputsMetadata(currentFrame).inputs);
+		resource->FrameAdvance();
+		BaseStatus[_adhocLevel].nFrameAdvances++;
+		currentFrame++;
+	}
+
+	// Resume state tracking
+	InputsMetadata<TResource> inputsMetadata = GetInputsMetadataAndCache(frame);
+	if (!isStateTracker)
+		_rootScript->TrackState(this, inputsMetadata);
+
+	// Create a save as it is likely that very many frames were advanced since the most recent one.
+	Save();
+}
+
+template <derived_from_specialization_of<Resource> TResource>
+void Script<TResource>::Rollback(uint64_t frame)
+{
+	// Roll back diff and savebank to target frame. Note that rollback on diff
+	// includes target frame.
+	if (!BaseStatus[_adhocLevel].m64Diff.frames.empty())
+	{
+		int64_t firstFrame = BaseStatus[_adhocLevel].m64Diff.frames.lower_bound(frame)->first;
+
+		BaseStatus[_adhocLevel].m64Diff.frames.erase(
+			BaseStatus[_adhocLevel].m64Diff.frames.lower_bound(frame),
+			BaseStatus[_adhocLevel].m64Diff.frames.end());
+
+		inputsCache[_adhocLevel].erase(inputsCache[_adhocLevel].lower_bound(firstFrame), inputsCache[_adhocLevel].end());
+		frameCounter[_adhocLevel].erase(frameCounter[_adhocLevel].upper_bound(firstFrame), frameCounter[_adhocLevel].end());
+		saveBank[_adhocLevel].erase(saveBank[_adhocLevel].upper_bound(firstFrame), saveBank[_adhocLevel].end());
+		saveCache[_adhocLevel].erase(saveCache[_adhocLevel].upper_bound(firstFrame), saveCache[_adhocLevel].end());
+		_rootScript->EraseTrackedStates(this, _adhocLevel, firstFrame);
+	}
+
+	//Desyncs should be impossible for rollback because no inputs are changed prior to frame being loaded
+	LoadBase(frame, false);
+}
+
+// Same as Rollback, but starts from current frame. Useful for scripts that edit past frames
+template <derived_from_specialization_of<Resource> TResource>
+void Script<TResource>::RollForward(int64_t frame)
+{
+	// Check if script altered state
+	bool desync = (!BaseStatus[_adhocLevel].m64Diff.frames.empty()) && (BaseStatus[_adhocLevel].m64Diff.frames.begin()->first < GetCurrentFrame());
+
+	if (!BaseStatus[_adhocLevel].m64Diff.frames.empty())
+	{
+		int64_t firstFrame = BaseStatus[_adhocLevel].m64Diff.frames.begin()->first;
+
+		//Roll forward inputs through frame prior to target frame
+		auto inputsUpperBound = BaseStatus[_adhocLevel].m64Diff.frames.upper_bound(frame - 1);
+		if (inputsUpperBound == BaseStatus[_adhocLevel].m64Diff.frames.begin())
+			inputsUpperBound = BaseStatus[_adhocLevel].m64Diff.frames.end();
+		else
+			inputsUpperBound = std::prev(inputsUpperBound);
+
+		BaseStatus[_adhocLevel].m64Diff.frames.erase(BaseStatus[_adhocLevel].m64Diff.frames.begin(), inputsUpperBound);
+
+		inputsCache[_adhocLevel].erase(inputsCache[_adhocLevel].lower_bound(firstFrame), inputsCache[_adhocLevel].end());
+		frameCounter[_adhocLevel].erase(frameCounter[_adhocLevel].upper_bound(firstFrame), frameCounter[_adhocLevel].end());
+		saveBank[_adhocLevel].erase(saveBank[_adhocLevel].upper_bound(firstFrame), saveBank[_adhocLevel].end());
+		saveCache[_adhocLevel].erase(saveCache[_adhocLevel].upper_bound(firstFrame), saveCache[_adhocLevel].end());
+		_rootScript->EraseTrackedStates(this, _adhocLevel, firstFrame);
+	}
+
+	LoadBase(frame, desync);
+}
+
+// Load and clear diff and savebank
+template <derived_from_specialization_of<Resource> TResource>
+void Script<TResource>::Restore(int64_t frame)
+{
+	// Check if script altered state
+	bool desync = (!BaseStatus[_adhocLevel].m64Diff.frames.empty()) && (BaseStatus[_adhocLevel].m64Diff.frames.begin()->first < GetCurrentFrame());
+
+	// Clear diff, frame counter and savebank
+	if (!BaseStatus[_adhocLevel].m64Diff.frames.empty())
+	{
+		int64_t firstFrame = BaseStatus[_adhocLevel].m64Diff.frames.begin()->first;
+
+		BaseStatus[_adhocLevel].m64Diff.frames.erase(
+			BaseStatus[_adhocLevel].m64Diff.frames.lower_bound(frame),
+			BaseStatus[_adhocLevel].m64Diff.frames.end());
+
+		inputsCache[_adhocLevel].erase(inputsCache[_adhocLevel].lower_bound(firstFrame), inputsCache[_adhocLevel].end());
+		frameCounter[_adhocLevel].erase(frameCounter[_adhocLevel].upper_bound(firstFrame), frameCounter[_adhocLevel].end());
+		saveBank[_adhocLevel].erase(saveBank[_adhocLevel].upper_bound(firstFrame), saveBank[_adhocLevel].end());
+		saveCache[_adhocLevel].erase(saveCache[_adhocLevel].upper_bound(firstFrame), saveCache[_adhocLevel].end());
+		_rootScript->EraseTrackedStates(this, _adhocLevel, firstFrame);
+	}
+
+	LoadBase(frame, desync);
+}
+
+template <derived_from_specialization_of<Resource> TResource>
+void* Script<TResource>::ReadState(const char* symbol) const
+{
+	return resource->addr(symbol);
+}
+
+template <derived_from_specialization_of<Resource> TResource>
+bool Script<TResource>::Run()
+{
+	// Validate
+	auto start = get_time();
+	BaseStatus[_adhocLevel].validated = ExecuteAdhoc([&] { return validation(); }).executed;
+	auto finish = get_time();
+
+	BaseStatus[_adhocLevel].validationDuration = finish - start;
+
+	if (!BaseStatus[_adhocLevel].validated)
+		return false;
+
+	// Execute
+	start = get_time();
+	BaseStatus[_adhocLevel].executed = ModifyAdhoc([&] { return execution(); }).executed;
+	finish = get_time();
+
+	BaseStatus[_adhocLevel].executionDuration = finish - start;
+
+	if (!BaseStatus[_adhocLevel].executed)
+		return false;
+
+	// Assert
+	start = get_time();
+	BaseStatus[_adhocLevel].asserted = ExecuteAdhoc([&] { return assertion(); }).executed;
+	finish = get_time();
+
+	BaseStatus[_adhocLevel].assertionDuration = finish - start;
+
+	return BaseStatus[_adhocLevel].asserted;
+}
+
+template <derived_from_specialization_of<Resource> TResource>
+void Script<TResource>::Initialize(Script<TResource>* parentScript)
+{
+	_parentScript = parentScript;
+
+	// Per-level containers (BaseStatus, saveBank, caches) are created on first use; see
+	// LevelStack. A script that never saves never constructs a save bank.
+	if (_parentScript)
+	{
+		resource = _parentScript->resource;
+		_rootScript = _parentScript->_rootScript;
+	}
+	else
+		_rootScript = this;
+
+	startSaveHandle = SlotHandle<TResource>(resource, -1);
+	_initialFrame = int64_t(GetCurrentFrame());
+}
+
+template <derived_from_specialization_of<Resource> TResource>
+template <typename F>
+BaseScriptStatus Script<TResource>::ExecuteAdhocBase(F adhocScript)
+{
+	//Increment adhoc level. The other per-level containers are created on first use.
+	_adhocLevel++;
+	BaseStatus[_adhocLevel].validated = true;
+
+	uint64_t loadCyclesStart = resource->work.loadCycles;
+	uint64_t saveCyclesStart = resource->work.saveCycles;
+	uint64_t advanceCyclesStart = resource->work.advanceCycles;
+
+	// Cycles, like every other duration (ROADMAP 3.6). This was the one place that recorded
+	// milliseconds through std::chrono.
+	uint64_t start = get_time();
+	BaseStatus[_adhocLevel].executed = adhocScript();
+	uint64_t finish = get_time();
+
+	BaseStatus[_adhocLevel].loadDuration = resource->work.loadCycles - loadCyclesStart;
+	BaseStatus[_adhocLevel].saveDuration = resource->work.saveCycles - saveCyclesStart;
+	BaseStatus[_adhocLevel].advanceFrameDuration = resource->work.advanceCycles - advanceCyclesStart;
+
+	BaseStatus[_adhocLevel].executionDuration = finish - start;
+
+	BaseStatus[_adhocLevel].asserted = BaseStatus[_adhocLevel].executed;
+
+	//Decrement adhoc level, revert state and return status
+	//NOTE: saveBank is not popped here as the saves may be moved to the parent.
+	//Caller is responsible for popping it.
+	BaseScriptStatus status = std::move(BaseStatus[_adhocLevel]);
+	BaseStatus.erase(_adhocLevel);
+	frameCounter.erase(_adhocLevel);
+	saveCache.erase(_adhocLevel);
+	inputsCache.erase(_adhocLevel);
+	loadTracker.erase(_adhocLevel);
+	_adhocLevel--;
+
+	BaseStatus[_adhocLevel].nLoads += status.nLoads;
+	BaseStatus[_adhocLevel].nSaves += status.nSaves;
+	BaseStatus[_adhocLevel].nFrameAdvances += status.nFrameAdvances;
+
+	return status;
 }
 
 template <derived_from_specialization_of<Resource> TResource>
@@ -322,6 +587,14 @@ InputsMetadata<TResource> Script<TResource>::GetInputsMetadataAndCache(int64_t f
 }
 
 template <derived_from_specialization_of<Resource> TResource>
+void Script<TResource>::SetInputs(Inputs inputs)
+{
+	// Was three addr("gControllerPads") lookups per frame (three GetProcAddress calls on
+	// LibSm64); the resource now writes its own pad from a pointer cached at construction.
+	resource->setInputs(inputs);
+}
+
+template <derived_from_specialization_of<Resource> TResource>
 uint64_t Script<TResource>::GetFrameCounter(InputsMetadata<TResource> cachedInputs)
 {
 	if (!cachedInputs.stateOwner->frameCounter[cachedInputs.stateOwnerAdhocLevel].contains(cachedInputs.frame))
@@ -338,6 +611,12 @@ uint64_t Script<TResource>::IncrementFrameCounter(InputsMetadata<TResource> cach
 
 	//Return value BEFORE incrementing
 	return cachedInputs.stateOwner->frameCounter[cachedInputs.stateOwnerAdhocLevel][cachedInputs.frame]++;
+}
+
+template <derived_from_specialization_of<Resource> TResource>
+M64Metadata Script<TResource>::GetM64Metadata() const
+{
+	return _rootScript->GetM64Metadata(); // the root is a TopLevelScript, whose override answers from its movie
 }
 
 template <derived_from_specialization_of<Resource> TResource>
@@ -446,59 +725,29 @@ SaveMetadata<TResource> Script<TResource>::GetLatestSaveAndCache(int64_t frame)
 	return save;
 }
 
+//Internal version of Save() that specifies adhoc level, that can be called by a child script
 template <derived_from_specialization_of<Resource> TResource>
-void* Script<TResource>::ReadState(const char* symbol) const
+SaveMetadata<TResource> Script<TResource>::Save(int64_t adhocLevel)
 {
-	return resource->addr(symbol);
+	//Desyncs should always clear future saves, so if a save already exists there is no need to overwrite it
+	int64_t currentFrame = GetCurrentFrame();
+	if (!saveBank[adhocLevel].contains(currentFrame))
+	{
+		saveBank[adhocLevel].emplace(
+			std::piecewise_construct,
+			std::forward_as_tuple(currentFrame),
+			std::forward_as_tuple(resource, resource->SaveState()));
+		BaseStatus[adhocLevel].nSaves++;
+	}
+
+	//Return metadata for caching
+	return SaveMetadata<TResource>(this, currentFrame, adhocLevel);
 }
 
 template <derived_from_specialization_of<Resource> TResource>
-void Script<TResource>::Load(uint64_t frame)
+void Script<TResource>::DeleteSave(int64_t frame, int64_t adhocLevel)
 {
-	LoadBase(frame, false);
-}
-
-template <derived_from_specialization_of<Resource> TResource>
-void Script<TResource>::LongLoad(int64_t frame)
-{
-	int64_t currentFrame = static_cast<int64_t>(GetCurrentFrame());
-	if (currentFrame == frame)
-		return;
-
-	// Load most recent save at or before frame. Check child saves before
-	// parent. If target frame is in future and a save lies between the cursor and it, check
-	// if faster to frame advance or load (see LoadBase for the history of this condition).
-	// Also, don't cache as it is unlikely the save will be needed again.
-	auto latestSave = GetLatestSave(frame);
-	if (frame < currentFrame)
-	{
-		resource->LoadState(latestSave.GetSlotHandle()->slotId);
-		BaseStatus[_adhocLevel].nLoads++;
-	}
-	else if (latestSave.frame > currentFrame && resource->shouldLoad(latestSave.frame - currentFrame))
-	{
-		resource->LoadState(latestSave.GetSlotHandle()->slotId);
-		BaseStatus[_adhocLevel].nLoads++;
-	}
-
-	// If save is before target frame, play back until frame is reached
-	currentFrame = GetCurrentFrame();
-	while (currentFrame < frame)
-	{
-		// Advance frame
-		SetInputs(GetInputsMetadata(currentFrame).inputs);
-		resource->FrameAdvance();
-		BaseStatus[_adhocLevel].nFrameAdvances++;
-		currentFrame++;
-	}
-
-	// Resume state tracking
-	InputsMetadata<TResource> inputsMetadata = GetInputsMetadataAndCache(frame);
-	if (!isStateTracker)
-		_rootScript->TrackState(this, inputsMetadata);
-
-	// Create a save as it is likely that very many frames were advanced since the most recent one.
-	Save();
+	saveBank[adhocLevel].erase(frame);
 }
 
 template <derived_from_specialization_of<Resource> TResource>
@@ -584,300 +833,51 @@ void Script<TResource>::Revert(uint64_t frame, const M64Diff& m64, FrameMap<int6
 }
 
 template <derived_from_specialization_of<Resource> TResource>
-void Script<TResource>::Rollback(uint64_t frame)
+void Script<TResource>::ApplyChildDiff(const BaseScriptStatus& status, FrameMap<int64_t, SlotHandle<TResource>>* childSaveBank, int64_t initialFrame, Script<TResource>* childScript)
 {
-	// Roll back diff and savebank to target frame. Note that rollback on diff
-	// includes target frame.
-	if (!BaseStatus[_adhocLevel].m64Diff.frames.empty())
+	//Revert if script was unsuccessful
+	if (!status.asserted)
 	{
-		int64_t firstFrame = BaseStatus[_adhocLevel].m64Diff.frames.lower_bound(frame)->first;
+		Revert(initialFrame, status.m64Diff, childSaveBank, childScript);
+		return;
+	}	
 
-		BaseStatus[_adhocLevel].m64Diff.frames.erase(
-			BaseStatus[_adhocLevel].m64Diff.frames.lower_bound(frame),
-			BaseStatus[_adhocLevel].m64Diff.frames.end());
+	uint64_t firstFrame = 0;
+	uint64_t lastFrame = 0;
+	if (!status.m64Diff.frames.empty())
+	{
+		firstFrame = status.m64Diff.frames.begin()->first;
+		lastFrame = status.m64Diff.frames.rbegin()->first;
 
+		// Erase all saves, cached saves, and frame counters after this point
 		inputsCache[_adhocLevel].erase(inputsCache[_adhocLevel].lower_bound(firstFrame), inputsCache[_adhocLevel].end());
 		frameCounter[_adhocLevel].erase(frameCounter[_adhocLevel].upper_bound(firstFrame), frameCounter[_adhocLevel].end());
 		saveBank[_adhocLevel].erase(saveBank[_adhocLevel].upper_bound(firstFrame), saveBank[_adhocLevel].end());
 		saveCache[_adhocLevel].erase(saveCache[_adhocLevel].upper_bound(firstFrame), saveCache[_adhocLevel].end());
 		_rootScript->EraseTrackedStates(this, _adhocLevel, firstFrame);
-	}
 
-	//Desyncs should be impossible for rollback because no inputs are changed prior to frame being loaded
-	LoadBase(frame, false);
-}
-
-// Same as Rollback, but starts from current frame. Useful for scripts that edit past frames
-template <derived_from_specialization_of<Resource> TResource>
-void Script<TResource>::RollForward(int64_t frame)
-{
-	// Check if script altered state
-	bool desync = (!BaseStatus[_adhocLevel].m64Diff.frames.empty()) && (BaseStatus[_adhocLevel].m64Diff.frames.begin()->first < GetCurrentFrame());
-
-	if (!BaseStatus[_adhocLevel].m64Diff.frames.empty())
-	{
-		int64_t firstFrame = BaseStatus[_adhocLevel].m64Diff.frames.begin()->first;
-
-		//Roll forward inputs through frame prior to target frame
-		auto inputsUpperBound = BaseStatus[_adhocLevel].m64Diff.frames.upper_bound(frame - 1);
-		if (inputsUpperBound == BaseStatus[_adhocLevel].m64Diff.frames.begin())
-			inputsUpperBound = BaseStatus[_adhocLevel].m64Diff.frames.end();
-		else
-			inputsUpperBound = std::prev(inputsUpperBound);
-
-		BaseStatus[_adhocLevel].m64Diff.frames.erase(BaseStatus[_adhocLevel].m64Diff.frames.begin(), inputsUpperBound);
-
-		inputsCache[_adhocLevel].erase(inputsCache[_adhocLevel].lower_bound(firstFrame), inputsCache[_adhocLevel].end());
-		frameCounter[_adhocLevel].erase(frameCounter[_adhocLevel].upper_bound(firstFrame), frameCounter[_adhocLevel].end());
-		saveBank[_adhocLevel].erase(saveBank[_adhocLevel].upper_bound(firstFrame), saveBank[_adhocLevel].end());
-		saveCache[_adhocLevel].erase(saveCache[_adhocLevel].upper_bound(firstFrame), saveCache[_adhocLevel].end());
-		_rootScript->EraseTrackedStates(this, _adhocLevel, firstFrame);
-	}
-
-	LoadBase(frame, desync);
-}
-
-// Load and clear diff and savebank
-template <derived_from_specialization_of<Resource> TResource>
-void Script<TResource>::Restore(int64_t frame)
-{
-	// Check if script altered state
-	bool desync = (!BaseStatus[_adhocLevel].m64Diff.frames.empty()) && (BaseStatus[_adhocLevel].m64Diff.frames.begin()->first < GetCurrentFrame());
-
-	// Clear diff, frame counter and savebank
-	if (!BaseStatus[_adhocLevel].m64Diff.frames.empty())
-	{
-		int64_t firstFrame = BaseStatus[_adhocLevel].m64Diff.frames.begin()->first;
-
-		BaseStatus[_adhocLevel].m64Diff.frames.erase(
-			BaseStatus[_adhocLevel].m64Diff.frames.lower_bound(frame),
-			BaseStatus[_adhocLevel].m64Diff.frames.end());
-
-		inputsCache[_adhocLevel].erase(inputsCache[_adhocLevel].lower_bound(firstFrame), inputsCache[_adhocLevel].end());
-		frameCounter[_adhocLevel].erase(frameCounter[_adhocLevel].upper_bound(firstFrame), frameCounter[_adhocLevel].end());
-		saveBank[_adhocLevel].erase(saveBank[_adhocLevel].upper_bound(firstFrame), saveBank[_adhocLevel].end());
-		saveCache[_adhocLevel].erase(saveCache[_adhocLevel].upper_bound(firstFrame), saveCache[_adhocLevel].end());
-		_rootScript->EraseTrackedStates(this, _adhocLevel, firstFrame);
-	}
-
-	LoadBase(frame, desync);
-}
-
-template <derived_from_specialization_of<Resource> TResource>
-void Script<TResource>::Save()
-{
-	int64_t currentFrame = GetCurrentFrame();
-	auto inputsMetadata = GetInputsMetadata(currentFrame);
-	saveCache[_adhocLevel][currentFrame] = inputsMetadata.stateOwner->Save(inputsMetadata.stateOwnerAdhocLevel);
-}
-
-//Internal version of Save() that specifies adhoc level, that can be called by a child script
-template <derived_from_specialization_of<Resource> TResource>
-SaveMetadata<TResource> Script<TResource>::Save(int64_t adhocLevel)
-{
-	//Desyncs should always clear future saves, so if a save already exists there is no need to overwrite it
-	int64_t currentFrame = GetCurrentFrame();
-	if (!saveBank[adhocLevel].contains(currentFrame))
-	{
-		saveBank[adhocLevel].emplace(
-			std::piecewise_construct,
-			std::forward_as_tuple(currentFrame),
-			std::forward_as_tuple(resource, resource->SaveState()));
-		BaseStatus[adhocLevel].nSaves++;
-	}
-
-	//Return metadata for caching
-	return SaveMetadata<TResource>(this, currentFrame, adhocLevel);
-}
-
-//Do a cost-benefit analysis to decide whether a save should be created
-//CBA is only for creating a save in the current script on tthe current frame
-template <derived_from_specialization_of<Resource> TResource>
-void Script<TResource>::OptionalSave()
-{
-	//Integrate frame counter, saving only if threshold is reached
-	int64_t currentFrame = GetCurrentFrame();
-	int64_t latestSaveFrame = GetLatestSaveAndCache(currentFrame).frame;
-	uint64_t frameCounter = 0;
-	for (int64_t frame = latestSaveFrame + 1; frame <= currentFrame; frame++)
-	{
-		auto cachedInputs = GetInputsMetadataAndCache(frame);
-		frameCounter += GetFrameCounter(cachedInputs);
-
-		if (resource->shouldSave(frameCounter / 2))
+		//Apply diff. State is already synced from child script, so no need to update it
+		for (uint64_t frame = firstFrame; frame <= lastFrame; frame++)
 		{
-			//Create save at the current frame in current frame state owner
-			SaveMetadata<TResource> cachedSave = cachedInputs.stateOwner->Save(cachedInputs.stateOwnerAdhocLevel);
-			saveCache[_adhocLevel][currentFrame] = cachedSave;
-			break;
+			if (status.m64Diff.frames.count(frame))
+				BaseStatus[_adhocLevel].m64Diff.frames[frame] = status.m64Diff.frames.at(frame);
 		}
 	}
-}
 
-template <derived_from_specialization_of<Resource> TResource>
-void Script<TResource>::DeleteSave(int64_t frame, int64_t adhocLevel)
-{
-	saveBank[adhocLevel].erase(frame);
-}
+	//Move child saves to parent because they are still synced
+	//If child is ad-hoc script, pop the save bank
+	if (childSaveBank && !childSaveBank->empty())
+		std::move(childSaveBank->begin(), childSaveBank->end(), std::insert_iterator(saveBank[_adhocLevel], saveBank[_adhocLevel].end()));
+	if (saveBank.contains(_adhocLevel + 1))
+		saveBank.erase(_adhocLevel + 1);
 
-template <derived_from_specialization_of<Resource> TResource>
-void Script<TResource>::SetInputs(Inputs inputs)
-{
-	// Was three addr("gControllerPads") lookups per frame (three GetProcAddress calls on
-	// LibSm64); the resource now writes its own pad from a pointer cached at construction.
-	resource->setInputs(inputs);
-}
+	int64_t childAdhocLevel = this == childScript ? _adhocLevel + 1 : 0; // Ad-hoc script vs. regular script
+	_rootScript->MoveSyncedTrackedStates(childScript, childAdhocLevel, this, _adhocLevel);
 
-// Only checks base diff, i.e. ad-hoc level 0
-template <derived_from_specialization_of<Resource> TResource>
-bool Script<TResource>::IsDiffEmpty()
-{
-	return BaseStatus[0].m64Diff.frames.empty();
-}
-
-template <derived_from_specialization_of<Resource> TResource>
-M64Diff Script<TResource>::GetDiff()
-{
-	return BaseStatus[_adhocLevel].m64Diff;
-}
-
-// Useful for exporting current output of script hieerarchy without terminating it
-template <derived_from_specialization_of<Resource> TResource>
-M64Diff Script<TResource>::GetTotalDiff()
-{
-	M64Diff totalDiff;
-	for (Script<TResource>* script = this; script != nullptr; script = script->_parentScript)
-	{
-		for (int64_t adhocLevel = script->_adhocLevel; adhocLevel >= 0; adhocLevel--)
-		{
-			for (auto input : script->BaseStatus[adhocLevel].m64Diff.frames)
-			{
-				if (!totalDiff.frames.contains(input.first))
-					totalDiff.frames[input.first] = input.second;
-			}
-		}
-	}
-	
-	return totalDiff;
-}
-
-// TODO: Deprecate
-template <derived_from_specialization_of<Resource> TResource>
-M64Diff Script<TResource>::GetBaseDiff()
-{
-	return BaseStatus[0].m64Diff;
-}
-
-template <derived_from_specialization_of<Resource> TResource>
-AdhocBaseScriptStatus Script<TResource>::ExecuteAdhoc(AdhocScript auto adhocScript)
-{
-	int64_t initialFrame = GetCurrentFrame();
-
-	BaseScriptStatus status = ExecuteAdhocBase(adhocScript);
-	Revert(initialFrame, status.m64Diff, SaveBankIfCreated(*this, _adhocLevel + 1), this);
-
-	return AdhocBaseScriptStatus(std::move(status));
-}
-
-template <derived_from_specialization_of<Resource> TResource>
-template <class TAdhocCustomScriptStatus, AdhocCustomStatusScript<TAdhocCustomScriptStatus> F>
-AdhocScriptStatus<TAdhocCustomScriptStatus> Script<TResource>::ExecuteAdhoc(F adhocScript)
-{
-	int64_t initialFrame = GetCurrentFrame();
-
-	TAdhocCustomScriptStatus customStatus = TAdhocCustomScriptStatus();
-	BaseScriptStatus baseStatus = ExecuteAdhocBase([&]() { return adhocScript(customStatus); });
-	Revert(initialFrame, baseStatus.m64Diff, SaveBankIfCreated(*this, _adhocLevel + 1), this);
-
-	return AdhocScriptStatus<TAdhocCustomScriptStatus>(std::move(baseStatus), std::move(customStatus));
-}
-
-template <derived_from_specialization_of<Resource> TResource>
-AdhocBaseScriptStatus Script<TResource>::ModifyAdhoc(AdhocScript auto adhocScript)
-{
-	int64_t initialFrame = GetCurrentFrame();
-
-	auto status = ExecuteAdhocBase(adhocScript);
-	ApplyChildDiff(status, SaveBankIfCreated(*this, _adhocLevel + 1), initialFrame, this);
-
-	return AdhocBaseScriptStatus(std::move(status));
-}
-
-template <derived_from_specialization_of<Resource> TResource>
-template <class TAdhocCustomScriptStatus, AdhocCustomStatusScript<TAdhocCustomScriptStatus> F>
-AdhocScriptStatus<TAdhocCustomScriptStatus> Script<TResource>::ModifyAdhoc(F adhocScript)
-{
-	int64_t initialFrame = GetCurrentFrame();
-
-	TAdhocCustomScriptStatus customStatus = TAdhocCustomScriptStatus();
-	BaseScriptStatus baseStatus = ExecuteAdhocBase([&]() { return adhocScript(customStatus); });
-	ApplyChildDiff(baseStatus, SaveBankIfCreated(*this, _adhocLevel + 1), initialFrame, this);
-
-	return AdhocScriptStatus<TAdhocCustomScriptStatus>(std::move(baseStatus), std::move(customStatus));
-}
-
-template <derived_from_specialization_of<Resource> TResource>
-template <AdhocScript TAdhocScript>
-AdhocBaseScriptStatus Script<TResource>::TestAdhoc(TAdhocScript&& adhocScript)
-{
-	auto status = ExecuteAdhoc(std::forward<TAdhocScript>(adhocScript));
-	status.m64Diff = M64Diff();
-
-	return status;
-}
-
-template <derived_from_specialization_of<Resource> TResource>
-template <class TAdhocCustomScriptStatus, AdhocCustomStatusScript<TAdhocCustomScriptStatus> F>
-AdhocScriptStatus<TAdhocCustomScriptStatus> Script<TResource>::TestAdhoc(F&& adhocScript)
-{
-	auto status = ExecuteAdhoc<TAdhocCustomScriptStatus>(std::forward<F>(adhocScript));
-	status.m64Diff = M64Diff();
-
-	return status;
-}
-
-template <derived_from_specialization_of<Resource> TResource>
-template <typename F>
-BaseScriptStatus Script<TResource>::ExecuteAdhocBase(F adhocScript)
-{
-	//Increment adhoc level. The other per-level containers are created on first use.
-	_adhocLevel++;
-	BaseStatus[_adhocLevel].validated = true;
-
-	uint64_t loadCyclesStart = resource->work.loadCycles;
-	uint64_t saveCyclesStart = resource->work.saveCycles;
-	uint64_t advanceCyclesStart = resource->work.advanceCycles;
-
-	// Cycles, like every other duration (ROADMAP 3.6). This was the one place that recorded
-	// milliseconds through std::chrono.
-	uint64_t start = get_time();
-	BaseStatus[_adhocLevel].executed = adhocScript();
-	uint64_t finish = get_time();
-
-	BaseStatus[_adhocLevel].loadDuration = resource->work.loadCycles - loadCyclesStart;
-	BaseStatus[_adhocLevel].saveDuration = resource->work.saveCycles - saveCyclesStart;
-	BaseStatus[_adhocLevel].advanceFrameDuration = resource->work.advanceCycles - advanceCyclesStart;
-
-	BaseStatus[_adhocLevel].executionDuration = finish - start;
-
-	BaseStatus[_adhocLevel].asserted = BaseStatus[_adhocLevel].executed;
-
-	//Decrement adhoc level, revert state and return status
-	//NOTE: saveBank is not popped here as the saves may be moved to the parent.
-	//Caller is responsible for popping it.
-	BaseScriptStatus status = std::move(BaseStatus[_adhocLevel]);
-	BaseStatus.erase(_adhocLevel);
-	frameCounter.erase(_adhocLevel);
-	saveCache.erase(_adhocLevel);
-	inputsCache.erase(_adhocLevel);
-	loadTracker.erase(_adhocLevel);
-	_adhocLevel--;
-
-	BaseStatus[_adhocLevel].nLoads += status.nLoads;
-	BaseStatus[_adhocLevel].nSaves += status.nSaves;
-	BaseStatus[_adhocLevel].nFrameAdvances += status.nFrameAdvances;
-
-	return status;
+	if (!status.m64Diff.frames.empty())
+		Load(lastFrame + 1); //Forward state to end of diff
+	else
+		Load(initialFrame);
 }
 
 #endif

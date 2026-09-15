@@ -49,6 +49,14 @@ public:
 	Script& operator= (const Script<TResource>&) = delete;
 
 protected:
+	// The lifecycle, in the order it runs: validation and assertion in a sandbox the framework
+	// reverts, execution the one phase whose input diff can persist (AGENTS.md, hard rule 4).
+	virtual bool validation() = 0;
+	virtual bool execution() = 0;
+	virtual bool assertion() = 0;
+
+	// Child scripts: run one and revert it (Execute), keep its diff if it asserted (Modify), or
+	// revert it and drop the diff from its status (Test).
 	template <derived_from_specialization_of<Script> TScript, typename... Us>
 		requires(std::constructible_from<TScript, Us...>)
 	ScriptStatus<TScript> Execute(Us&&... params)
@@ -123,6 +131,7 @@ protected:
 		return status;
 	}
 
+	// The same three for an ad-hoc lambda.
 	AdhocBaseScriptStatus ExecuteAdhoc(AdhocScript auto adhocScript);
 
 	template <class TAdhocCustomScriptStatus, AdhocCustomStatusScript<TAdhocCustomScriptStatus> F>
@@ -508,31 +517,21 @@ protected:
 
 	#pragma endregion
 
-	// The tracked state at `frame`, computed on first request. The reference points into the
-	// root's table and stays valid until a write at or before `frame` invalidates it; copy
-	// it (`auto state = ...`) if it has to outlive the next AdvanceFrameWrite/Load.
-	template <std::derived_from<Script<TResource>> TStateTracker>
-		requires std::constructible_from<TStateTracker>
-	const typename TStateTracker::CustomScriptStatus& GetTrackedState(int64_t frame)
-	{
-		return TrackerRoot<TStateTracker>()->GetTrackedStateInternal(this, GetInputsMetadataAndCache(frame));
-	}
-
-	template <std::derived_from<Script<TResource>> TStateTracker>
-		requires std::constructible_from<TStateTracker>
-	bool TrackedStateExists(int64_t frame)
-	{
-		return TrackerRoot<TStateTracker>()->TrackedStateExistsInternal(this, GetInputsMetadataAndCache(frame));
-	}
-
+	// The cursor and the inputs.
 	uint64_t GetCurrentFrame();
+	void AdvanceFrameRead();
+	void AdvanceFrameWrite(Inputs inputs);
+	Inputs GetInputs(int64_t frame);
+	M64Diff GetInputs(int64_t firstFrame, int64_t lastFrame);
 	bool IsDiffEmpty();
 	M64Diff GetDiff();
 	M64Diff GetTotalDiff();
 	M64Diff GetBaseDiff();
 	void Apply(const M64Diff& m64Diff);
-	void AdvanceFrameRead();
-	void AdvanceFrameWrite(Inputs inputs);
+	bool ExportM64(std::filesystem::path fileName);
+	bool ExportM64(std::filesystem::path fileName, int64_t maxFrame);
+
+	// Saves and loads: automatic in the normal case, these are the escape hatches.
 	void OptionalSave();
 	void Save();
 	void Load(uint64_t frame);
@@ -540,11 +539,9 @@ protected:
 	void Rollback(uint64_t frame);
 	void RollForward(int64_t frame);
 	void Restore(int64_t frame);
-	Inputs GetInputs(int64_t frame);
-	M64Diff GetInputs(int64_t firstFrame, int64_t lastFrame);
-	bool ExportM64(std::filesystem::path fileName);
-	bool ExportM64(std::filesystem::path fileName, int64_t maxFrame);
 
+	// State: the resource's memory, the script's state for a run on another resource, and the
+	// tracked state at a frame.
 	// The resource's memory, read only: the address of a symbol (LibSm64: a DLL export,
 	// PyramidUpdate: a field of its own state; an unknown name throws). The one way a script
 	// sees game memory (AGENTS.md, hard rule 9). A write is a hack, a kind of input the
@@ -576,9 +573,22 @@ protected:
 		return save;
 	}
 
-	virtual bool validation() = 0;
-	virtual bool execution() = 0;
-	virtual bool assertion() = 0;
+	// The tracked state at `frame`, computed on first request. The reference points into the
+	// root's table and stays valid until a write at or before `frame` invalidates it; copy
+	// it (`auto state = ...`) if it has to outlive the next AdvanceFrameWrite/Load.
+	template <std::derived_from<Script<TResource>> TStateTracker>
+		requires std::constructible_from<TStateTracker>
+	const typename TStateTracker::CustomScriptStatus& GetTrackedState(int64_t frame)
+	{
+		return TrackerRoot<TStateTracker>()->GetTrackedStateInternal(this, GetInputsMetadataAndCache(frame));
+	}
+
+	template <std::derived_from<Script<TResource>> TStateTracker>
+		requires std::constructible_from<TStateTracker>
+	bool TrackedStateExists(int64_t frame)
+	{
+		return TrackerRoot<TStateTracker>()->TrackedStateExistsInternal(this, GetInputsMetadataAndCache(frame));
+	}
 
 private:
 	// TopLevelScript is the root of every hierarchy: it starts the lifecycle from outside it
@@ -587,7 +597,7 @@ private:
 	// constraints included; MSVC and Clang reject an unconstrained one (docs/compilers.md).
 	template <derived_from_specialization_of<Resource> R, std::derived_from<Script<R>> T>
 	friend class TopLevelScript;
-	
+
 	friend class SaveMetadata<TResource>;
 	friend class InputsMetadata<TResource>;
 	friend class ScriptCompareHelper<TResource>;
@@ -597,7 +607,7 @@ private:
 	// The resource the hierarchy runs on, set by TopLevelScript when it starts. Every
 	// interaction goes through the operations above; scripts never hold it (hard rule 9).
 	TResource* resource = nullptr;
-	
+
 	int64_t _adhocLevel = 0;
 	int64_t _initialFrame = 0;
 	// One entry per ad-hoc level (see LevelStack.hpp); level 0 is the script itself.
@@ -614,52 +624,9 @@ private:
 	bool isStateTracker = false;
 	ScriptCompareHelper<TResource> compareHelper = ScriptCompareHelper<TResource>(this);
 
+	// The lifecycle, run by the parent.
 	bool Run();
-
 	void Initialize(Script<TResource>* parentScript);
-	SaveMetadata<TResource> GetLatestSave(int64_t frame);
-	SaveMetadata<TResource> GetLatestSaveAndCache(int64_t frame);
-	// The inputs of a frame and who owns the state there. The walk is the second form: it
-	// writes into the caller's object and asks the parent to write into the same one, so
-	// nothing is copied per level; the first form is that object, built in the caller's
-	// return slot (a named return value optimization every compiler applies to one named
-	// object returned once). Returning temporaries on some paths and a named local on
-	// another made MSVC copy the 40 bytes at the end of every level, a third of the walk's
-	// time (docs/performance-changelog.md, 2026-09-15).
-	InputsMetadata<TResource> GetInputsMetadata(int64_t frame);
-	virtual void GetInputsMetadata(int64_t frame, InputsMetadata<TResource>& metadata);
-	InputsMetadata<TResource> GetInputsMetadataAndCache(int64_t frame);
-	void DeleteSave(int64_t frame, int64_t adhocLevel);
-	void SetInputs(Inputs inputs);
-	void Revert(uint64_t frame, const M64Diff& m64, FrameMap<int64_t, SlotHandle<TResource>>* childSaveBank, Script<TResource>* childScript);
-	void AdvanceFrameRead(uint64_t& counter);
-	uint64_t GetFrameCounter(InputsMetadata<TResource> cachedInputs);
-	uint64_t IncrementFrameCounter(InputsMetadata<TResource> cachedInputs);
-	void ApplyChildDiff(const BaseScriptStatus& status, FrameMap<int64_t, SlotHandle<TResource>>* childSaveBank, int64_t initialFrame, Script<TResource>* childScript);
-	SaveMetadata<TResource> Save(int64_t adhocLevel);
-	void LoadBase(uint64_t frame, bool desync);
-
-	// A child's save bank at `adhocLevel`, or nullptr if the child never saved (the level was
-	// never created). Reverting through a pointer avoids constructing an empty map just to
-	// find out it is empty.
-	static FrameMap<int64_t, SlotHandle<TResource>>* SaveBankIfCreated(Script<TResource>& script, int64_t adhocLevel)
-	{
-		return script.saveBank.contains(adhocLevel) ? &script.saveBank[adhocLevel] : nullptr;
-	}
-
-	// The root as its TopLevelScript type. Checked by comparing type tags rather than with
-	// dynamic_cast because this runs on every tracked-state lookup (ROADMAP 3.7).
-	template <class TStateTracker>
-	TopLevelScript<TResource, TStateTracker>* TrackerRoot()
-	{
-		if (_rootScript->_stateTrackerTag != &StateTrackerTag<TStateTracker>::value) [[unlikely]]
-		{
-			throw std::runtime_error(std::string("GetTrackedState<") + typeid(TStateTracker).name()
-				+ ">: the root script's state tracker is a different type");
-		}
-		return static_cast<TopLevelScript<TResource, TStateTracker>*>(_rootScript);
-	}
-
 	template <typename F>
 	BaseScriptStatus ExecuteAdhocBase(F adhocScript);
 
@@ -700,6 +667,56 @@ private:
 		return ScriptStatus<TStateTracker>(std::move(script.BaseStatus[0]), std::move(script.CustomStatus));
 	}
 
+	// The root as its TopLevelScript type. Checked by comparing type tags rather than with
+	// dynamic_cast because this runs on every tracked-state lookup (ROADMAP 3.7).
+	template <class TStateTracker>
+	TopLevelScript<TResource, TStateTracker>* TrackerRoot()
+	{
+		if (_rootScript->_stateTrackerTag != &StateTrackerTag<TStateTracker>::value) [[unlikely]]
+		{
+			throw std::runtime_error(std::string("GetTrackedState<") + typeid(TStateTracker).name()
+				+ ">: the root script's state tracker is a different type");
+		}
+		return static_cast<TopLevelScript<TResource, TStateTracker>*>(_rootScript);
+	}
+
+	// The input walk.
+	// The inputs of a frame and who owns the state there. The walk is the second form: it
+	// writes into the caller's object and asks the parent to write into the same one, so
+	// nothing is copied per level; the first form is that object, built in the caller's
+	// return slot (a named return value optimization every compiler applies to one named
+	// object returned once). Returning temporaries on some paths and a named local on
+	// another made MSVC copy the 40 bytes at the end of every level, a third of the walk's
+	// time (docs/performance-changelog.md, 2026-09-15).
+	InputsMetadata<TResource> GetInputsMetadata(int64_t frame);
+	virtual void GetInputsMetadata(int64_t frame, InputsMetadata<TResource>& metadata);
+	InputsMetadata<TResource> GetInputsMetadataAndCache(int64_t frame);
+	void SetInputs(Inputs inputs);
+	void AdvanceFrameRead(uint64_t& counter);
+	uint64_t GetFrameCounter(InputsMetadata<TResource> cachedInputs);
+	uint64_t IncrementFrameCounter(InputsMetadata<TResource> cachedInputs);
+	// What the source movie's header says (its game), for ExportM64: a script asks the root,
+	// and the root, a TopLevelScript, answers from its movie. Once per export, never per frame.
+	virtual M64Metadata GetM64Metadata() const;
+
+	// Saves, loads and reverts.
+	SaveMetadata<TResource> GetLatestSave(int64_t frame);
+	SaveMetadata<TResource> GetLatestSaveAndCache(int64_t frame);
+	SaveMetadata<TResource> Save(int64_t adhocLevel);
+	void DeleteSave(int64_t frame, int64_t adhocLevel);
+	void LoadBase(uint64_t frame, bool desync);
+	void Revert(uint64_t frame, const M64Diff& m64, FrameMap<int64_t, SlotHandle<TResource>>* childSaveBank, Script<TResource>* childScript);
+	void ApplyChildDiff(const BaseScriptStatus& status, FrameMap<int64_t, SlotHandle<TResource>>* childSaveBank, int64_t initialFrame, Script<TResource>* childScript);
+
+	// A child's save bank at `adhocLevel`, or nullptr if the child never saved (the level was
+	// never created). Reverting through a pointer avoids constructing an empty map just to
+	// find out it is empty.
+	static FrameMap<int64_t, SlotHandle<TResource>>* SaveBankIfCreated(Script<TResource>& script, int64_t adhocLevel)
+	{
+		return script.saveBank.contains(adhocLevel) ? &script.saveBank[adhocLevel] : nullptr;
+	}
+
+	// The tracker hooks the root overrides.
 	// Needed for state tracking. These do nothing, but TopLevelScript overrides them. Can't access explicitly because of lack of template information.
 	// Tracked-state containers are created on first use, so there is no "push"; "pop" drops them.
 	virtual void TrackState(Script<TResource>* /*currentScript*/, const InputsMetadata<TResource>& /*inputsMetadata*/) { return; }
@@ -707,10 +724,6 @@ private:
 	virtual void PopTrackedStatesContainer(Script<TResource>* /*currentScript*/, int64_t /*adhocLevel*/) { return; }
 	virtual void MoveSyncedTrackedStates(Script<TResource>* /*sourceScript*/, int64_t /*sourceAdhocLevel*/, Script<TResource>* /*destScript*/, int64_t /*destAdhocLevel*/) { return; }
 	virtual void EraseTrackedStates(Script<TResource>* /*currentScript*/, int64_t /*adhocLevel*/, int64_t /*firstFrame*/) { return; }
-	
-	// What the source movie's header says (its game), for ExportM64: a script asks the root,
-	// and the root, a TopLevelScript, answers from its movie. Once per export, never per frame.
-	virtual M64Metadata GetM64Metadata() const;
 };
 
 //Include template method implementations

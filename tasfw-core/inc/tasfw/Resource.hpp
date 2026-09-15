@@ -54,6 +54,24 @@ public:
 	Resource(Resource<TState>&&) = default;
 	Resource& operator= (const Resource<TState>&) = delete;
 
+	// What a derived resource implements: the game as save, load, advance, inputs, memory and
+	// the frame.
+	virtual void save(TState& state) const = 0;
+	virtual void load(const TState& state) = 0;
+	virtual void advance() = 0;
+	// Write the controller inputs that the next advance() will see. Called once per frame;
+	// implementations must not do any lookup here (cache pointers at construction).
+	virtual void setInputs(const Inputs& inputs) = 0;
+	// Symbol lookup for scripts. LibSm64 resolves a name through the OS loader once and
+	// answers from its own table after, so a script may ask per execution; one that needs
+	// a symbol every frame still caches the pointer.
+	virtual void* addr(const char* symbol) const = 0;
+	virtual std::size_t getStateSize(const TState& state) const = 0;
+	//TODO: make this resource-agnostic
+	virtual uint32_t getCurrentFrame() const = 0;
+
+	// The counted operations, and the cost model that decides when a replay earns a save or a
+	// save ahead is worth loading.
 	int64_t SaveState();
 	void LoadState(int64_t slotId);
 	void FrameAdvance();
@@ -81,20 +99,6 @@ public:
 	{
 		return UState(*this, std::forward<Us>(params)...);
 	}
-
-	virtual void save(TState& state) const = 0;
-	virtual void load(const TState& state) = 0;
-	virtual void advance() = 0;
-	// Write the controller inputs that the next advance() will see. Called once per frame;
-	// implementations must not do any lookup here (cache pointers at construction).
-	virtual void setInputs(const Inputs& inputs) = 0;
-	// Symbol lookup for scripts. LibSm64 resolves a name through the OS loader once and
-	// answers from its own table after, so a script may ask per execution; one that needs
-	// a symbol every frame still caches the pointer.
-	virtual void* addr(const char* symbol) const = 0;
-	virtual std::size_t getStateSize(const TState& state) const = 0;
-	//TODO: make this resource-agnostic
-	virtual uint32_t getCurrentFrame() const = 0;
 
 protected:
 	// Whether a state being saved is the start save rather than a slot's; what a derived

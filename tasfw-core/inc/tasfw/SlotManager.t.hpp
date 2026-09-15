@@ -6,12 +6,6 @@
 #include <algorithm>
 
 template <class TState>
-bool SlotManager<TState>::isValid(int64_t slotId) const
-{
-	return slotsById.contains(slotId);
-}
-
-template <class TState>
 int64_t SlotManager<TState>::CreateSlot()
 {
 	while (true)
@@ -65,6 +59,16 @@ int64_t SlotManager<TState>::CreateSlot()
 }
 
 template <class TState>
+void SlotManager<TState>::EraseOldestSlot()
+{
+	int64_t slotId = slotIdsByLastAccess.begin() == slotIdsByLastAccess.end() ? -1 : slotIdsByLastAccess.begin()->second;
+	if (slotId == -1)
+		return;
+
+	EraseSlot(slotId);
+}
+
+template <class TState>
 void SlotManager<TState>::EraseSlot(int64_t slotId)
 {
 	auto slot = slotsById.find(slotId);
@@ -107,13 +111,9 @@ void SlotManager<TState>::LoadSlot(int64_t slotId)
 }
 
 template <class TState>
-void SlotManager<TState>::EraseOldestSlot()
+bool SlotManager<TState>::isValid(int64_t slotId) const
 {
-	int64_t slotId = slotIdsByLastAccess.begin() == slotIdsByLastAccess.end() ? -1 : slotIdsByLastAccess.begin()->second;
-	if (slotId == -1)
-		return;
-
-	EraseSlot(slotId);
+	return slotsById.contains(slotId);
 }
 
 #endif
