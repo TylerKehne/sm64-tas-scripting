@@ -25,6 +25,15 @@
 // size, and the next push at that level reuses the storage without allocating. References
 // to a level stay valid across pushes and pops of other levels (a level is never moved),
 // which Script relies on.
+// Keeps a cold path out of the accessor it serves. A compiler keyword, not a language
+// feature (docs/compilers.md, "MSVC 19.51 inlines a single-call-site function whatever its
+// size"); the one other such fork is the rdtsc header in Resource.t.hpp.
+#if defined(_MSC_VER)
+	#define TAS_FW_NOINLINE __declspec(noinline)
+#else
+	#define TAS_FW_NOINLINE __attribute__((noinline))
+#endif
+
 template <class T>
 class LevelStack
 {
@@ -41,6 +50,10 @@ public:
 	// caller; the growth loop lives in Grow(). With the loop inline here MSVC stopped
 	// inlining the accessor and every bookkeeping access in the ancestor walk became a call
 	// (+19% on a depth-16 LongLoad, +13% on an empty ExecuteAdhoc; clang was unaffected).
+	// MSVC 19.51 inlined Grow() back into the accessor by itself, a function with one call
+	// site whatever its size, with the same result: seven calls per level in the input
+	// walk, fifteen per AdvanceFrameWrite (docs/performance-changelog.md, 2026-09-15).
+	// Hence the noinline on Grow().
 	T& operator[](int64_t level)
 	{
 		uint64_t target = uint64_t(level);
@@ -74,7 +87,7 @@ private:
 		return level == 0 ? *_level0 : *_higher[level - 1];
 	}
 
-	void Grow(uint64_t target)
+	TAS_FW_NOINLINE void Grow(uint64_t target)
 	{
 		while (_size <= target)
 		{

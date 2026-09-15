@@ -29,7 +29,8 @@ powershell -ExecutionPolicy Bypass -File scripts\build.ps1            # Debug
 powershell -ExecutionPolicy Bypass -File scripts\build.ps1 -Config Release
 ```
 
-The script finds Visual Studio 2022 with vswhere, imports the x64 developer environment,
+The script finds the latest Visual Studio (2026 or 2022) with vswhere, imports the x64
+developer environment,
 uses the cmake/ninja bundled with Visual Studio if none are on PATH, and configures from the
 `CMakePresets.json` preset for the compiler and config (`msvc-release`, or `clang-cl-release`
 with `-Compiler clang`). Output goes to `build\<Config>\out\bitfs-turn.exe`

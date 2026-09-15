@@ -704,7 +704,15 @@ private:
 	void Initialize(Script<TResource>* parentScript);
 	SaveMetadata<TResource> GetLatestSave(int64_t frame);
 	SaveMetadata<TResource> GetLatestSaveAndCache(int64_t frame);
-	virtual InputsMetadata<TResource> GetInputsMetadata(int64_t frame);
+	// The inputs of a frame and who owns the state there. The walk is the second form: it
+	// writes into the caller's object and asks the parent to write into the same one, so
+	// nothing is copied per level; the first form is that object, built in the caller's
+	// return slot (a named return value optimization every compiler applies to one named
+	// object returned once). Returning temporaries on some paths and a named local on
+	// another made MSVC copy the 40 bytes at the end of every level, a third of the walk's
+	// time (docs/performance-changelog.md, 2026-09-15).
+	InputsMetadata<TResource> GetInputsMetadata(int64_t frame);
+	virtual void GetInputsMetadata(int64_t frame, InputsMetadata<TResource>& metadata);
 	InputsMetadata<TResource> GetInputsMetadataAndCache(int64_t frame);
 	void DeleteSave(int64_t frame, int64_t adhocLevel);
 	void SetInputs(Inputs inputs);
@@ -940,7 +948,7 @@ private:
 	// overrides for the movie (the GetM64Metadata shape), measured 7 to 18 ns more per
 	// uncached lookup on MSVC 19.51 in three forms, with the root's own walk flat
 	// (docs/performance-changelog.md, 2026-09-15).
-	InputsMetadata<TResource> GetInputsMetadata(int64_t frame) override;
+	void GetInputsMetadata(int64_t frame, InputsMetadata<TResource>& metadata) override;
 	// (No self-friend declaration: a class is always its own friend, and GCC warns about it.)
 
 	// Data: trackedStates[script][adhocLevel][frame] = state;

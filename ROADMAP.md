@@ -1,9 +1,9 @@
 # Roadmap
 
-Status as of 2026-09-15: Phases 1 and 2 are done; of Phase 3 only 3.2 (encapsulation),
-3.17 (guidelines for TASing with the framework, after 3.2) and 3.18 (perf baselines on the
-Visual Studio 2026 toolset) remain, the rest landed in #94 and #95; Phase 4 has 4.1 and
-4.5 done; Phase 5 has its first item, per-scenario movement options, done. Items are ordered; each phase makes the next one safe to do with an AI
+Status as of 2026-09-15: Phases 1 and 2 are done; of Phase 3 only 3.2 (encapsulation, in
+progress) and 3.17 (guidelines for TASing with the framework, after 3.2) remain, the rest
+landed in #94 and #95 and, for 3.18 and 3.19, on 3.2's branch; Phase 4 has 4.1 and 4.5
+done; Phase 5 has its first item, per-scenario movement options, done. Items are ordered; each phase makes the next one safe to do with an AI
 agent. Check boxes as work lands and keep "Done when" honest.
 
 **Cross-cutting rules:**
@@ -341,8 +341,7 @@ Goal: the DLL becomes a reproducible, swappable artifact instead of a mystery bi
 ## Phase 3: framework hardening
 
 Goal: the core's implicit invariants become explicit and enforced. Status 2026-09-15: every
-item is done except 3.2, which comes next, 3.17, which follows it, and 3.18, the baselines
-on the toolset the build script now picks; then Phase 4.
+item is done except 3.2, in progress, and 3.17, which follows it; then Phase 4.
 
 - [x] **3.1 Frame cursor semantics.** Decided by the maintainer 2026-09-08: `Modify` leaves the
       cursor at the end of the child's diff on purpose, because the common case is to keep
@@ -690,40 +689,42 @@ on the toolset the build script now picks; then Phase 4.
       Phase 4. Shape (a docs page or a section of AGENTS.md) to be decided then.
       *Done when:* the guidelines exist and an agent given the repository and them can
       create, run and check a new script without further instruction.
-- [ ] **3.18 Perf baselines on the Visual Studio 2026 toolset.** Found 2026-09-15: with
+- [x] **3.18 Perf baselines on the Visual Studio 2026 toolset.** Done 2026-09-15. With
       Visual Studio 2026 installed, `scripts\build.ps1` (vswhere, latest install) builds with
-      its MSVC 19.51 and clang-cl 22, and `perf\baselines\tyler-desktop*` and the reference
-      binaries under `perf\reference\` are 19.44's and clang-cl 19's. Against them 19.51 reads
-      most of the Script family 14 to 35% slower, the child-script rows 9 to 12% faster and
-      the throughput Tier D 12% faster, so a compare's "vs base" column reads the toolset
-      until the baselines are re-saved on it (`-SaveBaseline`, both compilers; the
-      maintainer's call). Until then a change is measured against master built with the
-      same toolset and passed with `-Reference`, as 3.2's tables were
-      (docs/performance-changelog.md, 2026-09-15). The same day the uncached `GetInputs`
-      rows proved placement-sensitive on 19.51 beyond the gate: master with one unrelated
-      benchmark appended read them 15 to 28% over master's own binary, and the counters
-      showed byte-identical code retiring the same instructions, mispredicts and misses in
-      more cycles (a front-end effect of where the code lands; the change log has the
-      table). What to do with those rows (a wider tolerance for them, aligning the loop, or
-      a benchmark less sensitive to placement) is decided with the baselines; 3.19 would
-      shrink the sensitivity at its source. *Done when:* both baselines and both references
-      are saved on the toolset the build script picks, and the placement-sensitive rows have
-      a stated rule.
-- [ ] **3.19 The input walk's front-end cost.** Found 2026-09-15 while root-causing 3.2's
-      perf rows (docs/performance-changelog.md): on MSVC 19.51 `LevelStack::operator[]` is
-      not inlined into `Script::GetInputsMetadata`, a call per container per level, twelve
-      per uncached lookup at depth 1 and 22% of the loop's samples, although the accessor
-      was shaped to inline (LevelStack.hpp) and 19.44 did; the likely cause of the 14 to
-      35% the 19.51 reference reads over the 19.44 baseline on the Script family, to be
-      confirmed on a symbolized 19.44 build. And the walk returns its 40-byte
-      `InputsMetadata` by copying a local it assembled after the parent's answer, since its
-      several returns defeat MSVC's named return value optimization: 34% of the walk's
-      samples sit on the instruction after that copy. Both are measured optimizations
-      behind an unchanged interface (hard rule 10 does not apply), each to ship with the
-      suite's table; the second changes no behavior and the first none either, so the
-      engine tests cover them. *Done when:* the accessor inlines on every compiler the
-      suite runs, the copy is gone, and the uncached `GetInputs` rows read at or under the
-      19.44 baseline on 19.51.
+      its MSVC 19.51 and clang-cl 22; `perf\baselines\tyler-desktop*` and the references
+      under `perf\reference\` were 19.44's and clang-cl 19's, against which 19.51 read most
+      of the Script family 14 to 35% slower (3.19 found why and closed most of it) and the
+      throughput Tier D 12% faster. Both baselines and both references are re-saved from
+      the 3.19 code on the new toolset (`-SaveBaseline`, then `-Compiler clang`). While
+      they were stale, a change was measured against master built with the same toolset
+      and passed with `-Reference`, as 3.2's and 3.19's tables were; that remains the way
+      to measure across a toolset change (docs/performance.md). The uncached `GetInputs`
+      rows had proved placement-sensitive beyond the gate on 19.51 (master with one
+      unrelated benchmark appended read them 15 to 28% over master's own binary, the
+      counters showing byte-identical code retiring the same instructions, mispredicts and
+      misses in more cycles); with 3.19 the same probe moves them 1 to 6%, so they need no
+      rule of their own (docs/performance-changelog.md).
+- [x] **3.19 The input walk's front-end cost.** Found and fixed 2026-09-15 while
+      root-causing 3.2's perf rows (docs/performance-changelog.md). On MSVC 19.51
+      `LevelStack::operator[]` was not inlined into `Script::GetInputsMetadata`, a call per
+      container per level, twelve per uncached lookup at depth 1 and 22% of the loop's
+      samples: the compiler had inlined the cold `Grow()` into the accessor, a function
+      with one call site whatever its size, and then the accessor nowhere (19.44 had not;
+      docs/compilers.md). `Grow()` is `TAS_FW_NOINLINE` and the accessor, 23
+      instructions, inlines everywhere again. And the walk returned its 40-byte
+      `InputsMetadata` by copying a local it assembled after the parent's answer, its
+      several returns defeating MSVC's named return value optimization, 34% of the walk's
+      samples on that copy: the recursion now writes into the caller's object
+      (`GetInputsMetadata(frame, metadata)`), the by-value form being that object built in
+      the return slot. Both behind unchanged interfaces, no behavior change, the engine
+      tests unchanged and green on both compilers. MSVC 19.51 against master on the same
+      toolset: the Script family 8 to 33% faster, every count identical, Tier D flat;
+      against the 19.44 baseline the uncached `GetInputs` rows read +3.3%, -3.9% and
+      -18.5% and `Execute_ChildOneFrame` -25.8%, with `AdvanceFrameWrite` and
+      `AdvanceFrameRead` still +6 to +7% (the toolset's remainder). clang-cl 22: depth 16
+      -18.3%, the rest within noise. The accessor's inlining was verified in MSVC's
+      disassembly and clang's by measurement; GCC runs only in CI, whose Tier C gate is
+      counts. The placement sensitivity went with the cause (3.18).
 
 ## Phase 4: the squish-cancel brute forcer
 

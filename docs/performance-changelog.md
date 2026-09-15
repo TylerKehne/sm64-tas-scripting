@@ -4,6 +4,57 @@ Every hot-path change records its delta table here, newest first; the policy, th
 how to run it are in [performance.md](performance.md). The first measurements (2026-09-07),
 which everything since is compared against, are at the bottom.
 
+## 2026-09-15: the input walk's front-end cost (ROADMAP 3.19)
+
+Two measured optimizations behind unchanged interfaces, found while root-causing the 3.2
+rows below. `LevelStack::Grow()` is `TAS_FW_NOINLINE`: MSVC 19.51 had inlined it, vector
+growth and allocation included, into `operator[]` and then inlined the accessor nowhere
+(docs/compilers.md); with the keyword the accessor is 23 instructions and inlines into every
+caller again, so the walk and `AdvanceFrameWrite` make no accessor calls (their only
+`Grow` references are the cold branches). And the walk writes into the caller's object:
+`GetInputsMetadata(frame, metadata)` is the recursion, each level adjusting the parent's
+answer in place, and `GetInputsMetadata(frame)` is that object built in the caller's return
+slot, where returning temporaries on some paths and a named local on another had made
+MSVC copy the 40 bytes at the end of every level. No behavior changes; the engine tests
+pin the walk's answers.
+
+MSVC 19.51, Release, against master built with the same toolset (`-Reference`) and the
+committed 19.44 baseline; every Tier C and D count identical (deterministic Tier D: 52
+solutions, 111,860 blocks, 524,380 scripts on both), allocations identical, 0 regressions,
+15 rows faster:
+
+| | 19.44 baseline | master, 19.51 | this change | vs master | vs 19.44 |
+|---|---|---|---|---|---|
+| AdvanceFrameWrite | 49.4 ns | 66.3 ns | 52.2 ns | -21.3% | +5.6% |
+| AdvanceFrameRead | 85.9 ns | 100.8 ns | 92.2 ns | -8.5% | +7.3% |
+| Write_RewindOne | 127.3 ns | 144.4 ns | 124.9 ns | -13.5% | -1.9% |
+| ExecuteAdhoc_Empty | 25.5 ns | 32.4 ns | 24.3 ns | -24.9% | -4.7% |
+| ModifyAdhoc_OneFrame | 125.2 ns | 163.0 ns | 122.6 ns | -24.8% | -2.1% |
+| Execute_ChildOneFrame | 815.0 ns | 717.8 ns | 604.5 ns | -15.8% | -25.8% |
+| Modify_ChildOneFrame | 708.5 ns | 639.8 ns | 564.6 ns | -11.8% | -20.3% |
+| GetInputs_Uncached_Depth/1 | 44.3 ns | 50.1 ns | 45.7 ns | -8.7% | +3.3% |
+| GetInputs_Uncached_Depth/4 | 73.2 ns | 85.5 ns | 70.3 ns | -17.8% | -3.9% |
+| GetInputs_Uncached_Depth/16 | 200.5 ns | 242.9 ns | 163.5 ns | -32.7% | -18.5% |
+| LongLoad_RewindToRoot_Depth/16 | 208.7 ns | 227.1 ns | 193.9 ns | -14.6% | -7.1% |
+| AdvanceFrameWrite_TrivialTracker | 426.1 ns | 530.1 ns | 435.0 ns | -17.9% | +2.1% |
+| AdvanceFrameWrite_RecursiveTracker | 584.1 ns | 701.6 ns | 580.9 ns | -17.2% | -0.6% |
+| Framework_PyramidOscillation | 663.5 ms | 675.7 ms | 675.1 ms | -0.1% | +1.8% |
+| Framework_TrackerSweep | 6.9 ms | 7.1 ms | 6.9 ms | -2.7% | +0.9% |
+| TierD_Deterministic | 95.1 s | 94.6 s | 93.8 s | -0.8% | -1.4% |
+| TierD_Throughput | 67.9 s | 58.9 s | 57.9 s | -1.7% | -14.7% |
+
+The Script family is where the framework's own bookkeeping shows; the game workloads are
+bounded by the DLL and read within noise. What 19.51 still reads over 19.44 on the four
+rows above is the toolset's, the change closed the rest. clang-cl 22, against master built
+with it: `GetInputs_Uncached_Depth/16` 181.9 to 148.7 ns (-18.3%, the return copy), every
+other Script row within 5%, 0 regressions; clang's inliner never had the accessor problem.
+
+The placement sensitivity of the 3.2 entry below went with the cause: the same never-run
+benchmark appended to this code moves the uncached rows -1.2%, -0.1% and -5.9% against
+the code's own binary (master's moved +28.4%, +19.4% and +14.6%), so those rows need no
+rule of their own. The baselines and references of both compilers were then re-saved from
+this code on the new toolset (ROADMAP 3.18).
+
 ## 2026-09-15: ScriptFriend retired, and the walk the root keeps (ROADMAP 3.2)
 
 The first change measured on Visual Studio 2026's toolset (MSVC 19.51, clang-cl 22;

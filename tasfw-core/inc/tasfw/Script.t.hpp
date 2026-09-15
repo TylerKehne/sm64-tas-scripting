@@ -267,6 +267,14 @@ M64Metadata Script<TResource>::GetM64Metadata() const
 template <derived_from_specialization_of<Resource> TResource>
 InputsMetadata<TResource> Script<TResource>::GetInputsMetadata(int64_t frame)
 {
+	InputsMetadata<TResource> metadata;
+	GetInputsMetadata(frame, metadata);
+	return metadata;
+}
+
+template <derived_from_specialization_of<Resource> TResource>
+void Script<TResource>::GetInputsMetadata(int64_t frame, InputsMetadata<TResource>& metadata)
+{
 	if (!_parentScript)
 		throw std::runtime_error("Failed to get inputs because of missing parent script");
 
@@ -286,14 +294,20 @@ InputsMetadata<TResource> Script<TResource>::GetInputsMetadata(int64_t frame)
 
 				// BUGFIX 5/22/23: Failure to return after finding state owner after inputs caused state owner to be set to root
 				if (alreadyFoundInputs)
-					return InputsMetadata<TResource>(inputs, frame, this, stateOwnerAdhocLevel);
+				{
+					metadata = InputsMetadata<TResource>(inputs, frame, this, stateOwnerAdhocLevel);
+					return;
+				}
 			}
 		}
 
 		if (BaseStatus[adhocLevel].m64Diff.frames.contains(frame))
 		{
 			if (stateOwnerAdhocLevel != -1)
-				return InputsMetadata<TResource>(alreadyFoundInputs ? inputs : BaseStatus[adhocLevel].m64Diff.frames[frame], frame, this, stateOwnerAdhocLevel);
+			{
+				metadata = InputsMetadata<TResource>(alreadyFoundInputs ? inputs : BaseStatus[adhocLevel].m64Diff.frames[frame], frame, this, stateOwnerAdhocLevel);
+				return;
+			}
 
 			if (!alreadyFoundInputs)
 			{
@@ -304,7 +318,7 @@ InputsMetadata<TResource> Script<TResource>::GetInputsMetadata(int64_t frame)
 
 		if (inputsCache[adhocLevel].contains(frame))
 		{
-			InputsMetadata<TResource> metadata = inputsCache[adhocLevel][frame];
+			metadata = inputsCache[adhocLevel][frame];
 			if (stateOwnerAdhocLevel != -1)
 			{
 				metadata.stateOwner = this;
@@ -314,12 +328,12 @@ InputsMetadata<TResource> Script<TResource>::GetInputsMetadata(int64_t frame)
 			if (alreadyFoundInputs)
 				metadata.inputs = inputs;
 
-			return metadata;
+			return;
 		}
 	}
 
-	//Then check parent script
-	InputsMetadata metadata = _parentScript->GetInputsMetadata(frame);
+	//Then check parent script, which writes its answer into the same object
+	_parentScript->GetInputsMetadata(frame, metadata);
 	if (stateOwnerAdhocLevel != -1)
 	{
 		metadata.stateOwner = this;
@@ -328,12 +342,6 @@ InputsMetadata<TResource> Script<TResource>::GetInputsMetadata(int64_t frame)
 
 	if (alreadyFoundInputs)
 		metadata.inputs = inputs;
-
-	return metadata;
-
-	//This should be impossible
-	throw std::runtime_error("Failed to get inputs, possible error in recursion logic.");
-	return InputsMetadata<TResource>();
 }
 
 template <derived_from_specialization_of<Resource> TResource, std::derived_from<Script<TResource>> TStateTracker>
@@ -343,7 +351,7 @@ M64Metadata TopLevelScript<TResource, TStateTracker>::GetM64Metadata() const
 }
 
 template <derived_from_specialization_of<Resource> TResource, std::derived_from<Script<TResource>> TStateTracker>
-InputsMetadata<TResource> TopLevelScript<TResource, TStateTracker>::GetInputsMetadata(int64_t frame)
+void TopLevelScript<TResource, TStateTracker>::GetInputsMetadata(int64_t frame, InputsMetadata<TResource>& metadata)
 {
 	//State owner determines what frame counter needs to be incremented
 	int64_t stateOwnerAdhocLevel = -1;
@@ -362,15 +370,21 @@ InputsMetadata<TResource> TopLevelScript<TResource, TStateTracker>::GetInputsMet
 
 				// BUGFIX 5/22/23: Failure to return after finding state owner after inputs caused state owner to be set to root
 				if (alreadyFoundInputs)
-					return InputsMetadata<TResource>(inputs, frame, this, stateOwnerAdhocLevel);
+				{
+					metadata = InputsMetadata<TResource>(inputs, frame, this, stateOwnerAdhocLevel);
+					return;
+				}
 			}
 		}
 
 		if (this->BaseStatus[adhocLevel].m64Diff.frames.contains(frame))
 		{
 			if (stateOwnerAdhocLevel != -1)
-				return InputsMetadata<TResource>(alreadyFoundInputs ? inputs
+			{
+				metadata = InputsMetadata<TResource>(alreadyFoundInputs ? inputs
 					: this->BaseStatus[adhocLevel].m64Diff.frames[frame], frame, this, stateOwnerAdhocLevel);
+				return;
+			}
 
 			if (!alreadyFoundInputs)
 			{
@@ -381,14 +395,14 @@ InputsMetadata<TResource> TopLevelScript<TResource, TStateTracker>::GetInputsMet
 
 		if (this->inputsCache[adhocLevel].contains(frame))
 		{
-			InputsMetadata<TResource> metadata = this->inputsCache[adhocLevel][frame];
+			metadata = this->inputsCache[adhocLevel][frame];
 			if (stateOwnerAdhocLevel != -1)
 				metadata.stateOwnerAdhocLevel = stateOwnerAdhocLevel;
 
 			if (alreadyFoundInputs)
 				metadata.inputs = inputs;
 
-			return metadata;
+			return;
 		}
 	}
 
@@ -397,16 +411,22 @@ InputsMetadata<TResource> TopLevelScript<TResource, TStateTracker>::GetInputsMet
 
 	//Return this if inputs have been found but state owner is root
 	if (alreadyFoundInputs)
-		return InputsMetadata<TResource>(inputs, frame, this, 0);
+	{
+		metadata = InputsMetadata<TResource>(inputs, frame, this, 0);
+		return;
+	}
 
 	//Then check actual m64.
 	//For the purposes of the frame counter, mark as adhoc level 0.
 	if (_m64->frames.count(frame))
-		return InputsMetadata<TResource>(_m64->frames[frame], frame, this, stateOwnerAdhocLevel, InputsMetadata<TResource>::InputsSource::ORIGINAL);
+	{
+		metadata = InputsMetadata<TResource>(_m64->frames[frame], frame, this, stateOwnerAdhocLevel, InputsMetadata<TResource>::InputsSource::ORIGINAL);
+		return;
+	}
 
 	//Default to no input
 	//For the purposes of the frame counter, mark as adhoc level 0.
-	return InputsMetadata<TResource>(Inputs(0, 0, 0), frame, this, stateOwnerAdhocLevel, InputsMetadata<TResource>::InputsSource::DEFAULT);
+	metadata = InputsMetadata<TResource>(Inputs(0, 0, 0), frame, this, stateOwnerAdhocLevel, InputsMetadata<TResource>::InputsSource::DEFAULT);
 }
 
 template <derived_from_specialization_of<Resource> TResource>
