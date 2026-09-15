@@ -522,7 +522,14 @@ Noise control, learned the hard way while setting this up:
 - Each benchmark runs three repetitions in each of three fresh processes, and the comparison
   uses the **fastest** of the nine. External noise only ever adds time,
   so the minimum is the best estimate of intrinsic cost. Medians of three drifted 15 to 35%
-  between runs of the same binary on a busy desktop.
+  between runs of the same binary on a busy desktop. Every repetition measures the same
+  state: the Framework benchmarks run their workload once before the measurement starts,
+  since the first run on a fresh resource fills the symbol table `LibSm64::addr` keeps, and
+  the allocation gate is exact (CI's Tier C gate tripped on a cold first repetition,
+  2026-09-15; it runs three repetitions like the suite). The rule (the maintainer,
+  2026-09-15): a benchmark that needs a warm state warms it itself, before its
+  measurement; the compare never allows for a cold repetition, so the gates stay
+  consistent between the suite and CI and between repetitions.
 - The benchmark process runs at High priority pinned to one logical CPU (`-Affinity`, default
   `0x10`), so other processes and the scheduler contribute less.
 - Each benchmark family runs in its own process, several times. One slot benchmark measured

@@ -1,6 +1,6 @@
 {
   "benchmarks": [
-    {"name": "TierD_Deterministic", "run_name": "TierD_Deterministic", "run_type": "iteration", "repetitions": 1, "repetition_index": 0, "threads": 1, "iterations": 1, "real_time": 147200.0, "cpu_time": 147200.0, "time_unit": "ms", "validationFailures": 0.0, "shots": 600.0, "scripts": 520052.0, "blocks": 109958.0, "solutions": 55.0, "frameAdvances": 18014927.0, "saves": 608.0, "loads": 1038084.0, "cycles": 1371027976357.0, "peakResidentMB": 121.9},
-    {"name": "TierD_Throughput", "run_name": "TierD_Throughput", "run_type": "iteration", "repetitions": 1, "repetition_index": 0, "threads": 1, "iterations": 1, "real_time": 70300.0, "cpu_time": 70300.0, "time_unit": "ms", "validationFailures": 0.0, "shotsPerSecond": 17.07, "scriptsPerSecond": 14576.71, "frameAdvancesPerSecond": 503749.83, "cycles": 3310861721240.0, "peakResidentMB": 618.4}
+    {"name": "TierD_Deterministic", "run_name": "TierD_Deterministic", "run_type": "iteration", "repetitions": 1, "repetition_index": 0, "threads": 1, "iterations": 1, "real_time": 94100.0, "cpu_time": 94100.0, "time_unit": "ms", "validationFailures": 0.0, "shots": 600.0, "scripts": 524380.0, "blocks": 111860.0, "solutions": 52.0, "frameAdvances": 17800136.0, "saves": 608.0, "loads": 1045094.0, "cycles": 1297629356912.0, "overheadPct": 25.8, "peakResidentMB": 119.8},
+    {"name": "TierD_Throughput", "run_name": "TierD_Throughput", "run_type": "iteration", "repetitions": 1, "repetition_index": 0, "threads": 1, "iterations": 1, "real_time": 90100.0, "cpu_time": 90100.0, "time_unit": "ms", "validationFailures": 0.0, "shotsPerSecond": 13.32, "scriptsPerSecond": 11289.5, "frameAdvancesPerSecond": 392327.13, "cycles": 4267876722145.0, "overheadPct": 9.2, "peakResidentMB": 608.5}
   ]
 }

@@ -253,6 +253,13 @@ static void BM_Framework_PyramidOscillation(benchmark::State& state)
 		return;
 	LibSm64& resource = *game->resource;
 
+	// One run before the measurement: the first run on a fresh resource fills the symbol
+	// table `LibSm64::addr` keeps, and every repetition measures the same warm state.
+	{
+		OscillationWorkload::Result warmUp;
+		TopLevelScriptBuilder<OscillationWorkload>::Build(*game->m64).ImportResource(&resource).Run(warmUp);
+	}
+
 	ResourceWork before = Snapshot(resource);
 	tasfw_perf::Measurement m0 = tasfw_perf::BeginMeasure();
 	uint64_t wall = 0;
@@ -282,6 +289,11 @@ static void BM_Framework_DownhillAngle_PyramidUpdate(benchmark::State& state)
 		return;
 	LibSm64& resource = *game->resource;
 	const int calls = 1000;
+
+	{
+		DownhillAngleWorkload::Result warmUp; // the same warm state in every repetition
+		TopLevelScriptBuilder<DownhillAngleWorkload>::Build(*game->m64).ImportResource(&resource).Run(calls, warmUp);
+	}
 
 	ResourceWork total;
 	tasfw_perf::Measurement m0 = tasfw_perf::BeginMeasure();
@@ -319,6 +331,14 @@ static void BM_Framework_TrackerSweep(benchmark::State& state)
 	LibSm64& resource = *game->resource;
 	const int frames = 500;
 	NormalSpecsDto specs = DrNormalSpecs();
+
+	{
+		TrackerSweepWorkload::Result warmUp; // the same warm state in every repetition
+		TopLevelScriptBuilder<TrackerSweepWorkload>::Build(*game->m64)
+			.ImportResource(&resource)
+			.ConfigureStateTracker(int64_t(game->frame), 4, specs, 15, -0.17944f, 0.3936f)
+			.Run(frames, warmUp);
+	}
 
 	ResourceWork before = Snapshot(resource);
 	tasfw_perf::Measurement m0 = tasfw_perf::BeginMeasure();
