@@ -365,19 +365,34 @@ item is done except 3.2, in progress, and 3.17, which follows it; then Phase 4.
       instead of the accessors. A tracker's own frames skip the root's `TrackState` at the
       call site instead of being asked, a virtual call per tracker frame; the root sets its
       tag itself. `startSaveHandle` and `TopLevelScript::_m64` are private; `resource` stays
-      public until the access contract below. The rule this enforces is already
+      public until the access contract below. Second stage, the resource's surface, same
+      day: the slot manager is private to `Resource` and its own data private, a slot is
+      reached only through `SaveState`, `LoadState`, `DisposeState` and `HasState` (dllcheck,
+      the save-mode tests and the libsm64 benchmarks moved to them), and the tests and
+      benchmarks whose subject is the slot manager itself reach it through `PerfAccess`
+      (tasfw-testing), the friend Scattershot already had, extended with the manager, a
+      slot's state, the pool and the limit; `SlotHandle`'s pointer and id are private with
+      `Script` their friend; the start save is `SaveStart(frame)`, `LoadStart()` and
+      `InitialFrame()` on `Resource`, the state itself private behind the protected
+      predicate `IsStartSave` that `LibSm64`'s dirty mode asks, instead of two public
+      fields `TopLevelScript` and three tests set by hand;
+      `sign` and `CopyVec3f` left `Script` for `ScriptMath` in tasfw-scripts (the
+      maintainer's call, 2026-09-15); the five public methods without callers
+      (`OptionalSave`, `RollForward`, `Restore`, `GetBaseDiff`, `TestAdhoc`) stay as escape
+      hatches (his call too). The rule this enforces is already
       in force by convention (AGENTS.md, hard rule 9, 2026-09-12): scripts touch the resource
       only through `resource->addr()` until a better access contract exists, and that
       contract is part of this item. Its shape is not settled (maintainer, 2026-09-12): it is
       adjacent to hack support (Phase 5), will probably admit only certain kinds of symbols,
       and will carry some guard against invalid memory access. Do not design it piecemeal.
-      Known remaining direct access to fold in: the drift
-      test (`test_libsm64_pyramid.cpp`) drives a locally constructed `PyramidUpdate` from inside a
-      script instead of going through `ImportSave<PyramidUpdateMem>`, `SlotHandle` holds a
-      public resource pointer, and `SlotManager` is all-public: `test_slots.cpp` and the Tier B
-      benchmarks set `_saveMemLimit`, `_maxPooledStates` and `_pooledMem` directly (maintainer,
-      2026-09-14: not ideal, wants better encapsulation; an accessor over a public member is not
-      the answer, the surface is).
+      What remains, all of it the contract's: `resource` public and the roughly 220
+      `resource->addr` reads in 34 files; the 17 `ImportSave<PyramidUpdateMem>(..., *resource,
+      pyramid)` sites and the drift test (`test_libsm64_pyramid.cpp`), which drives a locally
+      constructed `PyramidUpdate` from inside a script, both of which need a way for a script
+      to hand its current state to another resource without seeing its own (`Resource::State`
+      was written for that, is unused, and cannot construct `PyramidUpdateMem`, which wants
+      the derived resource type); and the 26 reads of `s.resource->checksum()` in the engine
+      tests, which can read the mock they own instead.
 - [x] **3.3 PyramidUpdate drift test.** `test_libsm64_pyramid.cpp` imports `PyramidUpdateMem` from
       the DLL before each of 240 frames (Mario walks to the pyramid's centre, then it settles;
       91 frames move the normal), advances both, and requires the normal to match

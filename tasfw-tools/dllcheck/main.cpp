@@ -324,18 +324,18 @@ namespace
 			for (int i = 0; i < reps; i++)
 				resource->LoadState(slot);
 			_results.loadMicros = MicrosecondsSince(start) / reps;
-			resource->slotManager.EraseSlot(slot);
+			resource->DisposeState(slot);
 
 			start = std::chrono::steady_clock::now();
 			for (int i = 0; i < reps; i++)
 			{
 				int64_t id = resource->SaveState();
-				resource->slotManager.EraseSlot(id);
+				resource->DisposeState(id);
 			}
 			_results.saveMicros = MicrosecondsSince(start) / reps;
 
 			resource->LoadState(anchor); // back to <frame> for everything below
-			resource->slotManager.EraseSlot(anchor);
+			resource->DisposeState(anchor);
 
 			// Cost of a symbol lookup (GetProcAddress through the loader). Scripts that call
 			// addr() per frame pay this each time; see docs/performance.md.
@@ -481,7 +481,7 @@ namespace
 				Step(stats, ever, prev, i + 1, frames);
 			}
 			resource->LoadState(slot);
-			resource->slotManager.EraseSlot(slot);
+			resource->DisposeState(slot);
 			char title[128];
 			std::snprintf(title, sizeof(title), "\nPages written, pattern inputs from frame %lld for %d frames:", (long long)_frame, frames);
 			for (const std::string& line : DescribeDirty(title, stats, *resource))
@@ -582,7 +582,7 @@ namespace
 			Diff(0, data0, Snapshot(*resource, 0), _results.leaksPass2, _results.leakBytesPass2);
 			Diff(1, bss0, Snapshot(*resource, 1), _results.leaksPass2, _results.leakBytesPass2);
 
-			resource->slotManager.EraseSlot(slot);
+			resource->DisposeState(slot);
 		}
 	private:
 		LibSm64* resource;

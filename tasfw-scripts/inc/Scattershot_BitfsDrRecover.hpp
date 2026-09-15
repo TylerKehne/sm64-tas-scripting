@@ -1,5 +1,6 @@
 #pragma once
 #include <Scattershot.hpp>
+#include <ScriptMath.hpp>
 #include <BitFSPyramidOscillation.hpp>
 #include <cmath>
 #include <sm64/Camera.hpp>
@@ -801,7 +802,7 @@ private:
                 //cap intended yaw diff at 2048
                 int16_t intendedYaw = uphillAngle;
                 if (abs(int16_t(uphillAngle - marioState->faceAngle[1])) >= 16384)
-                    intendedYaw = marioState->faceAngle[1] + 2048 * sign(int16_t(uphillAngle - marioState->faceAngle[1]));
+                    intendedYaw = marioState->faceAngle[1] + 2048 * ScriptMath::Sign(int16_t(uphillAngle - marioState->faceAngle[1]));
 
                 // Don't always turn uphill full distance
                 if (GetTempRng() % 8 == 0)

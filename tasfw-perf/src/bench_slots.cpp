@@ -3,6 +3,7 @@
 #include <vector>
 
 #include <tasfw/testing/MockResource.hpp>
+#include <tasfw/testing/PerfAccess.hpp>
 
 // SlotManager bookkeeping (three std::maps per slot) at different live-slot counts.
 // The mock state is 256 bytes, so the copy itself is negligible. Fixed iteration counts keep
@@ -12,7 +13,7 @@ static void BM_SlotManager_CreateErase(benchmark::State& state)
 {
 	const int live = int(state.range(0));
 	MockResource resource;
-	auto& slots = resource.slotManager;
+	auto& slots = PerfAccess::Slots(resource);
 	for (int i = 0; i < live; i++)
 		slots.CreateSlot();
 
@@ -30,7 +31,7 @@ static void BM_SlotManager_LoadSlot(benchmark::State& state)
 {
 	const int live = int(state.range(0));
 	MockResource resource;
-	auto& slots = resource.slotManager;
+	auto& slots = PerfAccess::Slots(resource);
 	std::vector<int64_t> ids;
 	ids.reserve(live);
 	for (int i = 0; i < live; i++)
@@ -52,8 +53,8 @@ static void BM_SlotManager_CreateAtCap(benchmark::State& state)
 {
 	const int live = int(state.range(0));
 	MockResource resource;
-	auto& slots = resource.slotManager;
-	slots._saveMemLimit = int64_t(live + 1) * int64_t(sizeof(MockState));
+	auto& slots = PerfAccess::Slots(resource);
+	PerfAccess::SetSlotLimit(resource, int64_t(live + 1) * int64_t(sizeof(MockState)));
 	for (int i = 0; i < live; i++)
 		slots.CreateSlot();
 
@@ -75,7 +76,7 @@ static void BM_Resource_SaveLoadState(benchmark::State& state)
 	{
 		int64_t id = resource.SaveState();
 		resource.LoadState(id);
-		resource.slotManager.EraseSlot(id);
+		resource.DisposeState(id);
 	}
 	tasfw_perf::EndMeasure(state, m0);
 }

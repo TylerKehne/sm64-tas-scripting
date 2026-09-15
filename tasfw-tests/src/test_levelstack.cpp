@@ -121,12 +121,12 @@ TEST_CASE("Erasing a level destroys its contents: slot handles release their slo
 	MockResource resource;
 	LevelStack<FrameMap<int64_t, SlotHandle<MockResource>>> saveBank;
 
-	int64_t slot = resource.slotManager.CreateSlot();
+	int64_t slot = resource.SaveState();
 	saveBank[1].emplace(5, SlotHandle<MockResource>(&resource, slot));
-	REQUIRE(resource.slotManager.isValid(slot));
+	REQUIRE(resource.HasState(slot));
 
 	saveBank.erase(1);
-	CHECK_FALSE(resource.slotManager.isValid(slot));
+	CHECK_FALSE(resource.HasState(slot));
 	CHECK(saveBank[1].empty());
 }
 

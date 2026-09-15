@@ -78,8 +78,7 @@ namespace
 				resource.FrameAdvance();
 			}
 			// The anchor is the start save from here on (what MainImport does on first use).
-			resource.save(resource.startSave);
-			resource.initialFrame = 0;
+			resource.SaveStart(0);
 			game = std::move(loaded);
 		}
 		return game.get();

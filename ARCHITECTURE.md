@@ -47,11 +47,19 @@ scenario, not to the resource type.
 `advance`, `addr(symbol)`, `getCurrentFrame`. A state's contents live from `save` until its
 slot is erased; a state type that holds a reference to something outside itself defines
 `dispose()`, which the slot manager calls at that point, resolved at compile time
-(`LibSm64Mem`'s dirty baseline). Scripts reach a slot only through the resource,
-`DisposeState` and `HasState`, never through the slot manager. It also owns a `SlotManager` and its counters,
-`work` (`ResourceWork`: counts and rdtsc cycles of advances, saves and loads, and the slot
-manager's high-water marks, pool reuses and evictions; docs/performance.md, "Existing
-instrumentation").
+(`LibSm64Mem`'s dirty baseline). Everything reaches a slot only through the resource,
+`SaveState`, `LoadState`, `DisposeState` and `HasState`: the slot manager is private to it,
+and the tests and benchmarks whose subject is the slot manager itself reach it through
+`PerfAccess` (`tasfw-testing`), the friend declared for that. The start save, the state a
+top-level run begins from and returns to: `SaveStart(frame)` makes the current state it
+(`TopLevelScript` does this the first time it runs on a resource), `LoadStart()` returns to
+it uncounted (how an imported resource is reset for its next run), `LoadState(-1)` is a
+script's own load of it, counted like any load, and `InitialFrame()` is its frame, -1
+before one is taken. The state itself is private; a derived resource may only ask
+`IsStartSave(state)` (`LibSm64`'s dirty mode does not count it as a live slot). It also owns
+the counters, `work` (`ResourceWork`: counts and rdtsc cycles of advances, saves and loads,
+and the slot manager's high-water marks, pool reuses and evictions; docs/performance.md,
+"Existing instrumentation").
 
 - `SlotManager` stores savestates by integer slot id, evicts least-recently-touched slots when
   the resource's limit would be exceeded, and throws if a single save cannot fit. The limit

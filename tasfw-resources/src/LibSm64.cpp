@@ -466,7 +466,7 @@ void LibSm64::save(LibSm64Mem& state) const
 		// The first slot of a run takes a baseline: no slot is live (the start save is not one).
 		if (d.liveSlots == 0)
 			TakeBaseline();
-		if (&state != &startSave)
+		if (!IsStartSave(state))
 			d.liveSlots++;
 		const std::vector<uint64_t>& written = d.Written();
 		state.baseline = d.baseline;

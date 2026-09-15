@@ -1,5 +1,6 @@
 #pragma once
 #include <array>
+#include <ScriptMath.hpp>
 #include <Scattershot.hpp>
 #include <BitFSPyramidOscillation.hpp>
 #include <cmath>
@@ -171,11 +172,11 @@ private:
             if (std::fabs(_args.TargetNx - normalX) <= 0.005f)
             {
                 CustomStatus.adjustedRemainderError[0] = (_args.TargetNx - normalX) / errorIncX;
-                CustomStatus.incrementFrames[0] = i * sign(errorX);
+                CustomStatus.incrementFrames[0] = i * ScriptMath::Sign(errorX);
                 break;
             }
 
-            normalX += sign(errorX) * 0.01f;
+            normalX += ScriptMath::Sign(errorX) * 0.01f;
         }
 
         float normalZ = pyramid->oTiltingPyramidNormalZ;
@@ -184,11 +185,11 @@ private:
             if (std::fabs(_args.TargetNz - normalZ) <= 0.005f)
             {
                 CustomStatus.adjustedRemainderError[2] = (_args.TargetNz - normalZ) / errorIncZ;
-                CustomStatus.incrementFrames[2] = i * sign(errorZ);
+                CustomStatus.incrementFrames[2] = i * ScriptMath::Sign(errorZ);
                 break;
             }
 
-            normalZ += sign(errorZ) * 0.01f;
+            normalZ += ScriptMath::Sign(errorZ) * 0.01f;
         }
     }
 
@@ -699,7 +700,7 @@ private:
                 //cap intended yaw diff at 2048
                 int16_t intendedYaw = uphillAngle;
                 if (abs(int16_t(uphillAngle - marioState->faceAngle[1])) >= 16384)
-                    intendedYaw = marioState->faceAngle[1] + 2048 * sign(int16_t(uphillAngle - marioState->faceAngle[1]));
+                    intendedYaw = marioState->faceAngle[1] + 2048 * ScriptMath::Sign(int16_t(uphillAngle - marioState->faceAngle[1]));
 
                 // Don't always turn uphill full distance
                 if (GetTempRng() % 8 == 0)

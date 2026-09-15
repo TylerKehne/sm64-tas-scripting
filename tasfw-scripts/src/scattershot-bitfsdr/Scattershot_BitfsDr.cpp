@@ -1,4 +1,5 @@
 #include <Scattershot_BitfsDr.hpp>
+#include <ScriptMath.hpp>
 
 void Scattershot_BitfsDr::SelectMovementOptions()
 {
@@ -744,7 +745,7 @@ bool Scattershot_BitfsDr::TurnUphill_1f()
             //cap intended yaw diff at 2048
             int16_t intendedYaw = uphillAngle;
             if (abs(int16_t(uphillAngle - marioState->faceAngle[1])) >= 16384)
-                intendedYaw = marioState->faceAngle[1] + 2048 * sign(int16_t(uphillAngle - marioState->faceAngle[1]));
+                intendedYaw = marioState->faceAngle[1] + 2048 * ScriptMath::Sign(int16_t(uphillAngle - marioState->faceAngle[1]));
 
             auto inputs = Inputs::GetClosestInputByYawHau(intendedYaw, 32, camera->yaw);
             AdvanceFrameWrite(Inputs(0, inputs.first, inputs.second));
