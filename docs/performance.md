@@ -44,6 +44,13 @@ Places where the code pays (or paid) for an abstraction it should not, gated by 
   a per-type tag compare (ROADMAP 3.7). Tracking still goes through virtual hooks on
   `_rootScript` on every frame advance.
 - `Resource::save` / `load` / `advance` / `setInputs` are virtual and called per frame.
+- ~~On MSVC 19.51 `LevelStack::operator[]` is not inlined into `Script::GetInputsMetadata`
+  (a call per container per level, twelve per uncached lookup at depth 1, 22% of that
+  loop's samples; 19.44 inlined it), and the walk returns its 40-byte result by copying a
+  local it assembled after the parent's answer (34% of its samples on the instruction after
+  the copy).~~ Found 2026-09-15 with PMC counters and fixed the same day: `Grow()` is
+  `TAS_FW_NOINLINE` (docs/compilers.md), so the accessor inlines everywhere again, and the
+  walk writes into the caller's object (ROADMAP 3.19; performance-changelog.md).
 - Block segments are `std::shared_ptr<Segment>` chains, touched on every decode.
 - Tracker scripts are constructed per tracked frame: three lifecycle sandboxes and a
   `CustomStatus` move. The per-level containers are created on first use and, with
@@ -550,10 +557,14 @@ Noise control, learned the hard way while setting this up:
   the gate on jitter.
 - Tight loops are sensitive to code layout. Adding code elsewhere in the binary has moved
   clang-cl's uncached `GetInputs` rows by about 15% in both directions, stably across
-  processes, while the same rows on MSVC and every benchmark that touched the changed code
-  stayed put. A shift on one compiler only, on a benchmark whose code did not change, is
-  layout: confirm with a re-run, say so in the change log (performance-changelog.md), and
-  re-save the baseline.
+  processes, while the same rows on MSVC 19.44 and every benchmark that touched the changed
+  code stayed put. On MSVC 19.51 the same rows moved by more than the gate while the walk
+  was front-end bound (master with one unrelated benchmark appended read them 15 to 28%
+  over master's own binary); with ROADMAP 3.19 the same probe moves them 1 to 6%
+  (performance-changelog.md, 2026-09-15). A shift on a benchmark whose code did not change
+  is layout: confirm with a re-run, say so in the change log, and re-save the baseline.
+  Across a toolset change, measure against master built with the new toolset and passed
+  with `-Reference` until the baselines are re-saved on it (ROADMAP 3.18).
 - The perf binary's own code moves its tight loops, and by more than 15%. Adding the Tier B
   scaling and memory benchmarks moved `Resource_SaveLoadState` from 149 to 340 ns on MSVC
   and `Scattershot_UpsertBlock_Improve` from 91 to 128 ns on clang-cl with the framework

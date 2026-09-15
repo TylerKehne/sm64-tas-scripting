@@ -241,8 +241,8 @@ its place with numbers, and "it is cleaner" is not a number.
   Both manage savestates and reverts for you.
 - Naming: PascalCase types and methods, `_camelCase` private members, `CustomStatus` for the
   public result object.
-- Compiler workarounds exist (`ScriptFriend`, `using` directives in `ScattershotThread`, the
-  named static in `Inputs.cpp`). Each is catalogued in docs/compilers.md; add yours there.
+- Compiler workarounds exist (`using` directives in `ScattershotThread`, the named static in
+  `Inputs.cpp`). Each is catalogued in docs/compilers.md; add yours there.
 
 ## Verifying a change
 

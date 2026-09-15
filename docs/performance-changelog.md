@@ -4,6 +4,153 @@ Every hot-path change records its delta table here, newest first; the policy, th
 how to run it are in [performance.md](performance.md). The first measurements (2026-09-07),
 which everything since is compared against, are at the bottom.
 
+## 2026-09-15: the input walk's front-end cost (ROADMAP 3.19)
+
+Two measured optimizations behind unchanged interfaces, found while root-causing the 3.2
+rows below. `LevelStack::Grow()` is `TAS_FW_NOINLINE`: MSVC 19.51 had inlined it, vector
+growth and allocation included, into `operator[]` and then inlined the accessor nowhere
+(docs/compilers.md); with the keyword the accessor is 23 instructions and inlines into every
+caller again, so the walk and `AdvanceFrameWrite` make no accessor calls (their only
+`Grow` references are the cold branches). And the walk writes into the caller's object:
+`GetInputsMetadata(frame, metadata)` is the recursion, each level adjusting the parent's
+answer in place, and `GetInputsMetadata(frame)` is that object built in the caller's return
+slot, where returning temporaries on some paths and a named local on another had made
+MSVC copy the 40 bytes at the end of every level. No behavior changes; the engine tests
+pin the walk's answers.
+
+MSVC 19.51, Release, against master built with the same toolset (`-Reference`) and the
+committed 19.44 baseline; every Tier C and D count identical (deterministic Tier D: 52
+solutions, 111,860 blocks, 524,380 scripts on both), allocations identical, 0 regressions,
+15 rows faster:
+
+| | 19.44 baseline | master, 19.51 | this change | vs master | vs 19.44 |
+|---|---|---|---|---|---|
+| AdvanceFrameWrite | 49.4 ns | 66.3 ns | 52.2 ns | -21.3% | +5.6% |
+| AdvanceFrameRead | 85.9 ns | 100.8 ns | 92.2 ns | -8.5% | +7.3% |
+| Write_RewindOne | 127.3 ns | 144.4 ns | 124.9 ns | -13.5% | -1.9% |
+| ExecuteAdhoc_Empty | 25.5 ns | 32.4 ns | 24.3 ns | -24.9% | -4.7% |
+| ModifyAdhoc_OneFrame | 125.2 ns | 163.0 ns | 122.6 ns | -24.8% | -2.1% |
+| Execute_ChildOneFrame | 815.0 ns | 717.8 ns | 604.5 ns | -15.8% | -25.8% |
+| Modify_ChildOneFrame | 708.5 ns | 639.8 ns | 564.6 ns | -11.8% | -20.3% |
+| GetInputs_Uncached_Depth/1 | 44.3 ns | 50.1 ns | 45.7 ns | -8.7% | +3.3% |
+| GetInputs_Uncached_Depth/4 | 73.2 ns | 85.5 ns | 70.3 ns | -17.8% | -3.9% |
+| GetInputs_Uncached_Depth/16 | 200.5 ns | 242.9 ns | 163.5 ns | -32.7% | -18.5% |
+| LongLoad_RewindToRoot_Depth/16 | 208.7 ns | 227.1 ns | 193.9 ns | -14.6% | -7.1% |
+| AdvanceFrameWrite_TrivialTracker | 426.1 ns | 530.1 ns | 435.0 ns | -17.9% | +2.1% |
+| AdvanceFrameWrite_RecursiveTracker | 584.1 ns | 701.6 ns | 580.9 ns | -17.2% | -0.6% |
+| Framework_PyramidOscillation | 663.5 ms | 675.7 ms | 675.1 ms | -0.1% | +1.8% |
+| Framework_TrackerSweep | 6.9 ms | 7.1 ms | 6.9 ms | -2.7% | +0.9% |
+| TierD_Deterministic | 95.1 s | 94.6 s | 93.8 s | -0.8% | -1.4% |
+| TierD_Throughput | 67.9 s | 58.9 s | 57.9 s | -1.7% | -14.7% |
+
+The Script family is where the framework's own bookkeeping shows; the game workloads are
+bounded by the DLL and read within noise. What 19.51 still reads over 19.44 on the four
+rows above is the toolset's, the change closed the rest. clang-cl 22, against master built
+with it: `GetInputs_Uncached_Depth/16` 181.9 to 148.7 ns (-18.3%, the return copy), every
+other Script row within 5%, 0 regressions; clang's inliner never had the accessor problem.
+
+The placement sensitivity of the 3.2 entry below went with the cause: the same never-run
+benchmark appended to this code moves the uncached rows -1.2%, -0.1% and -5.9% against
+the code's own binary (master's moved +28.4%, +19.4% and +14.6%), so those rows need no
+rule of their own. The baselines and references of both compilers were then re-saved from
+this code on the new toolset (ROADMAP 3.18).
+
+## 2026-09-15: ScriptFriend retired, and the walk the root keeps (ROADMAP 3.2)
+
+The first change measured on Visual Studio 2026's toolset (MSVC 19.51, clang-cl 22;
+`scripts\build.ps1` takes the latest install). The committed baselines and the reference
+under `perf\reference\tyler-desktop` are 19.44's, so this table's reference is master built
+with 19.51 in a worktree and passed with `-Reference` (`perf\reference\tyler-desktop-master-19.51`,
+gitignored), interleaved as usual. The "vs base" column then reads the toolchain, not the
+change: against 19.44's baseline, 19.51 runs most of the Script family 14 to 35% slower,
+the child-script rows 9 to 12% faster and the throughput Tier D 12% faster. Re-saving the
+baselines on 19.51 is the maintainer's call.
+
+The change: `Script` befriends `TopLevelScript` and the accessor class is gone; a tracker's
+own frames skip the root's `TrackState` at the call site instead of being asked;
+`startSaveHandle` and the root's `_m64` are private (docs/compilers.md, ROADMAP 3.2). Every
+Tier C and D count identical on both binaries (deterministic Tier D: 52 solutions, 111,860
+blocks, 524,380 scripts), allocations identical, Tier D and the framework workloads within
+noise. Release, MSVC 19.51, min of nine:
+
+| | reference (master, 19.51) | current | vs ref |
+|---|---|---|---|
+| AdvanceFrameWrite | 63.0 ns | 63.2 ns | +0.4% |
+| AdvanceFrameRead | 99.1 ns | 97.5 ns | -1.6% |
+| AdvanceFrameWrite_TrivialTracker | 531.9 ns | 506.5 ns | -4.8% |
+| AdvanceFrameWrite_RecursiveTracker | 668.5 ns | 660.2 ns | -1.2% |
+| GetInputs_Uncached_Depth/1 | 49.9 ns | 54.9 ns | +10.0%; re-run 51.5 / 54.9 ns, +6.6% |
+| GetInputs_Uncached_Depth/4 | 83.2 ns | 90.6 ns | +8.9%; re-run +8.8% |
+| GetInputs_Uncached_Depth/16 | 244.9 ns | 253.7 ns | +3.6%; re-run +5.6% |
+| LongLoad_RewindToRoot_Depth/16 | 227.8 ns | 221.8 ns | -2.6% |
+| Framework_PyramidOscillation | 680.9 ms | 687.8 ms | +1.0% |
+| Framework_TrackerSweep | 6.9 ms | 7.0 ms | +1.5% |
+| TierD_Deterministic | 94.7 s | 95.1 s | +0.4% |
+| TierD_Throughput | 59.0 s | 59.6 s | +1.0% |
+
+The uncached `GetInputs` rows read 5 to 9 ns over the reference. Root cause, established
+on symbolized Release-codegen builds of master and the branch (the `/Zi /O2 /Ob2` recipe,
+which reproduced the gap: 52.1 against 54.8 ns at depth 1):
+
+- The code that runs is the same. `dumpbin /disasm` of `Script::GetInputsMetadata`, the
+  root's override, `GetInputsMetadataAndCache` and the container accessors is
+  instruction-identical between the two binaries (addresses aside). Only
+  `DepthScript::execution`, the benchmark fixture, differs, by the four instructions of the
+  inlined tracker check in its `LongLoad` path, which moved every function after it: the
+  walk sits at a different 64-byte-line phase in each binary (start mod 64: 16 against 32)
+  and the timed loop's head at mod 16 = 0 against 6.
+- The hardware counters say what changed. Timer samples every 0.12 ms carrying the CPU's
+  cumulative counters, the loop's intervals told from the fixture's by the sampled PC,
+  depth 1, 8,000,000 iterations, per iteration:
+
+  | | master | branch |
+  |---|---|---|
+  | instructions retired | 911 | 936 |
+  | retired branch mispredicts | 0.027 | 0.043 |
+  | cache misses, LLC misses | 1.42 | 1.44 |
+  | unhalted core cycles | 203 | 230 |
+  | IPC | 4.48 | 4.07 |
+
+  Same work, the same predictions and the same misses to within noise, 27 more cycles per
+  lookup: instruction delivery. The 0.12 ms heat map of the walk puts the extra samples on
+  the instructions after its call returns and taken branches (+368 on the `test` after the
+  first `LevelStack::operator[]` return, +178 on the `sar` that follows), with master's
+  surplus on other branch targets of the same code; a redistribution over identical
+  instructions, not a stalled one. xperf exposes no front-end event on this machine (the
+  PMU cannot drive sampling interrupts here at all), so which structure is charged, uop
+  cache lines or fetch alignment, stays unnamed.
+- Placement alone reproduces it: master's own source with one benchmark appended to the
+  M64 family, never run under the Script filter, read against master's reference binary
+  +28.4% at depth 1, +19.4% at depth 4 and +14.6% at depth 16 (64.8, 102.9 and 279.5 ns
+  against 50.5, 86.2 and 243.8), every other Script row within 4%.
+
+Why this loop is so sensitive, from the same profile, both binaries alike: the walk is
+front-end bound at IPC 4.5, and on MSVC 19.51 `LevelStack::operator[]` is not inlined into
+it (a call per container per level, twelve per lookup at depth 1, 22% of the loop's
+samples; LevelStack.hpp's note says 19.44 inlined it, and the 19.44 baseline's Script rows
+are 14 to 35% faster), and the walk returns its 40-byte result by copying a local it has
+just assembled (34% of its samples on the `vmovsd` after that copy). Both are ROADMAP 3.19.
+On this toolset these rows move by more than the gate with code that did not change
+(performance.md, noise control; ROADMAP 3.18).
+
+Tried and dropped: one walk for every script, `Script::GetInputsMetadata` ending in a
+private virtual the root overrides for the movie (`GetM64Inputs`, the `GetM64Metadata`
+shape), so that the root's copy of the walk goes. Three forms, Script family only, each
+against the same reference:
+
+| form | Depth/1 | Depth/4 | Depth/16 | AdvanceFrameWrite |
+|---|---|---|---|---|
+| the fallback returns an object the walk then adjusts (owner, level, inputs) | +30.2% (+15 ns) | +18.6% | +7.3% | +8.9% |
+| the same, the walk `__declspec(noinline)` | +33.1% | +24.2% | +7.8% | +10.3% |
+| the fallback builds the answer in place, the walk non-virtual | +13.7% (+7 ns) | +16.1% | +13.7% | -2.6% |
+| the same, the walk virtual with no override | +36.0% | +25.0% | +10.5% | +0.5% |
+| the root's own walk kept, reached through the friend (as landed) | -1.1% | +3.3% | -0.4% | +1.2% |
+
+Not explained (inlining is ruled out by the second row, and a virtual per hop was the shape
+before too) and not pursued: the real workloads never moved, but the row is gated and the
+duplicate walk costs nothing at run time. The root keeps its walk; the comment on
+`TopLevelScript::GetInputsMetadata` says why.
+
 ## 2026-09-14: the ticket wait blocks past a bounded spin (ROADMAP 3.15)
 
 Designed under hard rule 10 and agreed the same evening. `WaitForTurn` spun with

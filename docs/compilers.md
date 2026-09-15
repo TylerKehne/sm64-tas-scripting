@@ -9,10 +9,12 @@ that gives real confidence in C++23 code like this.
 
 ## Supported toolchains
 
-| Toolchain | Status (2026-09-08) | How to build |
+| Toolchain | Status (2026-09-15) | How to build |
 |---|---|---|
-| MSVC 19.44 (VS 2022), Ninja | primary; warning-free at `/W3` | `scripts\build.ps1` (preset `msvc-<config>`) |
-| clang-cl 19.1 (VS "C++ Clang tools for Windows"), Ninja | warning-free at `/W4` locally and in CI (windows-clang-cl job) | `scripts\build.ps1 -Compiler clang` (preset `clang-cl-<config>`) |
+| MSVC 19.51 (VS 2026), Ninja | primary since 2026-09-15: `scripts\build.ps1` takes the latest install vswhere finds, and the perf baselines under `perf\baselines\tyler-desktop\` are saved on it; warning-free at `/W3` | `scripts\build.ps1` (preset `msvc-<config>`) |
+| MSVC 19.44 (VS 2022), Ninja | the primary until 2026-09-15; warning-free at `/W3`; its inliner treated `LevelStack::Grow()` differently (pitfall below) | the same, when it is the latest install |
+| clang-cl 22.1 (VS 2026's "C++ Clang tools for Windows"), Ninja | warning-free at `/W4`; the baselines under `perf\baselines\tyler-desktop-clang\` are saved on it | `scripts\build.ps1 -Compiler clang` (preset `clang-cl-<config>`) |
+| clang-cl 19.1 (VS 2022's), Ninja | warning-free at `/W4` locally and in CI (windows-clang-cl job) | the same |
 | GCC 14 on Linux (Ubuntu 24.04), Ninja | the CI compiler since the move to C++23 (2026-09-14, GCC 13 before; "Language standard" below), built without LTO (`-DTASFW_LTO=OFF`: its LTO link of `bitfs-turn` fails, pitfall below); warning-free at `-Wall -Wextra` in CI (ubuntu-24.04-gcc job) and in the 24.04 container below; cannot run the game there, the Linux libsm64 `.so` needs glibc 2.43 (docs/libsm64.md) | `cmake --preset gcc-release`, then `cmake --build --preset gcc-release` |
 | Clang 18 on Linux (Ubuntu 24.04), Ninja | the CI compiler since the move to C++23 (Clang 17 before); warning-free at `-Wall -Wextra` in CI (ubuntu-24.04-clang job) and in the 24.04 container below | presets `clang-<config>` |
 | GCC 15.2 on Linux (Ubuntu 26.04), Ninja | warning-free at `-Wall -Wextra` in the 26.04 container below; `LibSm64`'s `mprotect`/`SIGSEGV` save path passes the libsm64 test group against bitfs-sbb's JP `.so`, drift test max diff 0 (2026-09-08) | same presets, or the container commands below |
@@ -150,14 +152,53 @@ the declaration, and when in doubt define the member inside the class body. Watc
 `ExecuteAdhoc` / `ModifyAdhoc` / `TestAdhoc` family in `Script.hpp` and `Script.t.hpp`,
 which mixes abbreviated (`AdhocScript auto`) and explicit template forms for this reason.
 
-### MSVC: friend class template for `TopLevelScript`
+### MSVC and IntelliSense: friend class template for `TopLevelScript`
 
-MSVC did not accept the friend template declaration that would let `TopLevelScript` reach
-`Script`'s private members, and where MSVC accepted a form, Visual Studio's IntelliSense
-(a different front end) rejected it, or the other way round; the maintainer kept hitting one
-or the other. Workaround: `ScriptFriend<TResource>`, a class of static accessors in
-`Script.hpp`. Do not add new callers outside `TopLevelScript`, and treat IntelliSense as a
-fourth front end when retiring it (ROADMAP 3.2).
+`Script` declares `TopLevelScript` a friend with the primary's exact template-head,
+constraints included:
+
+```cpp
+template <derived_from_specialization_of<Resource> R, std::derived_from<Script<R>> T>
+friend class TopLevelScript;
+```
+
+Until 2026-09-15 a class of static accessors, `ScriptFriend`, stood in for it: the MSVC of
+the time did not accept the friend template, and where it did, Visual Studio's IntelliSense
+(a different front end) rejected it, or the other way round. Retired under ROADMAP 3.2 once
+the declaration compiled in a minimal reproduction on MSVC 19.44 and clang-cl 19, with a
+control that failed without it, and in the project on MSVC 19.51 and clang-cl 22; the
+editor check, Visual Studio 2026's IntelliSense, is the maintainer's and pending as of
+2026-09-15. From the same reproduction, two forms that do not work:
+
+- An unconstrained head, `template <class R, class T> friend class TopLevelScript;`, is
+  rejected by both compilers (Clang: "type constraint differs in template redeclaration"),
+  since a friend template's head must be equivalent to the primary's.
+- MSVC 19.44 rejects with C3855 a friend head whose type-constraint names `TopLevelScript`
+  (`derived_from_specialization_of<TopLevelScript> TTop, ...`, what befriending the builders
+  from `TopLevelScript` would take), with or without a variadic pack, while the same head
+  naming `Script` or a standard concept compiles: a type-constraint whose template
+  argument carries a dependent constraint in its own head. The `Main*` entry points stay
+  public for that reason.
+
+A passkey (a non-template key class befriending the `TopLevelScript` template, keyed public
+entry points on `Script`) compiled on both and is the fallback should a front end balk at
+the direct friend. One thing the accessor class hid: a `TTopLevelScript` may declare names
+that hide `Script`'s (`ScattershotThread::Initialize`), so `InitializeAndRun` reaches
+`Script`'s members through a `Script<TResource>&`.
+
+### MSVC 19.51 inlines a single-call-site function whatever its size
+
+`LevelStack::operator[]` is a compare, a branch and a pointer select, with the growth loop
+in a separate `Grow()` so that the accessor inlines into every caller (LevelStack.hpp). MSVC
+19.51 (Visual Studio 2026) inlined `Grow()`, allocation and vector growth included, back
+into the accessor, because it has one call site, and then inlined the 200-instruction
+result nowhere: seven calls per level in `Script::GetInputsMetadata`, fifteen per
+`AdvanceFrameWrite`, and the Script family 14 to 35% slower than the 19.44 baseline. The
+fix is `TAS_FW_NOINLINE` on `Grow()` (`__declspec(noinline)` on MSVC and clang-cl,
+`__attribute__((noinline))` elsewhere, defined in LevelStack.hpp): a compiler keyword for
+an inlining decision, not a language feature, like the rdtsc header fork in Resource.t.hpp.
+With it the accessor is 23 instructions and inlines everywhere
+(docs/performance-changelog.md, 2026-09-15, ROADMAP 3.19).
 
 ### MSVC: dependent base members need using-declarations
 
@@ -170,8 +211,8 @@ Clang need `this->` or the same using-declarations; the using-declarations satis
 `script->ExecuteStateTracker<T>(...)` where `script` has a dependent type must be written
 `script->template ExecuteStateTracker<T>(...)`; otherwise GCC and Clang parse the `<` as
 less-than and fail. MSVC compiles the omission. Found by the first Linux CI run in
-`ScriptFriend::ExecuteStateTracker` (`Script.hpp`). Same rule for `foo.template bar<T>()`
-and `typename` on dependent nested types.
+what is now `TopLevelScript::GetTrackedStateInternal` (`Script.t.hpp`). Same rule for
+`foo.template bar<T>()` and `typename` on dependent nested types.
 
 ### libstdc++ 13 does not declare the f-suffixed math functions in `std`
 
