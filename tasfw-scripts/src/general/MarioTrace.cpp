@@ -24,15 +24,15 @@ bool MarioTrace::execution()
 	{
 		try
 		{
-			return resource->addr(symbol);
+			return ReadState(symbol);
 		}
 		catch (const std::exception&)
 		{
 			return nullptr;
 		}
 	};
-	MarioState* const* marioState = static_cast<MarioState* const*>(resource->addr("gMarioState"));
-	Camera* const* camera = static_cast<Camera* const*>(resource->addr("gCamera"));
+	MarioState* const* marioState = static_cast<MarioState* const*>(ReadState("gMarioState"));
+	Camera* const* camera = static_cast<Camera* const*>(ReadState("gCamera"));
 	const int16_t* selectionFlags = static_cast<const int16_t*>(optional("sSelectionFlags"));
 	const int16_t* movementFlags = static_cast<const int16_t*>(optional("gCameraMovementFlags"));
 	const int16_t* dirBaseYaw = static_cast<const int16_t*>(optional("s8DirModeBaseYaw"));

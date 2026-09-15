@@ -11,8 +11,8 @@
 bool BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle::validation()
 {
 	// Check if Mario is on the pyramid platform
-	auto marioObj = (PyramidUpdateMem::Sm64Object*)(resource->addr("gMarioObject"));
-	auto marioState = (PyramidUpdateMem::Sm64MarioState*)(resource->addr("gMarioStates"));
+	auto marioObj = (PyramidUpdateMem::Sm64Object*)(ReadState("gMarioObject"));
+	auto marioState = (PyramidUpdateMem::Sm64MarioState*)(ReadState("gMarioStates"));
 	if (!marioObj->platformIsPyramid || marioState->floorId == -1)
 		return false;
 
@@ -26,8 +26,8 @@ bool BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle::execution()
 {
 	AdvanceFrameRead();
 
-	auto marioState = (PyramidUpdateMem::Sm64MarioState*)(resource->addr("gMarioStates"));
-	auto pyramid = (PyramidUpdateMem::Sm64Object*)(resource->addr("Pyramid"));
+	auto marioState = (PyramidUpdateMem::Sm64MarioState*)(ReadState("gMarioStates"));
+	auto pyramid = (PyramidUpdateMem::Sm64Object*)(ReadState("Pyramid"));
 
 	/*
 	if (marioState->floorId == -1 || marioState->isFloorStatic)

@@ -153,9 +153,6 @@ public:
 	class CustomScriptStatus {};
 	CustomScriptStatus CustomStatus = {};
 
-	// TODO: make private (ROADMAP 3.2: the access contract that replaces resource->addr)
-	TResource* resource = nullptr;
-
 	Script() = default;
 
 	Script(const Script<TResource>&) = delete;
@@ -658,6 +655,37 @@ protected:
 	bool ExportM64(std::filesystem::path fileName);
 	bool ExportM64(std::filesystem::path fileName, int64_t maxFrame);
 
+	// The resource's memory, read only: the address of a symbol (LibSm64: a DLL export,
+	// PyramidUpdate: a field of its own state; an unknown name throws). The one way a script
+	// sees game memory (AGENTS.md, hard rule 9). A write is a hack, a kind of input the
+	// framework will apply for the script (ROADMAP Phase 5), never a store through this.
+	void* ReadState(const char* symbol) const;
+
+	// The script's state, exported as another resource's state type for a top-level run on
+	// that resource to import (TopLevelScriptBuilder::ImportSave): UState converts from the
+	// resource it is exported from (PyramidUpdateMem from a Resource<LibSm64Mem>) plus any
+	// further parameters, through Resource::State. The first form exports the current
+	// frame; the second loads `frame` first and returns to the current frame after, both
+	// through the script's own loads, counted like any. The constraint is Resource::State's
+	// own, repeated so a frame is never taken for a state parameter when the two overload.
+	template <class UState, typename... Us>
+		requires(requires(TResource& r, Us&&... params) { r.template State<UState>(std::forward<Us>(params)...); })
+	ImportedSave<UState> ExportSave(Us&&... params)
+	{
+		return ImportedSave<UState>(resource->template State<UState>(std::forward<Us>(params)...), GetCurrentFrame());
+	}
+
+	template <class UState, typename... Us>
+		requires(requires(TResource& r, Us&&... params) { r.template State<UState>(std::forward<Us>(params)...); })
+	ImportedSave<UState> ExportSave(int64_t frame, Us&&... params)
+	{
+		uint64_t currentFrame = GetCurrentFrame();
+		Load(frame);
+		ImportedSave<UState> save = ExportSave<UState>(std::forward<Us>(params)...);
+		Load(currentFrame);
+		return save;
+	}
+
 	virtual bool validation() = 0;
 	virtual bool execution() = 0;
 	virtual bool assertion() = 0;
@@ -675,6 +703,11 @@ private:
 	friend class ScriptCompareHelper<TResource>;
 
 	SlotHandle<TResource> startSaveHandle = SlotHandle<TResource>(nullptr, -1);
+
+	// The resource the hierarchy runs on, set by TopLevelScript when it starts. Every
+	// interaction goes through the operations above; scripts never hold it (hard rule 9).
+	TResource* resource = nullptr;
+	
 	int64_t _adhocLevel = 0;
 	int64_t _initialFrame = 0;
 	// One entry per ad-hoc level (see LevelStack.hpp); level 0 is the script itself.
@@ -1010,6 +1043,14 @@ public:
 			_m64, std::move(importedSave), DefaultResourceConfig(), _stateTrackerParams);
 	}
 
+	// A save a script exported (Script::ExportSave), state and frame together.
+	template <class TState>
+	TopLevelScriptBuilderConfigured<TTopLevelScript, TState, DefaultResourceConfig, TStateTrackerParams...> ImportSave(ImportedSave<TState> save)
+	{
+		return TopLevelScriptBuilderConfigured<TTopLevelScript, TState, DefaultResourceConfig, TStateTrackerParams...>(
+			_m64, std::move(save), DefaultResourceConfig(), _stateTrackerParams);
+	}
+
 	template <typename TResourceConfig>
 	TopLevelScriptBuilderConfigured<TTopLevelScript, DefaultState, TResourceConfig, TStateTrackerParams...> ConfigureResource(TResourceConfig resourceConfig)
 	{
@@ -1040,7 +1081,7 @@ public:
 
 	TopLevelScriptBuilderConfigured(M64& m64, ImportedSave<TState> importedSave,
 		TResourceConfig resourceConfig, std::shared_ptr<std::tuple<TStateTrackerParams...>> stateTrackerParams)
-		: TopLevelScriptBuilder<TTopLevelScript, TStateTrackerParams...>(m64, stateTrackerParams), _importedSave(importedSave), _resourceConfig(resourceConfig) {}
+		: TopLevelScriptBuilder<TTopLevelScript, TStateTrackerParams...>(m64, stateTrackerParams), _importedSave(std::move(importedSave)), _resourceConfig(resourceConfig) {}
 
 	template <typename... UStateTrackerParams>
 	TopLevelScriptBuilderConfigured<TTopLevelScript, TState, TResourceConfig, UStateTrackerParams...> ConfigureStateTracker(
@@ -1058,6 +1099,13 @@ public:
 		ImportedSave<UState> importedSave = ImportedSave(UState(std::forward<TStateParams>(stateParams)...), frame);
 		return TopLevelScriptBuilderConfigured<TTopLevelScript, UState, TResourceConfig, TStateTrackerParams...>(
 			_m64, std::move(importedSave), std::move(_resourceConfig), _stateTrackerParams);
+	}
+
+	template <class UState>
+	TopLevelScriptBuilderConfigured<TTopLevelScript, UState, TResourceConfig, TStateTrackerParams...> ImportSave(ImportedSave<UState> save)
+	{
+		return TopLevelScriptBuilderConfigured<TTopLevelScript, UState, TResourceConfig, TStateTrackerParams...>(
+			_m64, std::move(save), std::move(_resourceConfig), _stateTrackerParams);
 	}
 
 	template <typename UResourceConfig>

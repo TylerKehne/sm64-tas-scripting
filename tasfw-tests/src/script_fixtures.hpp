@@ -31,6 +31,7 @@ namespace tasfw::tests
 		using Base::Execute;
 		using Base::ExecuteAdhoc;
 		using Base::ExportM64;
+		using Base::ExportSave;
 		using Base::GetCurrentFrame;
 		using Base::GetDiff;
 		using Base::GetInputs;
@@ -39,6 +40,7 @@ namespace tasfw::tests
 		using Base::Load;
 		using Base::LongLoad;
 		using Base::Modify;
+		using Base::ReadState;
 		using Base::ModifyAdhoc;
 		using Base::ModifyCompare;
 		using Base::ModifyCompareAdhoc;

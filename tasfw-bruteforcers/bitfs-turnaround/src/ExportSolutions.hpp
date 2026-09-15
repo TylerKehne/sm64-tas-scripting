@@ -22,8 +22,8 @@ public:
 
 	bool execution() override
 	{
-		MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-		Object* objectPool = (Object*)(resource->addr("gObjectPool"));
+		MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
+		Object* objectPool = (Object*)(ReadState("gObjectPool"));
 		Object* pyramid = &objectPool[84]; // level-specific index; AGENTS.md, known problems
 
 		LongLoad(_startFrame);

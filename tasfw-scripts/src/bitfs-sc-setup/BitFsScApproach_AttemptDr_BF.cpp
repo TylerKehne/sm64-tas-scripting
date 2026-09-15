@@ -6,7 +6,7 @@
 
 bool BitFsScApproach_AttemptDr_BF::validation()
 {
-	MarioState* marioState = (MarioState*)(resource->addr("gMarioStates"));
+	MarioState* marioState = (MarioState*)(ReadState("gMarioStates"));
 		
 	// Check if Mario is on the pyramid platform
 	Surface* floor = marioState->floor;
@@ -18,7 +18,7 @@ bool BitFsScApproach_AttemptDr_BF::validation()
 		return false;
 
 	const BehaviorScript* pyramidBehavior =
-		(const BehaviorScript*)(resource->addr("bhvBitfsTiltingInvertedPyramid"));
+		(const BehaviorScript*)(ReadState("bhvBitfsTiltingInvertedPyramid"));
 	if (floorObject->behavior != pyramidBehavior)
 		return false;
 
@@ -27,8 +27,8 @@ bool BitFsScApproach_AttemptDr_BF::validation()
 
 bool BitFsScApproach_AttemptDr_BF::execution()
 {
-	MarioState* marioState = (MarioState*)(resource->addr("gMarioStates"));
-	Camera* camera = *(Camera**)(resource->addr("gCamera"));
+	MarioState* marioState = (MarioState*)(ReadState("gMarioStates"));
+	Camera* camera = *(Camera**)(ReadState("gCamera"));
 	Object* pyramid = marioState->floor->object;
 
 	//advance 1 frame at a time along the previous path
@@ -47,8 +47,8 @@ bool BitFsScApproach_AttemptDr_BF::execution()
 	//Hack track platform x pos
 	/*
 	AdvanceFrameWrite(GetInputs(_minFrame - 1));
-	const BehaviorScript* trackPlatformBehavior = (const BehaviorScript*)(resource->addr("bhvPlatformOnTrack"));
-	Object* objectPool = (Object*)(resource->addr("gObjectPool"));
+	const BehaviorScript* trackPlatformBehavior = (const BehaviorScript*)(ReadState("bhvPlatformOnTrack"));
+	Object* objectPool = (Object*)(ReadState("gObjectPool"));
 	Object* trackPlatform = &objectPool[85];
 	if (trackPlatform->behavior != trackPlatformBehavior)
 		return false;
@@ -79,7 +79,7 @@ bool BitFsScApproach_AttemptDr_BF::execution()
 					// Turn 2048 towrds uphill
 					auto m64 = M64();
 					auto uphillAngleStatus = TopLevelScriptBuilder<BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>::Build(m64)
-						.ImportSave<PyramidUpdateMem>(GetCurrentFrame(), *resource, pyramid)
+						.ImportSave(ExportSave<PyramidUpdateMem>(pyramid))
 						.Run(0);
 					if (!uphillAngleStatus.validated)
 						return false;

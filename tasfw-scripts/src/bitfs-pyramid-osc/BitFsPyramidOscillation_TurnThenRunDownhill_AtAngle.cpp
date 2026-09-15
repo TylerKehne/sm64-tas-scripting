@@ -30,7 +30,7 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::validation()
 	CustomStatus.angle = _angle;
 
 	// Verify Mario is running on the platform
-	MarioState* marioState = (MarioState*) (resource->addr("gMarioStates"));
+	MarioState* marioState = (MarioState*) (ReadState("gMarioStates"));
 
 	Surface* floor = marioState->floor;
 	if (!floor)
@@ -41,7 +41,7 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::validation()
 		return false;
 
 	const BehaviorScript* pyramidBehavior =
-		(const BehaviorScript*) (resource->addr("bhvBitfsTiltingInvertedPyramid"));
+		(const BehaviorScript*) (ReadState("bhvBitfsTiltingInvertedPyramid"));
 	if (floorObject->behavior != pyramidBehavior)
 		return false;
 
@@ -55,9 +55,9 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::validation()
 
 bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::execution()
 {
-	const BehaviorScript* pyramidBehavior = (const BehaviorScript*) (resource->addr("bhvBitfsTiltingInvertedPyramid"));
-	MarioState* marioState = (MarioState*) (resource->addr("gMarioStates"));
-	Camera* camera = *(Camera**)(resource->addr("gCamera"));
+	const BehaviorScript* pyramidBehavior = (const BehaviorScript*) (ReadState("bhvBitfsTiltingInvertedPyramid"));
+	MarioState* marioState = (MarioState*) (ReadState("gMarioStates"));
+	Camera* camera = *(Camera**)(ReadState("gCamera"));
 
 	CustomStatus.initialXzSum = _oscillationParams.initialXzSum;
 	_oscillationParams.roughTargetAngle = marioState->faceAngle[1] + 0x8000;

@@ -46,8 +46,8 @@ bool VerifyLayout::execution()
 	// a whole slot of gObjectPool), and the script stops at the first of those that fails.
 
 	// --- Checks valid at any frame ------------------------------------------------------
-	MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-	MarioState* marioStates = (MarioState*)(resource->addr("gMarioStates"));
+	MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
+	MarioState* marioStates = (MarioState*)(ReadState("gMarioStates"));
 	if (marioState != marioStates)
 	{
 		fail("gMarioState (" + Hex(marioState) + ") != &gMarioStates[0] (" + Hex(marioStates) + "); pointer width or symbol resolution is wrong");
@@ -55,7 +55,7 @@ bool VerifyLayout::execution()
 	}
 	ok("gMarioState points at gMarioStates[0]");
 
-	Object* objectPool = (Object*)(resource->addr("gObjectPool"));
+	Object* objectPool = (Object*)(ReadState("gObjectPool"));
 	auto poolSlot = [&](const void* p) -> int // the slot an object pointer names, or -1
 	{
 		std::ptrdiff_t offset = reinterpret_cast<const char*>(p) - reinterpret_cast<const char*>(objectPool);
@@ -64,11 +64,11 @@ bool VerifyLayout::execution()
 		return int(offset / std::ptrdiff_t(sizeof(Object)));
 	};
 
-	uint32_t timer = *(uint32_t*)(resource->addr("gGlobalTimer"));
+	uint32_t timer = *(uint32_t*)(ReadState("gGlobalTimer"));
 	ok("gGlobalTimer readable (" + std::to_string(timer) + ")");
 
 	// --- Checks that need Mario to exist (inside a level) --------------------------------
-	Object* marioObj = *(Object**)(resource->addr("gMarioObject"));
+	Object* marioObj = *(Object**)(ReadState("gMarioObject"));
 	if (marioObj == nullptr)
 	{
 		note("gMarioObject is null (not in a level); in-level checks skipped");
@@ -83,7 +83,7 @@ bool VerifyLayout::execution()
 	}
 	ok("gMarioObject is gObjectPool[" + std::to_string(marioSlot) + "] (sizeof(Object) = " + std::to_string(sizeof(Object)) + " matches the pool stride)");
 
-	const void* bhvMario = resource->addr("bhvMario");
+	const void* bhvMario = ReadState("bhvMario");
 	if (marioObj->behavior == bhvMario)
 		ok("gMarioObject->behavior == bhvMario (Object::behavior offset)");
 	else
@@ -132,7 +132,7 @@ bool VerifyLayout::execution()
 			fail("gMarioState->floor->object (" + Hex(floor->object) + ") is neither null nor a slot of gObjectPool; Surface::object offset is wrong");
 	}
 
-	Camera* camera = *(Camera**)(resource->addr("gCamera"));
+	Camera* camera = *(Camera**)(ReadState("gCamera"));
 	if (camera != nullptr)
 		ok("gCamera is set");
 	else
@@ -143,7 +143,7 @@ bool VerifyLayout::execution()
 	{
 		try
 		{
-			return resource->addr(e.behavior);
+			return ReadState(e.behavior);
 		}
 		catch (const std::exception&)
 		{

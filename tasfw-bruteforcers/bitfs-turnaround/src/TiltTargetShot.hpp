@@ -114,8 +114,8 @@ public:
 
     bool validation()
     {
-        MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-        const BehaviorScript* pyramidBehavior = (const BehaviorScript*)(resource->addr("bhvBitfsTiltingInvertedPyramid"));
+        MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
+        const BehaviorScript* pyramidBehavior = (const BehaviorScript*)(ReadState("bhvBitfsTiltingInvertedPyramid"));
 
         if (marioState->floor == nullptr)
             return false;
@@ -129,7 +129,7 @@ public:
 
     bool execution()
     {
-        MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
+        MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
         Object* pyramid = marioState->floor->object;
 
         CustomStatus.initialized = true;
@@ -358,8 +358,8 @@ public:
 
     bool validation() override
     {
-        MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-        const BehaviorScript* pyramidBehavior = (const BehaviorScript*)(resource->addr("bhvBitfsTiltingInvertedPyramid"));
+        MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
+        const BehaviorScript* pyramidBehavior = (const BehaviorScript*)(ReadState("bhvBitfsTiltingInvertedPyramid"));
 
         // TODO: add method in TopLevelScriptBuilder
         LongLoad(_initialFrame - 10);
@@ -442,7 +442,7 @@ public:
 
     BinaryStateBin<16> GetStateBin() override
     {
-        MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
+        MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
 
         float xMin = -2430.0f;
         float xMax = -1450.0f;
@@ -557,7 +557,7 @@ public:
 
     bool ValidateState() override
     {
-        MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
+        MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
 
         // Position sanity check
         if (marioState->pos[0] < -2430 || marioState->pos[0] > -1450)
@@ -675,8 +675,8 @@ public:
 
     std::string GetCsvRow() override
     {
-        MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-        Object* objectPool = (Object*)(resource->addr("gObjectPool"));
+        MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
+        Object* objectPool = (Object*)(ReadState("gObjectPool"));
         Object* pyramid = &objectPool[84];
 
         char line[256];
@@ -784,8 +784,8 @@ private:
 
     bool VerifyOnPyramid()
     {
-        MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-        const BehaviorScript* pyramidBehavior = (const BehaviorScript*)(resource->addr("bhvBitfsTiltingInvertedPyramid"));
+        MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
+        const BehaviorScript* pyramidBehavior = (const BehaviorScript*)(ReadState("bhvBitfsTiltingInvertedPyramid"));
 
         return marioState->marioObj->platform != nullptr && marioState->marioObj->platform->behavior == pyramidBehavior;
     }
@@ -800,7 +800,7 @@ private:
         if (GetTempRng() % 16 == 0)
             return Inputs(0, 0, 0);
 
-        Camera* camera = *(Camera**)(resource->addr("gCamera"));
+        Camera* camera = *(Camera**)(ReadState("gCamera"));
 
                 
         // new random input
@@ -843,7 +843,7 @@ private:
 
     Inputs PerturbExistingInput()
     {
-        Camera* camera = *(Camera**)(resource->addr("gCamera"));
+        Camera* camera = *(Camera**)(ReadState("gCamera"));
 
         auto currentInputs = GetInputs(GetCurrentFrame());
         auto intendedInputs = Inputs::GetIntendedYawMagFromInput(currentInputs.stick_x, currentInputs.stick_y, camera->yaw);
@@ -882,7 +882,7 @@ private:
 
     int16_t RandomCardinalYaw()
     {
-        MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
+        MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
 
         int16_t intendedYaw;
         if (marioState->action == ACT_IDLE)
@@ -962,13 +962,13 @@ private:
         if (GetTempRng() % 4 == 0)
             return Inputs(0, 0, 0);
 
-        MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
+        MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
 
         Inputs newInputs;
         int64_t currentFrame = GetCurrentFrame();
         ExecuteAdhoc([&]()
             {
-                Camera* camera = *(Camera**)(resource->addr("gCamera"));
+                Camera* camera = *(Camera**)(ReadState("gCamera"));
                 Load(frame);
 
                 if (GetTempRng() % 16 == 0)

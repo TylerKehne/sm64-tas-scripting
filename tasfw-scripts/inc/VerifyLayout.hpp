@@ -29,7 +29,7 @@ struct ExpectedObject
 
 // Does the game look the way the copied decomp structs and the scripts say it does? Loads
 // to `frame` (which should be inside a level) and cross-checks what it reads through
-// resource->addr() against relationships the game guarantees: Mario's object is a whole
+// ReadState() against relationships the game guarantees: Mario's object is a whole
 // slot of gObjectPool, its behavior is bhvMario, its position fields mirror MarioState, the
 // floor normal is unit length, and every ExpectedObject sits in its slot. A mismatch means
 // the headers in tasfw-core/inc/sm64 do not describe this DLL build, or the level does not

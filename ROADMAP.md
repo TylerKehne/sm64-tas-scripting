@@ -1,8 +1,8 @@
 # Roadmap
 
-Status as of 2026-09-15: Phases 1 and 2 are done; of Phase 3 only 3.2 (encapsulation, in
-progress) and 3.17 (guidelines for TASing with the framework, after 3.2) remain, the rest
-landed in #94 and #95 and, for 3.18 and 3.19, on 3.2's branch; Phase 4 has 4.1 and 4.5
+Status as of 2026-09-15: Phases 1 and 2 are done; of Phase 3 only 3.17 (guidelines for
+TASing with the framework, after 3.2) remains, the rest landed in #94, #95, #97 and #98
+and 3.2's access contract last; Phase 4 has 4.1 and 4.5
 done; Phase 5 has its first item, per-scenario movement options, done. Items are ordered; each phase makes the next one safe to do with an AI
 agent. Check boxes as work lands and keep "Done when" honest.
 
@@ -45,7 +45,7 @@ correctness and in speed.
 - [x] **1.1 DLL layout self-check.** The `VerifyLayout` script (`tasfw-scripts/inc/VerifyLayout.hpp`)
       cross-checks the copied structs against relationships the game guarantees (Mario's object
       is a whole slot of `gObjectPool`, its behavior is `bhvMario`, `oPos` and `gfx.pos` mirror
-      `MarioState::pos`, the floor normal is unit length), reading through `resource->addr()`
+      `MarioState::pos`, the floor normal is unit length), reading through `ReadState()`
       only. The pipeline runs it once on one resource before its first stage and stops with the
       report on a failure. Until 2026-09-12 it was a `LibSm64` method called per scattershot
       thread through a `Resource` virtual; the maintainer's review moved it out, since the
@@ -349,50 +349,40 @@ item is done except 3.2, in progress, and 3.17, which follows it; then Phase 4.
       `ScattershotThread` does, since blocks are keyed by that frame), and a caller that wants
       to roll back runs `Execute` and applies the returned diff later. Written into
       ARCHITECTURE.md; the TODOs that proposed changing `Modify` are gone.
-- [ ] **3.2 Encapsulation.** Make `Script` internals private and retire `ScriptFriend` if current
-      MSVC accepts the friend template. Mark `resource` and `startSaveHandle` private. Note
-      from the maintainer: MSVC and Visual Studio IntelliSense disagree about such
-      declarations and one or the other kept failing, which is why `ScriptFriend` exists;
-      retiring it means checking both, not just the build. Progress 2026-09-15: `ScriptFriend`
-      is retired. `Script` befriends `TopLevelScript` with the primary's constrained
-      template-head, which MSVC 19.44 and 19.51 and clang-cl 19 and 22 accept
-      (docs/compilers.md has the forms that do not); the IntelliSense check in Visual Studio
-      2026 is the maintainer's. The root's copy of the level walk in `GetInputsMetadata`
-      stays: one walk for both, ending in a private virtual the root overrides for the movie
-      (the `GetM64Metadata` shape), was tried in three forms and each cost 7 to 18 ns per
-      uncached lookup on MSVC 19.51 against the root's own walk, which is flat
-      (docs/performance-changelog.md), so the override reads its levels through the friend
-      instead of the accessors. A tracker's own frames skip the root's `TrackState` at the
-      call site instead of being asked, a virtual call per tracker frame; the root sets its
-      tag itself. `startSaveHandle` and `TopLevelScript::_m64` are private; `resource` stays
-      public until the access contract below. Second stage, the resource's surface, same
-      day: the slot manager is private to `Resource` and its own data private, a slot is
-      reached only through `SaveState`, `LoadState`, `DisposeState` and `HasState` (dllcheck,
-      the save-mode tests and the libsm64 benchmarks moved to them), and the tests and
-      benchmarks whose subject is the slot manager itself reach it through `PerfAccess`
-      (tasfw-testing), the friend Scattershot already had, extended with the manager, a
-      slot's state, the pool and the limit; `SlotHandle`'s pointer and id are private with
-      `Script` their friend; the start save is `SaveStart(frame)`, `LoadStart()` and
-      `InitialFrame()` on `Resource`, the state itself private behind the protected
-      predicate `IsStartSave` that `LibSm64`'s dirty mode asks, instead of two public
-      fields `TopLevelScript` and three tests set by hand;
-      `sign` and `CopyVec3f` left `Script` for `ScriptMath` in tasfw-scripts (the
-      maintainer's call, 2026-09-15); the five public methods without callers
-      (`OptionalSave`, `RollForward`, `Restore`, `GetBaseDiff`, `TestAdhoc`) stay as escape
-      hatches (his call too). The rule this enforces is already
-      in force by convention (AGENTS.md, hard rule 9, 2026-09-12): scripts touch the resource
-      only through `resource->addr()` until a better access contract exists, and that
-      contract is part of this item. Its shape is not settled (maintainer, 2026-09-12): it is
-      adjacent to hack support (Phase 5), will probably admit only certain kinds of symbols,
-      and will carry some guard against invalid memory access. Do not design it piecemeal.
-      What remains, all of it the contract's: `resource` public and the roughly 220
-      `resource->addr` reads in 34 files; the 17 `ImportSave<PyramidUpdateMem>(..., *resource,
-      pyramid)` sites and the drift test (`test_libsm64_pyramid.cpp`), which drives a locally
-      constructed `PyramidUpdate` from inside a script, both of which need a way for a script
-      to hand its current state to another resource without seeing its own (`Resource::State`
-      was written for that, is unused, and cannot construct `PyramidUpdateMem`, which wants
-      the derived resource type); and the 26 reads of `s.resource->checksum()` in the engine
-      tests, which can read the mock they own instead.
+- [x] **3.2 Encapsulation.** Done 2026-09-15 in three stages, each on the maintainer's
+      decisions. `ScriptFriend` is retired: `Script` befriends `TopLevelScript` with the
+      primary's constrained template-head, which MSVC 19.44 and 19.51 and clang-cl 19 and 22
+      accept (docs/compilers.md has the forms that do not); the IntelliSense check in Visual
+      Studio 2026 was the maintainer's. The root's copy of the level walk in
+      `GetInputsMetadata` stays: one walk for both, ending in a private virtual the root
+      overrides for the movie, cost 7 to 18 ns per uncached lookup on MSVC 19.51 against the
+      root's own walk (docs/performance-changelog.md), so the override reads its levels
+      through the friend. A tracker's own frames skip the root's `TrackState` at the call
+      site; the root sets its tag itself. `startSaveHandle`, `TopLevelScript::_m64` and
+      `resource` are private. The resource's surface: the slot manager is private to
+      `Resource` and its own data private, a slot is reached only through `SaveState`,
+      `LoadState`, `DisposeState` and `HasState`, and the tests and benchmarks whose subject
+      is the slot manager itself reach it through `PerfAccess` (tasfw-testing), the friend
+      Scattershot already had; `SlotHandle`'s pointer and id are private with `Script` their
+      friend; the start save is `SaveStart(frame)`, `LoadStart()` and `InitialFrame()` on
+      `Resource`, the state itself private behind the protected predicate `IsStartSave` that
+      `LibSm64`'s dirty mode asks; `sign` and `CopyVec3f` left `Script` for `ScriptMath` in
+      tasfw-scripts; the five public methods without callers (`OptionalSave`, `RollForward`,
+      `Restore`, `GetBaseDiff`, `TestAdhoc`) stay as escape hatches. The access contract
+      (hard rule 9): `ReadState("symbol")` on `Script` is the one way a script sees game
+      memory, and the 203 reads in 33 files that went through `resource->addr()`,
+      `ScattershotThread`'s six included, go through it; `ExportSave<UState>(params...)`
+      hands the script's state to a run on another resource through `Resource::State`, which
+      `PyramidUpdateMem` now converts from (`const Resource<LibSm64Mem>&`), so the 23 sites
+      that passed `*resource` read `ImportSave(ExportSave<PyramidUpdateMem>(pyramid))` and
+      the drift test exports the same way; its second form takes a frame, loaded through the
+      script's own loads and returned from after, and both carry `Resource::State`'s
+      constraint so a frame is never taken for a state parameter. The engine tests read the
+      mock they own, which answers `ReadState("checksum")` for the scattershot mock. What
+      the contract still owes, reads typed by symbol, their const-ness (the 53 helper
+      prototypes taking game pointers non-const stay as they are), a guard against invalid
+      access and the write side, `HackMemory`, is Phase 5's, with the hacks (the maintainer,
+      2026-09-15).
 - [x] **3.3 PyramidUpdate drift test.** `test_libsm64_pyramid.cpp` imports `PyramidUpdateMem` from
       the DLL before each of 240 frames (Mario walks to the pyramid's centre, then it settles;
       91 frames move the normal), advances both, and requires the normal to match
@@ -812,8 +802,8 @@ Not scheduled. Listed so decisions in earlier phases do not paint us into a corn
   DWARF table as after-the-fact checks (docs/decomp.md). Haphazard by the maintainer's own
   account (2026-09-13); it stays because it is verified. When the framework takes a second
   game, decide this once: a game module derived from a declared source (a DWARF layout, a
-  decomp revision), or an access contract that needs no copies (3.2, the `addr` replacement
-  hard rule 9 waits for), and the copies go.
+  decomp revision), or an access contract that needs no copies (the typed `ReadState`
+  Phase 5 owes, below), and the copies go.
 - **Generators for new scripts and resources.** The end user (AGENTS.md, "Who it is for")
   should be able to start a script or a resource from a working skeleton and tweak it,
   rather than from the templates' declarations: a script class with its
@@ -853,7 +843,10 @@ Not scheduled. Listed so decisions in earlier phases do not paint us into a corn
   be replayed from a savestate, which is why hard rule 1 forbids it. The intent is to make
   hacks a special input type the framework applies at a frame like any other input, so they
   are part of the diff, replayed on decode and reverted with the sandbox. Design not yet
-  discussed; nothing should assume inputs are only controller states.
+  discussed; nothing should assume inputs are only controller states. The write side of the
+  access contract goes with it, `HackMemory` beside `ReadState`, and `ReadState`'s own
+  remainder from 3.2: reads typed by symbol, const, and guarded against invalid access (the
+  maintainer, 2026-09-15).
 - **A savestate policy the run chooses** (3.11, tabled here 2026-09-13). What the design
   discussion settled before tabling it:
   - The policy is a property of the scenario, not of the resource type. It is configured

@@ -16,8 +16,8 @@ bool TryHackedWalkOutOfBounds::validation()
 
 bool TryHackedWalkOutOfBounds::execution()
 {
-	MarioState* marioState = (MarioState*) (resource->addr("gMarioStates"));
-	Camera* camera		   = *(Camera**) (resource->addr("gCamera"));
+	MarioState* marioState = (MarioState*) (ReadState("gMarioStates"));
+	Camera* camera		   = *(Camera**) (ReadState("gCamera"));
 
 	CustomStatus.startSpeed = _speed;
 	ScriptMath::CopyVec3f(CustomStatus.startPos, marioState->pos);

@@ -555,6 +555,12 @@ SaveMetadata<TResource> Script<TResource>::GetLatestSaveAndCache(int64_t frame)
 }
 
 template <derived_from_specialization_of<Resource> TResource>
+void* Script<TResource>::ReadState(const char* symbol) const
+{
+	return resource->addr(symbol);
+}
+
+template <derived_from_specialization_of<Resource> TResource>
 void Script<TResource>::Load(uint64_t frame)
 {
 	LoadBase(frame, false);

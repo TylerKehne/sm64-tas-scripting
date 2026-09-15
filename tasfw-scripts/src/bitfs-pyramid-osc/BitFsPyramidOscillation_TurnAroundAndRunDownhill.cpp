@@ -9,7 +9,7 @@
 bool BitFsPyramidOscillation_TurnAroundAndRunDownhill::validation()
 {
 	// Check if Mario is on the pyramid platform
-	MarioState* marioState = (MarioState*) (resource->addr("gMarioStates"));
+	MarioState* marioState = (MarioState*) (ReadState("gMarioStates"));
 
 	Surface* floor = marioState->floor;
 	if (!floor)
@@ -20,7 +20,7 @@ bool BitFsPyramidOscillation_TurnAroundAndRunDownhill::validation()
 		return false;
 
 	const BehaviorScript* pyramidBehavior =
-		(const BehaviorScript*) (resource->addr("bhvBitfsTiltingInvertedPyramid"));
+		(const BehaviorScript*) (ReadState("bhvBitfsTiltingInvertedPyramid"));
 	if (floorObject->behavior != pyramidBehavior)
 		return false;
 
@@ -34,9 +34,9 @@ bool BitFsPyramidOscillation_TurnAroundAndRunDownhill::validation()
 bool BitFsPyramidOscillation_TurnAroundAndRunDownhill::execution()
 {
 	const BehaviorScript* pyramidBehavior =
-		(const BehaviorScript*) (resource->addr("bhvBitfsTiltingInvertedPyramid"));
-	MarioState* marioState = (MarioState*) (resource->addr("gMarioStates"));
-	Camera* camera		   = *(Camera**) (resource->addr("gCamera"));
+		(const BehaviorScript*) (ReadState("bhvBitfsTiltingInvertedPyramid"));
+	MarioState* marioState = (MarioState*) (ReadState("gMarioStates"));
+	Camera* camera		   = *(Camera**) (ReadState("gCamera"));
 
 	// Turn around
 	if (_oscillationParams.brake)

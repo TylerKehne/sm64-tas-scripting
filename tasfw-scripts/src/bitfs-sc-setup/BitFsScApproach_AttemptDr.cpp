@@ -12,7 +12,7 @@ public:
 
 bool BitFsScApproach_AttemptDr::validation()
 {
-	MarioState* marioState = (MarioState*)(resource->addr("gMarioStates"));
+	MarioState* marioState = (MarioState*)(ReadState("gMarioStates"));
 
 	//verify action
 	uint32_t action = marioState->action;
@@ -42,7 +42,7 @@ bool BitFsScApproach_AttemptDr::validation()
 	if (!floorObject)
 		return false;
 
-	const BehaviorScript* pyramidBehavior = (const BehaviorScript*)(resource->addr("bhvBitfsTiltingInvertedPyramid"));
+	const BehaviorScript* pyramidBehavior = (const BehaviorScript*)(ReadState("bhvBitfsTiltingInvertedPyramid"));
 	if (floorObject->behavior != pyramidBehavior)
 		return false;
 
@@ -51,8 +51,8 @@ bool BitFsScApproach_AttemptDr::validation()
 
 bool BitFsScApproach_AttemptDr::execution()
 {
-	MarioState* marioState = (MarioState*)(resource->addr("gMarioStates"));
-	Camera* camera = *(Camera**)(resource->addr("gCamera"));
+	MarioState* marioState = (MarioState*)(ReadState("gMarioStates"));
+	Camera* camera = *(Camera**)(ReadState("gCamera"));
 	Object* pyramid = marioState->floor->object;
 
 	//attempt to dive straight forward
@@ -80,7 +80,7 @@ bool BitFsScApproach_AttemptDr::execution()
 
 	auto m64 = M64();
 	auto uphillAngleStatus = TopLevelScriptBuilder<BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>::Build(m64)
-		.ImportSave<PyramidUpdateMem>(GetCurrentFrame(), *resource, pyramid)
+		.ImportSave(ExportSave<PyramidUpdateMem>(pyramid))
 		.Run(0);
 	if (!uphillAngleStatus.validated)
 		return false;

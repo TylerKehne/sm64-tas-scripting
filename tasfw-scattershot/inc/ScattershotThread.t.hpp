@@ -206,8 +206,8 @@ void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::Initiali
         });
 
     // Record start course/area for validation (generally scattershot has no cross-level value)
-    startCourse = *(short*)this->resource->addr("gCurrCourseNum");
-    startArea = *(short*)this->resource->addr("gCurrAreaIndex");
+    startCourse = *(short*)this->ReadState("gCurrCourseNum");
+    startArea = *(short*)this->ReadState("gCurrAreaIndex");
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
@@ -441,8 +441,8 @@ template <class TState, derived_from_specialization_of<Resource> TResource,
     class TOutputState>
 bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::ValidateCourseAndArea()
 {
-    return startCourse == *(short*)this->resource->addr("gCurrCourseNum")
-        && startArea == *(short*)this->resource->addr("gCurrAreaIndex");
+    return startCourse == *(short*)this->ReadState("gCurrCourseNum")
+        && startArea == *(short*)this->ReadState("gCurrAreaIndex");
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
@@ -868,8 +868,8 @@ Inputs ScattershotThread<TState, TResource, TStateTracker, TOutputState>::Random
 
     ExecuteAdhoc([&]()
         {
-            MarioState* marioState = *(MarioState**)(this->resource->addr("gMarioState"));
-            Camera* camera = *(Camera**)(this->resource->addr("gCamera"));
+            MarioState* marioState = *(MarioState**)(this->ReadState("gMarioState"));
+            Camera* camera = *(Camera**)(this->ReadState("gCamera"));
 
             // stick mag
             float intendedMag = 0;

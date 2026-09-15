@@ -15,34 +15,34 @@ TEST_CASE("Load restores exact state and replays are bit-identical")
 {
 	MockResource resource;
 	M64 m64;
-	RunRoot(resource, m64, [](auto& s)
+	RunRoot(resource, m64, [&](auto& s)
 		{
 			for (int i = 0; i < 5; i++)
 				s.AdvanceFrameWrite(In(i));
-			uint64_t at5 = s.resource->checksum();
+			uint64_t at5 = resource.checksum();
 			s.Save();
 
 			for (int i = 5; i < 10; i++)
 				s.AdvanceFrameWrite(In(i));
-			uint64_t at10 = s.resource->checksum();
+			uint64_t at10 = resource.checksum();
 
 			s.Load(5);
 			CHECK(s.GetCurrentFrame() == 5);
-			CHECK(s.resource->checksum() == at5);
+			CHECK(resource.checksum() == at5);
 
 			s.Load(10); // replays frames 5..9 from the diff
 			CHECK(s.GetCurrentFrame() == 10);
-			CHECK(s.resource->checksum() == at10);
+			CHECK(resource.checksum() == at10);
 
 			s.Load(0); // the start save
 			CHECK(s.GetCurrentFrame() == 0);
 			s.Load(10); // full replay from the start save
-			CHECK(s.resource->checksum() == at10);
+			CHECK(resource.checksum() == at10);
 
 			s.LongLoad(3);
 			CHECK(s.GetCurrentFrame() == 3);
 			s.LongLoad(10);
-			CHECK(s.resource->checksum() == at10);
+			CHECK(resource.checksum() == at10);
 		});
 }
 
@@ -53,7 +53,7 @@ TEST_CASE("State is a pure function of the start save and the resolved inputs ac
 	for (int i = 0; i < 20; i++)
 		m64.frames[i] = In(500 + i);
 
-	RunRoot(resource, m64, [](auto& s)
+	RunRoot(resource, m64, [&](auto& s)
 		{
 			// Root overrides frames 0..4, a child overrides 5..6, frames 7..9 come from the movie.
 			for (int i = 0; i < 5; i++)
@@ -62,7 +62,7 @@ TEST_CASE("State is a pure function of the start save and the resolved inputs ac
 			for (int i = 0; i < 3; i++)
 				s.AdvanceFrameRead();
 			CHECK(s.GetCurrentFrame() == 10);
-			uint64_t at10 = s.resource->checksum();
+			uint64_t at10 = resource.checksum();
 
 			CHECK(s.GetInputs(4) == In(4));
 			CHECK(s.GetInputs(5) == In(30));
@@ -71,7 +71,7 @@ TEST_CASE("State is a pure function of the start save and the resolved inputs ac
 
 			s.Load(0);
 			s.Load(10);
-			CHECK(s.resource->checksum() == at10);
+			CHECK(resource.checksum() == at10);
 		});
 }
 
@@ -79,18 +79,18 @@ TEST_CASE("Rollback erases the diff from the target frame and lands there")
 {
 	MockResource resource;
 	M64 m64;
-	RunRoot(resource, m64, [](auto& s)
+	RunRoot(resource, m64, [&](auto& s)
 		{
 			for (int i = 0; i < 10; i++)
 				s.AdvanceFrameWrite(In(i));
 			uint64_t at5 = 0;
 			s.Load(5);
-			at5 = s.resource->checksum();
+			at5 = resource.checksum();
 			s.Load(10);
 
 			s.Rollback(5);
 			CHECK(s.GetCurrentFrame() == 5);
-			CHECK(s.resource->checksum() == at5);
+			CHECK(resource.checksum() == at5);
 			CHECK(s.GetDiff().frames.size() == 5);
 			CHECK(s.GetInputs(7) == Inputs(0, 0, 0));
 		});
@@ -131,12 +131,12 @@ TEST_CASE("A reverted child's saves made after its first written frame never ser
 	for (int i = 0; i < 20; i++)
 		m64.frames[i] = In(500 + i);
 
-	RunRoot(resource, m64, [](auto& s)
+	RunRoot(resource, m64, [&](auto& s)
 		{
 			for (int i = 0; i < 3; i++)
 				s.AdvanceFrameWrite(In(i));
 			s.Load(6); // frames 3..5 from the movie
-			uint64_t at6 = s.resource->checksum();
+			uint64_t at6 = resource.checksum();
 			s.Load(3);
 
 			// The child overwrites frames 3 and 4, so its save at 6 depends on inputs that
@@ -158,7 +158,7 @@ TEST_CASE("A reverted child's saves made after its first written frame never ser
 			s.Load(8);
 			s.Load(6);
 			CHECK(s.GetCurrentFrame() == 6);
-			CHECK(s.resource->checksum() == at6);
+			CHECK(resource.checksum() == at6);
 		});
 }
 
@@ -166,7 +166,7 @@ TEST_CASE("Ad-hoc writes invalidate later saves and caches")
 {
 	MockResource resource;
 	M64 m64;
-	RunRoot(resource, m64, [](auto& s)
+	RunRoot(resource, m64, [&](auto& s)
 		{
 			for (int i = 0; i < 6; i++)
 				s.AdvanceFrameWrite(In(i));
@@ -181,10 +181,10 @@ TEST_CASE("Ad-hoc writes invalidate later saves and caches")
 			CHECK(s.GetInputs(3) == In(77));
 			CHECK(s.GetInputs(4) == In(4));
 
-			uint64_t direct = s.resource->checksum();
+			uint64_t direct = resource.checksum();
 			s.Load(0);
 			s.Load(6);
-			CHECK(s.resource->checksum() == direct);
+			CHECK(resource.checksum() == direct);
 		});
 }
 
@@ -205,7 +205,7 @@ TEST_CASE("A forward load jumps to a save that lies between the cursor and the t
 				if (i == 1000)
 					s.Save();
 				if (i == 1190)
-					at1190 = s.resource->checksum();
+					at1190 = resource.checksum();
 				s.AdvanceFrameWrite(In(i));
 			}
 			s.Load(0);
@@ -214,7 +214,7 @@ TEST_CASE("A forward load jumps to a save that lies between the cursor and the t
 			uint64_t advances = resource.work.frameAdvances;
 			s.Load(1190); // the save at 1000 lies between the cursor and the target
 			CHECK(s.GetCurrentFrame() == 1190);
-			CHECK(s.resource->checksum() == at1190);
+			CHECK(resource.checksum() == at1190);
 			CHECK(resource.work.loads == loads + 1);
 			CHECK(resource.work.frameAdvances == advances + 190);
 
@@ -224,8 +224,45 @@ TEST_CASE("A forward load jumps to a save that lies between the cursor and the t
 			advances = resource.work.frameAdvances;
 			s.LongLoad(1190);
 			CHECK(s.GetCurrentFrame() == 1190);
-			CHECK(s.resource->checksum() == at1190);
+			CHECK(resource.checksum() == at1190);
 			CHECK(resource.work.loads == loads + 1);
 			CHECK(resource.work.frameAdvances == advances + 190);
+		});
+}
+
+TEST_CASE("ExportSave hands the state at the current frame, or at another, to a run that imports it")
+{
+	MockResource resource;
+	M64 m64;
+	RunRoot(resource, m64, [&](auto& s)
+		{
+			for (int i = 0; i < 6; i++)
+				s.AdvanceFrameWrite(In(i));
+			uint64_t at6 = resource.checksum();
+
+			ImportedSave<MockState> now = s.template ExportSave<MockState>();
+			CHECK(now.initialFrame == 6);
+			CHECK(now.state.checksum == at6);
+
+			// Another frame: loaded through the script, exported, and the cursor put back.
+			uint64_t loads = resource.work.loads;
+			ImportedSave<MockState> earlier = s.template ExportSave<MockState>(3);
+			CHECK(earlier.initialFrame == 3);
+			CHECK(earlier.state.frame == 3);
+			CHECK(earlier.state.buttons == In(2).buttons);
+			CHECK(s.GetCurrentFrame() == 6);
+			CHECK(resource.checksum() == at6);
+			CHECK(resource.work.loads > loads);
+
+			// A run on a fresh resource starts from the exported save and, given the same
+			// inputs, reaches the same state (hard rule 1).
+			auto body = [&](auto& t)
+			{
+				CHECK(t.GetCurrentFrame() == 3);
+				for (int i = 3; i < 6; i++)
+					t.AdvanceFrameWrite(In(i));
+				CHECK(t.template ExportSave<MockState>().state.checksum == at6);
+			};
+			TopLevelScriptBuilder<TestRoot<decltype(body)>>::Build(m64).ImportSave(std::move(earlier)).Run(body);
 		});
 }

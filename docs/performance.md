@@ -90,7 +90,7 @@ Ordered by how much they dominate a typical scattershot run:
    blocking on the turn counter (the barriers it replaced were 58% of the deterministic
    Tier D run's CPU, the spinning queue about 50%; with the wait blocking, the run's CPU
    outside the resource is about 24%, ROADMAP 3.15).
-7. **`PyramidUpdate` construction.** `ImportSave<PyramidUpdateMem>` reads and transforms every
+7. **`PyramidUpdate` construction.** `ExportSave<PyramidUpdateMem>` reads and transforms every
    pyramid surface out of the DLL each time it is called, which is once per frame in
    `RunDownhill` and once per crossing in the trackers.
 

@@ -25,7 +25,7 @@ bool BitFsPyramidOscillation_Iteration::CompareSpeed(
 bool BitFsPyramidOscillation_Iteration::validation()
 {
 	// Verify Mario is running on the platform
-	MarioState* marioState = (MarioState*) (resource->addr("gMarioStates"));
+	MarioState* marioState = (MarioState*) (ReadState("gMarioStates"));
 
 	Surface* floor = marioState->floor;
 	if (!floor)
@@ -36,7 +36,7 @@ bool BitFsPyramidOscillation_Iteration::validation()
 		return false;
 
 	const BehaviorScript* pyramidBehavior =
-		(const BehaviorScript*) (resource->addr("bhvBitfsTiltingInvertedPyramid"));
+		(const BehaviorScript*) (ReadState("bhvBitfsTiltingInvertedPyramid"));
 	if (floorObject->behavior != pyramidBehavior)
 		return false;
 
@@ -50,7 +50,7 @@ bool BitFsPyramidOscillation_Iteration::validation()
 
 bool BitFsPyramidOscillation_Iteration::execution()
 {
-	MarioState* marioState = (MarioState*) (resource->addr("gMarioStates"));
+	MarioState* marioState = (MarioState*) (ReadState("gMarioStates"));
 
 	bool terminate = false;
 	bool foundResult = false;

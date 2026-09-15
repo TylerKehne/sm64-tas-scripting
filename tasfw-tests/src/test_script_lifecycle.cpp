@@ -14,7 +14,7 @@ TEST_CASE("AdvanceFrameWrite records the diff and applies inputs to the resource
 {
 	MockResource resource;
 	M64 m64;
-	RunRoot(resource, m64, [](auto& s)
+	RunRoot(resource, m64, [&](auto& s)
 		{
 			for (int i = 0; i < 5; i++)
 				s.AdvanceFrameWrite(In(i));
@@ -28,7 +28,7 @@ TEST_CASE("AdvanceFrameWrite records the diff and applies inputs to the resource
 			CHECK(s.GetInputs(3) == In(3));
 			CHECK(s.GetInputs(7) == Inputs(0, 0, 0)); // beyond the diff, no movie: neutral
 
-			const MockState& state = s.resource->state();
+			const MockState& state = resource.state();
 			CHECK(state.buttons == In(4).buttons);
 			CHECK(state.stickX == In(4).stick_x);
 			CHECK(state.stickY == In(4).stick_y);
@@ -42,13 +42,13 @@ TEST_CASE("Inputs fall back to the movie when no diff covers a frame")
 	for (int i = 0; i < 10; i++)
 		m64.frames[i] = In(100 + i);
 
-	RunRoot(resource, m64, [](auto& s)
+	RunRoot(resource, m64, [&](auto& s)
 		{
 			for (int i = 0; i < 10; i++)
 			{
 				CHECK(s.GetInputs(i) == In(100 + i));
 				s.AdvanceFrameRead();
-				CHECK(s.resource->state().buttons == In(100 + i).buttons);
+				CHECK(resource.state().buttons == In(100 + i).buttons);
 			}
 			CHECK(s.IsDiffEmpty());
 			CHECK(s.GetCurrentFrame() == 10);
@@ -59,11 +59,11 @@ TEST_CASE("Execute reverts the child's frames; Modify keeps them")
 {
 	MockResource resource;
 	M64 m64;
-	RunRoot(resource, m64, [](auto& s)
+	RunRoot(resource, m64, [&](auto& s)
 		{
 			s.AdvanceFrameWrite(In(0));
 			s.AdvanceFrameWrite(In(1));
-			uint64_t before = s.resource->checksum();
+			uint64_t before = resource.checksum();
 
 			auto executed = s.template Execute<WriteFrames>(3, 10);
 			CHECK(executed.executed);
@@ -71,7 +71,7 @@ TEST_CASE("Execute reverts the child's frames; Modify keeps them")
 			CHECK(executed.m64Diff.frames.size() == 3);
 			CHECK(executed.lastFrame == 4);
 			CHECK(s.GetCurrentFrame() == 2);
-			CHECK(s.resource->checksum() == before);
+			CHECK(resource.checksum() == before);
 			CHECK(s.GetDiff().frames.size() == 2);
 
 			auto tested = s.template Test<WriteFrames>(3, 10);
@@ -84,7 +84,7 @@ TEST_CASE("Execute reverts the child's frames; Modify keeps them")
 			CHECK(s.GetCurrentFrame() == 5);
 			CHECK(s.GetDiff().frames.size() == 5);
 			CHECK(s.GetInputs(4) == In(22));
-			CHECK(s.resource->checksum() != before);
+			CHECK(resource.checksum() != before);
 		});
 }
 
@@ -92,16 +92,16 @@ TEST_CASE("Modify reverts a child whose assertion fails")
 {
 	MockResource resource;
 	M64 m64;
-	RunRoot(resource, m64, [](auto& s)
+	RunRoot(resource, m64, [&](auto& s)
 		{
 			s.AdvanceFrameWrite(In(0));
-			uint64_t before = s.resource->checksum();
+			uint64_t before = resource.checksum();
 
 			auto status = s.template Modify<FailingScript>();
 			CHECK(status.executed);
 			CHECK_FALSE(status.asserted);
 			CHECK(s.GetCurrentFrame() == 1);
-			CHECK(s.resource->checksum() == before);
+			CHECK(resource.checksum() == before);
 			CHECK(s.GetDiff().frames.size() == 1);
 		});
 }
@@ -110,10 +110,10 @@ TEST_CASE("ExecuteAdhoc sandboxes; ModifyAdhoc persists")
 {
 	MockResource resource;
 	M64 m64;
-	RunRoot(resource, m64, [](auto& s)
+	RunRoot(resource, m64, [&](auto& s)
 		{
 			s.AdvanceFrameWrite(In(0));
-			uint64_t before = s.resource->checksum();
+			uint64_t before = resource.checksum();
 
 			auto sandboxed = s.ExecuteAdhoc([&]()
 				{
@@ -124,7 +124,7 @@ TEST_CASE("ExecuteAdhoc sandboxes; ModifyAdhoc persists")
 			CHECK(sandboxed.executed);
 			CHECK(sandboxed.m64Diff.frames.size() == 2);
 			CHECK(s.GetCurrentFrame() == 1);
-			CHECK(s.resource->checksum() == before);
+			CHECK(resource.checksum() == before);
 
 			auto kept = s.ModifyAdhoc([&]()
 				{

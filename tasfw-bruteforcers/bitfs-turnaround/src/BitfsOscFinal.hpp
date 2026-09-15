@@ -70,7 +70,7 @@ public:
 
     bool validation()
     {
-        Object* objectPool = (Object*)(resource->addr("gObjectPool"));
+        Object* objectPool = (Object*)(ReadState("gObjectPool"));
         Object* pyramid = &objectPool[84];
 
         //if (marioState->floor == nullptr)
@@ -89,7 +89,7 @@ public:
 
     bool execution()
     {
-        MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
+        MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
 
         CustomStatus.initialized = true;
         CustomStatus.frame = GetCurrentFrame();
@@ -103,7 +103,7 @@ public:
 
         auto m64 = M64();
         auto status = TopLevelScriptBuilder<DetectEdge>::Build(m64)
-            .ImportSave<PyramidUpdateMem>(GetCurrentFrame(), *resource, _pyramid)
+            .ImportSave(ExportSave<PyramidUpdateMem>(_pyramid))
             .Run();
 
         CustomStatus.normalDistance = status.asserted ? status.normalDistance : -1.0f;
@@ -123,7 +123,7 @@ private:
 
     void CalculatePhase()
     {
-        MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
+        MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
         auto lastFrameState = GetTrackedState<BitfsOscFinalMetrics>(GetCurrentFrame() - 1);
         if (!lastFrameState.initialized)
             return;
@@ -293,7 +293,7 @@ public:
 
     void SelectMovementOptions() override
     {
-        MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
+        MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
 
         auto state = GetTrackedState<BitfsOscFinalMetrics>(GetCurrentFrame());
         switch (state.phase)
@@ -334,9 +334,9 @@ public:
 
     bool ApplyMovement() override
     {
-        MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-        Camera* camera = *(Camera**)(resource->addr("gCamera"));
-        Object* objectPool = (Object*)(resource->addr("gObjectPool"));
+        MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
+        Camera* camera = *(Camera**)(ReadState("gCamera"));
+        Object* objectPool = (Object*)(ReadState("gObjectPool"));
         Object* pyramid = &objectPool[84];
 
         auto state = GetTrackedState<BitfsOscFinalMetrics>(GetCurrentFrame());
@@ -345,7 +345,7 @@ public:
         {
             auto m64 = M64();
             auto status = TopLevelScriptBuilder<DetectEdge>::Build(m64)
-                .ImportSave<PyramidUpdateMem>(GetCurrentFrame(), *resource, pyramid)
+                .ImportSave(ExportSave<PyramidUpdateMem>(pyramid))
                 .Run();
 
             if (status.asserted && status.normalDistance < 100.0f && marioState->pos[1] > -2991.0f && GetTempRng() % 2 == 0)
@@ -412,7 +412,7 @@ public:
 
     BinaryStateBin<16> GetStateBin() override
     {
-        MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
+        MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
 
         float xMin = -2430.0f;
         float xMax = -1450.0f;
@@ -486,7 +486,7 @@ public:
 
     bool ValidateState() override
     {
-        MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
+        MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
 
         // Position sanity check
         if (marioState->pos[0] < -2430 || marioState->pos[0] > -1450)
@@ -579,8 +579,8 @@ public:
 
     std::string GetCsvRow() override
     {
-        MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-        Object* objectPool = (Object*)(resource->addr("gObjectPool"));
+        MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
+        Object* objectPool = (Object*)(ReadState("gObjectPool"));
         Object* pyramid = &objectPool[84];
 
         auto state = GetTrackedState<BitfsOscFinalMetrics>(GetCurrentFrame());
@@ -633,9 +633,9 @@ public:
 private:
     bool RunDownhill_1f(bool min = true)
     {
-        MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-        Camera* camera = *(Camera**)(resource->addr("gCamera"));
-        Object* objectPool = (Object*)(resource->addr("gObjectPool"));
+        MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
+        Camera* camera = *(Camera**)(ReadState("gCamera"));
+        Object* objectPool = (Object*)(ReadState("gObjectPool"));
         Object* pyramid = &objectPool[84];
 
         ModifyAdhoc([&]()
@@ -647,7 +647,7 @@ private:
 
                 auto m64 = M64();
                 auto status = TopLevelScriptBuilder<BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>::Build(m64)
-                    .ImportSave<PyramidUpdateMem>(GetCurrentFrame(), *resource, pyramid)
+                    .ImportSave(ExportSave<PyramidUpdateMem>(pyramid))
                     .Run(state.roughTargetAngle, marioState->faceAngle[1]);
                 if (!status.asserted)
                     return true;
@@ -677,9 +677,9 @@ private:
 
     bool TurnUphill_1f()
     {
-        MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-        Camera* camera = *(Camera**)(resource->addr("gCamera"));
-        Object* objectPool = (Object*)(resource->addr("gObjectPool"));
+        MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
+        Camera* camera = *(Camera**)(ReadState("gCamera"));
+        Object* objectPool = (Object*)(ReadState("gObjectPool"));
         Object* pyramid = &objectPool[84];
 
         ModifyAdhoc([&]()
@@ -690,7 +690,7 @@ private:
                 // Turn 2048 towrds uphill
                 auto m64 = M64();
                 auto status = TopLevelScriptBuilder<BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>::Build(m64)
-                    .ImportSave<PyramidUpdateMem>(GetCurrentFrame(), *resource, pyramid)
+                    .ImportSave(ExportSave<PyramidUpdateMem>(pyramid))
                     .Run(0);
                 if (!status.asserted)
                     return true;
@@ -722,8 +722,8 @@ private:
 
     bool RunOffInTime()
     {
-        MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-        Camera* camera = *(Camera**)(resource->addr("gCamera"));
+        MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
+        Camera* camera = *(Camera**)(ReadState("gCamera"));
         auto initialState = GetTrackedState<BitfsOscFinalMetrics>(_args.InitialFrame);
         BitfsOscFinalMetrics::CustomScriptStatus state;
 
@@ -750,7 +750,7 @@ private:
 
     bool StopInTime()
     {
-        MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
+        MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
         auto initialState = GetTrackedState<BitfsOscFinalMetrics>(_args.InitialFrame);
         BitfsOscFinalMetrics::CustomScriptStatus state;
 

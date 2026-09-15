@@ -10,7 +10,7 @@
 bool GetMinimumDownhillWalkingAngle::validation()
 {
 	// Check if Mario is on the pyramid platform
-	MarioState* marioState = (MarioState*) (resource->addr("gMarioStates"));
+	MarioState* marioState = (MarioState*) (ReadState("gMarioStates"));
 
 	Surface* floor = marioState->floor;
 	if (!floor)
@@ -21,16 +21,16 @@ bool GetMinimumDownhillWalkingAngle::validation()
 		return false;
 
 	const BehaviorScript* pyramidBehavior =
-		(const BehaviorScript*) (resource->addr("bhvBitfsTiltingInvertedPyramid"));
+		(const BehaviorScript*) (ReadState("bhvBitfsTiltingInvertedPyramid"));
 	return floorObject->behavior == pyramidBehavior;
 }
 
 bool GetMinimumDownhillWalkingAngle::execution()
 {
-	MarioState* marioState = (MarioState*) (resource->addr("gMarioStates"));
+	MarioState* marioState = (MarioState*) (ReadState("gMarioStates"));
 	/*
 	s32(*mario_floor_is_slope)(struct MarioState*) = (s32(*)(struct
-	MarioState*))(resource->addr("mario_floor_is_slope"));
+	MarioState*))(ReadState("mario_floor_is_slope"));
 
 	bool hackedWalkValidated = false;
 

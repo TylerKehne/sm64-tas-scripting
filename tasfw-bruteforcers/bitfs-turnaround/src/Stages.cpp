@@ -387,8 +387,8 @@ namespace
 		{
 			LongLoad(_args.startFrame);
 
-			Camera* camera = *(Camera**)(resource->addr("gCamera"));
-			MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
+			Camera* camera = *(Camera**)(ReadState("gCamera"));
+			MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
 			auto stick = Inputs::GetClosestInputByYawExact(_args.stickYaw, _args.stickMagnitude, camera->yaw);
 			AdvanceFrameWrite(Inputs(0, stick.first, stick.second));
 

@@ -53,8 +53,8 @@ namespace
 		{
 			LongLoad(_frame);
 
-			MarioState* m = *(MarioState**)(resource->addr("gMarioState"));
-			Object* pyramid = &((Object*)(resource->addr("gObjectPool")))[84];
+			MarioState* m = *(MarioState**)(ReadState("gMarioState"));
+			Object* pyramid = &((Object*)(ReadState("gObjectPool")))[84];
 			MarioSnapshot& s = _results.snapshot;
 			for (int i = 0; i < 3; i++)
 			{

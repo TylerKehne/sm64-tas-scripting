@@ -203,13 +203,15 @@ its place with numbers, and "it is cleaner" is not a number.
 9. **Scripts do not touch the resource.** `Script` owns every interaction with it: frames
    advance through `AdvanceFrameRead`/`AdvanceFrameWrite`, saves and loads through `Save`,
    `Load`, `LongLoad` and the child-script and ad-hoc runners, the frame through
-   `GetCurrentFrame`. The one exception, until a better access contract exists (ROADMAP
-   3.2), is reading game memory with `resource->addr("symbol")`. Savestate management is
+   `GetCurrentFrame`. Game memory is read with `ReadState("symbol")`, the one way a script
+   sees it (its typed, const and guarded form, and the write side, `HackMemory`, are Phase
+   5's, with the hacks), and a script's state reaches a run on another resource through
+   `ExportSave` and the builder's `ImportSave`. Savestate management is
    automatic in the normal case; the
    manual methods are escape hatches, and a design that needs a script author to call or
    know something new is the wrong design. This holds for user scripts, stage scripts and
    the framework's own scripts (`ScattershotThread`) alike. A check on the game is a script
-   (`VerifyLayout`, which reads through `addr` like any other); only a tool or test whose
+   (`VerifyLayout`, which reads through `ReadState` like any other); only a tool or test whose
    subject is the resource itself (savestate cost, the leak scan) drives it directly, outside
    any script, with its own loop. Anything a resource needs (a baseline, a mode) it decides
    for itself from what it already observes, in the framework's own terms, never through a
