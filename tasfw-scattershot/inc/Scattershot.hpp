@@ -56,7 +56,6 @@ public:
     inline static const char* Blocks = "blocks";
     inline static const char* CsvCounters = "csvcounters";
     inline static const char* CsvExport = "csvexport";
-    inline static const char* InputSolutions = "inputsolutions";
     inline static const char* ScriptCounters = "scriptcounters";
 };
 
@@ -242,7 +241,6 @@ private:
     std::vector<int> BlockIndices; // Indexed by state bin hash
     std::map<int, ScattershotSolution<TOutputState>> Solutions;
     const std::vector<ScattershotSolution<TOutputState>>& InputSolutions;
-    uint16_t InputSolutionsIndex = 0;
 
     std::string CsvFileName;
     std::ofstream Csv;

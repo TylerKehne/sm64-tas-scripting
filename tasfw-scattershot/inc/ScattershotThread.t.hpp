@@ -155,46 +155,43 @@ void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::Initiali
 {
     LongLoad(config.StartFrame);
 
-    // Load piped-in diffs as root blocks
+    // Load piped-in diffs as root blocks, in rounds every thread takes part in: in round r
+    // thread i applies input r * threads + i when there is one and makes its queue call
+    // either way, so every thread makes the same number of calls and the tickets of 3.8 stay
+    // paired (ROADMAP 3.14: a shared index handed the inputs out in timing order and left
+    // the threads with different call counts, which paired later calls across threads and
+    // could hang). The block's piped-diff index is 16 bits, hence the cap.
     if (!scattershot.InputSolutions.empty())
     {
-        bool finishedProcessingDiffs = false;
-        uint16_t inputSolutionsIndex = 0;
         // (parent, seed, nScripts, pipedDiff1Index). Root segments are never decoded, so the
         // values are informational; the old call passed RngHash as nScripts (truncated to 8 bits).
         std::shared_ptr<Segment> rootSegment = std::make_shared<Segment>(nullptr, RngHash, uint8_t(0), uint16_t(0));
-        while (true)
+        uint64_t threads = uint64_t(omp_get_num_threads());
+        uint64_t inputs = std::min<uint64_t>(scattershot.InputSolutions.size(), 65534);
+        uint64_t rounds = (inputs + threads - 1) / threads;
+        for (uint64_t round = 0; round < rounds; round++)
         {
-            #pragma omp critical (inputsolutions)
-            {
-                inputSolutionsIndex = scattershot.InputSolutionsIndex++;
-                finishedProcessingDiffs = inputSolutionsIndex >= scattershot.InputSolutions.size() || inputSolutionsIndex >= 65534;
-            }
-
-            // Execute diff and save block
+            uint64_t index = round * threads + uint64_t(Id);
             ExecuteAdhoc([&]()
                 {
-                    if (finishedProcessingDiffs)
+                    if (index >= inputs)
                     {
                         QueueThreadById(config.Deterministic, [&]() {});
                         return true;
                     }
 
-                    this->Apply(scattershot.InputSolutions[inputSolutionsIndex].m64Diff);
+                    this->Apply(scattershot.InputSolutions[size_t(index)].m64Diff);
                     QueueThreadById(config.Deterministic, [&]()
                         {
                             #pragma omp critical (blocks)
                             {
                                 scattershot.UpsertBlock(GetStateBinSafe(), false, ScattershotSolution<TOutputState>(),
-                                    GetStateFitnessSafe(), rootSegment, 1, GetRng(), inputSolutionsIndex + 1);
+                                    GetStateFitnessSafe(), rootSegment, 1, GetRng(), uint16_t(index + 1));
                             }
                         });
 
                     return true;
                 });
-
-            if (finishedProcessingDiffs)
-                break;
         }
     }
 
@@ -586,7 +583,7 @@ AdhocBaseScriptStatus ScattershotThread<TState, TResource, TStateTracker, TOutpu
                             if (validated)
                                 novelScript = scattershot.UpsertBlock(newStateBin, isSolution, solution, fitness, BaseBlockTailSegment, n + 1, baseRngHash, 0);
                         }
-                    });
+                            });
 
                 // Update script result count
                 #pragma omp critical (scriptcounters)

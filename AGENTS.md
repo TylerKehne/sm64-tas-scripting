@@ -121,6 +121,8 @@ its place with numbers, and "it is cleaner" is not a number.
   (README.md, "Running the pipeline").
 - Tests: `powershell -ExecutionPolicy Bypass -File scripts\test.ps1` (add `-Config Release`,
   `-Compiler clang`, `-Filter '*Script*'`). Under a second without the DLL, a few seconds with it.
+  It builds only the `tasfw-tests` target: a count check with `bitfs-turn.exe` after a source
+  change needs `scriptsuild.ps1` first, or it runs the previous build (ROADMAP 3.14).
 - The DLL-level check is `build\Release\out\dllcheck.exe <dll> <m64> <frame>
   [--version jp|us] [--save-mode full|fixed|dirty] [--leak-scan [frames]] [--objects] [--dirty-scan [frames]]
   [--dirty-replay] [--levels] [--trace [frames]]` (docs/libsm64.md). It plays to a frame,

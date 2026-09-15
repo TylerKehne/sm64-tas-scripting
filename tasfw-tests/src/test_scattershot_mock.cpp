@@ -196,7 +196,8 @@ namespace
 	}
 
 	template <class TShot = MockShot>
-	Run RunSearch(int threads, int seed, bool deterministic, long long maxShots = 24, bool binDependsOnHistory = false, int64_t slotLimitBytes = 0)
+	Run RunSearch(int threads, int seed, bool deterministic, long long maxShots = 24, bool binDependsOnHistory = false, int64_t slotLimitBytes = 0,
+		const std::vector<Solution>* inputs = nullptr)
 	{
 		Configuration cfg = MakeConfig(threads, seed, deterministic, maxShots);
 		std::vector<MockResource> resources(static_cast<size_t>(threads));
@@ -208,7 +209,8 @@ namespace
 		}
 
 		Run run;
-		run.solutions = TShot::ConfigureScattershot(cfg)
+		auto builder = inputs ? TShot::ConfigureScattershot(cfg).PipeFrom(*inputs) : TShot::ConfigureScattershot(cfg);
+		run.solutions = builder
 			.ImportResourcePerThread([&](int threadId) { return &resources[size_t(threadId)]; })
 			.template Run<TShot>(run.counts, binDependsOnHistory); // `template`: dependent object (docs/compilers.md)
 		for (const MockResource& resource : resources)
@@ -306,6 +308,34 @@ TEST_CASE("A script's own CustomMoves enum goes through the same calls and its s
 	Run fourAgain = RunSearch<CustomShot>(4, 3, true, 96);
 	CheckSameSearch(four, fourAgain);
 	CHECK(four.frameAdvances == fourAgain.frameAdvances);
+}
+
+TEST_CASE("Piped-in solutions reproduce in deterministic mode, on three threads with two inputs")
+{
+	// The inputs are solutions of a single-thread search. They are handed out in rounds every
+	// thread takes part in, so every thread makes the same number of queue calls and the
+	// tickets pair up thread by thread (ROADMAP 3.14); with two inputs on three threads one
+	// thread has none in the only round, with three on two threads the second round is short.
+	Run source = RunSearch(1, 3, true, 96);
+	REQUIRE(source.solutions.size() >= 3);
+	std::vector<Solution> two(source.solutions.begin(), source.solutions.begin() + 2);
+	std::vector<Solution> three(source.solutions.begin(), source.solutions.begin() + 3);
+
+	Run first = RunSearch(3, 5, true, 24, false, 0, &two);
+	Run again = RunSearch(3, 5, true, 24, false, 0, &two);
+	REQUIRE(first.counts.scripts > 0);
+	CheckSameSearch(first, again);
+	CHECK(first.frameAdvances == again.frameAdvances);
+
+	// The inputs change the search: the same seed without them is a different search.
+	Run plain = RunSearch(3, 5, true);
+	CHECK((plain.counts.blocks != first.counts.blocks || plain.counts.scripts != first.counts.scripts
+		|| !SameSolutions(plain.solutions, first.solutions)));
+
+	Run more = RunSearch(2, 5, true, 24, false, 0, &three);
+	Run moreAgain = RunSearch(2, 5, true, 24, false, 0, &three);
+	CheckSameSearch(more, moreAgain);
+	CHECK(more.frameAdvances == moreAgain.frameAdvances);
 }
 
 TEST_CASE("A tight savestate limit evicts and replays, and changes nothing about the search")
