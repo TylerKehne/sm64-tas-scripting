@@ -3,7 +3,7 @@
 
 bool BitFsScApproach::validation()
 {
-	MarioState* marioState = (MarioState*)(resource->addr("gMarioStates"));
+	MarioState* marioState = (MarioState*)(ReadState("gMarioStates"));
 
 	// Calculate starting params
 	if (!_oscStatus.asserted || _oscStatus.oscillationMinMaxFrames.size() < 3)
@@ -51,7 +51,7 @@ bool BitFsScApproach::validation()
 		return false;
 
 	const BehaviorScript* pyramidBehavior =
-		(const BehaviorScript*)(resource->addr("bhvBitfsTiltingInvertedPyramid"));
+		(const BehaviorScript*)(ReadState("bhvBitfsTiltingInvertedPyramid"));
 	if (floorObject->behavior != pyramidBehavior)
 		return false;
 

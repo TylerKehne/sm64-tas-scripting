@@ -95,7 +95,10 @@ public:
 	uint32_t inputs = 0;
 
 	PyramidUpdateMem() = default;
-	PyramidUpdateMem(const LibSm64& resource, Object* pyramidLibSm64);
+	// What a script exports (Script::ExportSave) for a run on PyramidUpdate: reads the frame
+	// and gMarioObject, gMarioStates and gCamera through the base resource, and the pyramid's
+	// surfaces through the object the script read.
+	PyramidUpdateMem(const Resource<LibSm64Mem>& resource, Object* pyramidLibSm64);
 
 	static bool FloorIsSlope(Sm64Surface* floor, u32 action);
 	static short GetFloorClass(Sm64Surface* floor, u32 action);

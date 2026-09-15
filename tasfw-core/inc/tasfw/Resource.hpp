@@ -100,7 +100,7 @@ public:
 	TState state;
 	int64_t initialFrame;
 
-	ImportedSave(TState state, int64_t initialFrame) : state(state), initialFrame(initialFrame) {}
+	ImportedSave(TState state, int64_t initialFrame) : state(std::move(state)), initialFrame(initialFrame) {}
 };
 
 // Holds the saved states. A state's contents are written by Resource::save and die when its

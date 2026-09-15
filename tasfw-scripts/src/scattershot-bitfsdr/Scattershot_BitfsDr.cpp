@@ -3,7 +3,7 @@
 
 void Scattershot_BitfsDr::SelectMovementOptions()
 {
-    MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
+    MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
 
     AddRandomMovementOption(
         {
@@ -87,8 +87,8 @@ void Scattershot_BitfsDr::SelectMovementOptions()
 
 bool Scattershot_BitfsDr::ApplyMovement()
 {
-    MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-    Camera* camera = *(Camera**)(resource->addr("gCamera"));
+    MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
+    Camera* camera = *(Camera**)(ReadState("gCamera"));
     auto state = GetTrackedState<StateTracker_BitfsDr>(GetCurrentFrame());
 
     // Scripts
@@ -166,7 +166,7 @@ bool Scattershot_BitfsDr::ApplyMovement()
 
 BinaryStateBin<16> Scattershot_BitfsDr::GetStateBin()
 {
-    MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
+    MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
 
     auto trackedState = GetTrackedState<StateTracker_BitfsDr>(GetCurrentFrame());
 
@@ -276,8 +276,8 @@ BinaryStateBin<16> Scattershot_BitfsDr::GetStateBin()
 
 bool Scattershot_BitfsDr::ValidateState()
 {
-    MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-    Object* objectPool = (Object*)(resource->addr("gObjectPool"));
+    MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
+    Object* objectPool = (Object*)(ReadState("gObjectPool"));
     Object* pyramid = &objectPool[84];
 
     // Position sanity check
@@ -412,7 +412,7 @@ bool Scattershot_BitfsDr::ValidateState()
 
 float Scattershot_BitfsDr::GetStateFitness()
 {
-    MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
+    MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
 
     auto state = GetTrackedState<StateTracker_BitfsDr>(GetCurrentFrame());
     if (state.initialized)
@@ -453,7 +453,7 @@ std::string Scattershot_BitfsDr::GetCsvLabels()
 
 bool Scattershot_BitfsDr::ForceAddToCsv()
 {
-    MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
+    MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
 
     if (marioState->action == ACT_FORWARD_ROLLOUT || marioState->action == ACT_FREEFALL_LAND_STOP)
         return true;
@@ -463,8 +463,8 @@ bool Scattershot_BitfsDr::ForceAddToCsv()
 
 std::string Scattershot_BitfsDr::GetCsvRow()
 {
-    MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-    Object* objectPool = (Object*)(resource->addr("gObjectPool"));
+    MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
+    Object* objectPool = (Object*)(ReadState("gObjectPool"));
     Object* pyramid = &objectPool[84];
 
     auto state = GetTrackedState<StateTracker_BitfsDr>(GetCurrentFrame());
@@ -533,8 +533,8 @@ bool Scattershot_BitfsDr::Pbd()
 {
     return ModifyAdhoc([&]()
         {
-            MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-            Camera* camera = *(Camera**)(resource->addr("gCamera"));
+            MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
+            Camera* camera = *(Camera**)(ReadState("gCamera"));
 
             // Validate conditions for dive
             if (marioState->action != ACT_WALKING || marioState->forwardVel < 29.0f)
@@ -574,8 +574,8 @@ bool Scattershot_BitfsDr::RunForwardThenTurnAround()
 {
     return ModifyAdhoc([&]()
         {
-            MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-            Camera* camera = *(Camera**)(resource->addr("gCamera"));
+            MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
+            Camera* camera = *(Camera**)(ReadState("gCamera"));
 
             for (int i = 0; marioState->action == ACT_FINISH_TURNING_AROUND || (i < 15 && GetTempRng() % 10 < 9); i++)
             {
@@ -640,9 +640,9 @@ bool Scattershot_BitfsDr::TurnAround()
 {
     return ModifyAdhoc([&]()
         {
-            MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-            Camera* camera = *(Camera**)(resource->addr("gCamera"));
-            Object* objectPool = (Object*)(resource->addr("gObjectPool"));
+            MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
+            Camera* camera = *(Camera**)(ReadState("gCamera"));
+            Object* objectPool = (Object*)(ReadState("gObjectPool"));
             Object* pyramid = &objectPool[84];
 
             if (marioState->action != ACT_WALKING || marioState->forwardVel <= 16.0f)
@@ -655,7 +655,7 @@ bool Scattershot_BitfsDr::TurnAround()
                 // Turn 2048 towrds uphill
                 auto m64 = M64();
                 auto status = TopLevelScriptBuilder<BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>::Build(m64)
-                    .ImportSave<PyramidUpdateMem>(GetCurrentFrame(), *resource, pyramid)
+                    .ImportSave(ExportSave<PyramidUpdateMem>(pyramid))
                     .Run(state.roughTargetAngle, marioState->faceAngle[1]);
                 if (!status.asserted)
                     return true;
@@ -678,9 +678,9 @@ bool Scattershot_BitfsDr::TurnAround()
 
 bool Scattershot_BitfsDr::RunDownhill_1f(bool min)
 {
-    MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-    Camera* camera = *(Camera**)(resource->addr("gCamera"));
-    Object* objectPool = (Object*)(resource->addr("gObjectPool"));
+    MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
+    Camera* camera = *(Camera**)(ReadState("gCamera"));
+    Object* objectPool = (Object*)(ReadState("gObjectPool"));
     Object* pyramid = &objectPool[84];
 
     ModifyAdhoc([&]()
@@ -692,7 +692,7 @@ bool Scattershot_BitfsDr::RunDownhill_1f(bool min)
 
             auto m64 = M64();
             auto status = TopLevelScriptBuilder<BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>::Build(m64)
-                .ImportSave<PyramidUpdateMem>(GetCurrentFrame(), *resource, pyramid)
+                .ImportSave(ExportSave<PyramidUpdateMem>(pyramid))
                 .Run(state.roughTargetAngle, marioState->faceAngle[1]);
             if (!status.asserted)
                 return true;
@@ -722,9 +722,9 @@ bool Scattershot_BitfsDr::RunDownhill_1f(bool min)
 
 bool Scattershot_BitfsDr::TurnUphill_1f()
 {
-    MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-    Camera* camera = *(Camera**)(resource->addr("gCamera"));
-    Object* objectPool = (Object*)(resource->addr("gObjectPool"));
+    MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
+    Camera* camera = *(Camera**)(ReadState("gCamera"));
+    Object* objectPool = (Object*)(ReadState("gObjectPool"));
     Object* pyramid = &objectPool[84];
 
     ModifyAdhoc([&]()
@@ -735,7 +735,7 @@ bool Scattershot_BitfsDr::TurnUphill_1f()
             // Turn 2048 towrds uphill
             auto m64 = M64();
             auto status = TopLevelScriptBuilder<BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>::Build(m64)
-                .ImportSave<PyramidUpdateMem>(GetCurrentFrame(), *resource, pyramid)
+                .ImportSave(ExportSave<PyramidUpdateMem>(pyramid))
                 .Run(0);
             if (!status.asserted)
                 return true;
@@ -760,9 +760,9 @@ bool Scattershot_BitfsDr::Quickturn()
 {
     return ModifyAdhoc([&]()
         {
-            MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-            Camera* camera = *(Camera**)(resource->addr("gCamera"));
-            Object* objectPool = (Object*)(resource->addr("gObjectPool"));
+            MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
+            Camera* camera = *(Camera**)(ReadState("gCamera"));
+            Object* objectPool = (Object*)(ReadState("gObjectPool"));
             Object* pyramid = &objectPool[84];
 
             if (marioState->action != ACT_FREEFALL_LAND_STOP)
@@ -773,7 +773,7 @@ bool Scattershot_BitfsDr::Quickturn()
             // Turn 2048 towrds uphill
             auto m64 = M64();
             auto status = TopLevelScriptBuilder<BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>::Build(m64)
-                .ImportSave<PyramidUpdateMem>(GetCurrentFrame(), *resource, pyramid)
+                .ImportSave(ExportSave<PyramidUpdateMem>(pyramid))
                 .Run(marioState->faceAngle[1]);
             if (!status.asserted)
                 return true;

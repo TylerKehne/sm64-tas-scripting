@@ -49,12 +49,12 @@ namespace
 		bool execution() override
 		{
 			LongLoad(_startFrame);
-			Object* pyramid = &((Object*)(resource->addr("gObjectPool")))[84];
+			Object* pyramid = &((Object*)(ReadState("gObjectPool")))[84];
 			// BitFS uses bhvBitfsTiltingInvertedPyramid; bhvLllTiltingInvertedPyramid is the LLL one.
 			// Newer builds export it as bhvBitFSTiltingInvertedPyramid; LibSm64::addr maps between them.
-			const void* pyramidBehavior = resource->addr("bhvBitfsTiltingInvertedPyramid");
-			MarioState* mario = *(MarioState**)(resource->addr("gMarioState"));
-			Camera* camera = *(Camera**)(resource->addr("gCamera"));
+			const void* pyramidBehavior = ReadState("bhvBitfsTiltingInvertedPyramid");
+			MarioState* mario = *(MarioState**)(ReadState("gMarioState"));
+			Camera* camera = *(Camera**)(ReadState("gCamera"));
 			PyramidUpdate pu;
 			int framesOffInARow = 0;
 
@@ -65,7 +65,7 @@ namespace
 				float nz0 = pyramid->oTiltingPyramidNormalZ;
 
 				// Everything the pyramid loop will read this frame, as it stands before the frame.
-				PyramidUpdateMem mem(*resource, pyramid);
+				PyramidUpdateMem mem = ExportSave<PyramidUpdateMem>(pyramid).state;
 
 				// Walk toward the pyramid's centre for a while (the tilt changes every frame and
 				// the platform levels out under Mario, so he cannot slide off), then hold still.

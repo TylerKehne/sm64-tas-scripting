@@ -72,14 +72,14 @@ namespace
 			Bin bin;
 			uint8_t cursor = 0;
 			bin.AddValueBits(cursor, 16, uint64_t(GetCurrentFrame() - uint64_t(config.StartFrame)));
-			bin.AddValueBits(cursor, 8, resource->checksum() >> 56);
+			bin.AddValueBits(cursor, 8, *(uint64_t*)ReadState("checksum") >> 56);
 			if (_binDependsOnHistory && GetCurrentFrame() > uint64_t(config.StartFrame))
 				bin.AddValueBits(cursor, 8, uint64_t(++_calls & 0xFF));
 			return bin;
 		}
 
 		bool ValidateState() override { return true; }
-		float GetStateFitness() override { return float(resource->checksum() % 1000); }
+		float GetStateFitness() override { return float(*(uint64_t*)ReadState("checksum") % 1000); }
 		bool IsSolution() override { return GetCurrentFrame() >= uint64_t(config.StartFrame) + 6; }
 
 	private:

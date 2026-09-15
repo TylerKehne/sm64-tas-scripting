@@ -4,6 +4,24 @@ Every hot-path change records its delta table here, newest first; the policy, th
 how to run it are in [performance.md](performance.md). The first measurements (2026-09-07),
 which everything since is compared against, are at the bottom.
 
+## 2026-09-15: the access contract; `resource` private (ROADMAP 3.2, third stage)
+
+`ReadState("symbol")` on `Script` replaces the 203 `resource->addr()` reads in script code
+(an inline call onto the same `addr`), `ExportSave<UState>(params...)` replaces the 23
+`ImportSave<PyramidUpdateMem>(GetCurrentFrame(), *resource, pyramid)` sites through
+`Resource::State`, and `resource` is private. One measured effect, not by intent: the
+exported state used to be copied twice on its way into the run, once into `ImportedSave`
+and once into the configured builder, and both now move, so `Framework_DownhillAngle_PyramidUpdate`
+(1,000 imports) drops from 42,006 to 32,006 allocations per iteration and 14% of its time,
+and `Framework_PyramidOscillation` from 229,042 to 190,692 allocations (time within 1%).
+MSVC 19.51, Release, against the reference saved from 35ebcc8: 0 regressions, every Tier
+C and D count identical, the Script family within 3% either way but
+`LongLoad_RewindToRoot_Depth/16` +5.9% (a path the change does not touch; placement), the
+deterministic Tier D run -0.2%. The throughput Tier D run read 88 s for both the reference
+and the current binary against a 58 s baseline: the machine was busy that hour (the 16
+unpinned threads see it, the pinned deterministic run does not); the interleaved reference
+cancels it, +0.9%.
+
 ## 2026-09-15: the resource's surface (ROADMAP 3.2, second stage)
 
 No hot-path change by intent, measured because the change is under tasfw-core: the slot

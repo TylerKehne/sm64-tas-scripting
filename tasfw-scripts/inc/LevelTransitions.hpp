@@ -10,7 +10,7 @@
 // records each frame at which the level or the area changes, with the course. This is how
 // the frame a movie enters a level is found (the frame the tests, dllcheck and a stage's
 // startFrame are given, and the frame two movies for different game versions are spliced
-// at, docs/libsm64.md "US"). Reads through resource->addr() like every script, the three
+// at, docs/libsm64.md "US"). Reads through ReadState() like every script, the three
 // symbols resolved once before the loop. Not a hot path: `dllcheck --levels` is the only
 // caller. A transition's frame is the first frame whose state shows the new level: the
 // state at frame f is what inputs 0..f-1 produced, so a movie spliced at f keeps inputs

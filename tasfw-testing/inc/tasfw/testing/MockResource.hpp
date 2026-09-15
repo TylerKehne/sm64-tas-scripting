@@ -21,6 +21,11 @@ struct MockState
 	// The slot manager's dispose() hook, counted so a test can see it fire (tasfw/Resource.hpp).
 	static inline int disposed = 0;
 	void dispose() { disposed++; }
+
+	// What a script exports (Script::ExportSave) for a run on another MockResource: the
+	// state as the resource stands, the way PyramidUpdateMem converts from a LibSm64.
+	MockState() = default;
+	explicit MockState(const Resource<MockState>& resource) { resource.save(*this); }
 };
 
 class MockResource : public Resource<MockState>
@@ -50,9 +55,15 @@ public:
 		_pad.stickY = inputs.stick_y;
 	}
 
-	// Nothing in the framework core asks for symbols any more; keep the pad reachable for
-	// tests that want to poke it the way a script would.
-	void* addr(const char*) const override { return const_cast<Pad*>(&_pad); }
+	// The mock's memory, for Script::ReadState: "checksum" is the rolling checksum (what a
+	// test's script hashes or scores), any other name the pad (ScattershotThread reads the
+	// course and area through it; a test may poke it the way a script would).
+	void* addr(const char* symbol) const override
+	{
+		if (std::strcmp(symbol, "checksum") == 0)
+			return const_cast<uint64_t*>(&_state.checksum);
+		return const_cast<Pad*>(&_pad);
+	}
 
 	std::size_t getStateSize(const MockState&) const override { return sizeof(MockState); }
 	uint32_t getCurrentFrame() const override { return _state.frame; }

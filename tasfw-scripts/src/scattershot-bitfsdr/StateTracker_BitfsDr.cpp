@@ -22,8 +22,8 @@ bool StateTracker_BitfsDr::validation() { return int64_t(GetCurrentFrame()) >= i
 
 bool StateTracker_BitfsDr::execution()
 {
-    MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-    Object* objectPool = (Object*)(resource->addr("gObjectPool"));
+    MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
+    Object* objectPool = (Object*)(ReadState("gObjectPool"));
     Object* pyramid = &objectPool[84];
 
     CustomStatus.initialFrame = initialFrame;
@@ -110,7 +110,7 @@ void StateTracker_BitfsDr::CalculateOscillations(CustomScriptStatus lastFrameSta
 
         // Calulate max downhill speed (slow but new crossings are relatively rare)
         float maxDownhillSpeed = 0;
-        Camera* camera = *(Camera**)(resource->addr("gCamera"));
+        Camera* camera = *(Camera**)(ReadState("gCamera"));
         ExecuteAdhoc([&]()
             {
                 //No point in doing all this if it won't validate anyway
@@ -123,7 +123,7 @@ void StateTracker_BitfsDr::CalculateOscillations(CustomScriptStatus lastFrameSta
 
                     auto m64 = M64();
                     auto status = TopLevelScriptBuilder<BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>::Build(m64)
-                        .ImportSave<PyramidUpdateMem>(GetCurrentFrame(), *resource, pyramid)
+                        .ImportSave(ExportSave<PyramidUpdateMem>(pyramid))
                         .Run(marioState->faceAngle[1]);
                     if (!status.asserted)
                         return true;

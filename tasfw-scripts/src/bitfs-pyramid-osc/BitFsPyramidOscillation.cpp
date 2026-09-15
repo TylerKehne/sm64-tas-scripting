@@ -13,7 +13,7 @@
 bool BitFsPyramidOscillation::validation()
 {
 	// Check if Mario is on the pyramid platform
-	MarioState* marioState = (MarioState*) (resource->addr("gMarioStates"));
+	MarioState* marioState = (MarioState*) (ReadState("gMarioStates"));
 
 	Surface* floor = marioState->floor;
 	if (!floor)
@@ -23,7 +23,7 @@ bool BitFsPyramidOscillation::validation()
 	if (!floorObject)
 		return false;
 
-	const BehaviorScript* pyramidBehavior = (const BehaviorScript*)(resource->addr("bhvBitfsTiltingInvertedPyramid"));
+	const BehaviorScript* pyramidBehavior = (const BehaviorScript*)(ReadState("bhvBitfsTiltingInvertedPyramid"));
 	if (floorObject->behavior != pyramidBehavior)
 		return false;
 
@@ -36,14 +36,14 @@ bool BitFsPyramidOscillation::validation()
 
 bool BitFsPyramidOscillation::execution()
 {
-	MarioState* marioState = *(MarioState**) (resource->addr("gMarioState"));
-	Camera* camera		   = *(Camera**) (resource->addr("gCamera"));
+	MarioState* marioState = *(MarioState**) (ReadState("gMarioState"));
+	Camera* camera		   = *(Camera**) (ReadState("gCamera"));
 	Object* pyramid		   = marioState->floor->object;
 
 	int16_t initAngle	 = -32768;
 	auto m64 = M64();
 	auto initAngleStatus = TopLevelScriptBuilder<BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>::Build(m64)
-		.ImportSave<PyramidUpdateMem>(GetCurrentFrame(), *resource, pyramid)
+		.ImportSave(ExportSave<PyramidUpdateMem>(pyramid))
 		.Run(initAngle);
 
 	if (!initAngleStatus.validated)

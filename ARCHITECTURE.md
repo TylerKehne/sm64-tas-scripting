@@ -139,9 +139,12 @@ Running children:
 
 Both forms manage savestates, reverts, the input diff and tracked-state coherence
 automatically; the author never touches a slot, and never touches the resource: every
-interaction goes through `Script`'s methods, with `resource->addr("symbol")` for memory
-reads the one exception until a better access contract exists (AGENTS.md, hard rule 9;
-ROADMAP 3.2). The manual `Save`, `Load`, `LongLoad`, `OptionalSave` are escape hatches for
+interaction goes through `Script`'s methods. `ReadState("symbol")` is the one way a script
+sees game memory, an untyped address until the Phase 5 contract types and guards it, and
+`ExportSave<UState>(params...)` hands the script's state, at the current frame or at a
+frame it loads and returns from, to a run on another resource (`ImportSave`), through
+`Resource::State` (AGENTS.md, hard rule 9). The manual `Save`, `Load`, `LongLoad`,
+`OptionalSave` are escape hatches for
 the cases the automatic management does not cover, not the normal way to work. The same
 boundary shapes what a resource may ask of the framework: nothing. A resource decides its
 own representation and policy (`LibSm64`'s save modes and their baselines) from what it
@@ -233,8 +236,10 @@ one of:
 - `.Run(args...)` on a default-constructed resource,
 - `.ConfigureResource(cfg).Run(...)`,
 - `.ImportResource(&res).Run(...)` (resource shared across runs; start save reset on entry),
-- `.ImportSave<TState>(frame, stateArgs...).Run(...)` (resource initialised from a state
-  object, used to seed `PyramidUpdate` from `LibSm64`).
+- `.ImportSave<TState>(frame, stateArgs...).Run(...)`, or from inside a script
+  `.ImportSave(ExportSave<TState>(args...)).Run(...)` (resource initialised from a state
+  object; how `PyramidUpdate` is seeded from `LibSm64`, `PyramidUpdateMem` converting from
+  the base resource it is exported from).
 
 A script may depend on the game's state in the past or the future of its cursor, not only
 the present. The **state tracker** exists to make that state available automatically and
@@ -401,7 +406,7 @@ Everything below assumes the pinned DLL in `res/` (see `docs/libsm64.md`):
 - The `fixed` save mode's slices (`LibSm64FixedSlices` in `LibSm64.hpp`); `dirty` and
   `full` depend on nothing in the build.
 - The `VerifyLayout` script (`tasfw-scripts/inc/VerifyLayout.hpp`) verifies all of the above
-  relationships at run time, reading through `resource->addr()` only: the pipeline runs it
+  relationships at run time, reading through `ReadState()` only: the pipeline runs it
   once on one resource before its first stage, `--dry-run` and `dllcheck` print its report,
   and `dllcheck --save-mode fixed` adds the slice coverage (docs/libsm64.md). The framework
   itself has no layout concept.

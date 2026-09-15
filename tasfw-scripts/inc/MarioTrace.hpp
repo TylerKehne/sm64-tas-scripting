@@ -14,7 +14,7 @@
 // rest (health, coins, lives, cap flags, the camera's mode and yaw, the R-button camera
 // selection, the RNG seed) is what a movie carries into a level from the way it got there,
 // which is what to look at when two traces part at the first frame the player controls.
-// Reads through resource->addr(), each symbol resolved once. Not a hot path.
+// Reads through ReadState(), each symbol resolved once. Not a hot path.
 class MarioTrace : public TopLevelScript<LibSm64>
 {
 public:

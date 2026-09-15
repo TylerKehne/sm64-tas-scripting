@@ -126,8 +126,8 @@ namespace
 		bool validation() override { return true; }
 		bool execution() override
 		{
-			Camera* camera = *(Camera**)(resource->addr("gCamera"));
-			MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
+			Camera* camera = *(Camera**)(ReadState("gCamera"));
+			MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
 			auto stick = Inputs::GetClosestInputByYawExact(-16384, 32, camera->yaw);
 			AdvanceFrameWrite(Inputs(0, stick.first, stick.second));
 			for (int waited = 0; marioState->action != ACT_IDLE; waited++)
@@ -169,7 +169,7 @@ namespace
 		bool validation() override { return true; }
 		bool execution() override
 		{
-			MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
+			MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
 			Object* pyramid = marioState->floor ? marioState->floor->object : nullptr;
 			if (!pyramid)
 			{
@@ -182,7 +182,7 @@ namespace
 			{
 				int16_t targetAngle = int16_t(i * 4099); // walks the whole circle
 				auto status = TopLevelScriptBuilder<BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>::Build(empty)
-					.ImportSave<PyramidUpdateMem>(GetCurrentFrame(), *resource, pyramid)
+					.ImportSave(ExportSave<PyramidUpdateMem>(pyramid))
 					.Run(targetAngle);
 				_result.ok = _result.ok && status.validated && status.executed;
 				_result.frameAdvances += status.nFrameAdvances;

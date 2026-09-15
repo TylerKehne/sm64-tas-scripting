@@ -20,9 +20,9 @@ const char* LevelTransitions::LevelName(int16_t level)
 
 bool LevelTransitions::execution()
 {
-	const int16_t* level = static_cast<const int16_t*>(resource->addr("gCurrLevelNum"));
-	const int16_t* area = static_cast<const int16_t*>(resource->addr("gCurrAreaIndex"));
-	const int16_t* course = static_cast<const int16_t*>(resource->addr("gCurrCourseNum"));
+	const int16_t* level = static_cast<const int16_t*>(ReadState("gCurrLevelNum"));
+	const int16_t* area = static_cast<const int16_t*>(ReadState("gCurrAreaIndex"));
+	const int16_t* course = static_cast<const int16_t*>(ReadState("gCurrCourseNum"));
 
 	int16_t lastLevel = -1;
 	int16_t lastArea = -1;

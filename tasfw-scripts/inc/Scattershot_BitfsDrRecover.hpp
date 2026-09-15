@@ -25,15 +25,15 @@ public:
 
     bool validation()
     {
-        PyramidUpdateMem::Sm64MarioState* marioState = (PyramidUpdateMem::Sm64MarioState*)(resource->addr("gMarioStates"));
+        PyramidUpdateMem::Sm64MarioState* marioState = (PyramidUpdateMem::Sm64MarioState*)(ReadState("gMarioStates"));
 
         return marioState->floorId == -1;
     }
 
     bool execution()
     {
-        PyramidUpdateMem::Sm64MarioState* marioState = (PyramidUpdateMem::Sm64MarioState*)(resource->addr("gMarioStates"));
-        PyramidUpdateMem::Sm64Object* pyramid = (PyramidUpdateMem::Sm64Object*)(resource->addr("Pyramid"));
+        PyramidUpdateMem::Sm64MarioState* marioState = (PyramidUpdateMem::Sm64MarioState*)(ReadState("gMarioStates"));
+        PyramidUpdateMem::Sm64Object* pyramid = (PyramidUpdateMem::Sm64Object*)(ReadState("Pyramid"));
 
         AdvanceFrameRead();
 
@@ -180,8 +180,8 @@ public:
 
     bool execution() 
     {
-        MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-        Object* objectPool = (Object*)(resource->addr("gObjectPool"));
+        MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
+        Object* objectPool = (Object*)(ReadState("gObjectPool"));
         Object* pyramid = &objectPool[84];
 
         SetStateVariables(marioState, pyramid);
@@ -386,7 +386,7 @@ public:
 
     bool ApplyMovement() override
     {
-        MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
+        MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
 
         // Scripts
         if (!CheckMovementOptions(CustomMoves::NO_SCRIPT))
@@ -444,7 +444,7 @@ public:
 
     BinaryStateBin<16> GetStateBin() override
     {
-        MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
+        MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
 
         auto trackedState = GetTrackedState<StateTracker_BitfsDrRecover>(GetCurrentFrame());
 
@@ -519,8 +519,8 @@ public:
 
     bool ValidateState() override
     {
-        MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-        Object* objectPool = (Object*)(resource->addr("gObjectPool"));
+        MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
+        Object* objectPool = (Object*)(ReadState("gObjectPool"));
         Object* pyramid = &objectPool[84];
 
         // Position sanity check
@@ -565,7 +565,7 @@ public:
         {
             auto m64 = M64();
             auto status = TopLevelScriptBuilder<DetectEdge>::Build(m64)
-                .ImportSave<PyramidUpdateMem>(GetCurrentFrame(), *resource, pyramid)
+                .ImportSave(ExportSave<PyramidUpdateMem>(pyramid))
                 .Run();
 
             if (!status.asserted || status.normalDistance >= 2.0f)
@@ -617,8 +617,8 @@ public:
 
     std::string GetCsvRow() override
     {
-        MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-        Object* objectPool = (Object*)(resource->addr("gObjectPool"));
+        MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
+        Object* objectPool = (Object*)(ReadState("gObjectPool"));
         Object* pyramid = &objectPool[84];
 
         auto state = GetTrackedState<StateTracker_BitfsDrRecover>(GetCurrentFrame());
@@ -652,7 +652,7 @@ public:
 
     bool IsSolution() override
     {
-        MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
+        MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
         const auto& state = GetTrackedState<StateTracker_BitfsDrRecover>(GetCurrentFrame());
         const auto& prevState = GetTrackedState<StateTracker_BitfsDrRecover>(GetCurrentFrame());
 
@@ -715,8 +715,8 @@ private:
     {
         return ModifyAdhoc([&]()
             {
-                MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-                Camera* camera = *(Camera**)(resource->addr("gCamera"));
+                MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
+                Camera* camera = *(Camera**)(ReadState("gCamera"));
 
                 // Validate conditions for dive
                 if (marioState->action != ACT_WALKING || marioState->forwardVel < 29.0f)
@@ -735,9 +735,9 @@ private:
 
     bool RunDownhill_1f(bool min = true)
     {
-        MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-        Camera* camera = *(Camera**)(resource->addr("gCamera"));
-        Object* objectPool = (Object*)(resource->addr("gObjectPool"));
+        MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
+        Camera* camera = *(Camera**)(ReadState("gCamera"));
+        Object* objectPool = (Object*)(ReadState("gObjectPool"));
         Object* pyramid = &objectPool[84];
 
         ModifyAdhoc([&]()
@@ -749,7 +749,7 @@ private:
 
                 auto m64 = M64();
                 auto status = TopLevelScriptBuilder<BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>::Build(m64)
-                    .ImportSave<PyramidUpdateMem>(GetCurrentFrame(), *resource, pyramid)
+                    .ImportSave(ExportSave<PyramidUpdateMem>(pyramid))
                     .Run(state.roughTargetAngle, marioState->faceAngle[1]);
                 if (!status.asserted)
                     return true;
@@ -779,9 +779,9 @@ private:
 
     bool TurnUphill_1f()
     {
-        MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-        Camera* camera = *(Camera**)(resource->addr("gCamera"));
-        Object* objectPool = (Object*)(resource->addr("gObjectPool"));
+        MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
+        Camera* camera = *(Camera**)(ReadState("gCamera"));
+        Object* objectPool = (Object*)(ReadState("gObjectPool"));
         Object* pyramid = &objectPool[84];
 
         ModifyAdhoc([&]()
@@ -792,7 +792,7 @@ private:
                 // Turn 2048 towrds uphill
                 auto m64 = M64();
                 auto status = TopLevelScriptBuilder<BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>::Build(m64)
-                    .ImportSave<PyramidUpdateMem>(GetCurrentFrame(), *resource, pyramid)
+                    .ImportSave(ExportSave<PyramidUpdateMem>(pyramid))
                     .Run(0);
                 if (!status.asserted)
                     return true;
@@ -826,9 +826,9 @@ private:
     {
         return ModifyAdhoc([&]()
             {
-                MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-                Camera* camera = *(Camera**)(resource->addr("gCamera"));
-                Object* objectPool = (Object*)(resource->addr("gObjectPool"));
+                MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
+                Camera* camera = *(Camera**)(ReadState("gCamera"));
+                Object* objectPool = (Object*)(ReadState("gObjectPool"));
                 Object* pyramid = &objectPool[84];
 
                 if (marioState->action != ACT_FREEFALL_LAND_STOP)
@@ -839,7 +839,7 @@ private:
                 // Turn 2048 towrds uphill
                 auto m64 = M64();
                 auto status = TopLevelScriptBuilder<BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>::Build(m64)
-                    .ImportSave<PyramidUpdateMem>(GetCurrentFrame(), *resource, pyramid)
+                    .ImportSave(ExportSave<PyramidUpdateMem>(pyramid))
                     .Run(marioState->faceAngle[1]);
                 if (!status.asserted)
                     return true;
@@ -859,9 +859,9 @@ private:
     {
         return ModifyAdhoc([&]()
             {
-                MarioState* marioState = *(MarioState**)(resource->addr("gMarioState"));
-                Camera* camera = *(Camera**)(resource->addr("gCamera"));
-                Object* objectPool = (Object*)(resource->addr("gObjectPool"));
+                MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
+                Camera* camera = *(Camera**)(ReadState("gCamera"));
+                Object* objectPool = (Object*)(ReadState("gObjectPool"));
                 Object* pyramid = &objectPool[84];
 
                 if (marioState->action != ACT_FREEFALL_LAND_STOP)
@@ -872,7 +872,7 @@ private:
                 // Turn 2048 towrds uphill
                 auto m64 = M64();
                 auto status = TopLevelScriptBuilder<BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>::Build(m64)
-                    .ImportSave<PyramidUpdateMem>(GetCurrentFrame(), *resource, pyramid)
+                    .ImportSave(ExportSave<PyramidUpdateMem>(pyramid))
                     .Run(marioState->faceAngle[1]);
                 if (!status.asserted)
                     return false;
