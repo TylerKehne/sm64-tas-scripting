@@ -1,7 +1,10 @@
 # Roadmap
 
-Status as of 2026-09-08. Items are ordered; each phase makes the next one safe to do with
-an AI agent. Check boxes as work lands and keep "Done when" honest.
+Status as of 2026-09-15: Phases 1 and 2 are done; of Phase 3 only 3.2 (encapsulation) and
+3.17 (guidelines for TASing with the framework, after 3.2) remain, the rest landed in #94
+and #95; Phase 4 has 4.1 and 4.5 done; Phase 5 has its first item, per-scenario movement
+options, done. Items are ordered; each phase makes the next one safe to do with an AI
+agent. Check boxes as work lands and keep "Done when" honest.
 
 **Cross-cutting rules:**
 
@@ -9,8 +12,9 @@ an AI agent. Check boxes as work lands and keep "Done when" honest.
   [docs/performance.md](docs/performance.md)). Every item below must leave the gated
   performance counts unchanged or better, and any item that touches a hot path reports its
   delta table. Nothing in this roadmap is "done" if it made the search slower.
-- Every item must build clean with MSVC and clang-cl (see [docs/compilers.md](docs/compilers.md)).
-  Compiler-specific workarounds are documented there, never hidden in `#if` forks.
+- Every item must build clean with MSVC, clang-cl, GCC and Clang, the six toolchains CI runs
+  (see [docs/compilers.md](docs/compilers.md)). Compiler-specific workarounds are documented
+  there, never hidden in `#if` forks.
 - The documentation describes the current state of the repository. Every change is
   reconciled with AGENTS.md, ARCHITECTURE.md, this file, README.md and docs/ before the
   turn ends: extensions of what is documented are updated in place, deviations from a
@@ -336,7 +340,8 @@ Goal: the DLL becomes a reproducible, swappable artifact instead of a mystery bi
 
 ## Phase 3: framework hardening
 
-Goal: the core's implicit invariants become explicit and enforced.
+Goal: the core's implicit invariants become explicit and enforced. Status 2026-09-15: every
+item is done except 3.2, which comes next, and 3.17, which follows it; then Phase 4.
 
 - [x] **3.1 Frame cursor semantics.** Decided by the maintainer 2026-09-08: `Modify` leaves the
       cursor at the end of the child's diff on purpose, because the common case is to keep
@@ -634,7 +639,7 @@ Goal: the core's implicit invariants become explicit and enforced.
       builds only the tests target, so `bitfs-turn.exe` stays at whatever `build.ps1` last
       made (AGENTS.md, "Build and run").
 
-- [x] **3.15 The ticket wait spins on libomp.** Done 2026-09-14 (branch `queue-fixes`).
+- [x] **3.15 The ticket wait spins on libomp.** Done 2026-09-14 (#94).
       Seen in the clang-cl perf suite: the deterministic Tier D run's wall time fell 40%
       against the pre-branch binaries while its process cycles rose 57%, where the MSVC
       run's cycles fell with its wall time; `WaitForTurn` (3.8) spun until its ticket came
@@ -648,7 +653,7 @@ Goal: the core's implicit invariants become explicit and enforced.
       budget bought 1.5 s of wall for 22% more CPU and was not taken.
 
 - [x] **3.16 `BM_M64_Save_10k` is 20% slower on clang-cl since the FrameMap commit.** Done
-      2026-09-14 (branch `queue-fixes`). Seen in the clang-cl perf suite (1.4 to 1.7 ms;
+      2026-09-14 (#94). Seen in the clang-cl perf suite (1.4 to 1.7 ms;
       MSVC's build of the row went the other way, 2.1 to 1.8 ms) and bisected to 0fb3aaf,
       the sorted-vector containers of 3.7, with its parent still fast. An xperf profile of
       the benchmark on both builds (clang-cl, Release codegen with symbols) named it: a
