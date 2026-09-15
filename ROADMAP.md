@@ -661,6 +661,18 @@ Goal: the core's implicit invariants become explicit and enforced.
       builds only the tests: the perf binary was the old one every time (AGENTS.md, "Build
       and run").
 
+- [ ] **3.17 Agent instructions for TASing with the framework.** Added 2026-09-14 (the
+      maintainer): guidelines, for an agent or a person, on how to TAS with the framework
+      once the pieces above are settled, so that Phase 4 starts from an agreed way of
+      working rather than from the code alone: which tool to reach for (an ad-hoc attempt,
+      a script class, a state tracker, a scattershot stage), how a goal turns into a script
+      and a run, how a result is checked (counts, reproduction, exports) and which of the
+      hard rules bite while TASing. Not complicated, the maintainer's words; to be written
+      after 3.2, whose encapsulation the guidelines should describe as settled, and before
+      Phase 4. Shape (a docs page or a section of AGENTS.md) to be decided then.
+      *Done when:* the guidelines exist and an agent given the repository and them can
+      create, run and check a new script without further instruction.
+
 ## Phase 4: the squish-cancel brute forcer
 
 Goal: finish the thing the framework was built for.
