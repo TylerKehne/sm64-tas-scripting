@@ -285,6 +285,15 @@ clang-cl's spelling of GNU `-Wall -Wextra` is `/W4` (`/W1` to `/W3` are `-Wall`)
 `-Wextra` half has no CL homonym and would work on its own; `cmake/Warnings.cmake` uses
 `/W4`. Found 2026-09-08 (ROADMAP 1.7).
 
+### clang-cl: `FrameMap::operator[]` not inlined into `M64::save`
+
+With the frame-keyed containers as sorted vectors (ROADMAP 3.7), `M64::save` looked every
+frame up four times through `FrameMap<uint64_t, Inputs>::operator[]`. clang-cl 19.1 (thin
+LTO) emitted it as a call, a third of the benchmark's samples; MSVC inlined it, as both had
+inlined the `std::map` lookups before. The loop walks the sorted frames once now (ROADMAP
+3.16), so the difference no longer matters there, but it is the shape to expect from
+clang-cl for a small member template called in a loop from another translation unit.
+
 ### GCC 14.2: the LTO link of `bitfs-turn` loses a vtable
 
 Ubuntu 24.04's `g++-14` (14.2.0-4ubuntu2~24.04.1, binutils 2.42) compiles every target but

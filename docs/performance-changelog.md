@@ -4,6 +4,39 @@ Every hot-path change records its delta table here, newest first; the policy, th
 how to run it are in [performance.md](performance.md). The first measurements (2026-09-07),
 which everything since is compared against, are at the bottom.
 
+## 2026-09-14: `M64::save` walks its frames once (ROADMAP 3.16)
+
+An xperf profile of `BM_M64_Save_10k` on clang-cl builds with symbols (Release codegen),
+current tree against the FrameMap commit's parent: 34.7% of the current build's samples in
+`FrameMap<unsigned long long, Inputs>::operator[]`, a call per lookup that clang-cl does not
+inline into the save loop (`contains` and three `frames[i]` per frame), against 0% in the
+parent, whose `std::map` lookups were inlined into `M64::save` (40% of its samples there);
+MSVC inlines both, which is why its row had gained. The loop now walks the sorted frames
+once, a zero input for every frame not in it, behind the unchanged `save` (the round-trip,
+gap-filling and libsm64 identity tests check the file):
+
+| Row | Reference (5238d9b) | This change |
+|---|---|---|
+| BM_M64_Save_10k, clang-cl | 1.4 ms | 0.8 ms |
+| BM_M64_Save_10k, MSVC | 2.1 ms | 0.8 ms |
+| BM_M64_Load_10k, both | unchanged from the branch (0.6 ms) | |
+
+The same walk, one write per frame and one write per 4 KB chunk had each read as "no
+change" earlier the same day: `perf.ps1 -NoBuild` after `test.ps1`, which builds only the
+tests target, measured the previous perf binary every time.
+
+## 2026-09-14: the piped-in inputs handed out in rounds (ROADMAP 3.14)
+
+A determinism fix in `ScattershotThread::Initialize`, behind the unchanged interface: the
+input solutions of a piped-in run go to the threads in rounds keyed on the thread id, one
+queue call per thread per round, instead of through a shared index in timing order that
+left the threads with different call counts (the second pass of the dr stage differed run
+to run and could hang). No hot-path change: the hand-out is a few calls per run. Counts of
+stages with inputs change once (the dr scratch stage's first pass, 9 solutions, 212,436
+blocks and 2,910,119 scripts, is now 148, 211,753 and 2,983,279, and its second pass
+1,004 blocks and 15,047 scripts on every run and build); the no-input workloads keep theirs
+(CI-sized Tier D: every count identical).
+
 ## 2026-09-14: a search's own movement options (C++23, ROADMAP Phase 5)
 
 Designed under hard rule 10 and prototyped on a branch for the maintainer's decision. The
@@ -68,22 +101,11 @@ not reproduce: the family rerun alone put the row within a point of the referenc
 
 The clang-cl suite (same shape, the `tyler-desktop-clang` reference) passed the same
 gates with one time flag that reproduced on two family reruns: `BM_M64_Save_10k`, 1.4 to
-1.7 ms (MSVC's build of the same row is 16% faster than its reference). It is not this
-change's: the C++20 hotspots head (a9c14a9) built with clang-cl and run as the reference
-against this tree shows the same 1.7 ms (-0.8%), and it is not the per-frame lookups in
-`M64::save` either (a single walk over the sorted frames changed neither compiler's number
-and is not kept). Bisected over the branch's clang-cl builds, run as the reference against
-this tree: the FrameMap commit 0fb3aaf already has the slow row (1.8 ms), its parent 54e52e7 the fast one (1.4 ms, this tree +20.4% against it),
-so the container's arrival is what moved it, though not through its lookups. What remains
-per frame is the stream, three `ofstream::write` calls for four bytes, and it is not that
-either: one call per frame, and then one call per 4 KB chunk (ten per save instead of
-thirty thousand), each built, tested on both compilers and measured, left the row at
-1.7 ms on clang-cl and 1.8 ms on MSVC, so neither is kept. The frame loop is not this
-row's cost; the save's time is the file operations around it (create, header, close),
-and why the FrameMap commit's clang-cl build pays 0.3 ms more there is open (ROADMAP
-3.16): an export path, one save per exported solution, presented to the maintainer for
-the explicit acceptance the policy asks for (docs/performance.md) rather than hidden in a
-baseline re-save. Its
+1.7 ms (MSVC's build of the same row is 16% faster than its reference). Bisected over the
+branch's clang-cl builds run as the reference against this tree: the FrameMap commit
+0fb3aaf has the slow row (1.8 ms), its parent 54e52e7 the fast one (1.4 ms). Resolved as
+ROADMAP 3.16, below. (The entry first said that rewrites of the frame loop changed nothing;
+those were measured on a stale perf binary, see 3.16.) Its
 efficiency flag (frame advance at 2 threads) did not reproduce on the family rerun, and
 the 16-thread `SaveErase` row, a save path nothing here touches, read +0.9% in the suite
 and +14.9% on that rerun, the 16-thread noise seen all day. The deterministic row's counts

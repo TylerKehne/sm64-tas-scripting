@@ -612,27 +612,27 @@ Goal: the core's implicit invariants become explicit and enforced.
       total diff, undefined when the failing base block is the root with nothing applied;
       guarded. Identified 2026-09-14 when 3.5 went in with the pipeline-config test, the
       slot tests and the Tier D slot line as its only checks.
-- [ ] **3.14 Deterministic mode with piped-in input solutions.** Found 2026-09-14 (3.8): the
-      `dr` stage's second pass, which starts from the solutions its first pass piped in,
-      differs between two runs of one binary in deterministic mode (8,334 and 7,788
-      scripts on the same seed), while a first pass with no inputs reproduces to the last
-      count. `ScattershotThread::Initialize` hands the input solutions out one per thread
-      per iteration, each thread making one queue call per iteration, so an input count
-      that is not a multiple of the thread count leaves the threads with different call
-      counts and their later calls pairing across that boundary in timing order; the
-      ticket queue of 3.8 inherits it unchanged, and with it the mismatch can also hang:
-      the same scratch stage, run while builds shared the machine (2026-09-14, evening),
-      never finished, all eight threads spinning in `WaitForTurn` (30 CPU-seconds per 5 s
-      of wall time) for a turn passed to a ticket no thread takes, and was killed after
-      ten minutes; its log went with it (stdout is buffered when redirected), so the pass
-      is inferred: the first pass has completed every time today and uses no inputs, and
-      the same stage on the idle machine completed both passes in 17 s right after. No
-      committed stage runs deterministic with inputs (`tilt-x` has none), and hard rule 3
-      wants it fixed before one does.
-      *Done when:* the loop makes the same number of queue calls on every thread (the
-      inputs handed out in rounds every thread takes part in), the `dr` stage's second
-      pass reproduces in deterministic mode, and the mock test pins a piped-in run on
-      three threads with two inputs.
+- [x] **3.14 Deterministic mode with piped-in input solutions.** Done 2026-09-14 (branch
+      `queue-fixes`). Found the same day (3.8): the `dr` stage's second pass, which starts
+      from the solutions its first pass piped in, differed between two runs of one binary
+      in deterministic mode (8,334 and 7,788 scripts on the same seed) and, under CPU
+      contention, hung with every thread spinning in `WaitForTurn` for a turn passed to a
+      ticket no thread takes, while a first pass with no inputs reproduced to the last
+      count. `Initialize` handed the input solutions out through a shared index, so which
+      thread applied which input was timing order, and an input count that is not a
+      multiple of the thread count left the threads with different queue-call counts and
+      their later calls pairing across that boundary. Now the inputs go out in rounds
+      keyed on the thread id: in round r thread i applies input r * threads + i when there
+      is one and makes its queue call either way, so every thread makes the same number of
+      calls (the shared index and its critical section are gone). Verified: the dr stage's
+      second pass reproduces run to run and between a Release and a RelWithDebInfo build
+      (1,004 blocks, 15,047 scripts), the mock test pins piped-in runs on three threads
+      with two inputs and on two threads with three, and the no-input workloads keep their
+      counts (the CI-sized Tier D). The counts of a stage with inputs change once, as they
+      must: the dr scratch stage's first pass went from 9 to 148 solutions. A day of
+      chasing a "build-dependent" divergence on the way was a stale binary: `test.ps1`
+      builds only the tests target, so `bitfs-turn.exe` stays at whatever `build.ps1` last
+      made (AGENTS.md, "Build and run").
 
 - [ ] **3.15 The ticket wait spins on libomp.** Seen 2026-09-14 in the clang-cl perf suite:
       the deterministic Tier D run's wall time fell 40% against the pre-branch binaries
@@ -647,18 +647,19 @@ Goal: the core's implicit invariants become explicit and enforced.
       run's cycles back near its wall time times the thread count without a wall-time
       regression on either compiler, and the counts unchanged.
 
-- [ ] **3.16 `BM_M64_Save_10k` is 20% slower on clang-cl since the FrameMap commit.** Seen
-      2026-09-14 in the clang-cl perf suite (1.4 to 1.7 ms; MSVC's build of the row went
-      the other way, 2.1 to 1.8 ms) and bisected to 0fb3aaf, the sorted-vector containers
-      of 3.7, with its parent still fast. It is not the frame loop: the per-frame lookups
-      replaced by one walk, one stream call per frame, and one per 4 KB chunk all left the
-      row where it was on both compilers, so the time is in the file operations around the
-      loop (create, header writes and seeks, close), where nothing in that commit is. The
-      row is an export path (one save per exported solution) and is accepted as measured
-      for the merge (docs/performance-changelog.md). *Done when:* an xperf profile of
-      `tasfw-perf.exe` on clang-cl (docs/performance.md, the RelWithDebInfo recipe) names
-      where the 0.3 ms goes, and either the cause is fixed or the row is re-baselined with
-      the reason written here.
+- [x] **3.16 `BM_M64_Save_10k` is 20% slower on clang-cl since the FrameMap commit.** Done
+      2026-09-14 (branch `queue-fixes`). Seen in the clang-cl perf suite (1.4 to 1.7 ms;
+      MSVC's build of the row went the other way, 2.1 to 1.8 ms) and bisected to 0fb3aaf,
+      the sorted-vector containers of 3.7, with its parent still fast. An xperf profile of
+      the benchmark on both builds (clang-cl, Release codegen with symbols) named it: a
+      third of the samples in `FrameMap<uint64_t, Inputs>::operator[]`, a call per lookup
+      that clang-cl does not inline into `M64::save`'s loop (four lookups per frame), where
+      the map's lookups had been inlined and MSVC inlines both. `M64::save` walks the sorted
+      frames once instead: 0.8 ms on both compilers (clang-cl -41% and MSVC -61% against
+      their pre-branch references). Three rewrites of the loop had "changed nothing" the
+      same day because they were measured with `perf.ps1 -NoBuild` after `test.ps1`, which
+      builds only the tests: the perf binary was the old one every time (AGENTS.md, "Build
+      and run").
 
 ## Phase 4: the squish-cancel brute forcer
 
