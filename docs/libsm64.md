@@ -521,9 +521,9 @@ count; 4 on Linux), then run everything about the game that is exact:
   on `perf/tierd-ci-linux.json` on Linux (the `VerifyLayout` script to the first stage's
   frame, the same check a real run makes before its first stage);
 - Tier C with `perf_compare.py --counts-only` against the committed baseline, three
-  repetitions like the suite's, since the first repetition's allocations include the symbol
-  table `LibSm64::addr` fills on first use and the baseline holds the warm counts (one
-  repetition read three allocations over the baseline on 2026-09-15). A failed gate's
+  repetitions like the suite's; the Framework benchmarks warm the resource with one
+  unmeasured run first, so a cold first repetition cannot read the symbol table
+  `LibSm64::addr` fills on first use as allocations (it did on 2026-09-15). A failed gate's
   compare output is re-emitted as annotations, as build errors are, so it is readable
   through the public API without the job log;
 - Tier D on a CI-sized workload, `perf/tierd-ci.json` (`tierd-ci-linux.json` with the
