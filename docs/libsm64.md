@@ -523,7 +523,9 @@ count; 4 on Linux), then run everything about the game that is exact:
 - Tier C with `perf_compare.py --counts-only` against the committed baseline, three
   repetitions like the suite's, since the first repetition's allocations include the symbol
   table `LibSm64::addr` fills on first use and the baseline holds the warm counts (one
-  repetition read three allocations over the baseline on 2026-09-15);
+  repetition read three allocations over the baseline on 2026-09-15). A failed gate's
+  compare output is re-emitted as annotations, as build errors are, so it is readable
+  through the public API without the job log;
 - Tier D on a CI-sized workload, `perf/tierd-ci.json` (`tierd-ci-linux.json` with the
   `.so` pattern and `dirty` saves): the deterministic tilt-target stage cut to 100 shots
   on 4 threads, cost model off, about 40 s on the desktop, exact counts compared with
