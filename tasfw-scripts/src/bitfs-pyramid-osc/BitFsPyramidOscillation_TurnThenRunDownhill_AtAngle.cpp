@@ -3,6 +3,7 @@
 
 #include <cmath>
 #include <tasfw/Script.hpp>
+#include <ScriptMath.hpp>
 #include <sm64/Camera.hpp>
 #include <sm64/Sm64.hpp>
 
@@ -68,7 +69,7 @@ bool BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle::execution()
 		// Don't want to turn around early, so cap intended yaw diff at 2048
 		int16_t intendedYaw = _angle;
 		if (abs(int16_t(_angle - marioState->faceAngle[1])) >= 16384)
-			intendedYaw = marioState->faceAngle[1] + 2048 * sign(int16_t(_angle - marioState->faceAngle[1]));
+			intendedYaw = marioState->faceAngle[1] + 2048 * ScriptMath::Sign(int16_t(_angle - marioState->faceAngle[1]));
 
 		auto inputs = Inputs::GetClosestInputByYawHau(intendedYaw, 32, camera->yaw);
 		actualIntendedYaw = Inputs::GetIntendedYawMagFromInput(inputs.first, inputs.second, camera->yaw).first;

@@ -22,6 +22,10 @@
 template <class TState>
 class Resource;
 
+// The friend through which the tests and benchmarks whose subject is the slot manager reach it
+// (tasfw/testing/PerfAccess.hpp); everything else reaches a slot through Resource's operations.
+class PerfAccess;
+
 // Process-wide savestate memory (ROADMAP 3.5): a budget the application sets once, before
 // it creates resources, and the balance left of it. A resource subtracts its limit from the
 // balance when it is created, or throws if the balance is too low, and adds it back when it
@@ -107,6 +111,25 @@ template <class TState>
 class SlotManager
 {
 public:
+	SlotManager(Resource<TState>* resource) : _resource(resource) { }
+	~SlotManager() { SlotBudget::Give(_saveMemLimit); }
+
+	// The resource's limit, taken from the process budget; Resource's constructor sets it once.
+	void SetLimit(int64_t bytes)
+	{
+		SlotBudget::Take(bytes);
+		_saveMemLimit = bytes;
+	}
+
+	int64_t CreateSlot();
+	void EraseOldestSlot();
+	void EraseSlot(int64_t slotId);
+	void LoadSlot(int64_t slotId);
+	bool isValid(int64_t slotId) const;
+
+private:
+	friend class PerfAccess;
+
 	Resource<TState>* _resource = NULL;
 	std::map<int64_t, TState> slotsById;
 	std::map<int64_t, int64_t> slotIdsByLastAccess;
@@ -123,22 +146,6 @@ public:
 	std::vector<TState> _pool;
 	int64_t _pooledMem = 0;
 	size_t _maxPooledStates = 32;
-
-	SlotManager(Resource<TState>* resource) : _resource(resource) { }
-	~SlotManager() { SlotBudget::Give(_saveMemLimit); }
-
-	// The resource's limit, taken from the process budget; Resource's constructor sets it once.
-	void SetLimit(int64_t bytes)
-	{
-		SlotBudget::Take(bytes);
-		_saveMemLimit = bytes;
-	}
-
-	int64_t CreateSlot();
-	void EraseOldestSlot();
-	void EraseSlot(int64_t slotId);
-	void LoadSlot(int64_t slotId);
-	bool isValid(int64_t slotId) const;
 };
 
 // Interface for the state machine that represents the game. Can either contain the state machine itself, or be a client to an external state machine.
@@ -149,10 +156,6 @@ public:
 	// Counts and cycles of every FrameAdvance, SaveState and LoadState, plus the slot
 	// manager's own counters. Read it; the resource and its slot manager write it.
 	ResourceWork work;
-
-	TState startSave = TState();
-	int64_t initialFrame = -1;
-	SlotManager<TState> slotManager = SlotManager<TState>(this);
 
 	// When false, shouldSave/shouldLoad answer false: no automatic saves during replays and
 	// no loading ahead, only explicit saves and replays. The cost model's decisions depend on
@@ -183,6 +186,14 @@ public:
 	void DisposeState(int64_t slotId) { slotManager.EraseSlot(slotId); }
 	bool HasState(int64_t slotId) const { return slotManager.isValid(slotId); }
 
+	// The start save: the state a top-level run begins from and returns to. TopLevelScript
+	// saves it the first time it runs on a resource, at the frame InitialFrame then reports
+	// (-1 until then), and loads it back, uncounted, to reset a resource it imports again;
+	// a script's own load of it is LoadState(-1), counted like any load.
+	void SaveStart(int64_t frame);
+	void LoadStart() { load(startSave); }
+	int64_t InitialFrame() const { return initialFrame; }
+
 	//Return a conversion of the current state for the user to do with as they like (e.g. pass to a new top-level script)
 	//Requires a matching constructor in the return type that will convert TState to the return type
 	template <class UState, typename... Us>
@@ -205,6 +216,18 @@ public:
 	virtual std::size_t getStateSize(const TState& state) const = 0;
 	//TODO: make this resource-agnostic
 	virtual uint32_t getCurrentFrame() const = 0;
+
+protected:
+	// Whether a state being saved is the start save rather than a slot's; what a derived
+	// resource may ask about it (LibSm64's dirty mode does not count it as a live slot).
+	bool IsStartSave(const TState& state) const { return &state == &startSave; }
+
+private:
+	friend class PerfAccess;
+
+	TState startSave = TState();
+	int64_t initialFrame = -1;
+	SlotManager<TState> slotManager = SlotManager<TState>(this);
 };
 
 //Include template method implementations

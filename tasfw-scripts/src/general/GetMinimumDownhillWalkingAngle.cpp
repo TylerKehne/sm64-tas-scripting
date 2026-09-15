@@ -1,6 +1,7 @@
 #include <General.hpp>
 
 #include <tasfw/Script.hpp>
+#include <ScriptMath.hpp>
 #include <sm64/Sm64.hpp>
 #include <sm64/Types.hpp>
 #include <sm64/Pyramid.hpp>
@@ -92,14 +93,14 @@ bool GetMinimumDownhillWalkingAngle::execution()
 	// Get optimal angle for switching from turnaround to finish turnaround
 	int16_t facingDYaw = _faceAngle - CustomStatus.angleFacing;
 	if (abs(facingDYaw) <= 0x471C)
-		CustomStatus.angleFacingAnalogBack = _faceAngle + 0x471D * sign(facingDYaw);
+		CustomStatus.angleFacingAnalogBack = _faceAngle + 0x471D * ScriptMath::Sign(facingDYaw);
 	else
 		CustomStatus.angleFacingAnalogBack = CustomStatus.angleFacing;
 
 	int16_t notFacingDYaw = _faceAngle - CustomStatus.angleNotFacing;
 	if (abs(notFacingDYaw) <= 0x471C)
 		CustomStatus.angleNotFacingAnalogBack =
-			_faceAngle + 0x471D * sign(notFacingDYaw);
+			_faceAngle + 0x471D * ScriptMath::Sign(notFacingDYaw);
 	else
 		CustomStatus.angleNotFacingAnalogBack = CustomStatus.angleNotFacing;
 

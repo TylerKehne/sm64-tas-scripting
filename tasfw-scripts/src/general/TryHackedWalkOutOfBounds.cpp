@@ -5,6 +5,7 @@
 #include <sm64/Types.hpp>
 
 #include <tasfw/Script.hpp>
+#include <ScriptMath.hpp>
 
 #include <cmath>
 
@@ -19,7 +20,7 @@ bool TryHackedWalkOutOfBounds::execution()
 	Camera* camera		   = *(Camera**) (resource->addr("gCamera"));
 
 	CustomStatus.startSpeed = _speed;
-	Script::CopyVec3f(CustomStatus.startPos, marioState->pos);
+	ScriptMath::CopyVec3f(CustomStatus.startPos, marioState->pos);
 
 	// Attempt to walk OOB to prevent QStep position updates
 	marioState->forwardVel = _speed;
@@ -29,7 +30,7 @@ bool TryHackedWalkOutOfBounds::execution()
 	AdvanceFrameWrite(Inputs(0, inputs.first, inputs.second));
 
 	CustomStatus.endSpeed = marioState->forwardVel;
-	Script::CopyVec3f(CustomStatus.endPos, marioState->pos);
+	ScriptMath::CopyVec3f(CustomStatus.endPos, marioState->pos);
 	CustomStatus.endAction	= marioState->action;
 	CustomStatus.floorAngle = marioState->floorAngle;
 

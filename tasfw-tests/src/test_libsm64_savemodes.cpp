@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 
 #include "libsm64_env.hpp"
+#include <tasfw/testing/PerfAccess.hpp>
 
 #include <cmath>
 #include <cstddef>
@@ -67,7 +68,7 @@ namespace
 		};
 		auto pagesOf = [&](int64_t slot)
 		{
-			return resource.slotManager.slotsById.at(slot).pages.size() / size_t(pagesize);
+			return PerfAccess::SlotState(resource, slot).pages.size() / size_t(pagesize);
 		};
 
 		// s0 is the first slot of this run, so in Dirty mode it is where the resource takes its
@@ -98,9 +99,9 @@ namespace
 		play(60, 1); // the same inputs from the same state reach the same memory
 		results.replayDiff = differing(sections(), snap2);
 
-		resource.slotManager.EraseSlot(s0);
-		resource.slotManager.EraseSlot(s1);
-		resource.slotManager.EraseSlot(s2);
+		resource.DisposeState(s0);
+		resource.DisposeState(s1);
+		resource.DisposeState(s2);
 		return results;
 	}
 }
@@ -211,7 +212,7 @@ TEST_CASE("libsm64: no save mode copies or restores the C runtime's bytes at the
 
 		if (mode == LibSm64SaveMode::Full)
 		{
-			const LibSm64Mem& state = resource.slotManager.slotsById.at(slot);
+			const LibSm64Mem& state = PerfAccess::SlotState(resource, slot);
 			CHECK(state.buf1.size() == game->end[0] - game->begin[0]);
 			CHECK(state.buf2.size() == game->end[1] - game->begin[1]);
 		}
@@ -231,7 +232,7 @@ TEST_CASE("libsm64: no save mode copies or restores the C runtime's bytes at the
 		CHECK(spinCount() == before + 1);
 		SetCriticalSectionSpinCount(cs, before);
 #endif
-		resource.slotManager.EraseSlot(slot);
+		resource.DisposeState(slot);
 	}
 }
 
@@ -273,14 +274,13 @@ TEST_CASE("libsm64: dirty baselines hold copy-on-write pages, and every live sta
 			n += a[i] != b[i];
 		return n + (a.size() > b.size() ? a.size() - b.size() : b.size() - a.size());
 	};
-	auto pagesOf = [&](int64_t slot) { return resource.slotManager.slotsById.at(slot).pages.size() / size_t(pagesize); };
+	auto pagesOf = [&](int64_t slot) { return PerfAccess::SlotState(resource, slot).pages.size() / size_t(pagesize); };
 	auto isLive = [&](int b) { return d->baselines.at(size_t(b)).pages != nullptr; };
 
 	// What a top-level run's import does: the start save at power-on, under baseline 0, which
 	// holds no pages yet because nothing has been written since construction.
 	std::vector<uint8_t> powerOn = sections();
-	resource.save(resource.startSave);
-	resource.initialFrame = 0;
+	resource.SaveStart(0);
 	CHECK(d->baseline == 0);
 	CHECK(d->WrittenCount() == 0);
 
@@ -312,8 +312,8 @@ TEST_CASE("libsm64: dirty baselines hold copy-on-write pages, and every live sta
 
 	// Back to power-on through the start save, exactly, with pages from baseline 0 (the only
 	// place their power-on content still exists).
-	resource.slotManager.EraseSlot(s0);
-	resource.slotManager.EraseSlot(s1);
+	resource.DisposeState(s0);
+	resource.DisposeState(s1);
 	CHECK(d->baselines.at(1).refs == 0); // both states gave theirs back
 	CHECK(d->liveSlots == 0);
 	resource.LoadState(-1);
@@ -345,6 +345,6 @@ TEST_CASE("libsm64: dirty baselines hold copy-on-write pages, and every live sta
 	CHECK(differing(sections(), snap4) == 0);
 	MESSAGE("dirty baselines: " << d->faults << " first writes in all baselines; " << pagesOf(s3) << " pages in a state 60 frames after the first slot");
 
-	resource.slotManager.EraseSlot(s2);
-	resource.slotManager.EraseSlot(s3);
+	resource.DisposeState(s2);
+	resource.DisposeState(s3);
 }

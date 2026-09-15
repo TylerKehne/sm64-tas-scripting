@@ -1,4 +1,5 @@
 #include <Scattershot_BitfsDr.hpp>
+#include <ScriptMath.hpp>
 
 bool StateTracker_BitfsDr::ValidateCrossingData(const StateTracker_BitfsDr::CustomScriptStatus& state, float componentThreshold)
 {
@@ -78,17 +79,17 @@ void StateTracker_BitfsDr::CalculateOscillations(CustomScriptStatus lastFrameSta
     if (CustomStatus.phase == Phase::INITIAL)
         return;
 
-    int targetXDirection = sign(gSineTable[(uint16_t)(CustomStatus.roughTargetAngle) >> 4]);
-    int targetZDirection = sign(gCosineTable[(uint16_t)(CustomStatus.roughTargetAngle) >> 4]);
+    int targetXDirection = ScriptMath::Sign(gSineTable[(uint16_t)(CustomStatus.roughTargetAngle) >> 4]);
+    int targetZDirection = ScriptMath::Sign(gCosineTable[(uint16_t)(CustomStatus.roughTargetAngle) >> 4]);
 
     int tiltDirectionX, tiltDirectionZ, targetTiltDirectionX, targetTiltDirectionZ;
     float normalDiffX, normalDiffZ;
 
-    tiltDirectionX = sign(CustomStatus.pyraNormX - lastFrameState.pyraNormX);
+    tiltDirectionX = ScriptMath::Sign(CustomStatus.pyraNormX - lastFrameState.pyraNormX);
     targetTiltDirectionX = targetXDirection;
     normalDiffX = fabs(CustomStatus.pyraNormX - lastFrameState.pyraNormX);
 
-    tiltDirectionZ = Script::sign(CustomStatus.pyraNormZ - lastFrameState.pyraNormZ);
+    tiltDirectionZ = ScriptMath::Sign(CustomStatus.pyraNormZ - lastFrameState.pyraNormZ);
     targetTiltDirectionZ = targetZDirection;
     normalDiffZ = fabs(CustomStatus.pyraNormZ - lastFrameState.pyraNormZ);
 
@@ -239,11 +240,11 @@ void StateTracker_BitfsDr::CalculateARE(Object* pyramid)
         if (std::fabs(targetNormal[0] - normalX) <= 0.005f)
         {
             CustomStatus.adjustedRemainderError[0] = (targetNormal[0] - normalX) / errorIncX;
-            CustomStatus.incrementFrames[0] = i * sign(errorX);
+            CustomStatus.incrementFrames[0] = i * ScriptMath::Sign(errorX);
             break;
         }
 
-        normalX += sign(errorX) * 0.01f;
+        normalX += ScriptMath::Sign(errorX) * 0.01f;
     }
 
     float normalZ = pyramid->oTiltingPyramidNormalZ;
@@ -252,10 +253,10 @@ void StateTracker_BitfsDr::CalculateARE(Object* pyramid)
         if (std::fabs(targetNormal[2] - normalZ) <= 0.005f)
         {
             CustomStatus.adjustedRemainderError[2] = (targetNormal[2] - normalZ) / errorIncZ;
-            CustomStatus.incrementFrames[2] = i * sign(errorZ);
+            CustomStatus.incrementFrames[2] = i * ScriptMath::Sign(errorZ);
             break;
         }
 
-        normalZ += sign(errorZ) * 0.01f;
+        normalZ += ScriptMath::Sign(errorZ) * 0.01f;
     }
 }

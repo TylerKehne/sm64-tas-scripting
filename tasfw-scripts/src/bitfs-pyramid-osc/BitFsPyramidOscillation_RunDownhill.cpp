@@ -6,6 +6,7 @@
 #include <sm64/Types.hpp>
 #include <sm64/Trig.hpp>
 #include <tasfw/Script.hpp>
+#include <ScriptMath.hpp>
 #include <sm64/ObjectFields.hpp>
 
 #include <cmath>
@@ -46,8 +47,8 @@ bool BitFsPyramidOscillation_RunDownhill::execution()
 	Object* pyramid		   = marioState->floor->object;
 
 	int targetXDirection =
-		sign(gSineTable[(uint16_t) (_oscillationParams.roughTargetAngle) >> 4]);
-	int targetZDirection = sign(
+		ScriptMath::Sign(gSineTable[(uint16_t) (_oscillationParams.roughTargetAngle) >> 4]);
+	int targetZDirection = ScriptMath::Sign(
 		gCosineTable[(uint16_t) (_oscillationParams.roughTargetAngle) >> 4]);
 
 	// This shouldn't go on forever, but set a max frame number just in case
@@ -125,14 +126,14 @@ bool BitFsPyramidOscillation_RunDownhill::execution()
 				fabs(pyramid->oTiltingPyramidNormalZ))
 			{
 				tiltDirection =
-					Script::sign(pyramid->oTiltingPyramidNormalX - prevNormalX);
+					ScriptMath::Sign(pyramid->oTiltingPyramidNormalX - prevNormalX);
 				targetTiltDirection = targetXDirection;
 				normalDiff = fabs(pyramid->oTiltingPyramidNormalX - prevNormalX);
 			}
 			else
 			{
 				tiltDirection =
-					Script::sign(pyramid->oTiltingPyramidNormalZ - prevNormalZ);
+					ScriptMath::Sign(pyramid->oTiltingPyramidNormalZ - prevNormalZ);
 				targetTiltDirection = targetZDirection;
 				normalDiff = fabs(pyramid->oTiltingPyramidNormalZ - prevNormalZ);
 			}

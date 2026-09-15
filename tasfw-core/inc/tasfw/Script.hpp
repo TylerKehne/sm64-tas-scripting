@@ -60,9 +60,6 @@ template <derived_from_specialization_of<Resource> TResource>
 class SlotHandle
 {
 public:
-	TResource* resource = nullptr;
-	int64_t slotId = -1;
-
 	SlotHandle(TResource* resource, int64_t slotId) : resource(resource), slotId(slotId) { }
 
 	// A move transfers ownership: the source forgets its resource, so its destructor
@@ -96,6 +93,11 @@ public:
 	bool isValid();
 
 private:
+	friend class Script<TResource>; // reads the id to load the slot
+
+	TResource* resource = nullptr;
+	int64_t slotId = -1;
+
 	void Release();
 };
 
@@ -158,9 +160,6 @@ public:
 
 	Script(const Script<TResource>&) = delete;
 	Script& operator= (const Script<TResource>&) = delete;
-
-	// TODO: move this method to some utility class
-	static void CopyVec3f(Vec3f dest, Vec3f source);
 
 protected:
 	template <derived_from_specialization_of<Script> TScript, typename... Us>
@@ -639,13 +638,6 @@ protected:
 		return TrackerRoot<TStateTracker>()->TrackedStateExistsInternal(this, GetInputsMetadataAndCache(frame));
 	}
 
-	// TODO: move this method to some utility class
-	template <typename T>
-	int sign(T val)
-	{
-		return (T(0) < val) - (val < T(0));
-	}
-
 	uint64_t GetCurrentFrame();
 	bool IsDiffEmpty();
 	M64Diff GetDiff();
@@ -853,9 +845,7 @@ public:
 		script.stateTrackerFactory = std::make_shared<StateTrackerFactory<TStateTracker, TStateTrackerParams...>>(stateTrackerParams);
 
 		TResource resource = TResource();
-		resource.save(resource.startSave);
-
-		resource.initialFrame = 0;
+		resource.SaveStart(0);
 
 		return InitializeAndRun(m64, script, &resource);
 	}
@@ -868,13 +858,10 @@ public:
 		script.stateTrackerFactory = std::make_shared<StateTrackerFactory<TStateTracker, TStateTrackerParams...>>(stateTrackerParams);
 
 		// Initialize start save if resource is new. If not, load start save to reset resource.
-		if (resource->initialFrame == -1)
-		{
-			resource->save(resource->startSave);
-			resource->initialFrame = 0;
-		}
+		if (resource->InitialFrame() == -1)
+			resource->SaveStart(0);
 		else
-			resource->load(resource->startSave);
+			resource->LoadStart();
 
 		return InitializeAndRun(m64, script, resource);
 	}
@@ -887,9 +874,7 @@ public:
 		script.stateTrackerFactory = std::make_shared<StateTrackerFactory<TStateTracker, TStateTrackerParams...>>(stateTrackerParams);
 
 		TResource resource = TResource(config);
-		resource.save(resource.startSave);
-
-		resource.initialFrame = 0;
+		resource.SaveStart(0);
 
 		return InitializeAndRun(m64, script, &resource);
 	}
@@ -907,9 +892,7 @@ public:
 
 		TResource resource = TResource();
 		resource.load(save.state);
-		resource.save(resource.startSave);
-
-		resource.initialFrame = save.initialFrame;
+		resource.SaveStart(save.initialFrame);
 
 		return InitializeAndRun(m64, script, &resource);
 	}
@@ -928,9 +911,7 @@ public:
 
 		TResource resource = TResource(config);
 		resource.load(save.state);
-		resource.save(resource.startSave);
-
-		resource.initialFrame = save.initialFrame;
+		resource.SaveStart(save.initialFrame);
 
 		return InitializeAndRun(m64, script, &resource);
 	}

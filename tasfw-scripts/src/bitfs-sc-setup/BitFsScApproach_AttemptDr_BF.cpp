@@ -1,4 +1,5 @@
 #include <BitFsScApproach.hpp>
+#include <ScriptMath.hpp>
 #include <sm64/Camera.hpp>
 #include <sm64/Sm64.hpp>
 #include <sm64/ObjectFields.hpp>
@@ -90,7 +91,7 @@ bool BitFsScApproach_AttemptDr_BF::execution()
 					//cap intended yaw diff at 2048
 					int16_t intendedYaw = floorAngle;
 					if (abs(int16_t(floorAngle - marioState->faceAngle[1])) >= 16384)
-						intendedYaw = marioState->faceAngle[1] + 2048 * sign(int16_t(floorAngle - marioState->faceAngle[1]));
+						intendedYaw = marioState->faceAngle[1] + 2048 * ScriptMath::Sign(int16_t(floorAngle - marioState->faceAngle[1]));
 
 					auto inputs = Inputs::GetClosestInputByYawHau(intendedYaw, 32, camera->yaw);
 					AdvanceFrameWrite(Inputs(0, inputs.first, inputs.second));

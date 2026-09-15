@@ -205,7 +205,7 @@ namespace
 		{
 			resource.useCostModel = false; // no timing-dependent saves: every count is exact (as Tier C runs)
 			if (slotLimitBytes > 0)
-				resource.slotManager._saveMemLimit = slotLimitBytes;
+				PerfAccess::SetSlotLimit(resource, slotLimitBytes);
 		}
 
 		Run run;

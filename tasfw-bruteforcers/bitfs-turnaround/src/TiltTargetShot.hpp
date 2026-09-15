@@ -1,5 +1,6 @@
 #pragma once
 #include <array>
+#include <ScriptMath.hpp>
 #include <Scattershot.hpp>
 #include <BitFSPyramidOscillation.hpp>
 #include <cmath>
@@ -178,7 +179,7 @@ public:
                 break;
             }
 
-            normalX += sign(CustomStatus.error[0]) * 0.01f;
+            normalX += ScriptMath::Sign(CustomStatus.error[0]) * 0.01f;
         }
 
         float normalZ = pyramid->oTiltingPyramidNormalZ;
@@ -191,7 +192,7 @@ public:
                 break;
             }
 
-            normalZ += sign(CustomStatus.error[2]) * 0.01f;
+            normalZ += ScriptMath::Sign(CustomStatus.error[2]) * 0.01f;
         }
 
         const auto& prevState = GetTrackedState<TiltTargetShotMetrics>(GetCurrentFrame() - 1);

@@ -79,14 +79,6 @@ bool Script<TResource>::Run()
 }
 
 template <derived_from_specialization_of<Resource> TResource>
-void Script<TResource>::CopyVec3f(Vec3f dest, Vec3f source)
-{
-	dest[0] = source[0];
-	dest[1] = source[1];
-	dest[2] = source[2];
-}
-
-template <derived_from_specialization_of<Resource> TResource>
 uint64_t Script<TResource>::GetCurrentFrame()
 {
 	return resource->getCurrentFrame();
@@ -459,7 +451,7 @@ uint64_t Script<TResource>::IncrementFrameCounter(InputsMetadata<TResource> cach
 template <derived_from_specialization_of<Resource> TResource>
 SaveMetadata<TResource> Script<TResource>::GetLatestSave(int64_t frame)
 {
-	if (resource->initialFrame > frame)
+	if (resource->InitialFrame() > frame)
 		throw std::runtime_error("Error: attempted to load frame prior to initial frame");
 
 	//Check ad-hoc script hierarchy first, then current script

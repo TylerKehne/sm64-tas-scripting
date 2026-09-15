@@ -4,6 +4,17 @@ Every hot-path change records its delta table here, newest first; the policy, th
 how to run it are in [performance.md](performance.md). The first measurements (2026-09-07),
 which everything since is compared against, are at the bottom.
 
+## 2026-09-15: the resource's surface (ROADMAP 3.2, second stage)
+
+No hot-path change by intent, measured because the change is under tasfw-core: the slot
+manager and the start save went behind `Resource` (`DisposeState` is the one-line wrapper
+`EraseSlot` was, the start-save operations are what `TopLevelScript` did by hand), and the
+tests and benchmarks that reach the slot manager do so through `PerfAccess`. MSVC 19.51,
+Release, against the reference saved from 35ebcc8: 0 regressions, allocations and every
+Tier C and D count identical, `SlotManager_*` within 1.7% and `Resource_SaveLoadState`
+-0.4%, the Script family within 5% either way (`Execute_ChildEmpty` +4.7%, the rest under
+2%), Tier D -1.3% and -1.8%.
+
 ## 2026-09-15: the input walk's front-end cost (ROADMAP 3.19)
 
 Two measured optimizations behind unchanged interfaces, found while root-causing the 3.2

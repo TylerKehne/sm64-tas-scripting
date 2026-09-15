@@ -3,6 +3,7 @@
 #include "resident.hpp"
 
 #include <LibSm64.hpp>
+#include <tasfw/testing/PerfAccess.hpp>
 #include <tasfw/Inputs.hpp>
 #include <tasfw/testing/Env.hpp>
 
@@ -132,7 +133,7 @@ namespace
 		for (auto _ : state)
 		{
 			int64_t id = resource.SaveState();
-			resource.slotManager.EraseSlot(id);
+			resource.DisposeState(id);
 		}
 		tasfw_perf::EndMeasure(state, m0);
 	}
@@ -145,8 +146,7 @@ namespace
 		if (!game)
 			return;
 		LibSm64& resource = *game->resource;
-		resource.slotManager._pool.clear();
-		resource.slotManager._pooledMem = 0;
+		PerfAccess::DropPool(resource);
 
 		std::vector<int64_t> ids;
 		tasfw_perf::Measurement m0 = tasfw_perf::BeginMeasure();
@@ -155,7 +155,7 @@ namespace
 		tasfw_perf::EndMeasure(state, m0);
 
 		for (int64_t id : ids)
-			resource.slotManager.EraseSlot(id);
+			resource.DisposeState(id);
 	}
 
 	void Load(benchmark::State& state, LibSm64SaveMode mode)
@@ -201,14 +201,13 @@ namespace
 			return;
 		LibSm64& resource = *game->resource;
 		const int64_t slots = state.range(0);
-		const double stateBytes = double(resource.getStateSize(resource.slotManager.slotsById.at(game->anchor)));
+		const double stateBytes = double(resource.getStateSize(PerfAccess::SlotState(resource, game->anchor)));
 		if (stateBytes * double(slots) > 4.0 * 1024 * 1024 * 1024)
 		{
 			state.SkipWithMessage("more than 4 GB of states");
 			return;
 		}
-		resource.slotManager._pool.clear();
-		resource.slotManager._pooledMem = 0;
+		PerfAccess::DropPool(resource);
 
 		std::vector<int64_t> ids;
 		ids.reserve(size_t(slots));
@@ -224,9 +223,8 @@ namespace
 		state.counters["stateBytes"] = benchmark::Counter(stateBytes);
 		state.counters["rssPerSlot"] = benchmark::Counter(rssPerSlot);
 		for (int64_t id : ids)
-			resource.slotManager.EraseSlot(id);
-		resource.slotManager._pool.clear();
-		resource.slotManager._pooledMem = 0;
+			resource.DisposeState(id);
+		PerfAccess::DropPool(resource);
 	}
 
 	// Thread scaling: n threads, each on its own DLL copy with dirty-page saves, as the
@@ -325,7 +323,7 @@ namespace
 		for (auto _ : state)
 		{
 			int64_t id = resource.SaveState();
-			resource.slotManager.EraseSlot(id);
+			resource.DisposeState(id);
 		}
 		state.SetItemsProcessed(state.iterations());
 	}

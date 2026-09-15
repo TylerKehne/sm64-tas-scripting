@@ -144,6 +144,13 @@ int64_t Resource<TState>::SaveState()
 }
 
 template <class TState>
+void Resource<TState>::SaveStart(int64_t frame)
+{
+	save(startSave);
+	initialFrame = frame;
+}
+
+template <class TState>
 void Resource<TState>::LoadState(int64_t slotId)
 {
 	uint64_t start = get_time();
