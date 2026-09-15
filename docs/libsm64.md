@@ -520,7 +520,10 @@ count; 4 on Linux), then run everything about the game that is exact:
 - the pipeline's dry run: `bitfs-turn --dry-run` on the real `config.json` on Windows, and
   on `perf/tierd-ci-linux.json` on Linux (the `VerifyLayout` script to the first stage's
   frame, the same check a real run makes before its first stage);
-- Tier C with `perf_compare.py --counts-only` against the committed baseline;
+- Tier C with `perf_compare.py --counts-only` against the committed baseline, three
+  repetitions like the suite's, since the first repetition's allocations include the symbol
+  table `LibSm64::addr` fills on first use and the baseline holds the warm counts (one
+  repetition read three allocations over the baseline on 2026-09-15);
 - Tier D on a CI-sized workload, `perf/tierd-ci.json` (`tierd-ci-linux.json` with the
   `.so` pattern and `dirty` saves): the deterministic tilt-target stage cut to 100 shots
   on 4 threads, cost model off, about 40 s on the desktop, exact counts compared with

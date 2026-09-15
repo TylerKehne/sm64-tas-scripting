@@ -179,8 +179,8 @@ jobs:
         if: runner.os == 'Windows' && env.LIBSM64_KEY != ''
         shell: bash
         run: |
-          ${{ matrix.bindir }}/out/tasfw-perf --benchmark_filter='^BM_Framework' --benchmark_repetitions=1 --benchmark_out=tierc.json --benchmark_out_format=json
-          python scripts/perf_compare.py compare ${{ matrix.baseline }} tierc.json --counts-only | grep -v MISSING
+          ${{ matrix.bindir }}/out/tasfw-perf --benchmark_filter='^BM_Framework' --benchmark_repetitions=3 --benchmark_out=tierc.json --benchmark_out_format=json
+          python scripts/perf_compare.py compare ${{ matrix.baseline }} tierc.json --counts-only | grep -v MISSING | tee tierc-compare.log
 
       - name: Tier D exact counts (CI-sized workload) against the committed baseline
         if: runner.os == 'Windows' && env.LIBSM64_KEY != ''
@@ -188,16 +188,16 @@ jobs:
         run: |
           ${{ matrix.bindir }}/out/bitfs-turn --config perf/tierd-ci.json | tee tierd-ci.log
           python scripts/perf_compare.py tierd tierd-ci.log -o tierd-ci.json --name TierD_CI --exact
-          python scripts/perf_compare.py compare perf/baselines/tierd-ci.json tierd-ci.json --counts-only
+          python scripts/perf_compare.py compare perf/baselines/tierd-ci.json tierd-ci.json --counts-only | tee tierd-compare.log
 
       - name: Report failure details as annotations
         if: failure()
         shell: bash
         run: |
-          for f in configure.log build.log; do
+          for f in configure.log build.log tierc-compare.log tierd-compare.log; do
             if [ -f "$f" ]; then
               echo "::group::$f (errors)"
-              grep -inE '\berror\b|fatal error|FAILED' "$f" | head -40 | while IFS= read -r line; do
+              grep -inE '\berror\b|fatal error|FAILED|REGRESSION|regression[(]s[)]' "$f" | head -40 | while IFS= read -r line; do
                 echo "::error title=$f::${line}"
               done
               echo "::endgroup::"
@@ -282,8 +282,8 @@ jobs:
         if: env.LIBSM64_KEY != ''
         shell: bash
         run: |
-          ${{ matrix.bindir }}/out/tasfw-perf --benchmark_filter='^BM_Framework' --benchmark_repetitions=1 --benchmark_out=tierc.json --benchmark_out_format=json
-          python3 scripts/perf_compare.py compare perf/baselines/tyler-desktop tierc.json --counts-only | grep -v MISSING
+          ${{ matrix.bindir }}/out/tasfw-perf --benchmark_filter='^BM_Framework' --benchmark_repetitions=3 --benchmark_out=tierc.json --benchmark_out_format=json
+          python3 scripts/perf_compare.py compare perf/baselines/tyler-desktop tierc.json --counts-only | grep -v MISSING | tee tierc-compare.log
 
       - name: Tier D exact counts (CI-sized workload) against the committed baseline
         if: env.LIBSM64_KEY != ''
@@ -291,15 +291,15 @@ jobs:
         run: |
           ${{ matrix.bindir }}/out/bitfs-turn --config perf/tierd-ci-linux.json | tee tierd-ci.log
           python3 scripts/perf_compare.py tierd tierd-ci.log -o tierd-ci.json --name TierD_CI --exact
-          python3 scripts/perf_compare.py compare perf/baselines/tierd-ci.json tierd-ci.json --counts-only
+          python3 scripts/perf_compare.py compare perf/baselines/tierd-ci.json tierd-ci.json --counts-only | tee tierd-compare.log
 
       - name: Report failure details as annotations
         if: failure()
         run: |
-          for f in configure.log build.log; do
+          for f in configure.log build.log tierc-compare.log tierd-compare.log; do
             if [ -f "$f" ]; then
               echo "::group::$f (errors)"
-              grep -inE '\berror\b|fatal error|FAILED' "$f" | head -40 | while IFS= read -r line; do
+              grep -inE '\berror\b|fatal error|FAILED|REGRESSION|regression[(]s[)]' "$f" | head -40 | while IFS= read -r line; do
                 echo "::error title=$f::${line}"
               done
               echo "::endgroup::"
