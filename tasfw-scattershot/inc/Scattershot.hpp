@@ -12,7 +12,7 @@
 #include <cmath>
 #include <BinaryStateBin.hpp>
 #include <tasfw/Script.hpp>
-#include <tasfw/SharedLib.hpp>
+#include <tasfw/Concepts.hpp>
 #include <omp.h>
 #include <immintrin.h>
 #include <vector>

@@ -1,6 +1,7 @@
 #include <benchmark/benchmark.h>
 #include "measure.hpp"
 #include <tasfw/Inputs.hpp>
+#include <tasfw/M64.hpp>
 #include <filesystem>
 
 // Movie I/O. Every scattershot thread loads the source m64 at start, and every solution

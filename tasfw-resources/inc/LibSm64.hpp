@@ -9,6 +9,7 @@
 #include <vector>
 #include "tasfw/Resource.hpp"
 #include <tasfw/Inputs.hpp>
+#include <tasfw/M64.hpp>
 
 #ifndef LIBSM64_H
 #define LIBSM64_H

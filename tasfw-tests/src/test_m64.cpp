@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 #include <tasfw/Inputs.hpp>
+#include <tasfw/M64.hpp>
 
 #include "script_fixtures.hpp"
 

@@ -1,6 +1,7 @@
 add_library(tasfw-core STATIC
 	"src/core/SharedLib.cpp"
 	"src/core/Inputs.cpp"
+	"src/core/M64.cpp"
 	"src/decomp/Math.cpp"
 	"src/decomp/Pyramid.cpp"
 	"src/decomp/Surface.cpp"
