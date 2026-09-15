@@ -522,8 +522,10 @@ count; 4 on Linux), then run everything about the game that is exact:
   frame, the same check a real run makes before its first stage);
 - Tier C with `perf_compare.py --counts-only` against the committed baseline, three
   repetitions like the suite's, since the first repetition's allocations include the symbol
-  table `LibSm64::addr` fills on first use and the baseline holds the warm counts (one
-  repetition read three allocations over the baseline on 2026-09-15). A failed gate's
+  table `LibSm64::addr` fills on first use and the compare takes a row's allocation count as
+  the minimum over its repetitions, the warm one the baseline holds (one repetition read
+  three allocations over the baseline on 2026-09-15, and the fastest of three was once the
+  cold one). A failed gate's
   compare output is re-emitted as annotations, as build errors are, so it is readable
   through the public API without the job log;
 - Tier D on a CI-sized workload, `perf/tierd-ci.json` (`tierd-ci-linux.json` with the
