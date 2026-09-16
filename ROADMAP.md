@@ -377,7 +377,10 @@ item is done except 3.2, in progress, and 3.17, which follows it; then Phase 4.
       that passed `*resource` read `ImportSave(ExportSave<PyramidUpdateMem>(pyramid))` and
       the drift test exports the same way; its second form takes a frame, loaded through the
       script's own loads and returned from after, and both carry `Resource::State`'s
-      constraint so a frame is never taken for a state parameter. The engine tests read the
+      constraint so a frame is never taken for a state parameter, restated as a concept-id
+      because Visual Studio 2026 18.10's IntelliSense never satisfies it asked of `State` in
+      a requires-expression (docs/compilers.md, "Visual Studio 2026 IntelliSense"). The
+      engine tests read the
       mock they own, which answers `ReadState("checksum")` for the scattershot mock. What
       the contract still owes, reads typed by symbol, their const-ness (the 53 helper
       prototypes taking game pointers non-const stay as they are), a guard against invalid

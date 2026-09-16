@@ -190,6 +190,58 @@ the direct friend. One thing the accessor class hid: a `TTopLevelScript` may dec
 that hide `Script`'s (`ScattershotThread::Initialize`), so `InitializeAndRun` reaches
 `Script`'s members through a `Script<TResource>&`.
 
+### Visual Studio 2026 IntelliSense: `ImportSave(ExportSave<PyramidUpdateMem>(pyramid))` is an error in the editor
+
+In Visual Studio Community 2026 18.10.1, the IntelliSense (an EDG front end, not cl) marked
+every `ImportSave(ExportSave<PyramidUpdateMem>(pyramid))` in the scripts with E0304, "no
+instance of overloaded function matches the argument list", and `ExportSave` itself with
+the same for `(Object *)`, under the msvc and the clang-cl presets alike, while MSVC 19.51
+and clang-cl 22 build clean.
+
+The construct it cannot evaluate: a requires-expression in a member template's
+requires-clause whose body calls a member template of the class template's parameter with
+the member template's own parameter as an explicit template argument. `Script::ExportSave`
+asked `Resource::State` for its constraint that way,
+`requires(requires(TResource& r, Us&&... params) { r.template State<UState>(std::forward<Us>(params)...); })`,
+and the editor never satisfied it. Bisected on a minimal host (a class template with only
+the two constrained member templates, a derived class calling
+`ExportSave<PyramidUpdateMem>(_pyramid)` unqualified) with cl and clang-cl accepting every
+probe: red with that requirement, with a single overload, with the state parameters as
+`declval` instead of the requires-expression's own, with the state returned instead of
+`ImportedSave<UState>`, and with an empty pack (`ExportSave<Plain>()`); green with the
+requirement calling `State<PyramidUpdateMem>` for a concrete type at namespace scope or as
+a dependent call inside a class template, with a requires-expression calling a plain
+member (`r.SaveState()`), with a concept-id (`std::constructible_from<UState, const
+TResource&, Us...>` or the same on `const Resource<LibSm64Mem>&`), and with no constraint.
+Lookup is not involved: unqualified, `this->`, base-qualified and after a using-declaration
+all failed alike.
+
+Since 2026-09-15 both overloads carry the concept-id, `Resource::State`'s own constraint
+restated on the resource:
+
+```cpp
+requires(std::constructible_from<UState, const TResource&, Us...>)
+```
+
+It accepts and rejects the same calls (`test_script_saves.cpp` pins on the mock that
+`ExportSave<MockState>(3)` is the frame form), and is looser only in that a state
+constructible from the derived resource but not from `const Resource<TState>&` passes
+`Script`'s check and fails inside `State`. The editor resolves every site with it
+(checked 2026-09-15). The exact form as a named concept (`template <class TResource, class
+UState, class... Us> concept ... = requires(...)`, every parameter the concept's own) was
+not checked in the editor; it would be a new framework term (hard rule 10) and was not
+needed.
+
+Two things about probing this front end: a header Visual Studio does not know yet opens as
+a Miscellaneous File with no configuration and is not analyzed, so probes go into a source
+file of a target (a temporary namespace at the top of `Stages.cpp` served here, each probe
+a small class whose member function makes the failing call, so the red mark and the hover
+land on the call); and Include Cleanup underlines symbols whose header is only indirectly
+included, which look like errors at a glance and are not. The VS Code C/C++ extension,
+also EDG, fixed a sibling case in its 1.34.3 (a
+requires-expression with a parameter in a constrained hidden friend of a class template,
+microsoft/vscode-cpptools#14696); Visual Studio's IntelliSense ships its own EDG build.
+
 ### MSVC 19.51 inlines a single-call-site function whatever its size
 
 `LevelStack::operator[]` is a compare, a branch and a pointer select, with the growth loop
