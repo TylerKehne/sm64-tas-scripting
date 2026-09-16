@@ -3,34 +3,6 @@
 #error "Scattershot.t.hpp should only be included by Scattershot.hpp"
 #else
 
-/*
-template <class TState>
-void StateBin<TState>::print() const
-{
-    #pragma omp critical
-    {
-        // cast the instance to a char pointer
-        const char* ptr = reinterpret_cast<const char*>(&state);
-
-        // print the bytes in hex format using printf
-        for (std::size_t i = 0; i < sizeof(TState); i++)
-            printf("%02X ", static_cast<unsigned char>(ptr[i]));
-
-        printf("\n");
-    }
-}
-*/
-
-template <class TContainer, typename TElement>
-    requires std::is_same_v<TElement, std::string>
-void Configuration::SetResourcePaths(const TContainer& container)
-{
-    for (const std::string& item : container)
-    {
-        ResourcePaths.emplace_back(item);
-    }
-}
-
 template <class TState, derived_from_specialization_of<Resource> TResource,
     std::derived_from<Script<TResource>> TStateTracker,
     class TOutputState>

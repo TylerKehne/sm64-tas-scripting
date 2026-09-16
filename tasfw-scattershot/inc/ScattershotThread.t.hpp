@@ -1,8 +1,7 @@
 #pragma once
-#ifndef SCATTERSHOT_H
-#error "ScattershotThread.t.hpp should only be included by Scattershot.hpp"
+#ifndef SCATTERSHOTTHREAD_H
+#error "ScattershotThread.t.hpp should only be included by ScattershotThread.hpp"
 #else
-#include <Scattershot.hpp>
 #include <sm64/Camera.hpp>
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
