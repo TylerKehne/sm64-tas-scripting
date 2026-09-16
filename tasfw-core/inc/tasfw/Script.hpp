@@ -327,7 +327,6 @@ private:
 	virtual void GetInputsMetadata(int64_t frame, InputsMetadata<TResource>& metadata);
 	InputsMetadata<TResource> GetInputsMetadataAndCache(int64_t frame);
 	void SetInputs(Inputs inputs);
-	void AdvanceFrameRead(uint64_t& counter);
 	uint64_t GetFrameCounter(InputsMetadata<TResource> cachedInputs);
 	uint64_t IncrementFrameCounter(InputsMetadata<TResource> cachedInputs);
 	// What the source movie's header says (its game), for ExportM64: a script asks the root,
