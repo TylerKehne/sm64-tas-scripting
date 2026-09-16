@@ -149,8 +149,8 @@ protected:
 
 	// The compare family: run a script or an ad-hoc candidate over parameter tuples and keep the
 	// best by a comparator, with the Modify and Dynamic variants. Its 32 entry points are in
-	// Script.compare.inc, part of this class body.
-	#include "tasfw/Script.compare.inc"
+	// Script.compare.hpp, part of this class body.
+	#include "tasfw/Script.compare.hpp"
 
 	// The cursor and the inputs.
 	uint64_t GetCurrentFrame();

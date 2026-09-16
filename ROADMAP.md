@@ -739,7 +739,7 @@ item is done except 3.2, in progress, and 3.17, which follows it; then Phase 4.
       `.t.hpp` where it has definitions), every declaration's text and relative order kept;
       then one member order for every class and the `.t.hpp` files in the header's order
       (AGENTS.md, "Conventions"), data members untouched so no layout moved; then the compare
-      family's 32 entry points as `Script.compare.inc`, a member include of `Script` (the
+      family's 32 entry points as `Script.compare.hpp`, a member include of `Script` (the
       maintainer's choice over a base class), since a constrained member template has to be
       defined in its class on MSVC. `<tasfw/Script.hpp>` stays a script's one include and
       pulls in the root and the builders at its bottom: `GetTrackedState` reaches into

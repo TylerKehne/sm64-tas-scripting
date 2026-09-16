@@ -237,7 +237,7 @@ its place with numbers, and "it is cleaner" is not a number.
   the bottom of the `.hpp`. Keep that split. One header per concept (`SlotManager.hpp`,
   `TopLevelScript.hpp`, `M64.hpp`), each with its own `.t.hpp` where it has definitions; a
   file that only completes another (`TopLevelScript.hpp`, `TopLevelScriptBuilder.hpp`,
-  `Script.compare.inc`, the compare family's entry points as a member include of `Script`)
+  `Script.compare.hpp`, the compare family's entry points as a member include of `Script`)
   refuses to be included first. A class declares its members in one order: nested types,
   construction, the lifecycle the author implements, the runners, the cursor and the
   inputs, saves and loads, state; then friends, data, and the internals grouped by concern,

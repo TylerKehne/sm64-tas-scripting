@@ -152,7 +152,7 @@ the declaration, and when in doubt define the member inside the class body. Watc
 `ExecuteAdhoc` / `ModifyAdhoc` / `TestAdhoc` family in `Script.hpp` and `Script.t.hpp`,
 which mixes abbreviated (`AdhocScript auto`) and explicit template forms for this reason.
 The compare family's 32 entry points stay in the class body for the same reason: they are
-`Script.compare.inc`, a member include, rather than definitions in `Script.t.hpp`.
+`Script.compare.hpp`, a member include, rather than definitions in `Script.t.hpp`.
 
 ### MSVC and IntelliSense: friend class template for `TopLevelScript`
 

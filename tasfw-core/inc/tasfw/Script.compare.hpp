@@ -3,9 +3,11 @@
 // (ScriptCompareHelper.hpp, which also declares the concepts they take). Included inside the
 // class body of Script by Script.hpp and nowhere else: a constrained member template has to be
 // defined in its class (docs/compilers.md, MSVC), so the family cannot live in Script.t.hpp,
-// and this keeps Script.hpp readable. Tabs and access are the class body's.
+// and this keeps Script.hpp readable. Tabs and access are the class body's; a .hpp rather
+// than a .inc so the editors treat it as C++.
+#pragma once
 #ifndef SCRIPT_H
-#error "Script.compare.inc is included inside the class body of Script by Script.hpp"
+#error "Script.compare.hpp is included inside the class body of Script by Script.hpp"
 #endif
 
 	template <derived_from_specialization_of<Script> TScript,

@@ -8,7 +8,7 @@ which everything since is compared against, are at the bottom.
 
 No functional change, measured because tasfw-core moved: one header per concept, one member
 order per class with the `.t.hpp` files in the header's order, and the compare family's entry
-points as a member include (`Script.compare.inc`). Every declaration's text is what it was;
+points as a member include (`Script.compare.hpp`). Every declaration's text is what it was;
 only the order in which the compiler meets definitions changed, which moves code placement.
 MSVC 19.51, Release, against the reference saved from 35ebcc8: 0 regressions, every Tier C
 and D count identical, the deterministic Tier D run +0.0%, `Resource_SaveLoadState` -0.1%,
