@@ -19,6 +19,134 @@ ScattershotThread<TState, TResource, TStateTracker, TOutputState>::ScattershotTh
 template <class TState, derived_from_specialization_of<Resource> TResource,
     std::derived_from<Script<TResource>> TStateTracker,
     class TOutputState>
+std::string ScattershotThread<TState, TResource, TStateTracker, TOutputState>::GetCsvLabels()
+{
+    return "";
+}
+
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+std::string ScattershotThread<TState, TResource, TStateTracker, TOutputState>::GetCsvRow()
+{
+    return "";
+}
+
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::ForceAddToCsv()
+{
+    return false;
+}
+
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+uint64_t ScattershotThread<TState, TResource, TStateTracker, TOutputState>::GetTempRng()
+{
+    uint64_t rngHashPrev = RngHashTemp;
+    RngHashTemp = GetHash(RngHashTemp);
+    return rngHashPrev;
+}
+
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::AddRandomMovementOption(std::initializer_list<std::pair<BasicMoves, double>> weightedOptions)
+{
+    DrawOption(weightedOptions, basicMoves);
+}
+
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::AddMovementOption(BasicMoves movementOption, double probability)
+{
+    AddOption(std::size_t(movementOption), probability, basicMoves);
+}
+
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::CheckMovementOptions(BasicMoves movementOption)
+{
+    return OptionSelected(std::size_t(movementOption), basicMoves);
+}
+
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+Inputs ScattershotThread<TState, TResource, TStateTracker, TOutputState>::RandomInputs(std::initializer_list<std::pair<Buttons, double>> buttonProbabilities)
+{
+    std::array<std::pair<Buttons, double>, MaxWeightedEntries> probabilities;
+    std::size_t count = SortedByKey(buttonProbabilities, probabilities);
+    Inputs inputs;
+
+    ExecuteAdhoc([&]()
+        {
+            MarioState* marioState = *(MarioState**)(this->ReadState("gMarioState"));
+            Camera* camera = *(Camera**)(this->ReadState("gCamera"));
+
+            // stick mag
+            float intendedMag = 0;
+            if (CheckMovementOptions(BasicMoves::MAX_MAGNITUDE))
+                intendedMag = 32.0f;
+            else if (CheckMovementOptions(BasicMoves::ZERO_MAGNITUDE))
+                intendedMag = 0;
+            else if (CheckMovementOptions(BasicMoves::SAME_MAGNITUDE))
+                intendedMag = marioState->intendedMag;
+            else if (CheckMovementOptions(BasicMoves::RANDOM_MAGNITUDE))
+                intendedMag = (GetTempRng() % 1024) / 32.0f;
+
+            // Intended yaw
+            int16_t intendedYaw = 0;
+            if (CheckMovementOptions(BasicMoves::MATCH_FACING_YAW))
+                intendedYaw = marioState->faceAngle[1];
+            else if (CheckMovementOptions(BasicMoves::ANTI_FACING_YAW))
+                intendedYaw = marioState->faceAngle[1] + 0x8000;
+            else if (CheckMovementOptions(BasicMoves::SAME_YAW))
+                intendedYaw = marioState->intendedYaw;
+            else if (CheckMovementOptions(BasicMoves::RANDOM_YAW))
+                intendedYaw = int16_t(GetTempRng());
+
+            // Buttons
+            uint16_t buttons = 0;
+            if (CheckMovementOptions(BasicMoves::SAME_BUTTONS))
+                buttons = this->GetInputs(this->GetCurrentFrame() - 1).buttons;
+            else if (CheckMovementOptions(BasicMoves::NO_BUTTONS))
+                buttons = 0;
+            else if (CheckMovementOptions(BasicMoves::RANDOM_BUTTONS))
+            {
+                for (std::size_t i = 0; i < count; i++)
+                {
+                    const auto& pair = probabilities[i];
+                    if (pair.second <= 0)
+                        continue;
+
+                    if (pair.second >= 1.0)
+                    {
+                        buttons |= pair.first;
+                        continue;
+                    }
+
+                    if (double(GetTempRng()) / double(0xFFFFFFFFFFFFFFFFull) <= pair.second)
+                        buttons |= pair.first;
+                }
+            }
+
+            // Calculate and execute input
+            auto stick = Inputs::GetClosestInputByYawHau(intendedYaw, intendedMag, camera->yaw);
+            inputs = Inputs(buttons, stick.first, stick.second);
+            return true;
+        });
+
+    return inputs;
+}
+
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
 bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::validation() { return true; }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
@@ -150,6 +278,11 @@ bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::executio
 template <class TState, derived_from_specialization_of<Resource> TResource,
     std::derived_from<Script<TResource>> TStateTracker,
     class TOutputState>
+bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::assertion() { return true; }
+
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
 void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::Initialize()
 {
     LongLoad(config.StartFrame);
@@ -212,50 +345,144 @@ void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::Initiali
 template <class TState, derived_from_specialization_of<Resource> TResource,
     std::derived_from<Script<TResource>> TStateTracker,
     class TOutputState>
-std::string ScattershotThread<TState, TResource, TStateTracker, TOutputState>::GetCsvLabels()
+AdhocBaseScriptStatus ScattershotThread<TState, TResource, TStateTracker, TOutputState>::ExecuteFromBaseBlockAndEncode(int shot)
 {
-    return "";
-}
-
-template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
-    class TOutputState>
-bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::ForceAddToCsv()
-{
-    return false;
-}
-
-template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
-    class TOutputState>
-void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::AddCsvLabels()
-{
-    ExecuteAdhoc([&]()
+    return ExecuteAdhoc([&]()
         {
-            std::string labels = "Shot,Frame,Sampled," + GetCsvLabels();
-            if (labels == "" || config.CsvSamplePeriod == 0)
-                return false;
+            TState prevStateBin = BaseBlockStateBin;
+            uint64_t baseRngHash = RngHash;
+            bool anyNovelScripts = false; // Mark pellet as failed if 0 scripts were successful
 
-            scattershot.Csv << labels << "\n";
-            scattershot.CsvRows = 0;
-            AddCsvRow(0);
+            uint64_t baseFrame = this->GetCurrentFrame();
+            for (int n = 0; n < config.PelletMaxScripts && abs(int64_t(this->GetCurrentFrame() - baseFrame)) < config.PelletMaxFrameDistance; n++)
+            {
+                // Apply next script
+                SetTempRng(RngHash);
+                bool updated = ChooseScriptAndApply();
+                SetRng(RngHashTemp);
 
-            return true;
+                // Validation
+                bool validated = updated && ValidateCourseAndArea() && ExecuteAdhoc([&]() { return ValidateState(); }).executed;
+
+                // Create and add block to list if it is new.
+                bool novelScript = false;
+                auto newStateBin = validated ? GetStateBinSafe() : TState();
+                float fitness = validated ? GetStateFitnessSafe() : 0.f;
+                bool isSolution = validated ? ExecuteAdhoc([&]() { return IsSolution(); }).executed : false;
+                ScattershotSolution<TOutputState> solution = isSolution ? ScattershotSolution<TOutputState>(GetSolutionState(), this->GetTotalDiff())
+                    : ScattershotSolution<TOutputState>();
+                QueueThreadById(config.Deterministic, [&]()
+                    {
+                        #pragma omp critical (blocks)
+                        {
+                            //if (validated && newStateBin != prevStateBin && newStateBin != BaseBlockStateBin)
+                            if (validated)
+                                novelScript = scattershot.UpsertBlock(newStateBin, isSolution, solution, fitness, BaseBlockTailSegment, n + 1, baseRngHash, 0);
+                        }
+                            });
+
+                // Update script result count
+                #pragma omp critical (scriptcounters)
+                {
+                    scattershot.ScriptCount++;
+
+                    if (!validated)
+                        scattershot.FailedScripts++;
+                    else if (novelScript)
+                        scattershot.NovelScripts++;
+                    else
+                        scattershot.RedundantScripts++;
+                }
+
+                if (!validated)
+                    break;
+
+                if (novelScript)
+                {
+                    anyNovelScripts |= true;
+                    AddCsvRow(shot);
+                }
+
+                if (isSolution)
+                    break;
+
+                prevStateBin = newStateBin;
+            }
+
+            return anyNovelScripts;
         });
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
     std::derived_from<Script<TResource>> TStateTracker,
     class TOutputState>
-std::string ScattershotThread<TState, TResource, TStateTracker, TOutputState>::GetCsvRow()
+AdhocBaseScriptStatus ScattershotThread<TState, TResource, TStateTracker, TOutputState>::DecodeBaseBlockDiffAndApply()
 {
-    return "";
+    int64_t postScriptFrame = -1;
+    auto status = ModifyAdhoc([&]()
+        {
+            std::shared_ptr<Segment> tailSegment = BaseBlockTailSegment;
+            std::vector<std::shared_ptr<Segment>> segments(tailSegment->depth);
+            for (auto currentSegment = tailSegment; currentSegment->depth > 0; currentSegment = currentSegment->parent)
+                segments[currentSegment->depth - 1] = currentSegment;
+
+            for (auto& currentSegment : segments)
+            {
+                SetTempRng(currentSegment->seed);
+                for (int script = 0; script < currentSegment->nScripts; script++)
+                {
+                    if (currentSegment->pipedDiff1Index > 0)
+                        this->Apply(scattershot.InputSolutions[currentSegment->pipedDiff1Index - 1].m64Diff);
+                    else
+                        ChooseScriptAndApply();
+
+                    // This is here so the queued upserts don't block on the entire decoding
+                    QueueThreadById(config.Deterministic, [&]() {});
+                }
+            }
+
+            postScriptFrame = this->GetCurrentFrame();
+            return true;
+        });
+
+    // Modify leaves the cursor after the end of the child's diff by design (ARCHITECTURE.md,
+    // "Script hierarchy"); a block is keyed by the frame the script stopped on, so go back to
+    // it. This often does nothing and only costs anything when it rewinds.
+    this->Load(postScriptFrame);
+    return status;
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
     std::derived_from<Script<TResource>> TStateTracker,
     class TOutputState>
-bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::assertion() { return true; }
+bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::ChooseScriptAndApply()
+{
+    std::fill(basicMoves.begin(), basicMoves.end(), false);
+    std::fill(customMoves.begin(), customMoves.end(), false);
+
+    ExecuteAdhoc([&]()
+        {
+            SelectMovementOptions();
+            return true;
+        });
+
+    // Execute script and update rng hash
+    int64_t postScriptFrame = -1;
+    auto status = ModifyAdhoc([&]()
+        {
+            bool success = ApplyMovement();
+            postScriptFrame = this->GetCurrentFrame();
+            return success;
+        });
+
+    // Modify leaves the cursor after the end of the child's diff by design (ARCHITECTURE.md,
+    // "Script hierarchy"); a block is keyed by the frame the script stopped on, so go back to
+    // it. This often does nothing and only costs anything when it rewinds.
+    if (status.executed)
+        this->Load(postScriptFrame);
+
+    return status.executed;
+}
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
     std::derived_from<Script<TResource>> TStateTracker,
@@ -346,134 +573,10 @@ bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::Validate
 template <class TState, derived_from_specialization_of<Resource> TResource,
     std::derived_from<Script<TResource>> TStateTracker,
     class TOutputState>
-void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::AddCsvRow(int shot)
-{
-    bool sampled = false;
-    #pragma omp critical (csvcounters)
-    {
-        sampled = scattershot.CsvEnabled == true && scattershot.CsvRows != -1 && scattershot.CsvCounter++ % config.CsvSamplePeriod == 0;
-    }
-    
-    // Check if we should force an export for the current state
-    if (!sampled && !ExecuteAdhoc([&]() { return ForceAddToCsv(); }).executed)
-        return;
-
-    // Get CSV row and validate cell count
-    std::string row;
-    bool rowValidated = ExecuteAdhoc([&]()
-        {
-            auto labels = GetCsvLabels();
-            row = GetCsvRow();
-
-            // Validate column count is the same
-            int labelsColumns = int(std::count(labels.begin(), labels.end(), ','));
-            int rowColumns = int(std::count(row.begin(), row.end(), ','));
-
-            return labelsColumns == rowColumns;
-        }).executed;
-
-    if (!rowValidated)
-    {
-        #pragma omp critical (print)
-        {
-            std::cout << "Unable to add row to CSV. Labels/Row have different column counts.\n";
-        }
-
-        return;
-    }
-
-    int retries = 0;
-    #pragma omp critical (csvexport)
-    {
-        // CSV row export retry loop
-        auto failedRowPos = scattershot.Csv.tellp();
-        for (int retries = 0; retries < 5; retries++)
-        {
-            if (retries > 0)
-            {
-                #pragma omp critical (print)
-                {
-                    #pragma omp critical (csvcounters)
-                    {
-                        std::cout << "Retrying CSV row " << scattershot.CsvRows << ".\n";
-                    }
-                }
-            }
-
-            scattershot.Csv << shot << "," << this->GetCurrentFrame() << "," << sampled << "," << row << "\n";
-            if (!scattershot.Csv.fail())
-            {
-                #pragma omp critical (csvcounters)
-                {
-                    scattershot.CsvRows++;
-                }
-
-                break;
-            }
-            else
-            {
-                #pragma omp critical (print)
-                {
-                    std::cout << "Error writing to CSV row " << scattershot.CsvRows << ": " << scattershot.Csv.rdstate() << "\n";
-                }
-
-                scattershot.Csv.close();
-                scattershot.Csv = std::ofstream(scattershot.CsvFileName);
-                scattershot.Csv.seekp(failedRowPos);
-            }
-        }
-
-        if (retries == 5)
-        {
-            #pragma omp critical (print)
-            {
-                std::cout << "Exceeded CSV export retry count. Disabling CSV export.\n";
-            }
-
-            scattershot.CsvEnabled = false;
-        }
-    }
-}
-
-template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
-    class TOutputState>
 bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::ValidateCourseAndArea()
 {
     return startCourse == *(short*)this->ReadState("gCurrCourseNum")
         && startArea == *(short*)this->ReadState("gCurrAreaIndex");
-}
-
-template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
-    class TOutputState>
-bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::ChooseScriptAndApply()
-{
-    std::fill(basicMoves.begin(), basicMoves.end(), false);
-    std::fill(customMoves.begin(), customMoves.end(), false);
-
-    ExecuteAdhoc([&]()
-        {
-            SelectMovementOptions();
-            return true;
-        });
-
-    // Execute script and update rng hash
-    int64_t postScriptFrame = -1;
-    auto status = ModifyAdhoc([&]()
-        {
-            bool success = ApplyMovement();
-            postScriptFrame = this->GetCurrentFrame();
-            return success;
-        });
-
-    // Modify leaves the cursor after the end of the child's diff by design (ARCHITECTURE.md,
-    // "Script hierarchy"); a block is keyed by the frame the script stopped on, so go back to
-    // it. This often does nothing and only costs anything when it rewinds.
-    if (status.executed)
-        this->Load(postScriptFrame);
-
-    return status.executed;
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
@@ -509,116 +612,6 @@ float ScattershotThread<TState, TResource, TStateTracker, TOutputState>::GetStat
 template <class TState, derived_from_specialization_of<Resource> TResource,
     std::derived_from<Script<TResource>> TStateTracker,
     class TOutputState>
-AdhocBaseScriptStatus ScattershotThread<TState, TResource, TStateTracker, TOutputState>::DecodeBaseBlockDiffAndApply()
-{
-    int64_t postScriptFrame = -1;
-    auto status = ModifyAdhoc([&]()
-        {
-            std::shared_ptr<Segment> tailSegment = BaseBlockTailSegment;
-            std::vector<std::shared_ptr<Segment>> segments(tailSegment->depth);
-            for (auto currentSegment = tailSegment; currentSegment->depth > 0; currentSegment = currentSegment->parent)
-                segments[currentSegment->depth - 1] = currentSegment;
-
-            for (auto& currentSegment : segments)
-            {
-                SetTempRng(currentSegment->seed);
-                for (int script = 0; script < currentSegment->nScripts; script++)
-                {
-                    if (currentSegment->pipedDiff1Index > 0)
-                        this->Apply(scattershot.InputSolutions[currentSegment->pipedDiff1Index - 1].m64Diff);
-                    else
-                        ChooseScriptAndApply();
-
-                    // This is here so the queued upserts don't block on the entire decoding
-                    QueueThreadById(config.Deterministic, [&]() {});
-                }
-            }
-
-            postScriptFrame = this->GetCurrentFrame();
-            return true;
-        });
-
-    // Modify leaves the cursor after the end of the child's diff by design (ARCHITECTURE.md,
-    // "Script hierarchy"); a block is keyed by the frame the script stopped on, so go back to
-    // it. This often does nothing and only costs anything when it rewinds.
-    this->Load(postScriptFrame);
-    return status;
-}
-
-template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
-    class TOutputState>
-AdhocBaseScriptStatus ScattershotThread<TState, TResource, TStateTracker, TOutputState>::ExecuteFromBaseBlockAndEncode(int shot)
-{
-    return ExecuteAdhoc([&]()
-        {
-            TState prevStateBin = BaseBlockStateBin;
-            uint64_t baseRngHash = RngHash;
-            bool anyNovelScripts = false; // Mark pellet as failed if 0 scripts were successful
-
-            uint64_t baseFrame = this->GetCurrentFrame();
-            for (int n = 0; n < config.PelletMaxScripts && abs(int64_t(this->GetCurrentFrame() - baseFrame)) < config.PelletMaxFrameDistance; n++)
-            {
-                // Apply next script
-                SetTempRng(RngHash);
-                bool updated = ChooseScriptAndApply();
-                SetRng(RngHashTemp);
-
-                // Validation
-                bool validated = updated && ValidateCourseAndArea() && ExecuteAdhoc([&]() { return ValidateState(); }).executed;
-
-                // Create and add block to list if it is new.
-                bool novelScript = false;
-                auto newStateBin = validated ? GetStateBinSafe() : TState();
-                float fitness = validated ? GetStateFitnessSafe() : 0.f;
-                bool isSolution = validated ? ExecuteAdhoc([&]() { return IsSolution(); }).executed : false;
-                ScattershotSolution<TOutputState> solution = isSolution ? ScattershotSolution<TOutputState>(GetSolutionState(), this->GetTotalDiff())
-                    : ScattershotSolution<TOutputState>();
-                QueueThreadById(config.Deterministic, [&]()
-                    {
-                        #pragma omp critical (blocks)
-                        {
-                            //if (validated && newStateBin != prevStateBin && newStateBin != BaseBlockStateBin)
-                            if (validated)
-                                novelScript = scattershot.UpsertBlock(newStateBin, isSolution, solution, fitness, BaseBlockTailSegment, n + 1, baseRngHash, 0);
-                        }
-                            });
-
-                // Update script result count
-                #pragma omp critical (scriptcounters)
-                {
-                    scattershot.ScriptCount++;
-
-                    if (!validated)
-                        scattershot.FailedScripts++;
-                    else if (novelScript)
-                        scattershot.NovelScripts++;
-                    else
-                        scattershot.RedundantScripts++;
-                }
-
-                if (!validated)
-                    break;
-
-                if (novelScript)
-                {
-                    anyNovelScripts |= true;
-                    AddCsvRow(shot);
-                }
-
-                if (isSolution)
-                    break;
-
-                prevStateBin = newStateBin;
-            }
-
-            return anyNovelScripts;
-        });
-}
-
-template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
-    class TOutputState>
 uint64_t ScattershotThread<TState, TResource, TStateTracker, TOutputState>::GetRng()
 {
     uint64_t rngHashPrev = RngHash;
@@ -632,16 +625,6 @@ template <class TState, derived_from_specialization_of<Resource> TResource,
 void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::SetRng(uint64_t rngHash)
 {
     RngHash = rngHash;
-}
-
-template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
-    class TOutputState>
-uint64_t ScattershotThread<TState, TResource, TStateTracker, TOutputState>::GetTempRng()
-{
-    uint64_t rngHashPrev = RngHashTemp;
-    RngHashTemp = GetHash(RngHashTemp);
-    return rngHashPrev;
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
@@ -743,6 +726,117 @@ void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::RetireFr
 template <class TState, derived_from_specialization_of<Resource> TResource,
     std::derived_from<Script<TResource>> TStateTracker,
     class TOutputState>
+void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::AddCsvRow(int shot)
+{
+    bool sampled = false;
+    #pragma omp critical (csvcounters)
+    {
+        sampled = scattershot.CsvEnabled == true && scattershot.CsvRows != -1 && scattershot.CsvCounter++ % config.CsvSamplePeriod == 0;
+    }
+    
+    // Check if we should force an export for the current state
+    if (!sampled && !ExecuteAdhoc([&]() { return ForceAddToCsv(); }).executed)
+        return;
+
+    // Get CSV row and validate cell count
+    std::string row;
+    bool rowValidated = ExecuteAdhoc([&]()
+        {
+            auto labels = GetCsvLabels();
+            row = GetCsvRow();
+
+            // Validate column count is the same
+            int labelsColumns = int(std::count(labels.begin(), labels.end(), ','));
+            int rowColumns = int(std::count(row.begin(), row.end(), ','));
+
+            return labelsColumns == rowColumns;
+        }).executed;
+
+    if (!rowValidated)
+    {
+        #pragma omp critical (print)
+        {
+            std::cout << "Unable to add row to CSV. Labels/Row have different column counts.\n";
+        }
+
+        return;
+    }
+
+    int retries = 0;
+    #pragma omp critical (csvexport)
+    {
+        // CSV row export retry loop
+        auto failedRowPos = scattershot.Csv.tellp();
+        for (int retries = 0; retries < 5; retries++)
+        {
+            if (retries > 0)
+            {
+                #pragma omp critical (print)
+                {
+                    #pragma omp critical (csvcounters)
+                    {
+                        std::cout << "Retrying CSV row " << scattershot.CsvRows << ".\n";
+                    }
+                }
+            }
+
+            scattershot.Csv << shot << "," << this->GetCurrentFrame() << "," << sampled << "," << row << "\n";
+            if (!scattershot.Csv.fail())
+            {
+                #pragma omp critical (csvcounters)
+                {
+                    scattershot.CsvRows++;
+                }
+
+                break;
+            }
+            else
+            {
+                #pragma omp critical (print)
+                {
+                    std::cout << "Error writing to CSV row " << scattershot.CsvRows << ": " << scattershot.Csv.rdstate() << "\n";
+                }
+
+                scattershot.Csv.close();
+                scattershot.Csv = std::ofstream(scattershot.CsvFileName);
+                scattershot.Csv.seekp(failedRowPos);
+            }
+        }
+
+        if (retries == 5)
+        {
+            #pragma omp critical (print)
+            {
+                std::cout << "Exceeded CSV export retry count. Disabling CSV export.\n";
+            }
+
+            scattershot.CsvEnabled = false;
+        }
+    }
+}
+
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::AddCsvLabels()
+{
+    ExecuteAdhoc([&]()
+        {
+            std::string labels = "Shot,Frame,Sampled," + GetCsvLabels();
+            if (labels == "" || config.CsvSamplePeriod == 0)
+                return false;
+
+            scattershot.Csv << labels << "\n";
+            scattershot.CsvRows = 0;
+            AddCsvRow(0);
+
+            return true;
+        });
+}
+
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
 void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::AddOption(std::size_t index, double probability, std::vector<bool>& set)
 {
     if (probability <= 0.0)
@@ -762,31 +856,6 @@ template <class TState, derived_from_specialization_of<Resource> TResource,
 bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::OptionSelected(std::size_t index, const std::vector<bool>& set)
 {
     return index < set.size() && set[index];
-}
-
-template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
-    class TOutputState>
-template <class TKey>
-std::size_t ScattershotThread<TState, TResource, TStateTracker, TOutputState>::SortedByKey(
-    std::initializer_list<std::pair<TKey, double>> list, std::array<std::pair<TKey, double>, MaxWeightedEntries>& out)
-{
-    std::size_t count = 0;
-    for (const auto& entry : list)
-    {
-        bool duplicate = false;
-        for (std::size_t j = 0; j < count && !duplicate; j++)
-            duplicate = out[j].first == entry.first;
-        if (duplicate)
-            continue;
-        if (count == MaxWeightedEntries)
-            throw std::length_error("more weighted entries than a scattershot script can hold");
-        std::size_t i = count++;
-        for (; i > 0 && entry.first < out[i - 1].first; i--)
-            out[i] = out[i - 1];
-        out[i] = entry;
-    }
-    return count;
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
@@ -835,95 +904,26 @@ void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::DrawOpti
 template <class TState, derived_from_specialization_of<Resource> TResource,
     std::derived_from<Script<TResource>> TStateTracker,
     class TOutputState>
-void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::AddRandomMovementOption(std::initializer_list<std::pair<BasicMoves, double>> weightedOptions)
+template <class TKey>
+std::size_t ScattershotThread<TState, TResource, TStateTracker, TOutputState>::SortedByKey(
+    std::initializer_list<std::pair<TKey, double>> list, std::array<std::pair<TKey, double>, MaxWeightedEntries>& out)
 {
-    DrawOption(weightedOptions, basicMoves);
-}
-
-template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
-    class TOutputState>
-void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::AddMovementOption(BasicMoves movementOption, double probability)
-{
-    AddOption(std::size_t(movementOption), probability, basicMoves);
-}
-
-template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
-    class TOutputState>
-bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::CheckMovementOptions(BasicMoves movementOption)
-{
-    return OptionSelected(std::size_t(movementOption), basicMoves);
-}
-
-template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
-    class TOutputState>
-Inputs ScattershotThread<TState, TResource, TStateTracker, TOutputState>::RandomInputs(std::initializer_list<std::pair<Buttons, double>> buttonProbabilities)
-{
-    std::array<std::pair<Buttons, double>, MaxWeightedEntries> probabilities;
-    std::size_t count = SortedByKey(buttonProbabilities, probabilities);
-    Inputs inputs;
-
-    ExecuteAdhoc([&]()
-        {
-            MarioState* marioState = *(MarioState**)(this->ReadState("gMarioState"));
-            Camera* camera = *(Camera**)(this->ReadState("gCamera"));
-
-            // stick mag
-            float intendedMag = 0;
-            if (CheckMovementOptions(BasicMoves::MAX_MAGNITUDE))
-                intendedMag = 32.0f;
-            else if (CheckMovementOptions(BasicMoves::ZERO_MAGNITUDE))
-                intendedMag = 0;
-            else if (CheckMovementOptions(BasicMoves::SAME_MAGNITUDE))
-                intendedMag = marioState->intendedMag;
-            else if (CheckMovementOptions(BasicMoves::RANDOM_MAGNITUDE))
-                intendedMag = (GetTempRng() % 1024) / 32.0f;
-
-            // Intended yaw
-            int16_t intendedYaw = 0;
-            if (CheckMovementOptions(BasicMoves::MATCH_FACING_YAW))
-                intendedYaw = marioState->faceAngle[1];
-            else if (CheckMovementOptions(BasicMoves::ANTI_FACING_YAW))
-                intendedYaw = marioState->faceAngle[1] + 0x8000;
-            else if (CheckMovementOptions(BasicMoves::SAME_YAW))
-                intendedYaw = marioState->intendedYaw;
-            else if (CheckMovementOptions(BasicMoves::RANDOM_YAW))
-                intendedYaw = int16_t(GetTempRng());
-
-            // Buttons
-            uint16_t buttons = 0;
-            if (CheckMovementOptions(BasicMoves::SAME_BUTTONS))
-                buttons = this->GetInputs(this->GetCurrentFrame() - 1).buttons;
-            else if (CheckMovementOptions(BasicMoves::NO_BUTTONS))
-                buttons = 0;
-            else if (CheckMovementOptions(BasicMoves::RANDOM_BUTTONS))
-            {
-                for (std::size_t i = 0; i < count; i++)
-                {
-                    const auto& pair = probabilities[i];
-                    if (pair.second <= 0)
-                        continue;
-
-                    if (pair.second >= 1.0)
-                    {
-                        buttons |= pair.first;
-                        continue;
-                    }
-
-                    if (double(GetTempRng()) / double(0xFFFFFFFFFFFFFFFFull) <= pair.second)
-                        buttons |= pair.first;
-                }
-            }
-
-            // Calculate and execute input
-            auto stick = Inputs::GetClosestInputByYawHau(intendedYaw, intendedMag, camera->yaw);
-            inputs = Inputs(buttons, stick.first, stick.second);
-            return true;
-        });
-
-    return inputs;
+    std::size_t count = 0;
+    for (const auto& entry : list)
+    {
+        bool duplicate = false;
+        for (std::size_t j = 0; j < count && !duplicate; j++)
+            duplicate = out[j].first == entry.first;
+        if (duplicate)
+            continue;
+        if (count == MaxWeightedEntries)
+            throw std::length_error("more weighted entries than a scattershot script can hold");
+        std::size_t i = count++;
+        for (; i > 0 && entry.first < out[i - 1].first; i--)
+            out[i] = out[i - 1];
+        out[i] = entry;
+    }
+    return count;
 }
 
 #endif

@@ -6,6 +6,27 @@
 template <class TState, derived_from_specialization_of<Resource> TResource,
     std::derived_from<Script<TResource>> TStateTracker,
     class TOutputState>
+Scattershot<TState, TResource, TStateTracker, TOutputState>::Scattershot(const Configuration& config, const std::vector<ScattershotSolution<TOutputState>>& inputSolutions)
+    : config(config), InputSolutions(inputSolutions)
+{
+    Blocks.reserve(config.MaxBlocks);
+    BlockIndices.reserve(3 * config.MaxBlocks);
+
+    for (int i = 0; i < int(BlockIndices.capacity()); i++)
+        BlockIndices.push_back(-1);
+}
+
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+Scattershot<TState, TResource, TStateTracker, TOutputState>::~Scattershot()
+{
+    Csv.close();
+}
+
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
 template <typename F>
 void Scattershot<TState, TResource, TStateTracker, TOutputState>::MultiThread(int nThreads, F func)
 {
@@ -20,19 +41,6 @@ void Scattershot<TState, TResource, TStateTracker, TOutputState>::MultiThread(in
     }
 
     return;
-}
-
-template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
-    class TOutputState>
-Scattershot<TState, TResource, TStateTracker, TOutputState>::Scattershot(const Configuration& config, const std::vector<ScattershotSolution<TOutputState>>& inputSolutions)
-    : config(config), InputSolutions(inputSolutions)
-{
-    Blocks.reserve(config.MaxBlocks);
-    BlockIndices.reserve(3 * config.MaxBlocks);
-
-    for (int i = 0; i < int(BlockIndices.capacity()); i++)
-        BlockIndices.push_back(-1);
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
@@ -153,14 +161,6 @@ void Scattershot<TState, TResource, TStateTracker, TOutputState>::OpenCsv()
     }
     else
         std::cout << "Unable to create CSV file.";
-}
-
-template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
-    class TOutputState>
-Scattershot<TState, TResource, TStateTracker, TOutputState>::~Scattershot()
-{
-    Csv.close();
 }
 
 #endif

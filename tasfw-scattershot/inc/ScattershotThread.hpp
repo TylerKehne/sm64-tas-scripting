@@ -24,19 +24,6 @@ public:
         return ScattershotBuilder<TState, TResource, TStateTracker, TOutputState>(config, nullptr);
     }
 
-    /*
-    template <typename F>
-    static void ThreadLock(F func)
-    {
-        #pragma omp critical
-        {
-            func();
-        }
-
-        return;
-    }
-    */
-
     template <typename F>
     static void ThreadLock(const char* /*section*/, F func)
     {
@@ -60,10 +47,8 @@ protected:
 
     ScattershotThread(Scattershot<TState, TResource, TStateTracker, TOutputState>& scattershot);
 
-    virtual bool validation();
-    bool execution();
-    virtual bool assertion();
-
+    // What a scattershot script implements: its movement options and a move, its state bin, its
+    // validation and fitness, and what a solution carries; the CSV hooks have defaults.
     virtual void SelectMovementOptions() = 0;
     virtual bool ApplyMovement() = 0;
     virtual TState GetStateBin() = 0;
@@ -76,6 +61,8 @@ protected:
     virtual std::string GetCsvRow();
     virtual bool ForceAddToCsv();
 
+    // What it calls: the RNG (hard rule 3) and the movement options, the framework's moves and
+    // its own.
     uint64_t GetTempRng();
 
     // The weights are a braced list of {option, weight} pairs, walked in BasicMoves order
@@ -117,6 +104,11 @@ protected:
         return OptionSelected(std::size_t(option), thread.customMoves);
     }
 
+    // The lifecycle, the thread's own: one shot per execution.
+    virtual bool validation();
+    bool execution();
+    virtual bool assertion();
+
 private:
     Scattershot<TState, TResource, TStateTracker, TOutputState>& scattershot;
     int Id;
@@ -130,39 +122,39 @@ private:
     bool LastValidationFailed = false;
     TState LastDecodedBin;
     M64Diff LastDecodedDiff;
-    
+
     // The options selected for the current script, one bit per BasicMoves. The enum
     // grows with every scenario and no size is assumed: the vector grows to the largest
     // option a script on this thread ever selects (a handful of times in a run) and is
     // cleared in place per script, so no script allocates for it.
     std::vector<bool> basicMoves;       // BasicMoves, the framework's enum
     std::vector<bool> customMoves;           // the script's own CustomMoves
-    void AddOption(std::size_t index, double probability, std::vector<bool>& set);
-    static bool OptionSelected(std::size_t index, const std::vector<bool>& set);
-    template <class TOption>
-    void DrawOption(std::initializer_list<std::pair<TOption, double>> weightedOptions, std::vector<bool>& set);
 
-    // The entries of a braced list in key order, the first of any duplicate key kept: the
-    // order and the meaning a std::map built from the same list had. Returns the count.
     static constexpr std::size_t MaxWeightedEntries = 64;
     static constexpr uint64_t SpinBudget = 4096; // pauses before a waiter blocks on the turn (ROADMAP 3.15) // one draw's candidates, not the enum
-    template <class TKey>
-    static std::size_t SortedByKey(std::initializer_list<std::pair<TKey, double>> list, std::array<std::pair<TKey, double>, MaxWeightedEntries>& out);
 
     short startCourse;
     short startArea;
 
-    // Thread state methods
+    // The shot: from the base block through the pellet to the encoded block.
     void Initialize();
+    AdhocBaseScriptStatus ExecuteFromBaseBlockAndEncode(int shot);
+    AdhocBaseScriptStatus DecodeBaseBlockDiffAndApply();
+    bool ChooseScriptAndApply();
+    void SelectBaseBlock(int mainIteration);
+    bool ValidateBaseBlock(int shot);
+    bool ValidateCourseAndArea();
+    TState GetStateBinSafe();
+    float GetStateFitnessSafe();
+
+    // The RNG.
     uint64_t GetRng();
     void SetRng(uint64_t rngHash);
     void SetTempRng(uint64_t rngHash);
-    void SelectBaseBlock(int mainIteration);
-    bool ValidateBaseBlock(int shot);
+    template <typename T>
+    uint64_t GetHash(const T& toHash) const;
 
-    void AddCsvRow(int shot);
-    void AddCsvLabels();
-
+    // The turn queue of the deterministic mode.
     template <typename F>
     static void SingleThread(F func)
     {
@@ -188,15 +180,20 @@ private:
     void PassTurn(uint64_t next);
     void RetireFromQueue();
 
-    bool ValidateCourseAndArea();
-    bool ChooseScriptAndApply();
-    TState GetStateBinSafe();
-    float GetStateFitnessSafe();
-    AdhocBaseScriptStatus DecodeBaseBlockDiffAndApply();
-    AdhocBaseScriptStatus ExecuteFromBaseBlockAndEncode(int shot);
+    // The CSV.
+    void AddCsvRow(int shot);
+    void AddCsvLabels();
 
-    template <typename T>
-    uint64_t GetHash(const T& toHash) const;
+    // The draw over movement options.
+    void AddOption(std::size_t index, double probability, std::vector<bool>& set);
+    static bool OptionSelected(std::size_t index, const std::vector<bool>& set);
+    template <class TOption>
+    void DrawOption(std::initializer_list<std::pair<TOption, double>> weightedOptions, std::vector<bool>& set);
+
+    // The entries of a braced list in key order, the first of any duplicate key kept: the
+    // order and the meaning a std::map built from the same list had. Returns the count.
+    template <class TKey>
+    static std::size_t SortedByKey(std::initializer_list<std::pair<TKey, double>> list, std::array<std::pair<TKey, double>, MaxWeightedEntries>& out);
 };
 
 //Include template method implementations

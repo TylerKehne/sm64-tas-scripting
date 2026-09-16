@@ -103,11 +103,12 @@ class Scattershot
 {
 public:
     const Configuration& config;
-    friend class ScattershotThread<TState, TResource, TStateTracker, TOutputState>;
-    friend class PerfAccess; // tasfw-perf benchmarks and tasfw-tests (tasfw/testing/PerfAccess.hpp); see docs/performance.md
 
     Scattershot(const Configuration& configuration, const std::vector<ScattershotSolution<TOutputState>>& inputSolutions);
+    ~Scattershot();
 
+    // How a search starts, from a configuration or from imported resources (the builders call
+    // these).
     template <std::derived_from<ScattershotThread<TState, TResource, TStateTracker, TOutputState>> TScattershotThread,
         class TResourceConfig, typename F, typename... TParams, typename... TStateTrackerParams>
         requires std::same_as<std::invoke_result_t<F, int>, TResourceConfig>
@@ -150,9 +151,10 @@ public:
             });
     }
 
-    ~Scattershot();
-
 private:
+    friend class ScattershotThread<TState, TResource, TStateTracker, TOutputState>;
+    friend class PerfAccess; // tasfw-perf benchmarks and tasfw-tests (tasfw/testing/PerfAccess.hpp); see docs/performance.md
+
     // Global State
     // The deterministic mode's queue (ROADMAP 3.8). Every thread numbers its calls of
     // QueueThreadById; call k of thread i is ticket k * threads + i, and QueueTurn is the
@@ -183,29 +185,7 @@ private:
     // A non-zero count means replaying a segment chain is not a pure function of its seeds.
     uint64_t ValidationFailures = 0;
 
-    void PrintStatus();
-    bool UpsertBlock(TState stateBin, bool isSolution, ScattershotSolution<TOutputState> solution, float fitness,
-        std::shared_ptr<Segment> parentSegment, uint8_t nScripts, uint64_t segmentSeed, uint16_t pipedDiff1Index);
-
-    template <typename T>
-    uint64_t GetHash(const T& toHash, bool ignoreFillerBytes)
-    {
-        const auto* data = reinterpret_cast<const std::byte*>(&toHash);
-        uint64_t hashValue = 0;
-        for (std::size_t i = 0; i < sizeof(toHash); i++)
-        {
-            if (ignoreFillerBytes || !FillerBytes.contains(int(i)))
-                hashValue ^= HashByte(data[i]) + 0x9e3779b97f4a7c15ull + (hashValue << 6) + (hashValue >> 2);
-        }
-
-        return hashValue;
-    }
-
-    void OpenCsv();
-
-    template <typename F>
-    void MultiThread(int nThreads, F func);
-
+    // The search: the run, its threads, the block table, the status line and the CSV.
     template <std::derived_from<ScattershotThread<TState, TResource, TStateTracker, TOutputState>> TScattershotThread, typename F>
         requires std::same_as<std::invoke_result_t<F, Scattershot<TState, TResource, TStateTracker, TOutputState>&, M64&, int>, ScriptStatus<TScattershotThread>>
     static std::vector<ScattershotSolution<TOutputState>> RunBase(const Configuration& configuration, const std::vector<ScattershotSolution<TOutputState>>& inputSolutions, F scriptRunner)
@@ -282,6 +262,27 @@ private:
         return solutions;
     }
 
+    template <typename F>
+    void MultiThread(int nThreads, F func);
+    bool UpsertBlock(TState stateBin, bool isSolution, ScattershotSolution<TOutputState> solution, float fitness,
+        std::shared_ptr<Segment> parentSegment, uint8_t nScripts, uint64_t segmentSeed, uint16_t pipedDiff1Index);
+
+    template <typename T>
+    uint64_t GetHash(const T& toHash, bool ignoreFillerBytes)
+    {
+        const auto* data = reinterpret_cast<const std::byte*>(&toHash);
+        uint64_t hashValue = 0;
+        for (std::size_t i = 0; i < sizeof(toHash); i++)
+        {
+            if (ignoreFillerBytes || !FillerBytes.contains(int(i)))
+                hashValue ^= HashByte(data[i]) + 0x9e3779b97f4a7c15ull + (hashValue << 6) + (hashValue >> 2);
+        }
+
+        return hashValue;
+    }
+    void PrintStatus();
+    void OpenCsv();
+
     static std::unordered_set<int> GetStateBinRuntimeFillerBytes()
     {
         std::unordered_set<int> fillerBytes;
@@ -306,7 +307,6 @@ private:
 
         return fillerBytes;
     }
-
     inline const static std::unordered_set<int> FillerBytes = GetStateBinRuntimeFillerBytes();
 };
 
