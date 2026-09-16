@@ -5,8 +5,8 @@
 #include <tasfw/Concepts.hpp>
 #include <tasfw/Resource.hpp>
 
-#ifndef STATETRACKER_H
-#define STATETRACKER_H
+#ifndef METRICSCRIPT_H
+#define METRICSCRIPT_H
 
 template <derived_from_specialization_of<Resource> TResource>
 class Script;
