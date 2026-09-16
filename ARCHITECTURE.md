@@ -256,8 +256,12 @@ load, `TrackState` runs the tracker at that frame inside a reverted sandbox, and
 for a frame ahead of the cursor loads or advances to it in that sandbox and reverts, so the
 requesting script's cursor never moves. Because the tracker is a script, it may itself
 advance frames to look further ahead (`CalculateOscillations` does).
-Trackers may call `GetTrackedState<T>(frame - 1)` to compute recursive metrics; the cache
-makes this linear. Entries after a modified frame are erased on `AdvanceFrameWrite`,
+Trackers may call `GetTrackedState(frame - 1)` to compute recursive metrics; the cache
+makes this linear. The call names no tracker: a tracker reads its own state, a root or a
+stage script its tracker's (`TopLevelScript` declares `StateTracker` from its template
+parameter, `TrackerOf` in StateTracker.hpp resolves it from the calling class through a C++23
+explicit object parameter), and a child script that reads tracked state declares
+`using StateTracker = X;` once; `GetTrackedState<T>(frame)` still asks about a named tracker. Entries after a modified frame are erased on `AdvanceFrameWrite`,
 `Apply`, `Rollback`; on `Modify` they move from child to parent with the saves.
 `GetTrackedState` returns a `const` reference into that table and a finished tracker's
 `CustomStatus` is moved into it, not copied. A script's entry in the table is created on its
@@ -462,7 +466,9 @@ Counts are the metrics to trust; they are deterministic and machine-independent.
 ## Sharp edges worth knowing
 
 - `Modify` moves the cursor to the end of the child's diff (see above).
-- `GetTrackedState` throws if the root is not a `TopLevelScript` with that tracker type.
+- `GetTrackedState` throws if the root is not a `TopLevelScript` with that tracker type, the
+  one named or the one deduced from the calling class (its own for a tracker, its
+  `StateTracker` alias otherwise).
 - `GetTrackedState` returns a reference into the root's table. A write at or before that
   frame (`AdvanceFrameWrite`, `Apply`, `Rollback`) invalidates it; copy the state
   (`auto state = ...`) when it has to survive one.

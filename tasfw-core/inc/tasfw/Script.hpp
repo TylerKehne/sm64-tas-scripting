@@ -189,16 +189,19 @@ protected:
 	// further parameters, through Resource::State. The first form exports the current
 	// frame; the second loads `frame` first and returns to the current frame after, both
 	// through the script's own loads, counted like any. The constraint is Resource::State's
-	// own, repeated so a frame is never taken for a state parameter when the two overload.
+	// own, restated on the resource so a frame is never taken for a state parameter when the
+	// two overload. Restated rather than asked of State in a requires-expression: Visual
+	// Studio 2026's IntelliSense never satisfies one that names UState in a call on TResource
+	// (docs/compilers.md).
 	template <class UState, typename... Us>
-		requires(requires(TResource& r, Us&&... params) { r.template State<UState>(std::forward<Us>(params)...); })
+		requires(std::constructible_from<UState, const TResource&, Us...>)
 	ImportedSave<UState> ExportSave(Us&&... params)
 	{
 		return ImportedSave<UState>(resource->template State<UState>(std::forward<Us>(params)...), GetCurrentFrame());
 	}
 
 	template <class UState, typename... Us>
-		requires(requires(TResource& r, Us&&... params) { r.template State<UState>(std::forward<Us>(params)...); })
+		requires(std::constructible_from<UState, const TResource&, Us...>)
 	ImportedSave<UState> ExportSave(int64_t frame, Us&&... params)
 	{
 		uint64_t currentFrame = GetCurrentFrame();
@@ -223,6 +226,22 @@ protected:
 	bool TrackedStateExists(int64_t frame)
 	{
 		return TrackerRoot<TStateTracker>()->TrackedStateExistsInternal(this, GetInputsMetadataAndCache(frame));
+	}
+
+	// The same two with the tracker deduced from the calling class (TrackerOf): a tracker reads
+	// its own state, a root or a stage script its tracker's, with nothing named at the call
+	// (C++23 explicit object parameter, docs/compilers.md). The forms above stay for a script
+	// that asks about another tracker; the cast keeps this one from choosing itself.
+	template <std::derived_from<Script<TResource>> Self>
+	const typename TrackerOf<Self>::type::CustomScriptStatus& GetTrackedState(this Self& self, int64_t frame)
+	{
+		return static_cast<Script<TResource>&>(self).template GetTrackedState<typename TrackerOf<Self>::type>(frame);
+	}
+
+	template <std::derived_from<Script<TResource>> Self>
+	bool TrackedStateExists(this Self& self, int64_t frame)
+	{
+		return static_cast<Script<TResource>&>(self).template TrackedStateExists<typename TrackerOf<Self>::type>(frame);
 	}
 
 private:

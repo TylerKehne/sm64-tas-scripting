@@ -11,6 +11,34 @@
 
 using namespace tasfw::tests;
 
+// A child script that reads tracked state names its tracker once; a tracker names nothing
+// (script_fixtures.hpp, RecursiveTracker reads its own previous frame).
+class TrackerReader : public Script<MockResource>
+{
+public:
+	using StateTracker = RecursiveTracker;
+
+	bool validation() override { return true; }
+	bool execution() override
+	{
+		CustomStatus.sum = GetTrackedState(GetCurrentFrame()).sum;
+		CustomStatus.exists = TrackedStateExists(GetCurrentFrame());
+		return true;
+	}
+	bool assertion() override { return true; }
+
+	class CustomScriptStatus
+	{
+	public:
+		uint64_t sum = 0;
+		bool exists = false;
+	};
+	CustomScriptStatus CustomStatus;
+};
+
+static_assert(std::is_same_v<TrackerOf<RecursiveTracker>::type, RecursiveTracker>, "a tracker reads its own state");
+static_assert(std::is_same_v<TrackerOf<TrackerReader>::type, RecursiveTracker>, "a child reads the tracker it declares");
+
 TEST_CASE("State trackers compute per-frame state, recursively, without moving the cursor")
 {
 	MockResource resource;
@@ -20,11 +48,11 @@ TEST_CASE("State trackers compute per-frame state, recursively, without moving t
 			for (int i = 0; i < 10; i++)
 				s.AdvanceFrameWrite(In(i));
 
-			auto at10 = s.template GetTrackedState<RecursiveTracker>(10);
+			auto at10 = s.GetTrackedState(10);
 			CHECK(at10.initialized);
 			CHECK(at10.sum == 55); // 0 + 1 + ... + 10
 
-			auto at4 = s.template GetTrackedState<RecursiveTracker>(4);
+			auto at4 = s.GetTrackedState(4);
 			CHECK(at4.sum == 10);
 			CHECK(s.GetCurrentFrame() == 10);
 
@@ -33,7 +61,7 @@ TEST_CASE("State trackers compute per-frame state, recursively, without moving t
 			s.AdvanceFrameWrite(In(60));
 			for (int i = 7; i < 10; i++)
 				s.AdvanceFrameWrite(In(i));
-			CHECK(s.template GetTrackedState<RecursiveTracker>(10).sum == 55);
+			CHECK(s.GetTrackedState(10).sum == 55);
 		});
 }
 
@@ -53,7 +81,7 @@ TEST_CASE("A tracked state ahead of the cursor is computed in a sandbox and the 
 
 			// Frame 12 is seven frames ahead: the tracker advances there in its own sandbox
 			// and is reverted; the requesting script does not move and writes nothing.
-			const auto& at12 = s.template GetTrackedState<RecursiveTracker>(12);
+			const auto& at12 = s.GetTrackedState(12);
 			CHECK(at12.sum == 78); // 0 + 1 + ... + 12
 			CHECK(s.GetCurrentFrame() == 5);
 			CHECK(resource.checksum() == checksum);
@@ -61,8 +89,8 @@ TEST_CASE("A tracked state ahead of the cursor is computed in a sandbox and the 
 
 			// The frames computed on the way are cached: no further frame advances.
 			uint64_t advances = resource.work.frameAdvances;
-			CHECK(s.template GetTrackedState<RecursiveTracker>(12).sum == 78);
-			CHECK(s.template GetTrackedState<RecursiveTracker>(9).sum == 45);
+			CHECK(s.GetTrackedState(12).sum == 78);
+			CHECK(s.GetTrackedState(9).sum == 45);
 			CHECK(resource.work.frameAdvances == advances);
 		});
 }
@@ -77,7 +105,7 @@ TEST_CASE("Asking for a tracker type the root does not install throws instead of
 			CHECK_THROWS_AS(s.template GetTrackedState<OtherTracker>(1), std::runtime_error);
 			CHECK_THROWS_AS(s.template TrackedStateExists<OtherTracker>(1), std::runtime_error);
 			// The right type still works afterwards.
-			CHECK(s.template GetTrackedState<RecursiveTracker>(1).sum == 1);
+			CHECK(s.GetTrackedState(1).sum == 1);
 		});
 
 	// A root without a tracker rejects every tracker type.
@@ -96,13 +124,13 @@ TEST_CASE("A tracker that does not assert leaves a default state that is not rec
 			for (int i = 0; i < 4; i++)
 				s.AdvanceFrameWrite(In(i));
 
-			CHECK(s.template GetTrackedState<EvenFramesTracker>(2).initialized);
-			CHECK(s.template GetTrackedState<EvenFramesTracker>(2).frame == 2);
-			CHECK_FALSE(s.template GetTrackedState<EvenFramesTracker>(3).initialized);
-			CHECK(s.template TrackedStateExists<EvenFramesTracker>(3)); // stored, as a default
+			CHECK(s.GetTrackedState(2).initialized);
+			CHECK(s.GetTrackedState(2).frame == 2);
+			CHECK_FALSE(s.GetTrackedState(3).initialized);
+			CHECK(s.TrackedStateExists(3)); // stored, as a default
 
 			uint64_t advances = resource.work.frameAdvances;
-			CHECK_FALSE(s.template GetTrackedState<EvenFramesTracker>(3).initialized);
+			CHECK_FALSE(s.GetTrackedState(3).initialized);
 			CHECK(resource.work.frameAdvances == advances); // served from the table
 		});
 }
@@ -119,18 +147,34 @@ TEST_CASE("Tracked states follow the diff: kept by Modify, dropped by Execute")
 			// Execute: the child's frames are reverted, and so are their states.
 			s.template Execute<WriteFrames>(4, 10);
 			CHECK(s.GetCurrentFrame() == 3);
-			CHECK_FALSE(s.template TrackedStateExists<RecursiveTracker>(6));
+			CHECK_FALSE(s.TrackedStateExists(6));
 
 			// Modify: the frames persist and their states are handed to the parent.
 			s.template Modify<WriteFrames>(4, 20);
 			CHECK(s.GetCurrentFrame() == 7);
-			CHECK(s.template TrackedStateExists<RecursiveTracker>(6));
-			CHECK(s.template GetTrackedState<RecursiveTracker>(7).sum == 28); // 0 + ... + 7
+			CHECK(s.TrackedStateExists(6));
+			CHECK(s.GetTrackedState(7).sum == 28); // 0 + ... + 7
 
 			// A reference into the table stays valid until a write invalidates that frame.
-			const auto& at5 = s.template GetTrackedState<RecursiveTracker>(5);
+			const auto& at5 = s.GetTrackedState(5);
 			CHECK(at5.sum == 15);
-			CHECK(s.template GetTrackedState<RecursiveTracker>(7).sum == 28); // unrelated lookup
+			CHECK(s.GetTrackedState(7).sum == 28); // unrelated lookup
 			CHECK(at5.sum == 15);
+		});
+}
+
+TEST_CASE("GetTrackedState names no tracker: a child reads the one it declares under a root that installs it")
+{
+	MockResource resource;
+	M64 m64;
+	RunRoot<RecursiveTracker>(resource, m64, [](auto& s)
+		{
+			for (int i = 0; i < 5; i++)
+				s.AdvanceFrameWrite(In(i));
+			auto status = s.template Execute<TrackerReader>();
+			CHECK(status.executed);
+			CHECK(status.sum == 15); // 0 + ... + 5 at frame 5
+			CHECK(status.exists);
+			CHECK(s.GetTrackedState(5).sum == 15); // the root, through its own alias
 		});
 }

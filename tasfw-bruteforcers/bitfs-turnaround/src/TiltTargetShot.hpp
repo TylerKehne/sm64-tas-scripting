@@ -195,7 +195,7 @@ public:
             normalZ += ScriptMath::Sign(CustomStatus.error[2]) * 0.01f;
         }
 
-        const auto& prevState = GetTrackedState<TiltTargetShotMetrics>(GetCurrentFrame() - 1);
+        const auto& prevState = GetTrackedState(GetCurrentFrame() - 1);
 
         if (_targetX && CustomStatus.error[0] < prevState.minError[0])
         {
@@ -269,8 +269,8 @@ private:
     bool CheckEquilibrium()
     {
 
-        const auto& prevState2 = GetTrackedState<TiltTargetShotMetrics>(GetCurrentFrame() - 2);
-        const auto& prevState1 = GetTrackedState<TiltTargetShotMetrics>(GetCurrentFrame() - 1);
+        const auto& prevState2 = GetTrackedState(GetCurrentFrame() - 2);
+        const auto& prevState1 = GetTrackedState(GetCurrentFrame() - 1);
         bool wasMoving2 = prevState2.forwardVel != 0 || prevState2.action != ACT_IDLE;
         bool wasMoving1 = prevState1.forwardVel != 0 || prevState1.action != ACT_IDLE;
 
@@ -281,8 +281,8 @@ private:
             || (!_targetX && CustomStatus.error[2] > prevState1.error[2]))
         {
             if (CustomStatus.minErrorFrame > 0
-                && GetTrackedState<TiltTargetShotMetrics>(CustomStatus.minErrorFrame - 1).isMoving == false
-                && GetTrackedState<TiltTargetShotMetrics>(CustomStatus.minErrorFrame - 2).isMoving == false)
+                && GetTrackedState(CustomStatus.minErrorFrame - 1).isMoving == false
+                && GetTrackedState(CustomStatus.minErrorFrame - 2).isMoving == false)
             {
                 CustomStatus.equilibriumFrame = CustomStatus.minErrorFrame - 1;
                 return true;
@@ -308,13 +308,13 @@ private:
             return false;
 
         // This cannot be later than the current frame based on how this is calculated
-        const auto& prevState = GetTrackedState<TiltTargetShotMetrics>(equilibriumFrame);
+        const auto& prevState = GetTrackedState(equilibriumFrame);
 
         TiltTargetShotMetrics::CustomScriptStatus eqState;
         if (uint64_t(equilibriumFrame + 1) == GetCurrentFrame())
             eqState = CustomStatus;
         else
-            eqState = GetTrackedState<TiltTargetShotMetrics>(equilibriumFrame + 1);
+            eqState = GetTrackedState(equilibriumFrame + 1);
 
         std::array<float, 3> solutionError {};
         if (isAdjusted)
@@ -378,7 +378,7 @@ public:
         _initialNX = _pyramid->oTiltingPyramidNormalX;
         _initialNZ = _pyramid->oTiltingPyramidNormalZ;
 
-        if (!GetTrackedState<TiltTargetShotMetrics>(_initialFrame + 1).isEquilibrium)
+        if (!GetTrackedState(_initialFrame + 1).isEquilibrium)
             return false;
 
         return true;
@@ -394,7 +394,7 @@ public:
 
         int64_t initialFrame = _initialFrame;
         volatile int64_t currentFrame = GetCurrentFrame();
-        auto state = GetTrackedState<TiltTargetShotMetrics>(currentFrame + 1);
+        auto state = GetTrackedState(currentFrame + 1);
         if (false && _errorType == ErrorType::ABSOLUTE_ERROR)
         {
             auto diff = GetDiff();
@@ -519,7 +519,7 @@ public:
             state.AddValueBits(bitCursor, 1, 1);
 
         // Encode 1D ARE from other axis so different values don't compete with each other
-        auto nextState = GetTrackedState<TiltTargetShotMetrics>(GetCurrentFrame() + 1);
+        auto nextState = GetTrackedState(GetCurrentFrame() + 1);
         if (trackedState.fixOtherAxis
             && (trackedState.targetX ? std::fabs(nextState.adjustedRemainderError[2]) <= _neighborhood
                 : std::fabs(nextState.adjustedRemainderError[0]) <= _neighborhood))
@@ -593,7 +593,7 @@ public:
         
         if (_errorType == ErrorType::ABSOLUTE_ERROR)
         {
-            auto state = GetTrackedState<TiltTargetShotMetrics>(GetCurrentFrame());
+            auto state = GetTrackedState(GetCurrentFrame());
             if (state.targetX)
             {
                 if (std::fabs(state.adjustedRemainderError[0]) > _neighborhood)
@@ -608,11 +608,11 @@ public:
         if (!state.initialized)
             return false;
 
-        auto nextState = GetTrackedState<TiltTargetShotMetrics>(GetCurrentFrame() + 1);
+        auto nextState = GetTrackedState(GetCurrentFrame() + 1);
         if (state.frame > nextState.frame && nextState.initialized)
             state = nextState;
 
-        if (GetTrackedState<TiltTargetShotMetrics>(GetCurrentFrame()).fixOtherAxis)
+        if (GetTrackedState(GetCurrentFrame()).fixOtherAxis)
         {
             if (state.targetX)
             {
@@ -623,7 +623,7 @@ public:
                 return false;
         }
 
-        if (GetTrackedState<TiltTargetShotMetrics>(GetCurrentFrame()).fixTargetAxis)
+        if (GetTrackedState(GetCurrentFrame()).fixTargetAxis)
         {
             if (state.targetX)
             {
@@ -870,7 +870,7 @@ private:
 
     float RandomMag(bool lowMag)
     {
-        auto state = GetTrackedState<TiltTargetShotMetrics>(GetCurrentFrame());
+        auto state = GetTrackedState(GetCurrentFrame());
         if (_errorType == ErrorType::ABSOLUTE_ERROR && GetTempRng() % 2 == 0)
             return 32.0f;
 
@@ -895,10 +895,10 @@ private:
         else
             intendedYaw = -32768;
 
-        if (!GetTrackedState<TiltTargetShotMetrics>(GetCurrentFrame()).targetX)
+        if (!GetTrackedState(GetCurrentFrame()).targetX)
             intendedYaw += 16384;
 
-        if (GetTrackedState<TiltTargetShotMetrics>(GetCurrentFrame()).fixOtherAxis && GetTempRng() % 2)
+        if (GetTrackedState(GetCurrentFrame()).fixOtherAxis && GetTempRng() % 2)
             intendedYaw += 16384;
 
         return intendedYaw += GetYawDiff();
@@ -1049,16 +1049,16 @@ private:
 
         for (int i = 1; i <= 200; i++)
         {
-            if (!TrackedStateExists<TiltTargetShotMetrics>(initialFrame + i))
+            if (!TrackedStateExists(initialFrame + i))
                 Load(initialFrame + i);
 
-            trackedState = GetTrackedState<TiltTargetShotMetrics>(initialFrame + i);
+            trackedState = GetTrackedState(initialFrame + i);
             if (!trackedState.isOnPyramid || trackedState.equilibriumFrame != -1)
                 break;
         }
         if (trackedState.equilibriumFrame == -1)
             return TiltTargetShotMetrics::CustomScriptStatus();
 
-        return GetTrackedState<TiltTargetShotMetrics>(trackedState.equilibriumFrame + 1);
+        return GetTrackedState(trackedState.equilibriumFrame + 1);
     }
 };

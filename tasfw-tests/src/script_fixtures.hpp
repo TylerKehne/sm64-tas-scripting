@@ -137,7 +137,7 @@ namespace tasfw::tests
 			int64_t frame = GetCurrentFrame();
 			CustomStatus.sum = uint64_t(frame);
 			if (frame > 0)
-				CustomStatus.sum += GetTrackedState<RecursiveTracker>(frame - 1).sum;
+				CustomStatus.sum += GetTrackedState(frame - 1).sum;
 			CustomStatus.initialized = true;
 			return true;
 		}

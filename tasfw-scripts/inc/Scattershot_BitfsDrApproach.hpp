@@ -68,7 +68,7 @@ public:
         int64_t currentFrame = GetCurrentFrame();
         CustomScriptStatus lastFrameState;
         if (currentFrame > initialFrame)
-            lastFrameState = GetTrackedState<StateTracker_BitfsDrApproach>(currentFrame - 1);
+            lastFrameState = GetTrackedState(currentFrame - 1);
 
         if (!lastFrameState.initialized)
             return true;
@@ -272,7 +272,7 @@ public:
     {
         MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
 
-        auto state = GetTrackedState<StateTracker_BitfsDrApproach>(GetCurrentFrame());
+        auto state = GetTrackedState(GetCurrentFrame());
         switch (state.phase)
         {
             case StateTracker_BitfsDrApproach::Phase::RUN_DOWNHILL:
@@ -287,7 +287,7 @@ public:
 
             case StateTracker_BitfsDrApproach::Phase::TURN_UPHILL:
             {
-                auto prevState = GetTrackedState<StateTracker_BitfsDrApproach>(GetCurrentFrame() - 1);
+                auto prevState = GetTrackedState(GetCurrentFrame() - 1);
 
                 AddRandomMovementOption(
                     {
@@ -391,7 +391,7 @@ public:
     {
         MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
 
-        auto trackedState = GetTrackedState<StateTracker_BitfsDrApproach>(GetCurrentFrame());
+        auto trackedState = GetTrackedState(GetCurrentFrame());
 
         int actionValue;
         switch (marioState->action)
@@ -509,8 +509,8 @@ public:
             return false;
 
         // Check custom metrics
-        auto state = GetTrackedState<StateTracker_BitfsDrApproach>(GetCurrentFrame());
-        auto lastFrameState = GetTrackedState<StateTracker_BitfsDrApproach>(GetCurrentFrame() - 1);
+        auto state = GetTrackedState(GetCurrentFrame());
+        auto lastFrameState = GetTrackedState(GetCurrentFrame() - 1);
 
         // Was an empty statement (`if (...);`) until 2026-09; Clang's -Wempty-body found it.
         // Reject leaving the C-up trick phase without going airborne.
@@ -530,7 +530,7 @@ public:
         if (marioState->forwardVel < 29.0f && state.phase == StateTracker_BitfsDrApproach::Phase::TURN_UPHILL)
             return false;
 
-        auto initialState = GetTrackedState<StateTracker_BitfsDrApproach>(state.initialFrame + 1);
+        auto initialState = GetTrackedState(state.initialFrame + 1);
         if (state.adjustedRemainderError[0] != initialState.adjustedRemainderError[0])
             return false;
 
@@ -547,7 +547,7 @@ public:
     {
         MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
 
-        auto state = GetTrackedState<StateTracker_BitfsDrApproach>(GetCurrentFrame());
+        auto state = GetTrackedState(GetCurrentFrame());
         if (state.initialized)
         {
             switch (state.phase)
@@ -581,7 +581,7 @@ public:
         Object* objectPool = (Object*)(ReadState("gObjectPool"));
         Object* pyramid = &objectPool[84];
 
-        auto state = GetTrackedState<StateTracker_BitfsDrApproach>(GetCurrentFrame());
+        auto state = GetTrackedState(GetCurrentFrame());
 
         int phaseValue;
         switch (state.phase)
@@ -626,11 +626,11 @@ public:
         if (fabs(marioState->pos[1] - marioState->floorHeight) >= 4.0f)
             return false;
 
-        auto state = GetTrackedState<StateTracker_BitfsDrApproach>(GetCurrentFrame());
+        auto state = GetTrackedState(GetCurrentFrame());
         if (std::abs(state.incrementFrames[0]) % 2 != std::abs(state.incrementFrames[2]) % 2)
             return false;
 
-        //auto state = GetTrackedState<StateTracker_BitfsDrApproach>(GetCurrentFrame());
+        //auto state = GetTrackedState(GetCurrentFrame());
         //if (std::abs(state.incrementFrames[0] - state.incrementFrames[2]) != 0)
         //    return false;
 
@@ -639,7 +639,7 @@ public:
 
     Scattershot_BitfsDrApproach_Solution GetSolutionState() override
     {
-        const auto& state = GetTrackedState<StateTracker_BitfsDrApproach>(GetCurrentFrame());
+        const auto& state = GetTrackedState(GetCurrentFrame());
 
         auto solution = Scattershot_BitfsDrApproach_Solution();
         solution.fSpd = state.fSpd;
@@ -687,7 +687,7 @@ private:
                 if (marioState->action != ACT_TURNING_AROUND && marioState->action != ACT_FINISH_TURNING_AROUND && marioState->action != ACT_WALKING)
                     return true;
 
-                auto state = GetTrackedState<StateTracker_BitfsDrApproach>(GetCurrentFrame());
+                auto state = GetTrackedState(GetCurrentFrame());
 
                 auto m64 = M64();
                 auto status = TopLevelScriptBuilder<BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>::Build(m64)

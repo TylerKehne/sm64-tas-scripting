@@ -20,6 +20,23 @@ struct StateTrackerTag
 	static constexpr char value = 0;
 };
 
+// The tracker a script reads when it names none (Script::GetTrackedState(frame)): its
+// StateTracker alias when it declares one (TopLevelScript declares its template parameter,
+// so every root and every stage script inherits the answer), else the script itself, a
+// tracker reading its own earlier state.
+template <class TScript>
+struct TrackerOf
+{
+	using type = TScript;
+};
+
+template <class TScript>
+	requires requires { typename TScript::StateTracker; }
+struct TrackerOf<TScript>
+{
+	using type = typename TScript::StateTracker;
+};
+
 template <derived_from_specialization_of<Script> TStateTracker>
 class StateTrackerFactoryBase
 {
