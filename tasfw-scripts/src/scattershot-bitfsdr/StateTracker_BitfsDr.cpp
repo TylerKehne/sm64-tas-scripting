@@ -35,7 +35,7 @@ bool StateTracker_BitfsDr::execution()
     int64_t currentFrame = GetCurrentFrame();
     CustomScriptStatus lastFrameState;
     if (currentFrame > initialFrame)
-        lastFrameState = GetTrackedState<StateTracker_BitfsDr>(currentFrame - 1);
+        lastFrameState = GetTrackedState(currentFrame - 1);
 
     if (!lastFrameState.initialized)
         return true;

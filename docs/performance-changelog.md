@@ -4,6 +4,20 @@ Every hot-path change records its delta table here, newest first; the policy, th
 how to run it are in [performance.md](performance.md). The first measurements (2026-09-07),
 which everything since is compared against, are at the bottom.
 
+## 2026-09-15: `GetTrackedState(frame)` names no tracker
+
+`Script` gained overloads of `GetTrackedState` and `TrackedStateExists` that take the tracker
+from the calling class through a C++23 explicit object parameter (`TrackerOf`: a tracker
+reads its own state, a root or a stage script its tracker's, a child the alias it declares),
+and the 96 sites that named a type stopped naming one. The overload inlines to the call it
+replaces, so the code that runs is the same; measured because tasfw-core changed. MSVC 19.51,
+Release, against the reference saved from 35ebcc8: 0 regressions, every Tier C and D count
+identical, the deterministic Tier D run -0.4%, the throughput run +2.7%, the Script family
+within 6% either way as the day's other runs. The compare flagged three thread-scaling
+efficiency rows (`LibSm64Scaling_SaveErase` at 2, 4 and 8 threads, 5 to 8 points below the
+reference); a rerun of that family read all of them within a point, and it drives the
+resource directly, never a script.
+
 ## 2026-09-15: the core's file layout (ROADMAP 3.20)
 
 No functional change, measured because tasfw-core moved: one header per concept, one member

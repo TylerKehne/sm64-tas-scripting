@@ -21,6 +21,9 @@ template <derived_from_specialization_of<Resource> TResource,
 class TopLevelScript : public Script<TResource>
 {
 public:
+	// What GetTrackedState(frame) reads in a root and in everything derived from one.
+	using StateTracker = TStateTracker;
+
 	TopLevelScript()
 	{
 		this->_stateTrackerTag = &StateTrackerTag<TStateTracker>::value;

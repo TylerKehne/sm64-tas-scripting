@@ -190,7 +190,7 @@ public:
         int64_t currentFrame = GetCurrentFrame();
         CustomScriptStatus lastFrameState;
         if (currentFrame > initialFrame)
-            lastFrameState = GetTrackedState<StateTracker_BitfsDrRecover>(currentFrame - 1);
+            lastFrameState = GetTrackedState(currentFrame - 1);
 
         if (!lastFrameState.initialized)
             return true;
@@ -349,7 +349,7 @@ public:
     void SelectMovementOptions() override
     {
 
-        auto state = GetTrackedState<StateTracker_BitfsDrRecover>(GetCurrentFrame());
+        auto state = GetTrackedState(GetCurrentFrame());
         switch (state.phase)
         {
             case StateTracker_BitfsDrRecover::Phase::ATTEMPT_DR:
@@ -446,7 +446,7 @@ public:
     {
         MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
 
-        auto trackedState = GetTrackedState<StateTracker_BitfsDrRecover>(GetCurrentFrame());
+        auto trackedState = GetTrackedState(GetCurrentFrame());
 
         int actionValue;
         switch (marioState->action)
@@ -573,7 +573,7 @@ public:
         }
 
         // Check custom metrics
-        auto state = GetTrackedState<StateTracker_BitfsDrRecover>(GetCurrentFrame());
+        auto state = GetTrackedState(GetCurrentFrame());
 
         // Was an empty statement (`if (...);`) until 2026-09; Clang's -Wempty-body found it.
         // Reject sitting in first person during the C-up trick phase.
@@ -596,7 +596,7 @@ public:
     float GetStateFitness() override
     {
 
-        auto state = GetTrackedState<StateTracker_BitfsDrRecover>(GetCurrentFrame());
+        auto state = GetTrackedState(GetCurrentFrame());
         if (state.initialized)
         {
             return -float(GetCurrentFrame());
@@ -621,7 +621,7 @@ public:
         Object* objectPool = (Object*)(ReadState("gObjectPool"));
         Object* pyramid = &objectPool[84];
 
-        auto state = GetTrackedState<StateTracker_BitfsDrRecover>(GetCurrentFrame());
+        auto state = GetTrackedState(GetCurrentFrame());
 
         int phaseValue;
         switch (state.phase)
@@ -653,8 +653,8 @@ public:
     bool IsSolution() override
     {
         MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
-        const auto& state = GetTrackedState<StateTracker_BitfsDrRecover>(GetCurrentFrame());
-        const auto& prevState = GetTrackedState<StateTracker_BitfsDrRecover>(GetCurrentFrame());
+        const auto& state = GetTrackedState(GetCurrentFrame());
+        const auto& prevState = GetTrackedState(GetCurrentFrame());
 
         switch (_lastPhase)
         {
@@ -696,7 +696,7 @@ public:
 
     Scattershot_BitfsDrRecover_Solution GetSolutionState() override
     {
-        const auto& state = GetTrackedState<StateTracker_BitfsDrRecover>(GetCurrentFrame());
+        const auto& state = GetTrackedState(GetCurrentFrame());
 
         auto solution = Scattershot_BitfsDrRecover_Solution();
         solution.fSpd = state.fSpd;
@@ -745,7 +745,7 @@ private:
                 if (marioState->action != ACT_TURNING_AROUND && marioState->action != ACT_FINISH_TURNING_AROUND && marioState->action != ACT_WALKING)
                     return true;
 
-                auto state = GetTrackedState<StateTracker_BitfsDrRecover>(GetCurrentFrame());
+                auto state = GetTrackedState(GetCurrentFrame());
 
                 auto m64 = M64();
                 auto status = TopLevelScriptBuilder<BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>::Build(m64)

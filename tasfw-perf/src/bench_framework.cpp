@@ -217,7 +217,7 @@ namespace
 		{
 			for (int i = 0; i < _frames; i++)
 				AdvanceFrameRead();
-			const auto& last = GetTrackedState<StateTracker_BitfsDr>(GetCurrentFrame());
+			const auto& last = GetTrackedState(GetCurrentFrame());
 			_result.initialized = last.initialized;
 			_result.frame = last.frame;
 			return true;

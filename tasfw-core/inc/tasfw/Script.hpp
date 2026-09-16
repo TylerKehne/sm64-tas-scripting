@@ -225,6 +225,22 @@ protected:
 		return TrackerRoot<TStateTracker>()->TrackedStateExistsInternal(this, GetInputsMetadataAndCache(frame));
 	}
 
+	// The same two with the tracker deduced from the calling class (TrackerOf): a tracker reads
+	// its own state, a root or a stage script its tracker's, with nothing named at the call
+	// (C++23 explicit object parameter, docs/compilers.md). The forms above stay for a script
+	// that asks about another tracker; the cast keeps this one from choosing itself.
+	template <std::derived_from<Script<TResource>> Self>
+	const typename TrackerOf<Self>::type::CustomScriptStatus& GetTrackedState(this Self& self, int64_t frame)
+	{
+		return static_cast<Script<TResource>&>(self).template GetTrackedState<typename TrackerOf<Self>::type>(frame);
+	}
+
+	template <std::derived_from<Script<TResource>> Self>
+	bool TrackedStateExists(this Self& self, int64_t frame)
+	{
+		return static_cast<Script<TResource>&>(self).template TrackedStateExists<typename TrackerOf<Self>::type>(frame);
+	}
+
 private:
 	// TopLevelScript is the root of every hierarchy: it starts the lifecycle from outside it
 	// (InitializeAndRun), stores its tracker's tag, and runs the state tracker as a child of

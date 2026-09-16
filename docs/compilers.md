@@ -26,7 +26,9 @@ Every first-party target asks CMake for `cxx_std_23` (since 2026-09-14; C++20 be
 one C++23 feature the code relies on is the explicit object parameter (P0847, "deducing
 this"): `ScattershotThread`'s movement-option calls take the script's own nested
 `CustomMoves` enum from the object they are called on (ARCHITECTURE.md,
-"Scattershot"), which no C++20 shape managed without a word in front of the script author.
+"Scattershot"), which no C++20 shape managed without a word in front of the script author,
+and `Script::GetTrackedState(frame)` takes the tracker from the calling class the same way
+(`TrackerOf`, ARCHITECTURE.md, "State trackers"), so no call names a type.
 The floors that sets: MSVC 19.32 (VS 2022 17.2), clang-cl 18, GCC 14 and Clang 18. CMake
 spells the standard `/std:c++latest` for MSVC (no `/std:c++23` exists yet) and `-std=c++23`
 for clang-cl; the Ubuntu 24.04 CI jobs moved from GCC 13 and Clang 17 to GCC 14 and Clang

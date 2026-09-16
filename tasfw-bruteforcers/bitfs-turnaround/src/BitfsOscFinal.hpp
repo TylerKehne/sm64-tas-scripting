@@ -124,7 +124,7 @@ private:
     void CalculatePhase()
     {
         MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
-        auto lastFrameState = GetTrackedState<BitfsOscFinalMetrics>(GetCurrentFrame() - 1);
+        auto lastFrameState = GetTrackedState(GetCurrentFrame() - 1);
         if (!lastFrameState.initialized)
             return;
 
@@ -295,7 +295,7 @@ public:
     {
         MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
 
-        auto state = GetTrackedState<BitfsOscFinalMetrics>(GetCurrentFrame());
+        auto state = GetTrackedState(GetCurrentFrame());
         switch (state.phase)
         {
         case BitfsOscFinalMetrics::Phase::RUN_DOWNHILL:
@@ -310,7 +310,7 @@ public:
 
         case BitfsOscFinalMetrics::Phase::TURN_UPHILL:
         {
-            //auto prevState = GetTrackedState<BitfsOscFinalMetrics>(GetCurrentFrame() - 1);
+            //auto prevState = GetTrackedState(GetCurrentFrame() - 1);
             //bool avoidDoubleTurnaround = prevState.action == ACT_FINISH_TURNING_AROUND && state.action == ACT_WALKING;
 
             AddRandomMovementOption(
@@ -339,7 +339,7 @@ public:
         Object* objectPool = (Object*)(ReadState("gObjectPool"));
         Object* pyramid = &objectPool[84];
 
-        auto state = GetTrackedState<BitfsOscFinalMetrics>(GetCurrentFrame());
+        auto state = GetTrackedState(GetCurrentFrame());
 
         if (state.phase == BitfsOscFinalMetrics::Phase::RUN_DOWNHILL || state.phase == BitfsOscFinalMetrics::Phase::TURN_UPHILL)
         {
@@ -445,7 +445,7 @@ public:
         default: actionValue = 13;
         }
 
-        auto trackedState = GetTrackedState<BitfsOscFinalMetrics>(GetCurrentFrame());
+        auto trackedState = GetTrackedState(GetCurrentFrame());
         if (ExecuteAdhoc([&]() { return IsSolution(); }).executed)
         {
             state.AddValueBits(bitCursor, 2, 0);
@@ -512,8 +512,8 @@ public:
         //if (marioState->floorHeight == -3071)
         //    return false;
 
-        auto initialState = GetTrackedState<BitfsOscFinalMetrics>(_args.InitialFrame);
-        auto state = GetTrackedState<BitfsOscFinalMetrics>(GetCurrentFrame());
+        auto initialState = GetTrackedState(_args.InitialFrame);
+        auto state = GetTrackedState(GetCurrentFrame());
         if (state.adjustedRemainderError[0] != initialState.adjustedRemainderError[0]
             || state.adjustedRemainderError[2] != initialState.adjustedRemainderError[2])
             return false;
@@ -536,7 +536,7 @@ public:
 
     float GetStateFitness() override
     {
-        auto state = GetTrackedState<BitfsOscFinalMetrics>(GetCurrentFrame());
+        auto state = GetTrackedState(GetCurrentFrame());
         if (state.initialized)
         {
             switch (state.phase)
@@ -583,7 +583,7 @@ public:
         Object* objectPool = (Object*)(ReadState("gObjectPool"));
         Object* pyramid = &objectPool[84];
 
-        auto state = GetTrackedState<BitfsOscFinalMetrics>(GetCurrentFrame());
+        auto state = GetTrackedState(GetCurrentFrame());
 
         char line[256];
         snprintf(line, sizeof(line), "%f,%f,%f,%d,%f,%d,%f,%f,%f,%d,%f,%f",
@@ -606,7 +606,7 @@ public:
     bool IsSolution() override
     {
         //AdvanceFrameRead();
-        auto state = GetTrackedState<BitfsOscFinalMetrics>(GetCurrentFrame());
+        auto state = GetTrackedState(GetCurrentFrame());
 
         return state.normalDistance < 10.0f && state.phase == BitfsOscFinalMetrics::Phase::POSTBRAKE;
 
@@ -620,7 +620,7 @@ public:
 
         auto solution = BitfsOscSolution();
 
-        auto state = GetTrackedState<BitfsOscFinalMetrics>(GetCurrentFrame());
+        auto state = GetTrackedState(GetCurrentFrame());
         solution.fSpd = state.forwardVel;
         solution.pyraNormX = state.normal[0];
         solution.pyraNormY = state.normal[1];
@@ -643,7 +643,7 @@ private:
                 if (marioState->action != ACT_TURNING_AROUND && marioState->action != ACT_FINISH_TURNING_AROUND && marioState->action != ACT_WALKING)
                     return true;
 
-                auto state = GetTrackedState<BitfsOscFinalMetrics>(GetCurrentFrame());
+                auto state = GetTrackedState(GetCurrentFrame());
 
                 auto m64 = M64();
                 auto status = TopLevelScriptBuilder<BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>::Build(m64)
@@ -724,12 +724,12 @@ private:
     {
         MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
         Camera* camera = *(Camera**)(ReadState("gCamera"));
-        auto initialState = GetTrackedState<BitfsOscFinalMetrics>(_args.InitialFrame);
+        auto initialState = GetTrackedState(_args.InitialFrame);
         BitfsOscFinalMetrics::CustomScriptStatus state;
 
         for (int i = 0; i < 100; i++)
         {
-            state = GetTrackedState<BitfsOscFinalMetrics>(GetCurrentFrame());
+            state = GetTrackedState(GetCurrentFrame());
             if (state.adjustedRemainderError[0] != initialState.adjustedRemainderError[0]
                 || state.adjustedRemainderError[2] != initialState.adjustedRemainderError[2])
                 return false;
@@ -751,12 +751,12 @@ private:
     bool StopInTime()
     {
         MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
-        auto initialState = GetTrackedState<BitfsOscFinalMetrics>(_args.InitialFrame);
+        auto initialState = GetTrackedState(_args.InitialFrame);
         BitfsOscFinalMetrics::CustomScriptStatus state;
 
         for (int i = 0; i < 100; i++)
         {
-            state = GetTrackedState<BitfsOscFinalMetrics>(GetCurrentFrame());
+            state = GetTrackedState(GetCurrentFrame());
 
             if (state.adjustedRemainderError[0] != initialState.adjustedRemainderError[0]
                 || state.adjustedRemainderError[2] != initialState.adjustedRemainderError[2])

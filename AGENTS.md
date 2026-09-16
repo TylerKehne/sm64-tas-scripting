@@ -243,7 +243,9 @@ its place with numbers, and "it is cleaner" is not a number.
   inputs, saves and loads, state; then friends, data, and the internals grouped by concern,
   a one-line comment naming each group; the `.t.hpp` defines in that order.
 - A script is `class X : public Script<LibSm64>` with a nested `CustomScriptStatus` and the
-  three lifecycle methods. Child scripts are run with `Execute<X>` (revert), `Modify<X>`
+  three lifecycle methods. One that reads tracked state names its tracker once,
+  `using StateTracker = T;`, and calls `GetTrackedState(frame)`; a tracker and a root name
+  nothing. Child scripts are run with `Execute<X>` (revert), `Modify<X>`
   (keep diff if asserted) or `Test<X>` (revert and drop the diff from the status).
 - Ad-hoc lambdas use `ExecuteAdhoc` / `ModifyAdhoc` / `TestAdhoc` with the same semantics.
   Use them for one-off attempts; write a script class when the logic is heavy or reused.
