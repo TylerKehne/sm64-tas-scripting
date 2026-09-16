@@ -3,32 +3,25 @@
 #error "Scattershot.t.hpp should only be included by Scattershot.hpp"
 #else
 
-/*
-template <class TState>
-void StateBin<TState>::print() const
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+Scattershot<TState, TResource, TStateTracker, TOutputState>::Scattershot(const Configuration& config, const std::vector<ScattershotSolution<TOutputState>>& inputSolutions)
+    : config(config), InputSolutions(inputSolutions)
 {
-    #pragma omp critical
-    {
-        // cast the instance to a char pointer
-        const char* ptr = reinterpret_cast<const char*>(&state);
+    Blocks.reserve(config.MaxBlocks);
+    BlockIndices.reserve(3 * config.MaxBlocks);
 
-        // print the bytes in hex format using printf
-        for (std::size_t i = 0; i < sizeof(TState); i++)
-            printf("%02X ", static_cast<unsigned char>(ptr[i]));
-
-        printf("\n");
-    }
+    for (int i = 0; i < int(BlockIndices.capacity()); i++)
+        BlockIndices.push_back(-1);
 }
-*/
 
-template <class TContainer, typename TElement>
-    requires std::is_same_v<TElement, std::string>
-void Configuration::SetResourcePaths(const TContainer& container)
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TStateTracker,
+    class TOutputState>
+Scattershot<TState, TResource, TStateTracker, TOutputState>::~Scattershot()
 {
-    for (const std::string& item : container)
-    {
-        ResourcePaths.emplace_back(item);
-    }
+    Csv.close();
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
@@ -48,19 +41,6 @@ void Scattershot<TState, TResource, TStateTracker, TOutputState>::MultiThread(in
     }
 
     return;
-}
-
-template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
-    class TOutputState>
-Scattershot<TState, TResource, TStateTracker, TOutputState>::Scattershot(const Configuration& config, const std::vector<ScattershotSolution<TOutputState>>& inputSolutions)
-    : config(config), InputSolutions(inputSolutions)
-{
-    Blocks.reserve(config.MaxBlocks);
-    BlockIndices.reserve(3 * config.MaxBlocks);
-
-    for (int i = 0; i < int(BlockIndices.capacity()); i++)
-        BlockIndices.push_back(-1);
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
@@ -181,14 +161,6 @@ void Scattershot<TState, TResource, TStateTracker, TOutputState>::OpenCsv()
     }
     else
         std::cout << "Unable to create CSV file.";
-}
-
-template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
-    class TOutputState>
-Scattershot<TState, TResource, TStateTracker, TOutputState>::~Scattershot()
-{
-    Csv.close();
 }
 
 #endif

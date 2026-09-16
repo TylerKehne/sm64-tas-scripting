@@ -27,6 +27,10 @@
 #include <BasicMoves.hpp>
 #include <algorithm>
 #include <functional>
+#include <Configuration.hpp>
+#include <Segment.hpp>
+#include <Block.hpp>
+#include <ScattershotSolution.hpp>
 
 #define OMP_STRINGIFY(content) #content
 #define OMP_CRITICAL(name) _Pragma(OMP_STRINGIFY(omp critical(name)))
@@ -92,84 +96,6 @@ template <class TState,
     typename... TStateTrackerParams>
 class ScattershotBuilderImport;
 
-class Segment;
-
-template <class TState>
-class Block;
-
-class Configuration
-{
-public:
-    int StartFrame;
-    int PelletMaxScripts;
-    int PelletMaxFrameDistance;
-    int MaxBlocks;
-    int TotalThreads;
-    long long MaxShots;
-    int PelletsPerShot;
-    int ShotsPerUpdate;
-    int StartFromRootEveryNShots;
-    int MaxConsecutiveFailedPellets;
-    int MaxSolutions;
-    int Seed;
-    bool FitnessTieGoesToNewBlock;
-    bool Deterministic;
-    uint32_t CsvSamplePeriod; // Every nth new block per thread will be printed to a CSV. Set to 0 to disable CSV export.
-    std::filesystem::path M64Path;
-    std::string CsvOutputDirectory;
-    std::vector<std::filesystem::path> ResourcePaths;
-
-    template <class TContainer, typename TElement = typename TContainer::value_type>
-        requires std::is_same_v<TElement, std::string>
-    void SetResourcePaths(const TContainer& container);
-};
-
-class Segment
-{
-public:
-    std::shared_ptr<Segment> parent;
-    uint64_t seed;
-    uint8_t nScripts;
-    uint8_t depth;
-    uint16_t pipedDiff1Index = 0;
-
-    bool operator==(const Segment&) const = default;
-
-    Segment(std::shared_ptr<Segment> parent, uint64_t seed, uint8_t nScripts, uint16_t pipedDiff1Index)
-        : parent(parent), seed(seed), nScripts(nScripts), pipedDiff1Index(pipedDiff1Index)
-    {
-        if (parent == nullptr)
-            depth = 0;
-        else
-            depth = parent->depth + 1;
-    }
-};
-
-template <class TState>
-class Block
-{
-public:
-    std::shared_ptr<Segment> tailSegment;
-    TState stateBin;
-    float fitness;
-};
-
-template <class TOutputState>
-class ScattershotSolution
-{
-public:
-    TOutputState data;
-    M64Diff m64Diff;
-
-    ScattershotSolution(TOutputState data, M64Diff m64Diff) : data(data), m64Diff(m64Diff) {}
-
-    ScattershotSolution() = default;
-    ScattershotSolution(const ScattershotSolution&) = default;
-    ScattershotSolution& operator=(const ScattershotSolution&) = default;
-    ScattershotSolution(ScattershotSolution&&) noexcept = default;
-    ScattershotSolution& operator=(ScattershotSolution&&) noexcept = default;
-};
-
 template <class TState, derived_from_specialization_of<Resource> TResource,
     std::derived_from<Script<TResource>> TStateTracker = DefaultStateTracker<TResource>,
     class TOutputState = DefaultState>
@@ -177,11 +103,12 @@ class Scattershot
 {
 public:
     const Configuration& config;
-    friend class ScattershotThread<TState, TResource, TStateTracker, TOutputState>;
-    friend class PerfAccess; // tasfw-perf benchmarks and tasfw-tests (tasfw/testing/PerfAccess.hpp); see docs/performance.md
 
     Scattershot(const Configuration& configuration, const std::vector<ScattershotSolution<TOutputState>>& inputSolutions);
+    ~Scattershot();
 
+    // How a search starts, from a configuration or from imported resources (the builders call
+    // these).
     template <std::derived_from<ScattershotThread<TState, TResource, TStateTracker, TOutputState>> TScattershotThread,
         class TResourceConfig, typename F, typename... TParams, typename... TStateTrackerParams>
         requires std::same_as<std::invoke_result_t<F, int>, TResourceConfig>
@@ -224,9 +151,10 @@ public:
             });
     }
 
-    ~Scattershot();
-
 private:
+    friend class ScattershotThread<TState, TResource, TStateTracker, TOutputState>;
+    friend class PerfAccess; // tasfw-perf benchmarks and tasfw-tests (tasfw/testing/PerfAccess.hpp); see docs/performance.md
+
     // Global State
     // The deterministic mode's queue (ROADMAP 3.8). Every thread numbers its calls of
     // QueueThreadById; call k of thread i is ticket k * threads + i, and QueueTurn is the
@@ -257,29 +185,7 @@ private:
     // A non-zero count means replaying a segment chain is not a pure function of its seeds.
     uint64_t ValidationFailures = 0;
 
-    void PrintStatus();
-    bool UpsertBlock(TState stateBin, bool isSolution, ScattershotSolution<TOutputState> solution, float fitness,
-        std::shared_ptr<Segment> parentSegment, uint8_t nScripts, uint64_t segmentSeed, uint16_t pipedDiff1Index);
-
-    template <typename T>
-    uint64_t GetHash(const T& toHash, bool ignoreFillerBytes)
-    {
-        const auto* data = reinterpret_cast<const std::byte*>(&toHash);
-        uint64_t hashValue = 0;
-        for (std::size_t i = 0; i < sizeof(toHash); i++)
-        {
-            if (ignoreFillerBytes || !FillerBytes.contains(int(i)))
-                hashValue ^= HashByte(data[i]) + 0x9e3779b97f4a7c15ull + (hashValue << 6) + (hashValue >> 2);
-        }
-
-        return hashValue;
-    }
-
-    void OpenCsv();
-
-    template <typename F>
-    void MultiThread(int nThreads, F func);
-
+    // The search: the run, its threads, the block table, the status line and the CSV.
     template <std::derived_from<ScattershotThread<TState, TResource, TStateTracker, TOutputState>> TScattershotThread, typename F>
         requires std::same_as<std::invoke_result_t<F, Scattershot<TState, TResource, TStateTracker, TOutputState>&, M64&, int>, ScriptStatus<TScattershotThread>>
     static std::vector<ScattershotSolution<TOutputState>> RunBase(const Configuration& configuration, const std::vector<ScattershotSolution<TOutputState>>& inputSolutions, F scriptRunner)
@@ -356,6 +262,27 @@ private:
         return solutions;
     }
 
+    template <typename F>
+    void MultiThread(int nThreads, F func);
+    bool UpsertBlock(TState stateBin, bool isSolution, ScattershotSolution<TOutputState> solution, float fitness,
+        std::shared_ptr<Segment> parentSegment, uint8_t nScripts, uint64_t segmentSeed, uint16_t pipedDiff1Index);
+
+    template <typename T>
+    uint64_t GetHash(const T& toHash, bool ignoreFillerBytes)
+    {
+        const auto* data = reinterpret_cast<const std::byte*>(&toHash);
+        uint64_t hashValue = 0;
+        for (std::size_t i = 0; i < sizeof(toHash); i++)
+        {
+            if (ignoreFillerBytes || !FillerBytes.contains(int(i)))
+                hashValue ^= HashByte(data[i]) + 0x9e3779b97f4a7c15ull + (hashValue << 6) + (hashValue >> 2);
+        }
+
+        return hashValue;
+    }
+    void PrintStatus();
+    void OpenCsv();
+
     static std::unordered_set<int> GetStateBinRuntimeFillerBytes()
     {
         std::unordered_set<int> fillerBytes;
@@ -380,364 +307,16 @@ private:
 
         return fillerBytes;
     }
-
     inline const static std::unordered_set<int> FillerBytes = GetStateBinRuntimeFillerBytes();
-};
-
-
-
-// A scattershot script's own moves: a public nested `enum class CustomMoves` in the script class,
-// the magic name the way `CustomScriptStatus` is one.
-template <class T>
-concept HasCustomMoves = requires { typename T::CustomMoves; }
-    && std::is_enum_v<typename T::CustomMoves>;
-
-template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker = DefaultStateTracker<TResource>,
-    class TOutputState = DefaultState>
-class ScattershotThread : public TopLevelScript<TResource, TStateTracker>
-{
-public:
-    using TopLevelScript<TResource, TStateTracker>::MainConfig;
-
-    static ScattershotBuilder<TState, TResource, TStateTracker, TOutputState> ConfigureScattershot(const Configuration& config)
-    {
-        return ScattershotBuilder<TState, TResource, TStateTracker, TOutputState>(config, nullptr);
-    }
-
-    /*
-    template <typename F>
-    static void ThreadLock(F func)
-    {
-        #pragma omp critical
-        {
-            func();
-        }
-
-        return;
-    }
-    */
-
-    template <typename F>
-    static void ThreadLock(const char* /*section*/, F func)
-    {
-        OMP_CRITICAL(section)
-        {
-            func();
-        }
-
-        return;
-    }
-
-protected:
-    //friend class Scattershot<TState, TResource, TStateTracker, TOutputState>;
-
-    // Using directives needed for MSVC >:(
-    using Script<TResource>::LongLoad;
-    using Script<TResource>::ExecuteAdhoc;
-    using Script<TResource>::ModifyAdhoc;
-
-    const Configuration& config;
-
-    ScattershotThread(Scattershot<TState, TResource, TStateTracker, TOutputState>& scattershot);
-
-    virtual bool validation();
-    bool execution();
-    virtual bool assertion();
-
-    virtual void SelectMovementOptions() = 0;
-    virtual bool ApplyMovement() = 0;
-    virtual TState GetStateBin() = 0;
-    virtual bool ValidateState() = 0;
-    virtual float GetStateFitness() = 0;
-
-    virtual TOutputState GetSolutionState() { return TOutputState(); }
-    virtual bool IsSolution() { return false; };
-    virtual std::string GetCsvLabels();
-    virtual std::string GetCsvRow();
-    virtual bool ForceAddToCsv();
-
-    uint64_t GetTempRng();
-
-    // The weights are a braced list of {option, weight} pairs, walked in BasicMoves order
-    // whatever order the list gives them (the std::map this once took by value walked its keys
-    // in that order; a duplicate option keeps its first weight, as the map's insert did), so
-    // the draw is the same and nothing is allocated (ROADMAP 3.8). RandomInputs takes its
-    // button probabilities the same way.
-    void AddRandomMovementOption(std::initializer_list<std::pair<BasicMoves, double>> weightedOptions);
-    void AddMovementOption(BasicMoves movementOption, double probability = 1.0);
-    bool CheckMovementOptions(BasicMoves movementOption);
-    Inputs RandomInputs(std::initializer_list<std::pair<Buttons, double>> buttonProbabilities);
-
-    // The same three calls for a script's own moves, a public nested `enum class CustomMoves` in
-    // the script class (HasCustomMoves above). Each takes the script's class from the object it is
-    // called on (an explicit object parameter, C++23), so the element type of a braced list
-    // is the script's enum before the braces are considered, a foreign enum does not
-    // compile, and a script without the enum has only the BasicMoves overloads above.
-    // The framework's own input groups (stick magnitude, direction, buttons) stay in
-    // BasicMoves, which RandomInputs reads. Defined in-class: constrained member
-    // templates are (docs/compilers.md).
-    template <class Self> requires HasCustomMoves<Self>
-    void AddRandomMovementOption(this Self& self, std::initializer_list<std::pair<typename Self::CustomMoves, double>> weightedOptions)
-    {
-        ScattershotThread& thread = self;
-        thread.DrawOption(weightedOptions, thread.customMoves);
-    }
-
-    template <class Self> requires HasCustomMoves<Self>
-    void AddMovementOption(this Self& self, typename Self::CustomMoves option, double probability = 1.0)
-    {
-        ScattershotThread& thread = self;
-        thread.AddOption(std::size_t(option), probability, thread.customMoves);
-    }
-
-    template <class Self> requires HasCustomMoves<Self>
-    bool CheckMovementOptions(this const Self& self, typename Self::CustomMoves option)
-    {
-        const ScattershotThread& thread = self;
-        return OptionSelected(std::size_t(option), thread.customMoves);
-    }
-
-private:
-    Scattershot<TState, TResource, TStateTracker, TOutputState>& scattershot;
-    int Id;
-    uint64_t QueueCalls = 0; // tickets taken so far (deterministic mode)
-    uint64_t RngHash = 0;
-    uint64_t RngHashTemp = 0;
-    TState BaseBlockStateBin;
-    std::shared_ptr<Segment> BaseBlockTailSegment = nullptr;
-    // Set by ValidateBaseBlock on a mismatch so execution() can decode the same block a second
-    // time and report whether the two decodes agree with each other (ROADMAP 4.5 diagnosis).
-    bool LastValidationFailed = false;
-    TState LastDecodedBin;
-    M64Diff LastDecodedDiff;
-    
-    // The options selected for the current script, one bit per BasicMoves. The enum
-    // grows with every scenario and no size is assumed: the vector grows to the largest
-    // option a script on this thread ever selects (a handful of times in a run) and is
-    // cleared in place per script, so no script allocates for it.
-    std::vector<bool> basicMoves;       // BasicMoves, the framework's enum
-    std::vector<bool> customMoves;           // the script's own CustomMoves
-    void AddOption(std::size_t index, double probability, std::vector<bool>& set);
-    static bool OptionSelected(std::size_t index, const std::vector<bool>& set);
-    template <class TOption>
-    void DrawOption(std::initializer_list<std::pair<TOption, double>> weightedOptions, std::vector<bool>& set);
-
-    // The entries of a braced list in key order, the first of any duplicate key kept: the
-    // order and the meaning a std::map built from the same list had. Returns the count.
-    static constexpr std::size_t MaxWeightedEntries = 64;
-    static constexpr uint64_t SpinBudget = 4096; // pauses before a waiter blocks on the turn (ROADMAP 3.15) // one draw's candidates, not the enum
-    template <class TKey>
-    static std::size_t SortedByKey(std::initializer_list<std::pair<TKey, double>> list, std::array<std::pair<TKey, double>, MaxWeightedEntries>& out);
-
-    short startCourse;
-    short startArea;
-
-    // Thread state methods
-    void Initialize();
-    uint64_t GetRng();
-    void SetRng(uint64_t rngHash);
-    void SetTempRng(uint64_t rngHash);
-    void SelectBaseBlock(int mainIteration);
-    bool ValidateBaseBlock(int shot);
-
-    void AddCsvRow(int shot);
-    void AddCsvLabels();
-
-    template <typename F>
-    static void SingleThread(F func)
-    {
-        #pragma omp barrier
-        {
-            if (omp_get_thread_num() == 0)
-                func();
-        }
-        #pragma omp barrier
-
-        return;
-    }
-
-    // The deterministic mode's queue (ROADMAP 3.8): in deterministic mode func runs in this
-    // thread's turn (Scattershot::QueueTurn), the same total order per seed on every run
-    // whatever the threads' timing; otherwise it runs at once. A thread takes a ticket per
-    // call, waits for its turn, and passes the turn on, skipping retired threads; it retires
-    // when its shots are done.
-    template <typename F>
-    void QueueThreadById(bool deterministic, F func);
-    uint64_t TakeTicket();
-    void WaitForTurn(uint64_t ticket);
-    void PassTurn(uint64_t next);
-    void RetireFromQueue();
-
-    bool ValidateCourseAndArea();
-    bool ChooseScriptAndApply();
-    TState GetStateBinSafe();
-    float GetStateFitnessSafe();
-    AdhocBaseScriptStatus DecodeBaseBlockDiffAndApply();
-    AdhocBaseScriptStatus ExecuteFromBaseBlockAndEncode(int shot);
-
-    template <typename T>
-    uint64_t GetHash(const T& toHash) const;
-};
-
-//void DefaultResourceConfigGenerator() {}
-
-template <class TState,
-    derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
-    class TOutputState,
-    typename... TStateTrackerParams>
-class ScattershotBuilder
-{
-public:
-    ScattershotBuilder(const Configuration& config, const std::vector<ScattershotSolution<TOutputState>>* inputSolutions)
-        : _config(config), _inputSolutions(inputSolutions) // Ignore warning, we want to leave callback uninitialized so it fails to compile if it's not
-    {
-        _stateTrackerParams = std::make_shared<std::tuple<>>();
-    } 
-
-    ScattershotBuilder(const Configuration& config, const std::vector<ScattershotSolution<TOutputState>>* inputSolutions, std::shared_ptr<std::tuple<TStateTrackerParams...>> stateTrackerParams)
-        : _config(config), _inputSolutions(inputSolutions), _stateTrackerParams(stateTrackerParams)  // Ignore warning, we want to leave callback uninitialized so it fails to compile if it's not
-    { }
-
-    template <class TResourceConfig, typename FResourceConfigGenerator>
-        requires (std::same_as<std::invoke_result_t<FResourceConfigGenerator, int>, TResourceConfig>)
-    ScattershotBuilderConfig<TState, TResource, TStateTracker, TOutputState, TResourceConfig, FResourceConfigGenerator, TStateTrackerParams...> ConfigureResourcePerThread(FResourceConfigGenerator callback)
-    {
-        return ScattershotBuilderConfig<TState, TResource, TStateTracker, TOutputState, TResourceConfig, FResourceConfigGenerator, TStateTrackerParams...>(_config, callback, _inputSolutions, _stateTrackerParams);
-    }
-
-    template <typename FResourceImportGenerator>
-        requires (std::same_as<std::invoke_result_t<FResourceImportGenerator, int>, TResource*>)
-    ScattershotBuilderImport<TState, TResource, TStateTracker, TOutputState, FResourceImportGenerator, TStateTrackerParams...> ImportResourcePerThread(FResourceImportGenerator callback)
-    {
-        return ScattershotBuilderImport<TState, TResource, TStateTracker, TOutputState, FResourceImportGenerator, TStateTrackerParams...>(_config, callback, _inputSolutions, _stateTrackerParams);
-    }
-
-    ScattershotBuilder<TState, TResource, TStateTracker, TOutputState> PipeFrom(const std::vector<ScattershotSolution<TOutputState>>& inputSolutions)
-    {
-        return ScattershotBuilder<TState, TResource, TStateTracker, TOutputState, TStateTrackerParams...>(_config, &inputSolutions, _stateTrackerParams);
-    }
-
-    template <typename... UStateTrackerParams>
-    ScattershotBuilder<TState, TResource, TStateTracker, TOutputState, UStateTrackerParams...> ConfigureStateTracker(UStateTrackerParams&&... stateTrackerParams)
-    {
-        return ScattershotBuilder<TState, TResource, TStateTracker, TOutputState, UStateTrackerParams...>(
-            _config, _inputSolutions, std::make_shared(std::make_tuple(std::forward<UStateTrackerParams>(stateTrackerParams)...)));
-    }
-
-protected:
-    const Configuration& _config;
-    const std::vector<ScattershotSolution<TOutputState>>* _inputSolutions;
-    std::shared_ptr<std::tuple<TStateTrackerParams...>> _stateTrackerParams = nullptr;
-};
-
-template <class TState,
-    derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
-    class TOutputState,
-    class TResourceConfig,
-    typename FResourceConfigGenerator,
-    typename... TStateTrackerParams>
-class ScattershotBuilderConfig : public ScattershotBuilder<TState, TResource, TStateTracker, TOutputState, TStateTrackerParams...>
-{
-public:
-    using ScattershotBuilder<TState, TResource, TStateTracker, TOutputState, TStateTrackerParams...>::_config;
-    using ScattershotBuilder<TState, TResource, TStateTracker, TOutputState, TStateTrackerParams...>::_inputSolutions;
-    using ScattershotBuilder<TState, TResource, TStateTracker, TOutputState, TStateTrackerParams...>::_stateTrackerParams;
-
-    ScattershotBuilderConfig(const Configuration& config, FResourceConfigGenerator callback,
-        const std::vector<ScattershotSolution<TOutputState>>* inputSolutions, std::shared_ptr<std::tuple<TStateTrackerParams...>> stateTrackerParams)
-        : ScattershotBuilder<TState, TResource, TStateTracker, TOutputState, TStateTrackerParams...>(
-            config, inputSolutions, stateTrackerParams), _resourceConfigGenerator(callback) {}
-
-    template <class UResourceConfig, typename GResourceConfigGenerator>
-        requires (std::same_as<std::invoke_result_t<GResourceConfigGenerator, int>, UResourceConfig>)
-    ScattershotBuilderConfig<TState, TResource, TStateTracker, TOutputState, UResourceConfig, GResourceConfigGenerator, TStateTrackerParams...>
-        ConfigureResourcePerThread(GResourceConfigGenerator callback)
-    {
-        return ScattershotBuilderConfig<TState, TResource, TStateTracker, TOutputState, UResourceConfig, GResourceConfigGenerator, TStateTrackerParams...>(
-            _config, callback, _inputSolutions, _stateTrackerParams);
-    }
-
-    ScattershotBuilderConfig<TState, TResource, TStateTracker, TOutputState, TResourceConfig, FResourceConfigGenerator, TStateTrackerParams...>
-        PipeFrom(const std::vector<ScattershotSolution<TOutputState>>& inputSolutions)
-    {
-        return ScattershotBuilderConfig<TState, TResource, TStateTracker, TOutputState, TResourceConfig, FResourceConfigGenerator, TStateTrackerParams...>(
-            _config, _resourceConfigGenerator, &inputSolutions, _stateTrackerParams);
-    }
-
-    template <typename... UStateTrackerParams>
-    ScattershotBuilderConfig<TState, TResource, TStateTracker, TOutputState, TResourceConfig, FResourceConfigGenerator, UStateTrackerParams...>
-        ConfigureStateTracker(UStateTrackerParams&&... stateTrackerParams)
-    {
-        std::shared_ptr<std::tuple<UStateTrackerParams...>> tuplePtr =
-            std::make_shared<std::tuple<UStateTrackerParams...>>(std::forward<UStateTrackerParams>(stateTrackerParams)...);
-        return ScattershotBuilderConfig<TState, TResource, TStateTracker, TOutputState, TResourceConfig, FResourceConfigGenerator, UStateTrackerParams...>(
-            _config, _resourceConfigGenerator, _inputSolutions, tuplePtr);
-    }
-
-    template <std::derived_from<ScattershotThread<TState, TResource, TStateTracker, TOutputState>> TScattershotThread, typename... TParams>
-    std::vector<ScattershotSolution<TOutputState>> Run(TParams&&... params)
-    {
-        return Scattershot<TState, TResource, TStateTracker, TOutputState>::template RunConfig<TScattershotThread, TResourceConfig>(
-            _config, _inputSolutions ? *_inputSolutions : std::vector<ScattershotSolution<TOutputState>>(),
-            _resourceConfigGenerator, _stateTrackerParams, std::forward<TParams>(params)...);
-    }
-
-private:
-    FResourceConfigGenerator _resourceConfigGenerator;
-};
-
-template <class TState,
-    derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
-    class TOutputState,
-    typename FResourceImportGenerator,
-    typename... TStateTrackerParams>
-class ScattershotBuilderImport : public ScattershotBuilder<TState, TResource, TStateTracker, TOutputState, TStateTrackerParams...>
-{
-public:
-    using ScattershotBuilder<TState, TResource, TStateTracker, TOutputState, TStateTrackerParams...>::_config;
-    using ScattershotBuilder<TState, TResource, TStateTracker, TOutputState, TStateTrackerParams...>::_inputSolutions;
-    using ScattershotBuilder<TState, TResource, TStateTracker, TOutputState, TStateTrackerParams...>::_stateTrackerParams;
-
-    ScattershotBuilderImport(const Configuration& config, FResourceImportGenerator callback,
-        const std::vector<ScattershotSolution<TOutputState>>* inputSolutions, std::shared_ptr<std::tuple<TStateTrackerParams...>> stateTrackerParams)
-        : ScattershotBuilder<TState, TResource, TStateTracker, TOutputState, TStateTrackerParams...>(
-            config, inputSolutions, stateTrackerParams), _resourceImportGenerator(callback) {}
-
-    ScattershotBuilderImport<TState, TResource, TStateTracker, TOutputState, FResourceImportGenerator, TStateTrackerParams...>
-        PipeFrom(const std::vector<ScattershotSolution<TOutputState>>& inputSolutions)
-    {
-        return ScattershotBuilderImport<TState, TResource, TStateTracker, TOutputState, FResourceImportGenerator>(
-            _config, _resourceImportGenerator, &inputSolutions, _stateTrackerParams);
-    }
-
-    template <typename... UStateTrackerParams>
-    ScattershotBuilderImport<TState, TResource, TStateTracker, TOutputState, FResourceImportGenerator, UStateTrackerParams...>
-        ConfigureStateTracker(UStateTrackerParams&&... stateTrackerParams)
-    {
-        std::shared_ptr<std::tuple<UStateTrackerParams...>> tuplePtr =
-            std::make_shared<std::tuple<UStateTrackerParams...>>(std::forward<UStateTrackerParams>(stateTrackerParams)...);
-        return ScattershotBuilderImport<TState, TResource, TStateTracker, TOutputState, FResourceImportGenerator, UStateTrackerParams...>(
-            _config, _resourceImportGenerator, _inputSolutions, tuplePtr);
-    }
-
-    template <std::derived_from<ScattershotThread<TState, TResource, TStateTracker, TOutputState>> TScattershotThread, typename... TParams>
-    std::vector<ScattershotSolution<TOutputState>> Run(TParams&&... params)
-    {
-        return Scattershot<TState, TResource, TStateTracker, TOutputState>::template RunImport<TScattershotThread>(
-            _config, _inputSolutions ? *_inputSolutions : std::vector<ScattershotSolution<TOutputState>>(),
-            _resourceImportGenerator, _stateTrackerParams, std::forward<TParams>(params)...);
-    }
-
-private:
-    FResourceImportGenerator _resourceImportGenerator;
 };
 
 //Include template method implementations
 #include "Scattershot.t.hpp"
-#include "ScattershotThread.t.hpp"
+
+// The thread and the builders complete what Scattershot declares (the thread is its friend and
+// runs its search, the builders start one), so a search's translation unit has all three; the
+// two headers are not included on their own.
+#include <ScattershotThread.hpp>
+#include <ScattershotBuilder.hpp>
 
 #endif

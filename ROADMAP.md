@@ -750,8 +750,14 @@ item is done except 3.2, in progress, and 3.17, which follows it; then Phase 4.
       clang-cl 22 and GCC 14 (the container), tests unchanged, the suite flat
       (docs/performance-changelog.md). A declaration without a definition or a caller,
       `Script::AdvanceFrameRead(uint64_t&)`, went with it (the maintainer: meant for cost
-      modelling once, never written). tasfw-scattershot's `Scattershot.hpp` has the same
-      multi-class shape and could get the same treatment.
+      modelling once, never written). tasfw-scattershot got the same treatment the same
+      day: `Configuration.hpp` with a `.t.hpp` for its member template, `Segment.hpp`,
+      `Block.hpp`, `ScattershotSolution.hpp`, `ScattershotThread.hpp` over the existing
+      `.t.hpp` and `ScattershotBuilder.hpp` for the three builders came out of
+      `Scattershot.hpp`, which keeps the search, `HashByte` and the critical-region names and
+      pulls in the thread and the builders at its bottom; `Scattershot` and `ScattershotThread`
+      declare in the convention's order and their `.t.hpp` files follow; two commented-out
+      blocks and two redundant forward declarations went.
 
 ## Phase 4: the squish-cancel brute forcer
 
