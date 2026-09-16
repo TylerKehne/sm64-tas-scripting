@@ -64,9 +64,9 @@ correctness and in speed.
         invariants on `MockResource` (diff recording, movie fallback, Execute/Modify/Test/ad-hoc
         semantics, exact restore on `Load`, bit-identical replays, hierarchy input resolution,
         `Rollback`, cache invalidation after rewriting a frame, a child's saves surviving
-        `Modify`, and state trackers: recursive metrics, queries ahead of the cursor computed
+        `Modify`, and metric scripts: recursive metrics, queries ahead of the cursor computed
         in a sandbox, states following the diff on Execute/Modify, unasserted states stored
-        as defaults, the tracker type guard); and the bitfs-turn pipeline library (config
+        as defaults, the metric script type guard); and the bitfs-turn pipeline library (config
         schema and path resolution, scattershot override layering, rejected keys and
         references, solution-file round trip, selection, `input:<metric>` arguments).
       - libsm64 smoke test (skips unless `TASFW_LIBSM64`/`TASFW_M64` are set): loads the DLL,
@@ -84,7 +84,7 @@ correctness and in speed.
       `bitfs-turn` runs, Release/RelWithDebInfo only:
       - [x] Tier A microbenchmarks (Google Benchmark, DLL-free): hashing, state bins, input
         mapping, m64 I/O, `SlotManager`, `Script` per-operation overhead, hierarchy depth,
-        state trackers. `scripts\perf.ps1` runs and compares; first baseline committed
+        metric scripts. `scripts\perf.ps1` runs and compares; first baseline committed
         (2026-09-07). Heap allocations per iteration are counted on every benchmark and
         gated at 0.1 (2026-09-07). Runs in CI since 2026-09-08: every Tier A family once
         per job with a short minimum time, to prove the binary executes; nothing is gated
@@ -98,7 +98,7 @@ correctness and in speed.
         docs/performance.md.
       - [x] Tier C framework workloads with exact-count gates. Done 2026-09-08:
         `bench_framework.cpp` (`^BM_Framework`): the pyramid oscillation, 1,000 downhill-angle
-        calls through `PyramidUpdate`, and a 500-frame `StateTracker_BitfsDr` sweep, with the
+        calls through `PyramidUpdate`, and a 500-frame `BitfsDrMetrics` sweep, with the
         cost model off so frame advances, saves and loads are exact; replay ratio and
         overhead % reported, overhead gated at 2 points.
       - [x] Tier D scattershot end to end. Done 2026-09-08: `perf.ps1` runs `bitfs-turn` on
@@ -147,7 +147,7 @@ correctness and in speed.
       `.executed` results, missing `override`s, unhandled `switch` cases, `main` returning
       `false`, a bool/s32 compare in `PyramidUpdate`, int16-to-int8 narrowing in `Inputs.cpp`.
       Fixed 2026-09-08: the three MSVC C4244s (an `int` literal for the float
-      `CrossingDto::speed` in `StateTracker_BitfsDr.cpp`; the `TiltTargetShot.hpp` initializer
+      `CrossingDto::speed` in `BitfsDrMetrics.cpp`; the `TiltTargetShot.hpp` initializer
       lists first blamed were never the source), clang-cl's `getenv` deprecation (one
       `tasfw::testing::Env` helper, `_CRT_SECURE_NO_WARNINGS` on its consumers) and Google
       Benchmark's `/MP` under clang-cl (silenced on the two benchmark targets).
@@ -185,7 +185,7 @@ correctness and in speed.
       `-Wdangling-reference`, one `-Wmaybe-uninitialized`). Nearly every fix is an explicit
       cast of the conversion that was already happening, a deleted dead local or field, or
       an unnamed parameter; the rest: `Resource` has a virtual destructor, `sprintf` is
-      `snprintf`, the tracked-state hooks and `BitFsPyramidOscillation_Iteration` take
+      `snprintf`, the metrics hooks and `BitFsPyramidOscillation_Iteration` take
       `int64_t` levels and frames, `RequireObject` takes a `std::string_view`, and
       `BitFsScApproach_AttemptDr_BF` lost an unused constructor argument. Done in one pass
       rather than tree by tree because the casts are codegen-neutral; the perf delta table
@@ -357,7 +357,7 @@ item is done except 3.2, in progress, and 3.17, which follows it; then Phase 4.
       `GetInputsMetadata` stays: one walk for both, ending in a private virtual the root
       overrides for the movie, cost 7 to 18 ns per uncached lookup on MSVC 19.51 against the
       root's own walk (docs/performance-changelog.md), so the override reads its levels
-      through the friend. A tracker's own frames skip the root's `TrackState` at the call
+      through the friend. A metric script's own frames skip the root's `RecordMetrics` at the call
       site; the root sets its tag itself. `startSaveHandle`, `TopLevelScript::_m64` and
       `resource` are private. The resource's surface: the slot manager is private to
       `Resource` and its own data private, a slot is reached only through `SaveState`,
@@ -454,12 +454,12 @@ item is done except 3.2, in progress, and 3.17, which follows it; then Phase 4.
       `Resource::setInputs()` with cached `gControllerPads`/`sm64_update`/`gGlobalTimer`
       pointers in `LibSm64` (measured within noise: `GetProcAddress` is 62 ns here); the six
       per-level `unordered_map`s in `Script` replaced by `LevelStack` (ad-hoc overhead -56%,
-      child scripts -24 to -32%, tracked frames -22%, deep rewinds -46%; docs/performance.md).
+      child scripts -24 to -32%, recorded frames -22%, deep rewinds -46%; docs/performance.md).
       Also done 2026-09-07: per-level containers constructed on first use and reset in place
       on pop (no allocation per ad-hoc level, no save bank for scripts that never save);
-      tracked-state entries created on first insert; the `dynamic_cast` in `GetTrackedState`
+      metrics entries created on first insert; the `dynamic_cast` in `GetMetrics`
       replaced by a per-type tag compare; statuses moved rather than copied out of finished
-      scripts and `GetTrackedState` returning a reference; and a `SlotHandle` move that
+      scripts and `GetMetrics` returning a reference; and a `SlotHandle` move that
       copied the slot id, so every save a child handed to its parent on `Modify` was erased
       by the child's bank and replayed later (now pinned by a test). Allocation counts and
       timings are in docs/performance-changelog.md. Done 2026-09-14, from the 3.8 profile:
@@ -470,16 +470,16 @@ item is done except 3.2, in progress, and 3.17, which follows it; then Phase 4.
       of the throughput run's samples, so the virtual call is not separable from noise.
       Last done 2026-09-14: the `std::map` head node MSVC allocates for each container a
       script touches, and one map node per cached frame. Every one of the 11 allocations
-      of an empty child script and most of the 14 of a tracked frame were sentinel nodes
+      of an empty child script and most of the 14 of a recorded frame were sentinel nodes
       of `M64Diff`'s and the per-level caches' maps, constructed and moved per status
       object and per level, about 9% of the throughput run's CPU with the map code (3.8).
       `FrameMap` and `FrameSet` (`tasfw/FrameMap.hpp`, ARCHITECTURE.md "Script
       hierarchy", pinned by `test_framemap.cpp`) now hold `M64Base::frames` and the five
-      per-level containers; the tracked states stay a node container because a tracker
+      per-level containers; the metrics stay a node container because a metric script
       reads its previous states by reference while it may track another frame. Design
       presented under hard rule 10, prototyped at the maintainer's request and accepted on
       its numbers (2026-09-14): an empty sandbox 73 -> 25 ns and 2 -> 0 allocations, an
-      empty child script 408 -> 197 ns and 11 -> 2, a tracked frame 753 -> 452 ns and
+      empty child script 408 -> 197 ns and 11 -> 2, a recorded frame 753 -> 452 ns and
       14 -> 3, the movie's load 10,004 -> 27 allocations, `UpsertBlock` -42 to -57% (a
       solution carries a diff); Tier D deterministic -4.1% and throughput -2.9% in wall
       time against the same day's binary, every count identical, 0 regressions in the
@@ -492,8 +492,8 @@ item is done except 3.2, in progress, and 3.17, which follows it; then Phase 4.
       the process CPU time over the stage, and a sampled profile of both Tier D workloads
       and the Tier C family attributed the rest. On the throughput run, the pipeline's
       shape, the resource takes 76% of the CPU (game 62%, `fixed` loads 13%, saves 1%) and
-      the 24% outside it is 11% heap (7% of it the tilt-target tracker's `std::vector`
-      status, copied per tracked frame), 5% map code, 3% `GetInputsMetadata`, 1.5% symbol
+      the 24% outside it is 11% heap (7% of it the tilt-target metric script's `std::vector`
+      status, copied per recorded frame), 5% map code, 3% `GetInputsMetadata`, 1.5% symbol
       resolution under the loader lock, and the search's own code; 95% of the frame
       advances are replays, the evaluation to the pyramid's equilibrium after each script.
       The deterministic gate run is 58% barrier spin-wait, the spread of a script's cost
@@ -501,9 +501,9 @@ item is done except 3.2, in progress, and 3.17, which follows it; then Phase 4.
       Block decoding is 2 to 3%; `UpsertBlock`, the `print` section and the slot budget are
       nothing. Done from that list the same day: the framework's per-sandbox and
       per-frame allocations and map nodes (3.7, `FrameMap`), `addr` per call (3.7, the
-      table), and the trackers' status objects (`std::array`s instead of `std::vector`s
-      for the per-axis values in the tilt-target, osc-final and DR trackers and their
-      solutions, the tilt-target tracker reading its previous states by reference; a
+      table), and the metric scripts' status objects (`std::array`s instead of `std::vector`s
+      for the per-axis values in the tilt-target, osc-final and DR metric scripts and their
+      solutions, the tilt-target metric script reading its previous states by reference; a
       stage-script change, measured in docs/performance-changelog.md). The
       `dr-oscillations` stage was profiled the same day for the two suspects the
       tilt-target workload never runs: the `PyramidUpdateMem` import and
@@ -690,7 +690,7 @@ item is done except 3.2, in progress, and 3.17, which follows it; then Phase 4.
       maintainer): guidelines, for an agent or a person, on how to TAS with the framework
       once the pieces above are settled, so that Phase 4 starts from an agreed way of
       working rather than from the code alone: which tool to reach for (an ad-hoc attempt,
-      a script class, a state tracker, a scattershot stage), how a goal turns into a script
+      a script class, a metric script, a scattershot stage), how a goal turns into a script
       and a run, how a result is checked (counts, reproduction, exports) and which of the
       hard rules bite while TASing. Not complicated, the maintainer's words; to be written
       after 3.2, whose encapsulation the guidelines should describe as settled, and before
@@ -737,7 +737,7 @@ item is done except 3.2, in progress, and 3.17, which follows it; then Phase 4.
       change, three commits so history survives: the multi-class headers of tasfw-core split
       into one header per concept (`Concepts.hpp` out of `SharedLib.hpp`; `M64.hpp` and `M64.cpp`
       out of `Inputs`; `SlotBudget.hpp`, `ResourceWork.hpp` with `get_time` and `SlotManager.hpp`
-      out of `Resource.hpp`; `SlotHandle.hpp`, `ScriptMetadata.hpp`, `StateTracker.hpp`,
+      out of `Resource.hpp`; `SlotHandle.hpp`, `ScriptMetadata.hpp`, `MetricScript.hpp`,
       `TopLevelScript.hpp` and `TopLevelScriptBuilder.hpp` out of `Script.hpp`, each with its
       `.t.hpp` where it has definitions), every declaration's text and relative order kept;
       then one member order for every class and the `.t.hpp` files in the header's order
@@ -745,7 +745,7 @@ item is done except 3.2, in progress, and 3.17, which follows it; then Phase 4.
       family's 32 entry points as `Script.compare.hpp`, a member include of `Script` (the
       maintainer's choice over a base class), since a constrained member template has to be
       defined in its class on MSVC. `<tasfw/Script.hpp>` stays a script's one include and
-      pulls in the root and the builders at its bottom: `GetTrackedState` reaches into
+      pulls in the root and the builders at its bottom: `GetMetrics` reaches into
       `TopLevelScript`, so a script's translation unit needs both. Verified on MSVC 19.51,
       clang-cl 22 and GCC 14 (the container), tests unchanged, the suite flat
       (docs/performance-changelog.md). A declaration without a definition or a caller,

@@ -1,7 +1,7 @@
 #include <Scattershot_BitfsDr.hpp>
 #include <ScriptMath.hpp>
 
-bool StateTracker_BitfsDr::ValidateCrossingData(const StateTracker_BitfsDr::CustomScriptStatus& state, float componentThreshold)
+bool BitfsDrMetrics::ValidateCrossingData(const BitfsDrMetrics::CustomScriptStatus& state, float componentThreshold)
 {
     int crossings = int(state.crossingData.size());
     if (crossings > 2)
@@ -18,9 +18,9 @@ bool StateTracker_BitfsDr::ValidateCrossingData(const StateTracker_BitfsDr::Cust
     return true;
 }
 
-bool StateTracker_BitfsDr::validation() { return int64_t(GetCurrentFrame()) >= initialFrame; }
+bool BitfsDrMetrics::validation() { return int64_t(GetCurrentFrame()) >= initialFrame; }
 
-bool StateTracker_BitfsDr::execution()
+bool BitfsDrMetrics::execution()
 {
     MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
     Object* objectPool = (Object*)(ReadState("gObjectPool"));
@@ -35,7 +35,7 @@ bool StateTracker_BitfsDr::execution()
     int64_t currentFrame = GetCurrentFrame();
     CustomScriptStatus lastFrameState;
     if (currentFrame > initialFrame)
-        lastFrameState = GetTrackedState(currentFrame - 1);
+        lastFrameState = GetMetrics(currentFrame - 1);
 
     if (!lastFrameState.initialized)
         return true;
@@ -57,9 +57,9 @@ bool StateTracker_BitfsDr::execution()
     return true;
 }
 
-bool StateTracker_BitfsDr::assertion() { return CustomStatus.initialized == true; }
+bool BitfsDrMetrics::assertion() { return CustomStatus.initialized == true; }
 
-void StateTracker_BitfsDr::SetStateVariables(MarioState* marioState, Object* pyramid)
+void BitfsDrMetrics::SetStateVariables(MarioState* marioState, Object* pyramid)
 {
     CustomStatus.marioX = marioState->pos[0];
     CustomStatus.marioY = marioState->pos[1];
@@ -74,7 +74,7 @@ void StateTracker_BitfsDr::SetStateVariables(MarioState* marioState, Object* pyr
     CustomStatus.frame = GetCurrentFrame();
 }
 
-void StateTracker_BitfsDr::CalculateOscillations(CustomScriptStatus lastFrameState, MarioState* marioState, Object* pyramid)
+void BitfsDrMetrics::CalculateOscillations(CustomScriptStatus lastFrameState, MarioState* marioState, Object* pyramid)
 {
     if (CustomStatus.phase == Phase::INITIAL)
         return;
@@ -158,7 +158,7 @@ void StateTracker_BitfsDr::CalculateOscillations(CustomScriptStatus lastFrameSta
         CustomStatus.crossingData.rbegin()->maxSpeed = marioState->forwardVel;
 }
 
-void StateTracker_BitfsDr::CalculatePhase(CustomScriptStatus lastFrameState, MarioState* marioState, Object* /*pyramid*/)
+void BitfsDrMetrics::CalculatePhase(CustomScriptStatus lastFrameState, MarioState* marioState, Object* /*pyramid*/)
 {
     int32_t targetAngleDiffA = abs(int16_t(roughTargetAngleA - marioState->faceAngle[1]));
     int32_t targetAngleDiffB = abs(int16_t(roughTargetAngleB - marioState->faceAngle[1]));
@@ -226,7 +226,7 @@ void StateTracker_BitfsDr::CalculatePhase(CustomScriptStatus lastFrameState, Mar
         CustomStatus.facingRoughTargetAngle = CustomStatus.roughTargetAngle == roughTargetAngleB;
 }
 
-void StateTracker_BitfsDr::CalculateARE(Object* pyramid)
+void BitfsDrMetrics::CalculateARE(Object* pyramid)
 {
     float errorIncX = std::fabs(std::nextafter(targetNormal[0], INFINITY) - targetNormal[0]);
     float errorIncZ = std::fabs(std::nextafter(targetNormal[2], INFINITY) - targetNormal[2]);

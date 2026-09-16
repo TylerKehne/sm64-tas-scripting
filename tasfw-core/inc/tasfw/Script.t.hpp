@@ -85,11 +85,11 @@ void Script<TResource>::AdvanceFrameRead()
 	resource->FrameAdvance();
 	BaseStatus[_adhocLevel].nFrameAdvances++;
 
-	// A tracker's own frames are never tracked: the root's TrackState is skipped here rather
-	// than asked, which was a virtual call per frame of every tracker.
+	// A metric script's own frames are never recorded: the root's RecordMetrics is skipped here rather
+	// than asked, which was a virtual call per frame of every metric script.
 	InputsMetadata<TResource> inputsMetadata = GetInputsMetadataAndCache(currentFrame);
-	if (!isStateTracker)
-		_rootScript->TrackState(this, inputsMetadata);
+	if (!isMetricScript)
+		_rootScript->RecordMetrics(this, inputsMetadata);
 }
 
 template <derived_from_specialization_of<Resource> TResource>
@@ -104,7 +104,7 @@ void Script<TResource>::AdvanceFrameWrite(Inputs inputs)
 	frameCounter[_adhocLevel].erase(frameCounter[_adhocLevel].upper_bound(currentFrame), frameCounter[_adhocLevel].end());
 	saveBank[_adhocLevel].erase(saveBank[_adhocLevel].upper_bound(currentFrame), saveBank[_adhocLevel].end());
 	saveCache[_adhocLevel].erase(saveCache[_adhocLevel].upper_bound(currentFrame), saveCache[_adhocLevel].end());
-	_rootScript->EraseTrackedStates(this, _adhocLevel, currentFrame);
+	_rootScript->EraseMetrics(this, _adhocLevel, currentFrame);
 
 	// Set inputs and advance frame
 	SetInputs(inputs);
@@ -113,8 +113,8 @@ void Script<TResource>::AdvanceFrameWrite(Inputs inputs)
 
 	currentFrame++;
 	InputsMetadata<TResource> inputsMetadata = GetInputsMetadataAndCache(currentFrame);
-	if (!isStateTracker)
-		_rootScript->TrackState(this, inputsMetadata);
+	if (!isMetricScript)
+		_rootScript->RecordMetrics(this, inputsMetadata);
 }
 
 template <derived_from_specialization_of<Resource> TResource>
@@ -190,7 +190,7 @@ void Script<TResource>::Apply(const M64Diff& m64Diff)
 	frameCounter[_adhocLevel].erase(frameCounter[_adhocLevel].upper_bound(currentFrame), frameCounter[_adhocLevel].end());
 	saveBank[_adhocLevel].erase(saveBank[_adhocLevel].upper_bound(currentFrame), saveBank[_adhocLevel].end());
 	saveCache[_adhocLevel].erase(saveCache[_adhocLevel].upper_bound(currentFrame), saveCache[_adhocLevel].end());
-	_rootScript->EraseTrackedStates(this, _adhocLevel, currentFrame);
+	_rootScript->EraseMetrics(this, _adhocLevel, currentFrame);
 
 	while (currentFrame <= lastFrame)
 	{
@@ -208,8 +208,8 @@ void Script<TResource>::Apply(const M64Diff& m64Diff)
 
 		currentFrame++;
 		InputsMetadata<TResource> inputsMetadata = GetInputsMetadataAndCache(currentFrame);
-		if (!isStateTracker)
-			_rootScript->TrackState(this, inputsMetadata);
+		if (!isMetricScript)
+			_rootScript->RecordMetrics(this, inputsMetadata);
 	}
 }
 
@@ -309,8 +309,8 @@ void Script<TResource>::LongLoad(int64_t frame)
 
 	// Resume state tracking
 	InputsMetadata<TResource> inputsMetadata = GetInputsMetadataAndCache(frame);
-	if (!isStateTracker)
-		_rootScript->TrackState(this, inputsMetadata);
+	if (!isMetricScript)
+		_rootScript->RecordMetrics(this, inputsMetadata);
 
 	// Create a save as it is likely that very many frames were advanced since the most recent one.
 	Save();
@@ -333,7 +333,7 @@ void Script<TResource>::Rollback(uint64_t frame)
 		frameCounter[_adhocLevel].erase(frameCounter[_adhocLevel].upper_bound(firstFrame), frameCounter[_adhocLevel].end());
 		saveBank[_adhocLevel].erase(saveBank[_adhocLevel].upper_bound(firstFrame), saveBank[_adhocLevel].end());
 		saveCache[_adhocLevel].erase(saveCache[_adhocLevel].upper_bound(firstFrame), saveCache[_adhocLevel].end());
-		_rootScript->EraseTrackedStates(this, _adhocLevel, firstFrame);
+		_rootScript->EraseMetrics(this, _adhocLevel, firstFrame);
 	}
 
 	//Desyncs should be impossible for rollback because no inputs are changed prior to frame being loaded
@@ -364,7 +364,7 @@ void Script<TResource>::RollForward(int64_t frame)
 		frameCounter[_adhocLevel].erase(frameCounter[_adhocLevel].upper_bound(firstFrame), frameCounter[_adhocLevel].end());
 		saveBank[_adhocLevel].erase(saveBank[_adhocLevel].upper_bound(firstFrame), saveBank[_adhocLevel].end());
 		saveCache[_adhocLevel].erase(saveCache[_adhocLevel].upper_bound(firstFrame), saveCache[_adhocLevel].end());
-		_rootScript->EraseTrackedStates(this, _adhocLevel, firstFrame);
+		_rootScript->EraseMetrics(this, _adhocLevel, firstFrame);
 	}
 
 	LoadBase(frame, desync);
@@ -390,7 +390,7 @@ void Script<TResource>::Restore(int64_t frame)
 		frameCounter[_adhocLevel].erase(frameCounter[_adhocLevel].upper_bound(firstFrame), frameCounter[_adhocLevel].end());
 		saveBank[_adhocLevel].erase(saveBank[_adhocLevel].upper_bound(firstFrame), saveBank[_adhocLevel].end());
 		saveCache[_adhocLevel].erase(saveCache[_adhocLevel].upper_bound(firstFrame), saveCache[_adhocLevel].end());
-		_rootScript->EraseTrackedStates(this, _adhocLevel, firstFrame);
+		_rootScript->EraseMetrics(this, _adhocLevel, firstFrame);
 	}
 
 	LoadBase(frame, desync);
@@ -777,11 +777,11 @@ void Script<TResource>::LoadBase(uint64_t frame, bool desync)
 		BaseStatus[_adhocLevel].nLoads++;
 	}
 
-	// Run custom state tracker
+	// Run custom metric script
 	currentFrame = GetCurrentFrame();
 	InputsMetadata<TResource> inputsMetadata = GetInputsMetadataAndCache(currentFrame);
-	if (!isStateTracker)
-		_rootScript->TrackState(this, inputsMetadata);
+	if (!isMetricScript)
+		_rootScript->RecordMetrics(this, inputsMetadata);
 
 	// If save is before target frame, play back until frame is reached
 	uint64_t frameCounter = 0;
@@ -827,7 +827,7 @@ void Script<TResource>::Revert(uint64_t frame, const M64Diff& m64, FrameMap<int6
 		saveBank.erase(_adhocLevel + 1);
 
 	int64_t childAdhocLevel = this == childScript ? _adhocLevel + 1 : 0; // Ad-hoc script vs. regular script
-	_rootScript->PopTrackedStatesContainer(childScript, childAdhocLevel);
+	_rootScript->PopMetricsContainer(childScript, childAdhocLevel);
 
 	LoadBase(frame, desync);
 }
@@ -854,7 +854,7 @@ void Script<TResource>::ApplyChildDiff(const BaseScriptStatus& status, FrameMap<
 		frameCounter[_adhocLevel].erase(frameCounter[_adhocLevel].upper_bound(firstFrame), frameCounter[_adhocLevel].end());
 		saveBank[_adhocLevel].erase(saveBank[_adhocLevel].upper_bound(firstFrame), saveBank[_adhocLevel].end());
 		saveCache[_adhocLevel].erase(saveCache[_adhocLevel].upper_bound(firstFrame), saveCache[_adhocLevel].end());
-		_rootScript->EraseTrackedStates(this, _adhocLevel, firstFrame);
+		_rootScript->EraseMetrics(this, _adhocLevel, firstFrame);
 
 		//Apply diff. State is already synced from child script, so no need to update it
 		for (uint64_t frame = firstFrame; frame <= lastFrame; frame++)
@@ -872,7 +872,7 @@ void Script<TResource>::ApplyChildDiff(const BaseScriptStatus& status, FrameMap<
 		saveBank.erase(_adhocLevel + 1);
 
 	int64_t childAdhocLevel = this == childScript ? _adhocLevel + 1 : 0; // Ad-hoc script vs. regular script
-	_rootScript->MoveSyncedTrackedStates(childScript, childAdhocLevel, this, _adhocLevel);
+	_rootScript->MoveSyncedMetrics(childScript, childAdhocLevel, this, _adhocLevel);
 
 	if (!status.m64Diff.frames.empty())
 		Load(lastFrame + 1); //Forward state to end of diff

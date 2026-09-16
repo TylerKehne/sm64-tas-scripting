@@ -10,7 +10,7 @@
 // Scattershot's block table and hashing, exercised without threads, resources or scripts.
 
 using Bin = BinaryStateBin<16>;
-using SS = Scattershot<Bin, MockResource, DefaultStateTracker<MockResource>, DefaultState>;
+using SS = Scattershot<Bin, MockResource, DefaultMetricScript<MockResource>, DefaultState>;
 using Solution = ScattershotSolution<DefaultState>;
 
 static const std::vector<Solution> NoInputSolutions;

@@ -59,7 +59,7 @@ documented-but-unsupported features before. Rules:
 - Treat Clang-only warnings as signal; on first contact Clang pointed at two real bugs.
 
 Design principle: **as close to zero-cost abstractions as we can get.** The framework is
-templates and concepts on purpose, so that scripts, resources and state trackers resolve at
+templates and concepts on purpose, so that scripts, resources and metric scripts resolve at
 compile time and `if constexpr` removes what is unused. In anything executed per frame,
 prefer static dispatch over virtual calls, `std::function`, `dynamic_cast`, string-keyed
 lookups or heap allocation. An abstraction that costs at runtime in a hot path has to earn
@@ -79,7 +79,7 @@ its place with numbers, and "it is cleaner" is not a number.
 | `tasfw-tools/` | `dllcheck`: runs the `VerifyLayout` script against a DLL, reports fixed-slice coverage and what a savestate holds of the sections (`bytes:`, docs/libsm64.md "The game's bytes"), measures frame-advance and savestate cost, and lists a movie's level transitions (`--levels`) or Mario and the camera around a frame (`--trace`). `m64splice`: a movie for one game version out of two, the first up to the frame it enters a level, the second from its own, played and checked frame by frame (docs/libsm64.md, "A movie for the US game"). |
 | `tasfw-tests/` | Correctness tests (doctest), one file per subject; `script_fixtures.hpp` and `libsm64_env.hpp` hold what the `test_script_*` and `test_libsm64_*` files share. DLL-free tests always run; the libsm64 tests run when `res\` has the DLL and movie. `test_sm64_layout.cpp` compiles `sm64_layout.inc`, the pinned DLL's field offsets and struct sizes, against the copied headers, so the layout is checked without the game (docs/libsm64.md, "Struct layouts"). |
 | `tasfw-testing/` | Header-only test support shared by tests and benchmarks: `MockResource`, and `PerfAccess`, the friend through which a test or benchmark whose subject is Scattershot's table or the resource's slot manager reaches their internals (everything else uses the public operations). |
-| `perf/` | Committed benchmark baselines, one directory per machine and compiler (`tyler-desktop\`, `tyler-desktop-clang\`): a JSON file per benchmark family plus `context.json`, written by `scripts\perf.ps1 -SaveBaseline` and read through `perf_compare.py compare`, not by hand; `tierd-ci.json` is CI's Tier D baseline. `perf/results/` is gitignored. |
+| `perf/` | Committed benchmark baselines, one directory per machine and compiler (`tyler-desktop\`, `tyler-desktop-clang\`): a JSON file per benchmark family plus `context.json`, written by `scripts\perf.ps1 -SaveBaseline` and read through `perf_compare.py compare`, not by hand (the one hand edit is a renamed benchmark's row key, numbers untouched, as when the metric-script rows were renamed); `tierd-ci.json` is CI's Tier D baseline. `perf/results/` is gitignored. |
 | `analysis/` | R script that plots scattershot CSV output; also the pipeline's default output directory (CSVs, `solutions/*.json`, `m64/`), all gitignored. |
 | `res/` | Gitignored runtime inputs: 24 copies of the libsm64 DLL (made by `scripts/unlock_libsm64.py`), other source .m64 files, and thousands of exported solution .m64 files. |
 | `movies/` | The committed source movies: `bitfs-pyramid-jp.m64` (JP, 3,804 frames; the tests, the perf suite, CI and `config.json` use it), `bitfs-osc-final-jp.m64` (JP, 3,726 frames; the `osc-final-test3` stage), `1keyU.m64` (US, 7,628 frames; a whole 1-key run, the source of the US way into BitFS) and `bitfs-pyramid-us.m64` (US, 3,871 frames; `1keyU.m64` to its BitFS entry, then the JP movie from its own: its frame 3397 is the JP movie's 3330, the libsm64 tests run on it when `res\` has the US DLL). |
@@ -243,8 +243,8 @@ its place with numbers, and "it is cleaner" is not a number.
   inputs, saves and loads, state; then friends, data, and the internals grouped by concern,
   a one-line comment naming each group; the `.t.hpp` defines in that order.
 - A script is `class X : public Script<LibSm64>` with a nested `CustomScriptStatus` and the
-  three lifecycle methods. One that reads tracked state names its tracker once,
-  `using StateTracker = T;`, and calls `GetTrackedState(frame)`; a tracker and a root name
+  three lifecycle methods. One that reads metrics names its metric script once,
+  `using MetricScript = T;`, and calls `GetMetrics(frame)`; a metric script and a root name
   nothing. Child scripts are run with `Execute<X>` (revert), `Modify<X>`
   (keep diff if asserted) or `Test<X>` (revert and drop the diff from the status).
 - Ad-hoc lambdas use `ExecuteAdhoc` / `ModifyAdhoc` / `TestAdhoc` with the same semantics.

@@ -4,9 +4,9 @@
 #else
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
+    std::derived_from<Script<TResource>> TMetricScript,
     class TOutputState>
-Scattershot<TState, TResource, TStateTracker, TOutputState>::Scattershot(const Configuration& config, const std::vector<ScattershotSolution<TOutputState>>& inputSolutions)
+Scattershot<TState, TResource, TMetricScript, TOutputState>::Scattershot(const Configuration& config, const std::vector<ScattershotSolution<TOutputState>>& inputSolutions)
     : config(config), InputSolutions(inputSolutions)
 {
     Blocks.reserve(config.MaxBlocks);
@@ -17,18 +17,18 @@ Scattershot<TState, TResource, TStateTracker, TOutputState>::Scattershot(const C
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
+    std::derived_from<Script<TResource>> TMetricScript,
     class TOutputState>
-Scattershot<TState, TResource, TStateTracker, TOutputState>::~Scattershot()
+Scattershot<TState, TResource, TMetricScript, TOutputState>::~Scattershot()
 {
     Csv.close();
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
+    std::derived_from<Script<TResource>> TMetricScript,
     class TOutputState>
 template <typename F>
-void Scattershot<TState, TResource, TStateTracker, TOutputState>::MultiThread(int nThreads, F func)
+void Scattershot<TState, TResource, TMetricScript, TOutputState>::MultiThread(int nThreads, F func)
 {
     omp_set_num_threads(nThreads);
     QueueTurn.store(0);
@@ -44,9 +44,9 @@ void Scattershot<TState, TResource, TStateTracker, TOutputState>::MultiThread(in
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
+    std::derived_from<Script<TResource>> TMetricScript,
     class TOutputState>
-bool Scattershot<TState, TResource, TStateTracker, TOutputState>::UpsertBlock(
+bool Scattershot<TState, TResource, TMetricScript, TOutputState>::UpsertBlock(
     TState stateBin, bool isSolution, ScattershotSolution<TOutputState> solution, float fitness,
     std::shared_ptr<Segment> parentSegment, uint8_t nScripts, uint64_t segmentSeed, uint16_t pipedDiff1Index)
 {
@@ -111,9 +111,9 @@ bool Scattershot<TState, TResource, TStateTracker, TOutputState>::UpsertBlock(
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
+    std::derived_from<Script<TResource>> TMetricScript,
     class TOutputState>
-void Scattershot<TState, TResource, TStateTracker, TOutputState>::PrintStatus()
+void Scattershot<TState, TResource, TMetricScript, TOutputState>::PrintStatus()
 {
     printf("\nCombined Loops: %llu Blocks: %llu Solutions: %llu\n", (unsigned long long)TotalShots, (unsigned long long)Blocks.size(), (unsigned long long)Solutions.size());
 
@@ -141,9 +141,9 @@ void Scattershot<TState, TResource, TStateTracker, TOutputState>::PrintStatus()
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
+    std::derived_from<Script<TResource>> TMetricScript,
     class TOutputState>
-void Scattershot<TState, TResource, TStateTracker, TOutputState>::OpenCsv()
+void Scattershot<TState, TResource, TMetricScript, TOutputState>::OpenCsv()
 {
     if (config.CsvSamplePeriod == 0)
         return;

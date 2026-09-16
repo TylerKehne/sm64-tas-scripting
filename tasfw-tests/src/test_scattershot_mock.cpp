@@ -21,8 +21,8 @@ namespace fs = std::filesystem;
 namespace
 {
 	using Bin = BinaryStateBin<4>;
-	using SS = Scattershot<Bin, MockResource, DefaultStateTracker<MockResource>, DefaultState>;
-	using Thread = ScattershotThread<Bin, MockResource, DefaultStateTracker<MockResource>, DefaultState>;
+	using SS = Scattershot<Bin, MockResource, DefaultMetricScript<MockResource>, DefaultState>;
+	using Thread = ScattershotThread<Bin, MockResource, DefaultMetricScript<MockResource>, DefaultState>;
 	using Solution = ScattershotSolution<DefaultState>;
 
 	// The run's totals, copied out by every thread when it finishes (assertion runs after

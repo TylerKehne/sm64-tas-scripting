@@ -6,10 +6,10 @@
 #define TOPLEVELSCRIPT_H
 
 template <derived_from_specialization_of<Resource> TResource>
-class DefaultStateTracker : public Script<TResource>
+class DefaultMetricScript : public Script<TResource>
 {
 public:
-	DefaultStateTracker() = default;
+	DefaultMetricScript() = default;
 
 	bool validation() { return true; }
 	bool execution() { return true; }
@@ -17,16 +17,16 @@ public:
 };
 
 template <derived_from_specialization_of<Resource> TResource,
-	std::derived_from<Script<TResource>> TStateTracker = DefaultStateTracker<TResource>>
+	std::derived_from<Script<TResource>> TMetricScript = DefaultMetricScript<TResource>>
 class TopLevelScript : public Script<TResource>
 {
 public:
-	// What GetTrackedState(frame) reads in a root and in everything derived from one.
-	using StateTracker = TStateTracker;
+	// What GetMetrics(frame) reads in a root and in everything derived from one.
+	using MetricScript = TMetricScript;
 
 	TopLevelScript()
 	{
-		this->_stateTrackerTag = &StateTrackerTag<TStateTracker>::value;
+		this->_metricScriptTag = &MetricScriptTag<TMetricScript>::value;
 	}
 
 	virtual bool validation() override = 0;
@@ -35,12 +35,12 @@ public:
 
 	// How a run starts, one entry point per way of getting a resource: fresh, imported, built from
 	// a configuration, or loaded from an exported save (the builders call these).
-	template <derived_from_specialization_of<TopLevelScript> TTopLevelScript, typename... TStateTrackerParams, typename... Ts>
-		requires(std::constructible_from<TTopLevelScript, Ts...> && std::constructible_from<TResource> && std::constructible_from<TStateTracker, TStateTrackerParams...>)
-	static ScriptStatus<TTopLevelScript> Main(M64& m64, std::shared_ptr<std::tuple<TStateTrackerParams...>> stateTrackerParams, Ts&&... params)
+	template <derived_from_specialization_of<TopLevelScript> TTopLevelScript, typename... TMetricScriptParams, typename... Ts>
+		requires(std::constructible_from<TTopLevelScript, Ts...> && std::constructible_from<TResource> && std::constructible_from<TMetricScript, TMetricScriptParams...>)
+	static ScriptStatus<TTopLevelScript> Main(M64& m64, std::shared_ptr<std::tuple<TMetricScriptParams...>> metricScriptParams, Ts&&... params)
 	{
 		TTopLevelScript script = TTopLevelScript(std::forward<Ts>(params)...);
-		script.stateTrackerFactory = std::make_shared<StateTrackerFactory<TStateTracker, TStateTrackerParams...>>(stateTrackerParams);
+		script.metricScriptFactory = std::make_shared<MetricScriptFactory<TMetricScript, TMetricScriptParams...>>(metricScriptParams);
 
 		TResource resource = TResource();
 		resource.SaveStart(0);
@@ -48,12 +48,12 @@ public:
 		return InitializeAndRun(m64, script, &resource);
 	}
 
-	template <derived_from_specialization_of<TopLevelScript> TTopLevelScript, typename... TStateTrackerParams, typename... Ts>
-		requires(std::constructible_from<TTopLevelScript, Ts...> && std::constructible_from<TStateTracker, TStateTrackerParams...>)
-	static ScriptStatus<TTopLevelScript> MainImport(M64& m64, std::shared_ptr<std::tuple<TStateTrackerParams...>> stateTrackerParams, TResource* resource, Ts&&... params)
+	template <derived_from_specialization_of<TopLevelScript> TTopLevelScript, typename... TMetricScriptParams, typename... Ts>
+		requires(std::constructible_from<TTopLevelScript, Ts...> && std::constructible_from<TMetricScript, TMetricScriptParams...>)
+	static ScriptStatus<TTopLevelScript> MainImport(M64& m64, std::shared_ptr<std::tuple<TMetricScriptParams...>> metricScriptParams, TResource* resource, Ts&&... params)
 	{
 		TTopLevelScript script = TTopLevelScript(std::forward<Ts>(params)...);
-		script.stateTrackerFactory = std::make_shared<StateTrackerFactory<TStateTracker, TStateTrackerParams...>>(stateTrackerParams);
+		script.metricScriptFactory = std::make_shared<MetricScriptFactory<TMetricScript, TMetricScriptParams...>>(metricScriptParams);
 
 		// Initialize start save if resource is new. If not, load start save to reset resource.
 		if (resource->InitialFrame() == -1)
@@ -64,12 +64,12 @@ public:
 		return InitializeAndRun(m64, script, resource);
 	}
 
-	template <derived_from_specialization_of<TopLevelScript> TTopLevelScript, typename TResourceConfig, typename... TStateTrackerParams, typename... Ts>
-		requires(std::constructible_from<TTopLevelScript, Ts...> && std::constructible_from<TResource, TResourceConfig> && std::constructible_from<TStateTracker, TStateTrackerParams...>)
-	static ScriptStatus<TTopLevelScript> MainConfig(M64& m64, std::shared_ptr<std::tuple<TStateTrackerParams...>> stateTrackerParams, TResourceConfig config, Ts&&... params)
+	template <derived_from_specialization_of<TopLevelScript> TTopLevelScript, typename TResourceConfig, typename... TMetricScriptParams, typename... Ts>
+		requires(std::constructible_from<TTopLevelScript, Ts...> && std::constructible_from<TResource, TResourceConfig> && std::constructible_from<TMetricScript, TMetricScriptParams...>)
+	static ScriptStatus<TTopLevelScript> MainConfig(M64& m64, std::shared_ptr<std::tuple<TMetricScriptParams...>> metricScriptParams, TResourceConfig config, Ts&&... params)
 	{
 		TTopLevelScript script = TTopLevelScript(std::forward<Ts>(params)...);
-		script.stateTrackerFactory = std::make_shared<StateTrackerFactory<TStateTracker, TStateTrackerParams...>>(stateTrackerParams);
+		script.metricScriptFactory = std::make_shared<MetricScriptFactory<TMetricScript, TMetricScriptParams...>>(metricScriptParams);
 
 		TResource resource = TResource(config);
 		resource.SaveStart(0);
@@ -78,15 +78,15 @@ public:
 	}
 
 	template <derived_from_specialization_of<TopLevelScript> TTopLevelScript, class TState,
-		typename... TStateTrackerParams, typename... Ts>
+		typename... TMetricScriptParams, typename... Ts>
 		requires(std::constructible_from<TTopLevelScript, Ts...>
 			&& std::constructible_from<TResource>
 			&& std::derived_from<TResource, Resource<TState>>
-			&& std::constructible_from<TStateTracker, TStateTrackerParams...>)
-	static ScriptStatus<TTopLevelScript> MainFromSave(M64& m64, std::shared_ptr<std::tuple<TStateTrackerParams...>> stateTrackerParams, ImportedSave<TState>& save, Ts&&... params)
+			&& std::constructible_from<TMetricScript, TMetricScriptParams...>)
+	static ScriptStatus<TTopLevelScript> MainFromSave(M64& m64, std::shared_ptr<std::tuple<TMetricScriptParams...>> metricScriptParams, ImportedSave<TState>& save, Ts&&... params)
 	{
 		TTopLevelScript script = TTopLevelScript(std::forward<Ts>(params)...);
-		script.stateTrackerFactory = std::make_shared<StateTrackerFactory<TStateTracker, TStateTrackerParams...>>(stateTrackerParams);
+		script.metricScriptFactory = std::make_shared<MetricScriptFactory<TMetricScript, TMetricScriptParams...>>(metricScriptParams);
 
 		TResource resource = TResource();
 		resource.load(save.state);
@@ -96,16 +96,16 @@ public:
 	}
 
 	template <derived_from_specialization_of<TopLevelScript> TTopLevelScript, class TState,
-		typename TResourceConfig, typename... TStateTrackerParams, typename... Ts>
+		typename TResourceConfig, typename... TMetricScriptParams, typename... Ts>
 		requires(std::constructible_from<TTopLevelScript, Ts...>
 			&& std::constructible_from<TResource, TResourceConfig>
 			&& std::derived_from<TResource, Resource<TState>>
-			&& std::constructible_from<TStateTracker, TStateTrackerParams...>)
+			&& std::constructible_from<TMetricScript, TMetricScriptParams...>)
 	static ScriptStatus<TTopLevelScript> MainFromSaveConfig(
-		M64& m64, std::shared_ptr<std::tuple<TStateTrackerParams...>> stateTrackerParams, ImportedSave<TState>& save, TResourceConfig config, Ts&&... params)
+		M64& m64, std::shared_ptr<std::tuple<TMetricScriptParams...>> metricScriptParams, ImportedSave<TState>& save, TResourceConfig config, Ts&&... params)
 	{
 		TTopLevelScript script = TTopLevelScript(std::forward<Ts>(params)...);
-		script.stateTrackerFactory = std::make_shared<StateTrackerFactory<TStateTracker, TStateTrackerParams...>>(stateTrackerParams);
+		script.metricScriptFactory = std::make_shared<MetricScriptFactory<TMetricScript, TMetricScriptParams...>>(metricScriptParams);
 
 		TResource resource = TResource(config);
 		resource.load(save.state);
@@ -119,11 +119,11 @@ private:
 	// (No self-friend declaration: a class is always its own friend, and GCC warns about it.)
 
 	M64* _m64 = nullptr;
-	// Data: trackedStates[script][adhocLevel][frame] = state;
-	std::shared_ptr<StateTrackerFactoryBase<TStateTracker>> stateTrackerFactory = nullptr;
-	std::unordered_map<Script<TResource>*, LevelStack<std::map<int64_t, typename TStateTracker::CustomScriptStatus>>> trackedStates;
+	// Data: metrics[script][adhocLevel][frame] = state;
+	std::shared_ptr<MetricScriptFactoryBase<TMetricScript>> metricScriptFactory = nullptr;
+	std::unordered_map<Script<TResource>*, LevelStack<std::map<int64_t, typename TMetricScript::CustomScriptStatus>>> metrics;
 
-	template <std::derived_from<TopLevelScript<TResource, TStateTracker>> TTopLevelScript>
+	template <std::derived_from<TopLevelScript<TResource, TMetricScript>> TTopLevelScript>
 	static ScriptStatus<TTopLevelScript> InitializeAndRun(M64& m64, TTopLevelScript& script, TResource* resource)
 	{
 		// Script's names through the base, where nothing a TTopLevelScript declares hides them
@@ -133,7 +133,7 @@ private:
 		base.resource = resource;
 		base.Initialize(nullptr);
 
-		base.TrackState(&base, base.GetInputsMetadata(base.GetCurrentFrame()));
+		base.RecordMetrics(&base, base.GetInputsMetadata(base.GetCurrentFrame()));
 
 		uint64_t loadCyclesStart = resource->work.loadCycles;
 		uint64_t saveCyclesStart = resource->work.saveCycles;
@@ -163,12 +163,12 @@ private:
 	// (docs/performance-changelog.md, 2026-09-15).
 	void GetInputsMetadata(int64_t frame, InputsMetadata<TResource>& metadata) override;
 
-	void TrackState(Script<TResource>* currentScript, const InputsMetadata<TResource>& inputsMetadata) override;
-	bool TrackedStateExistsInternal(Script<TResource>* currentScript, const InputsMetadata<TResource>& inputsMetadata) override;
-	void PopTrackedStatesContainer(Script<TResource>* currentScript, int64_t adhocLevel) override;
-	void MoveSyncedTrackedStates(Script<TResource>* sourceScript, int64_t sourceAdhocLevel, Script<TResource>* destScript, int64_t destAdhocLevel) override;
-	void EraseTrackedStates(Script<TResource>* currentScript, int64_t adhocLevel, int64_t firstFrame) override;
-	const typename TStateTracker::CustomScriptStatus& GetTrackedStateInternal(Script<TResource>* currentScript, const InputsMetadata<TResource>& inputsMetadata);
+	void RecordMetrics(Script<TResource>* currentScript, const InputsMetadata<TResource>& inputsMetadata) override;
+	bool MetricsExistInternal(Script<TResource>* currentScript, const InputsMetadata<TResource>& inputsMetadata) override;
+	void PopMetricsContainer(Script<TResource>* currentScript, int64_t adhocLevel) override;
+	void MoveSyncedMetrics(Script<TResource>* sourceScript, int64_t sourceAdhocLevel, Script<TResource>* destScript, int64_t destAdhocLevel) override;
+	void EraseMetrics(Script<TResource>* currentScript, int64_t adhocLevel, int64_t firstFrame) override;
+	const typename TMetricScript::CustomScriptStatus& GetMetricsInternal(Script<TResource>* currentScript, const InputsMetadata<TResource>& inputsMetadata);
 };
 
 //Include template method implementations

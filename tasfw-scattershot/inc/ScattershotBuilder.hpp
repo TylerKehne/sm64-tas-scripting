@@ -7,105 +7,105 @@
 
 template <class TState,
     derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
+    std::derived_from<Script<TResource>> TMetricScript,
     class TOutputState,
-    typename... TStateTrackerParams>
+    typename... TMetricScriptParams>
 class ScattershotBuilder
 {
 public:
     ScattershotBuilder(const Configuration& config, const std::vector<ScattershotSolution<TOutputState>>* inputSolutions)
         : _config(config), _inputSolutions(inputSolutions) // Ignore warning, we want to leave callback uninitialized so it fails to compile if it's not
     {
-        _stateTrackerParams = std::make_shared<std::tuple<>>();
+        _metricScriptParams = std::make_shared<std::tuple<>>();
     } 
 
-    ScattershotBuilder(const Configuration& config, const std::vector<ScattershotSolution<TOutputState>>* inputSolutions, std::shared_ptr<std::tuple<TStateTrackerParams...>> stateTrackerParams)
-        : _config(config), _inputSolutions(inputSolutions), _stateTrackerParams(stateTrackerParams)  // Ignore warning, we want to leave callback uninitialized so it fails to compile if it's not
+    ScattershotBuilder(const Configuration& config, const std::vector<ScattershotSolution<TOutputState>>* inputSolutions, std::shared_ptr<std::tuple<TMetricScriptParams...>> metricScriptParams)
+        : _config(config), _inputSolutions(inputSolutions), _metricScriptParams(metricScriptParams)  // Ignore warning, we want to leave callback uninitialized so it fails to compile if it's not
     { }
 
     template <class TResourceConfig, typename FResourceConfigGenerator>
         requires (std::same_as<std::invoke_result_t<FResourceConfigGenerator, int>, TResourceConfig>)
-    ScattershotBuilderConfig<TState, TResource, TStateTracker, TOutputState, TResourceConfig, FResourceConfigGenerator, TStateTrackerParams...> ConfigureResourcePerThread(FResourceConfigGenerator callback)
+    ScattershotBuilderConfig<TState, TResource, TMetricScript, TOutputState, TResourceConfig, FResourceConfigGenerator, TMetricScriptParams...> ConfigureResourcePerThread(FResourceConfigGenerator callback)
     {
-        return ScattershotBuilderConfig<TState, TResource, TStateTracker, TOutputState, TResourceConfig, FResourceConfigGenerator, TStateTrackerParams...>(_config, callback, _inputSolutions, _stateTrackerParams);
+        return ScattershotBuilderConfig<TState, TResource, TMetricScript, TOutputState, TResourceConfig, FResourceConfigGenerator, TMetricScriptParams...>(_config, callback, _inputSolutions, _metricScriptParams);
     }
 
     template <typename FResourceImportGenerator>
         requires (std::same_as<std::invoke_result_t<FResourceImportGenerator, int>, TResource*>)
-    ScattershotBuilderImport<TState, TResource, TStateTracker, TOutputState, FResourceImportGenerator, TStateTrackerParams...> ImportResourcePerThread(FResourceImportGenerator callback)
+    ScattershotBuilderImport<TState, TResource, TMetricScript, TOutputState, FResourceImportGenerator, TMetricScriptParams...> ImportResourcePerThread(FResourceImportGenerator callback)
     {
-        return ScattershotBuilderImport<TState, TResource, TStateTracker, TOutputState, FResourceImportGenerator, TStateTrackerParams...>(_config, callback, _inputSolutions, _stateTrackerParams);
+        return ScattershotBuilderImport<TState, TResource, TMetricScript, TOutputState, FResourceImportGenerator, TMetricScriptParams...>(_config, callback, _inputSolutions, _metricScriptParams);
     }
 
-    ScattershotBuilder<TState, TResource, TStateTracker, TOutputState> PipeFrom(const std::vector<ScattershotSolution<TOutputState>>& inputSolutions)
+    ScattershotBuilder<TState, TResource, TMetricScript, TOutputState> PipeFrom(const std::vector<ScattershotSolution<TOutputState>>& inputSolutions)
     {
-        return ScattershotBuilder<TState, TResource, TStateTracker, TOutputState, TStateTrackerParams...>(_config, &inputSolutions, _stateTrackerParams);
+        return ScattershotBuilder<TState, TResource, TMetricScript, TOutputState, TMetricScriptParams...>(_config, &inputSolutions, _metricScriptParams);
     }
 
-    template <typename... UStateTrackerParams>
-    ScattershotBuilder<TState, TResource, TStateTracker, TOutputState, UStateTrackerParams...> ConfigureStateTracker(UStateTrackerParams&&... stateTrackerParams)
+    template <typename... UMetricScriptParams>
+    ScattershotBuilder<TState, TResource, TMetricScript, TOutputState, UMetricScriptParams...> ConfigureMetricScript(UMetricScriptParams&&... metricScriptParams)
     {
-        return ScattershotBuilder<TState, TResource, TStateTracker, TOutputState, UStateTrackerParams...>(
-            _config, _inputSolutions, std::make_shared(std::make_tuple(std::forward<UStateTrackerParams>(stateTrackerParams)...)));
+        return ScattershotBuilder<TState, TResource, TMetricScript, TOutputState, UMetricScriptParams...>(
+            _config, _inputSolutions, std::make_shared(std::make_tuple(std::forward<UMetricScriptParams>(metricScriptParams)...)));
     }
 
 protected:
     const Configuration& _config;
     const std::vector<ScattershotSolution<TOutputState>>* _inputSolutions;
-    std::shared_ptr<std::tuple<TStateTrackerParams...>> _stateTrackerParams = nullptr;
+    std::shared_ptr<std::tuple<TMetricScriptParams...>> _metricScriptParams = nullptr;
 };
 
 template <class TState,
     derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
+    std::derived_from<Script<TResource>> TMetricScript,
     class TOutputState,
     class TResourceConfig,
     typename FResourceConfigGenerator,
-    typename... TStateTrackerParams>
-class ScattershotBuilderConfig : public ScattershotBuilder<TState, TResource, TStateTracker, TOutputState, TStateTrackerParams...>
+    typename... TMetricScriptParams>
+class ScattershotBuilderConfig : public ScattershotBuilder<TState, TResource, TMetricScript, TOutputState, TMetricScriptParams...>
 {
 public:
-    using ScattershotBuilder<TState, TResource, TStateTracker, TOutputState, TStateTrackerParams...>::_config;
-    using ScattershotBuilder<TState, TResource, TStateTracker, TOutputState, TStateTrackerParams...>::_inputSolutions;
-    using ScattershotBuilder<TState, TResource, TStateTracker, TOutputState, TStateTrackerParams...>::_stateTrackerParams;
+    using ScattershotBuilder<TState, TResource, TMetricScript, TOutputState, TMetricScriptParams...>::_config;
+    using ScattershotBuilder<TState, TResource, TMetricScript, TOutputState, TMetricScriptParams...>::_inputSolutions;
+    using ScattershotBuilder<TState, TResource, TMetricScript, TOutputState, TMetricScriptParams...>::_metricScriptParams;
 
     ScattershotBuilderConfig(const Configuration& config, FResourceConfigGenerator callback,
-        const std::vector<ScattershotSolution<TOutputState>>* inputSolutions, std::shared_ptr<std::tuple<TStateTrackerParams...>> stateTrackerParams)
-        : ScattershotBuilder<TState, TResource, TStateTracker, TOutputState, TStateTrackerParams...>(
-            config, inputSolutions, stateTrackerParams), _resourceConfigGenerator(callback) {}
+        const std::vector<ScattershotSolution<TOutputState>>* inputSolutions, std::shared_ptr<std::tuple<TMetricScriptParams...>> metricScriptParams)
+        : ScattershotBuilder<TState, TResource, TMetricScript, TOutputState, TMetricScriptParams...>(
+            config, inputSolutions, metricScriptParams), _resourceConfigGenerator(callback) {}
 
     template <class UResourceConfig, typename GResourceConfigGenerator>
         requires (std::same_as<std::invoke_result_t<GResourceConfigGenerator, int>, UResourceConfig>)
-    ScattershotBuilderConfig<TState, TResource, TStateTracker, TOutputState, UResourceConfig, GResourceConfigGenerator, TStateTrackerParams...>
+    ScattershotBuilderConfig<TState, TResource, TMetricScript, TOutputState, UResourceConfig, GResourceConfigGenerator, TMetricScriptParams...>
         ConfigureResourcePerThread(GResourceConfigGenerator callback)
     {
-        return ScattershotBuilderConfig<TState, TResource, TStateTracker, TOutputState, UResourceConfig, GResourceConfigGenerator, TStateTrackerParams...>(
-            _config, callback, _inputSolutions, _stateTrackerParams);
+        return ScattershotBuilderConfig<TState, TResource, TMetricScript, TOutputState, UResourceConfig, GResourceConfigGenerator, TMetricScriptParams...>(
+            _config, callback, _inputSolutions, _metricScriptParams);
     }
 
-    ScattershotBuilderConfig<TState, TResource, TStateTracker, TOutputState, TResourceConfig, FResourceConfigGenerator, TStateTrackerParams...>
+    ScattershotBuilderConfig<TState, TResource, TMetricScript, TOutputState, TResourceConfig, FResourceConfigGenerator, TMetricScriptParams...>
         PipeFrom(const std::vector<ScattershotSolution<TOutputState>>& inputSolutions)
     {
-        return ScattershotBuilderConfig<TState, TResource, TStateTracker, TOutputState, TResourceConfig, FResourceConfigGenerator, TStateTrackerParams...>(
-            _config, _resourceConfigGenerator, &inputSolutions, _stateTrackerParams);
+        return ScattershotBuilderConfig<TState, TResource, TMetricScript, TOutputState, TResourceConfig, FResourceConfigGenerator, TMetricScriptParams...>(
+            _config, _resourceConfigGenerator, &inputSolutions, _metricScriptParams);
     }
 
-    template <typename... UStateTrackerParams>
-    ScattershotBuilderConfig<TState, TResource, TStateTracker, TOutputState, TResourceConfig, FResourceConfigGenerator, UStateTrackerParams...>
-        ConfigureStateTracker(UStateTrackerParams&&... stateTrackerParams)
+    template <typename... UMetricScriptParams>
+    ScattershotBuilderConfig<TState, TResource, TMetricScript, TOutputState, TResourceConfig, FResourceConfigGenerator, UMetricScriptParams...>
+        ConfigureMetricScript(UMetricScriptParams&&... metricScriptParams)
     {
-        std::shared_ptr<std::tuple<UStateTrackerParams...>> tuplePtr =
-            std::make_shared<std::tuple<UStateTrackerParams...>>(std::forward<UStateTrackerParams>(stateTrackerParams)...);
-        return ScattershotBuilderConfig<TState, TResource, TStateTracker, TOutputState, TResourceConfig, FResourceConfigGenerator, UStateTrackerParams...>(
+        std::shared_ptr<std::tuple<UMetricScriptParams...>> tuplePtr =
+            std::make_shared<std::tuple<UMetricScriptParams...>>(std::forward<UMetricScriptParams>(metricScriptParams)...);
+        return ScattershotBuilderConfig<TState, TResource, TMetricScript, TOutputState, TResourceConfig, FResourceConfigGenerator, UMetricScriptParams...>(
             _config, _resourceConfigGenerator, _inputSolutions, tuplePtr);
     }
 
-    template <std::derived_from<ScattershotThread<TState, TResource, TStateTracker, TOutputState>> TScattershotThread, typename... TParams>
+    template <std::derived_from<ScattershotThread<TState, TResource, TMetricScript, TOutputState>> TScattershotThread, typename... TParams>
     std::vector<ScattershotSolution<TOutputState>> Run(TParams&&... params)
     {
-        return Scattershot<TState, TResource, TStateTracker, TOutputState>::template RunConfig<TScattershotThread, TResourceConfig>(
+        return Scattershot<TState, TResource, TMetricScript, TOutputState>::template RunConfig<TScattershotThread, TResourceConfig>(
             _config, _inputSolutions ? *_inputSolutions : std::vector<ScattershotSolution<TOutputState>>(),
-            _resourceConfigGenerator, _stateTrackerParams, std::forward<TParams>(params)...);
+            _resourceConfigGenerator, _metricScriptParams, std::forward<TParams>(params)...);
     }
 
 private:
@@ -114,45 +114,45 @@ private:
 
 template <class TState,
     derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
+    std::derived_from<Script<TResource>> TMetricScript,
     class TOutputState,
     typename FResourceImportGenerator,
-    typename... TStateTrackerParams>
-class ScattershotBuilderImport : public ScattershotBuilder<TState, TResource, TStateTracker, TOutputState, TStateTrackerParams...>
+    typename... TMetricScriptParams>
+class ScattershotBuilderImport : public ScattershotBuilder<TState, TResource, TMetricScript, TOutputState, TMetricScriptParams...>
 {
 public:
-    using ScattershotBuilder<TState, TResource, TStateTracker, TOutputState, TStateTrackerParams...>::_config;
-    using ScattershotBuilder<TState, TResource, TStateTracker, TOutputState, TStateTrackerParams...>::_inputSolutions;
-    using ScattershotBuilder<TState, TResource, TStateTracker, TOutputState, TStateTrackerParams...>::_stateTrackerParams;
+    using ScattershotBuilder<TState, TResource, TMetricScript, TOutputState, TMetricScriptParams...>::_config;
+    using ScattershotBuilder<TState, TResource, TMetricScript, TOutputState, TMetricScriptParams...>::_inputSolutions;
+    using ScattershotBuilder<TState, TResource, TMetricScript, TOutputState, TMetricScriptParams...>::_metricScriptParams;
 
     ScattershotBuilderImport(const Configuration& config, FResourceImportGenerator callback,
-        const std::vector<ScattershotSolution<TOutputState>>* inputSolutions, std::shared_ptr<std::tuple<TStateTrackerParams...>> stateTrackerParams)
-        : ScattershotBuilder<TState, TResource, TStateTracker, TOutputState, TStateTrackerParams...>(
-            config, inputSolutions, stateTrackerParams), _resourceImportGenerator(callback) {}
+        const std::vector<ScattershotSolution<TOutputState>>* inputSolutions, std::shared_ptr<std::tuple<TMetricScriptParams...>> metricScriptParams)
+        : ScattershotBuilder<TState, TResource, TMetricScript, TOutputState, TMetricScriptParams...>(
+            config, inputSolutions, metricScriptParams), _resourceImportGenerator(callback) {}
 
-    ScattershotBuilderImport<TState, TResource, TStateTracker, TOutputState, FResourceImportGenerator, TStateTrackerParams...>
+    ScattershotBuilderImport<TState, TResource, TMetricScript, TOutputState, FResourceImportGenerator, TMetricScriptParams...>
         PipeFrom(const std::vector<ScattershotSolution<TOutputState>>& inputSolutions)
     {
-        return ScattershotBuilderImport<TState, TResource, TStateTracker, TOutputState, FResourceImportGenerator>(
-            _config, _resourceImportGenerator, &inputSolutions, _stateTrackerParams);
+        return ScattershotBuilderImport<TState, TResource, TMetricScript, TOutputState, FResourceImportGenerator>(
+            _config, _resourceImportGenerator, &inputSolutions, _metricScriptParams);
     }
 
-    template <typename... UStateTrackerParams>
-    ScattershotBuilderImport<TState, TResource, TStateTracker, TOutputState, FResourceImportGenerator, UStateTrackerParams...>
-        ConfigureStateTracker(UStateTrackerParams&&... stateTrackerParams)
+    template <typename... UMetricScriptParams>
+    ScattershotBuilderImport<TState, TResource, TMetricScript, TOutputState, FResourceImportGenerator, UMetricScriptParams...>
+        ConfigureMetricScript(UMetricScriptParams&&... metricScriptParams)
     {
-        std::shared_ptr<std::tuple<UStateTrackerParams...>> tuplePtr =
-            std::make_shared<std::tuple<UStateTrackerParams...>>(std::forward<UStateTrackerParams>(stateTrackerParams)...);
-        return ScattershotBuilderImport<TState, TResource, TStateTracker, TOutputState, FResourceImportGenerator, UStateTrackerParams...>(
+        std::shared_ptr<std::tuple<UMetricScriptParams...>> tuplePtr =
+            std::make_shared<std::tuple<UMetricScriptParams...>>(std::forward<UMetricScriptParams>(metricScriptParams)...);
+        return ScattershotBuilderImport<TState, TResource, TMetricScript, TOutputState, FResourceImportGenerator, UMetricScriptParams...>(
             _config, _resourceImportGenerator, _inputSolutions, tuplePtr);
     }
 
-    template <std::derived_from<ScattershotThread<TState, TResource, TStateTracker, TOutputState>> TScattershotThread, typename... TParams>
+    template <std::derived_from<ScattershotThread<TState, TResource, TMetricScript, TOutputState>> TScattershotThread, typename... TParams>
     std::vector<ScattershotSolution<TOutputState>> Run(TParams&&... params)
     {
-        return Scattershot<TState, TResource, TStateTracker, TOutputState>::template RunImport<TScattershotThread>(
+        return Scattershot<TState, TResource, TMetricScript, TOutputState>::template RunImport<TScattershotThread>(
             _config, _inputSolutions ? *_inputSolutions : std::vector<ScattershotSolution<TOutputState>>(),
-            _resourceImportGenerator, _stateTrackerParams, std::forward<TParams>(params)...);
+            _resourceImportGenerator, _metricScriptParams, std::forward<TParams>(params)...);
     }
 
 private:

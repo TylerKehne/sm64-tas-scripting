@@ -198,10 +198,10 @@ namespace
 		Result& _result;
 	};
 
-	// StateTracker_BitfsDr over consecutive frames: the tracker runs once per advanced frame
+	// BitfsDrMetrics over consecutive frames: the metric script runs once per advanced frame
 	// and looks the previous frame up recursively, so the sweep costs one extra load and one
 	// extra advance in total (the frame before the first advance) and nothing per frame.
-	class TrackerSweepWorkload : public TopLevelScript<LibSm64, StateTracker_BitfsDr>
+	class MetricsSweepWorkload : public TopLevelScript<LibSm64, BitfsDrMetrics>
 	{
 	public:
 		struct Result
@@ -210,14 +210,14 @@ namespace
 			int64_t frame = -1;
 		};
 
-		TrackerSweepWorkload(int frames, Result& result) : _frames(frames), _result(result) {}
+		MetricsSweepWorkload(int frames, Result& result) : _frames(frames), _result(result) {}
 
 		bool validation() override { return true; }
 		bool execution() override
 		{
 			for (int i = 0; i < _frames; i++)
 				AdvanceFrameRead();
-			const auto& last = GetTrackedState(GetCurrentFrame());
+			const auto& last = GetMetrics(GetCurrentFrame());
 			_result.initialized = last.initialized;
 			_result.frame = last.frame;
 			return true;
@@ -322,7 +322,7 @@ static void BM_Framework_DownhillAngle_PyramidUpdate(benchmark::State& state)
 }
 BENCHMARK(BM_Framework_DownhillAngle_PyramidUpdate)->Unit(benchmark::kMillisecond)->Iterations(3);
 
-static void BM_Framework_TrackerSweep(benchmark::State& state)
+static void BM_Framework_MetricsSweep(benchmark::State& state)
 {
 	Game* game = LoadGame(state);
 	if (!game)
@@ -332,10 +332,10 @@ static void BM_Framework_TrackerSweep(benchmark::State& state)
 	NormalSpecsDto specs = DrNormalSpecs();
 
 	{
-		TrackerSweepWorkload::Result warmUp; // the same warm state in every repetition
-		TopLevelScriptBuilder<TrackerSweepWorkload>::Build(*game->m64)
+		MetricsSweepWorkload::Result warmUp; // the same warm state in every repetition
+		TopLevelScriptBuilder<MetricsSweepWorkload>::Build(*game->m64)
 			.ImportResource(&resource)
-			.ConfigureStateTracker(int64_t(game->frame), 4, specs, 15, -0.17944f, 0.3936f)
+			.ConfigureMetricScript(int64_t(game->frame), 4, specs, 15, -0.17944f, 0.3936f)
 			.Run(frames, warmUp);
 	}
 
@@ -345,16 +345,16 @@ static void BM_Framework_TrackerSweep(benchmark::State& state)
 	bool failed = false;
 	for (auto _ : state)
 	{
-		TrackerSweepWorkload::Result result;
+		MetricsSweepWorkload::Result result;
 		uint64_t t0 = __rdtsc();
-		TopLevelScriptBuilder<TrackerSweepWorkload>::Build(*game->m64)
+		TopLevelScriptBuilder<MetricsSweepWorkload>::Build(*game->m64)
 			.ImportResource(&resource)
-			.ConfigureStateTracker(int64_t(game->frame), 4, specs, 15, -0.17944f, 0.3936f)
+			.ConfigureMetricScript(int64_t(game->frame), 4, specs, 15, -0.17944f, 0.3936f)
 			.Run(frames, result);
 		wall += __rdtsc() - t0;
 		if (!result.initialized || result.frame != game->frame + frames)
 		{
-			state.SkipWithError("the tracker did not produce a state for the last frame of the sweep");
+			state.SkipWithError("the metric script did not produce a state for the last frame of the sweep");
 			failed = true;
 			break;
 		}
@@ -364,4 +364,4 @@ static void BM_Framework_TrackerSweep(benchmark::State& state)
 	tasfw_perf::EndMeasure(state, m0);
 	ReportWork(state, before, Snapshot(resource), wall, uint64_t(frames) * uint64_t(state.iterations()));
 }
-BENCHMARK(BM_Framework_TrackerSweep)->Unit(benchmark::kMillisecond)->Iterations(3);
+BENCHMARK(BM_Framework_MetricsSweep)->Unit(benchmark::kMillisecond)->Iterations(3);

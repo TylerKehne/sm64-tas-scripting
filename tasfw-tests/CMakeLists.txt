@@ -29,7 +29,7 @@ add_executable(tasfw-tests
 	"src/test_framemap.cpp"
 	"src/test_script_lifecycle.cpp"
 	"src/test_script_saves.cpp"
-	"src/test_script_trackers.cpp"
+	"src/test_script_metrics.cpp"
 	"src/test_script_compare.cpp"
 	"src/test_sharedlib.cpp"
 	"src/test_sm64_layout.cpp"

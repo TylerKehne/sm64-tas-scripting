@@ -5,9 +5,9 @@
 #include <sm64/Camera.hpp>
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
+    std::derived_from<Script<TResource>> TMetricScript,
     class TOutputState>
-ScattershotThread<TState, TResource, TStateTracker, TOutputState>::ScattershotThread(Scattershot<TState, TResource, TStateTracker, TOutputState>& scattershot)
+ScattershotThread<TState, TResource, TMetricScript, TOutputState>::ScattershotThread(Scattershot<TState, TResource, TMetricScript, TOutputState>& scattershot)
     : config(scattershot.config), scattershot(scattershot)
 {
     Id = omp_get_thread_num();
@@ -17,33 +17,33 @@ ScattershotThread<TState, TResource, TStateTracker, TOutputState>::ScattershotTh
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
+    std::derived_from<Script<TResource>> TMetricScript,
     class TOutputState>
-std::string ScattershotThread<TState, TResource, TStateTracker, TOutputState>::GetCsvLabels()
+std::string ScattershotThread<TState, TResource, TMetricScript, TOutputState>::GetCsvLabels()
 {
     return "";
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
+    std::derived_from<Script<TResource>> TMetricScript,
     class TOutputState>
-std::string ScattershotThread<TState, TResource, TStateTracker, TOutputState>::GetCsvRow()
+std::string ScattershotThread<TState, TResource, TMetricScript, TOutputState>::GetCsvRow()
 {
     return "";
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
+    std::derived_from<Script<TResource>> TMetricScript,
     class TOutputState>
-bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::ForceAddToCsv()
+bool ScattershotThread<TState, TResource, TMetricScript, TOutputState>::ForceAddToCsv()
 {
     return false;
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
+    std::derived_from<Script<TResource>> TMetricScript,
     class TOutputState>
-uint64_t ScattershotThread<TState, TResource, TStateTracker, TOutputState>::GetTempRng()
+uint64_t ScattershotThread<TState, TResource, TMetricScript, TOutputState>::GetTempRng()
 {
     uint64_t rngHashPrev = RngHashTemp;
     RngHashTemp = GetHash(RngHashTemp);
@@ -51,33 +51,33 @@ uint64_t ScattershotThread<TState, TResource, TStateTracker, TOutputState>::GetT
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
+    std::derived_from<Script<TResource>> TMetricScript,
     class TOutputState>
-void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::AddRandomMovementOption(std::initializer_list<std::pair<BasicMoves, double>> weightedOptions)
+void ScattershotThread<TState, TResource, TMetricScript, TOutputState>::AddRandomMovementOption(std::initializer_list<std::pair<BasicMoves, double>> weightedOptions)
 {
     DrawOption(weightedOptions, basicMoves);
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
+    std::derived_from<Script<TResource>> TMetricScript,
     class TOutputState>
-void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::AddMovementOption(BasicMoves movementOption, double probability)
+void ScattershotThread<TState, TResource, TMetricScript, TOutputState>::AddMovementOption(BasicMoves movementOption, double probability)
 {
     AddOption(std::size_t(movementOption), probability, basicMoves);
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
+    std::derived_from<Script<TResource>> TMetricScript,
     class TOutputState>
-bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::CheckMovementOptions(BasicMoves movementOption)
+bool ScattershotThread<TState, TResource, TMetricScript, TOutputState>::CheckMovementOptions(BasicMoves movementOption)
 {
     return OptionSelected(std::size_t(movementOption), basicMoves);
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
+    std::derived_from<Script<TResource>> TMetricScript,
     class TOutputState>
-Inputs ScattershotThread<TState, TResource, TStateTracker, TOutputState>::RandomInputs(std::initializer_list<std::pair<Buttons, double>> buttonProbabilities)
+Inputs ScattershotThread<TState, TResource, TMetricScript, TOutputState>::RandomInputs(std::initializer_list<std::pair<Buttons, double>> buttonProbabilities)
 {
     std::array<std::pair<Buttons, double>, MaxWeightedEntries> probabilities;
     std::size_t count = SortedByKey(buttonProbabilities, probabilities);
@@ -145,14 +145,14 @@ Inputs ScattershotThread<TState, TResource, TStateTracker, TOutputState>::Random
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
+    std::derived_from<Script<TResource>> TMetricScript,
     class TOutputState>
-bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::validation() { return true; }
+bool ScattershotThread<TState, TResource, TMetricScript, TOutputState>::validation() { return true; }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
+    std::derived_from<Script<TResource>> TMetricScript,
     class TOutputState>
-bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::execution()
+bool ScattershotThread<TState, TResource, TMetricScript, TOutputState>::execution()
 {
     Initialize();
 
@@ -276,14 +276,14 @@ bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::executio
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
+    std::derived_from<Script<TResource>> TMetricScript,
     class TOutputState>
-bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::assertion() { return true; }
+bool ScattershotThread<TState, TResource, TMetricScript, TOutputState>::assertion() { return true; }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
+    std::derived_from<Script<TResource>> TMetricScript,
     class TOutputState>
-void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::Initialize()
+void ScattershotThread<TState, TResource, TMetricScript, TOutputState>::Initialize()
 {
     LongLoad(config.StartFrame);
 
@@ -343,9 +343,9 @@ void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::Initiali
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
+    std::derived_from<Script<TResource>> TMetricScript,
     class TOutputState>
-AdhocBaseScriptStatus ScattershotThread<TState, TResource, TStateTracker, TOutputState>::ExecuteFromBaseBlockAndEncode(int shot)
+AdhocBaseScriptStatus ScattershotThread<TState, TResource, TMetricScript, TOutputState>::ExecuteFromBaseBlockAndEncode(int shot)
 {
     return ExecuteAdhoc([&]()
         {
@@ -414,9 +414,9 @@ AdhocBaseScriptStatus ScattershotThread<TState, TResource, TStateTracker, TOutpu
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
+    std::derived_from<Script<TResource>> TMetricScript,
     class TOutputState>
-AdhocBaseScriptStatus ScattershotThread<TState, TResource, TStateTracker, TOutputState>::DecodeBaseBlockDiffAndApply()
+AdhocBaseScriptStatus ScattershotThread<TState, TResource, TMetricScript, TOutputState>::DecodeBaseBlockDiffAndApply()
 {
     int64_t postScriptFrame = -1;
     auto status = ModifyAdhoc([&]()
@@ -453,9 +453,9 @@ AdhocBaseScriptStatus ScattershotThread<TState, TResource, TStateTracker, TOutpu
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
+    std::derived_from<Script<TResource>> TMetricScript,
     class TOutputState>
-bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::ChooseScriptAndApply()
+bool ScattershotThread<TState, TResource, TMetricScript, TOutputState>::ChooseScriptAndApply()
 {
     std::fill(basicMoves.begin(), basicMoves.end(), false);
     std::fill(customMoves.begin(), customMoves.end(), false);
@@ -485,9 +485,9 @@ bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::ChooseSc
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
+    std::derived_from<Script<TResource>> TMetricScript,
     class TOutputState>
-void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::SelectBaseBlock(int mainIteration)
+void ScattershotThread<TState, TResource, TMetricScript, TOutputState>::SelectBaseBlock(int mainIteration)
 {
     int blockIndex = -1;
     if (mainIteration % config.StartFromRootEveryNShots == 0)
@@ -519,9 +519,9 @@ void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::SelectBa
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
+    std::derived_from<Script<TResource>> TMetricScript,
     class TOutputState>
-bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::ValidateBaseBlock(int shot)
+bool ScattershotThread<TState, TResource, TMetricScript, TOutputState>::ValidateBaseBlock(int shot)
 {
     TState currentStateBin = GetStateBinSafe();
     LastValidationFailed = BaseBlockStateBin != currentStateBin;
@@ -571,18 +571,18 @@ bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::Validate
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
+    std::derived_from<Script<TResource>> TMetricScript,
     class TOutputState>
-bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::ValidateCourseAndArea()
+bool ScattershotThread<TState, TResource, TMetricScript, TOutputState>::ValidateCourseAndArea()
 {
     return startCourse == *(short*)this->ReadState("gCurrCourseNum")
         && startArea == *(short*)this->ReadState("gCurrAreaIndex");
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
+    std::derived_from<Script<TResource>> TMetricScript,
     class TOutputState>
-TState ScattershotThread<TState, TResource, TStateTracker, TOutputState>::GetStateBinSafe()
+TState ScattershotThread<TState, TResource, TMetricScript, TOutputState>::GetStateBinSafe()
 {
     TState stateBin;
     ExecuteAdhoc([&]()
@@ -595,9 +595,9 @@ TState ScattershotThread<TState, TResource, TStateTracker, TOutputState>::GetSta
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
+    std::derived_from<Script<TResource>> TMetricScript,
     class TOutputState>
-float ScattershotThread<TState, TResource, TStateTracker, TOutputState>::GetStateFitnessSafe()
+float ScattershotThread<TState, TResource, TMetricScript, TOutputState>::GetStateFitnessSafe()
 {
     float fitness;
     ExecuteAdhoc([&]()
@@ -610,9 +610,9 @@ float ScattershotThread<TState, TResource, TStateTracker, TOutputState>::GetStat
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
+    std::derived_from<Script<TResource>> TMetricScript,
     class TOutputState>
-uint64_t ScattershotThread<TState, TResource, TStateTracker, TOutputState>::GetRng()
+uint64_t ScattershotThread<TState, TResource, TMetricScript, TOutputState>::GetRng()
 {
     uint64_t rngHashPrev = RngHash;
     RngHash = GetHash(RngHash);
@@ -620,26 +620,26 @@ uint64_t ScattershotThread<TState, TResource, TStateTracker, TOutputState>::GetR
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
+    std::derived_from<Script<TResource>> TMetricScript,
     class TOutputState>
-void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::SetRng(uint64_t rngHash)
+void ScattershotThread<TState, TResource, TMetricScript, TOutputState>::SetRng(uint64_t rngHash)
 {
     RngHash = rngHash;
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
+    std::derived_from<Script<TResource>> TMetricScript,
     class TOutputState>
-void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::SetTempRng(uint64_t rngHash)
+void ScattershotThread<TState, TResource, TMetricScript, TOutputState>::SetTempRng(uint64_t rngHash)
 {
     RngHashTemp = rngHash;
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
+    std::derived_from<Script<TResource>> TMetricScript,
     class TOutputState>
 template <typename T>
-uint64_t ScattershotThread<TState, TResource, TStateTracker, TOutputState>::GetHash(const T& toHash) const
+uint64_t ScattershotThread<TState, TResource, TMetricScript, TOutputState>::GetHash(const T& toHash) const
 {
     const std::byte* data = reinterpret_cast<const std::byte*>(&toHash);
     uint64_t hashValue = 0;
@@ -650,10 +650,10 @@ uint64_t ScattershotThread<TState, TResource, TStateTracker, TOutputState>::GetH
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
+    std::derived_from<Script<TResource>> TMetricScript,
     class TOutputState>
 template <typename F>
-void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::QueueThreadById(bool deterministic, F func)
+void ScattershotThread<TState, TResource, TMetricScript, TOutputState>::QueueThreadById(bool deterministic, F func)
 {
     if (!deterministic)
     {
@@ -668,9 +668,9 @@ void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::QueueThr
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
+    std::derived_from<Script<TResource>> TMetricScript,
     class TOutputState>
-uint64_t ScattershotThread<TState, TResource, TStateTracker, TOutputState>::TakeTicket()
+uint64_t ScattershotThread<TState, TResource, TMetricScript, TOutputState>::TakeTicket()
 {
     // Call k of thread i is ticket k * threads + i: round by round, threads in order, the
     // order the barriers gave the calls.
@@ -678,9 +678,9 @@ uint64_t ScattershotThread<TState, TResource, TStateTracker, TOutputState>::Take
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
+    std::derived_from<Script<TResource>> TMetricScript,
     class TOutputState>
-void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::WaitForTurn(uint64_t ticket)
+void ScattershotThread<TState, TResource, TMetricScript, TOutputState>::WaitForTurn(uint64_t ticket)
 {
     // A bounded spin, then a wait on the turn itself. The handoff is on the critical path
     // of every script, so the spin covers a turn of typical length and a wake through the
@@ -697,9 +697,9 @@ void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::WaitForT
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
+    std::derived_from<Script<TResource>> TMetricScript,
     class TOutputState>
-void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::PassTurn(uint64_t next)
+void ScattershotThread<TState, TResource, TMetricScript, TOutputState>::PassTurn(uint64_t next)
 {
     // Only the holder of the turn writes it. Retired threads' tickets are skipped; the loop
     // is bounded so that once every thread has retired the turn just moves on.
@@ -711,9 +711,9 @@ void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::PassTurn
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
+    std::derived_from<Script<TResource>> TMetricScript,
     class TOutputState>
-void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::RetireFromQueue()
+void ScattershotThread<TState, TResource, TMetricScript, TOutputState>::RetireFromQueue()
 {
     // Taken under this thread's own turn, so no holder is passing to it at that moment and
     // every later pass skips it.
@@ -724,9 +724,9 @@ void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::RetireFr
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
+    std::derived_from<Script<TResource>> TMetricScript,
     class TOutputState>
-void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::AddCsvRow(int shot)
+void ScattershotThread<TState, TResource, TMetricScript, TOutputState>::AddCsvRow(int shot)
 {
     bool sampled = false;
     #pragma omp critical (csvcounters)
@@ -816,9 +816,9 @@ void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::AddCsvRo
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
+    std::derived_from<Script<TResource>> TMetricScript,
     class TOutputState>
-void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::AddCsvLabels()
+void ScattershotThread<TState, TResource, TMetricScript, TOutputState>::AddCsvLabels()
 {
     ExecuteAdhoc([&]()
         {
@@ -835,9 +835,9 @@ void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::AddCsvLa
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
+    std::derived_from<Script<TResource>> TMetricScript,
     class TOutputState>
-void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::AddOption(std::size_t index, double probability, std::vector<bool>& set)
+void ScattershotThread<TState, TResource, TMetricScript, TOutputState>::AddOption(std::size_t index, double probability, std::vector<bool>& set)
 {
     if (probability <= 0.0)
         return;
@@ -851,18 +851,18 @@ void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::AddOptio
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
+    std::derived_from<Script<TResource>> TMetricScript,
     class TOutputState>
-bool ScattershotThread<TState, TResource, TStateTracker, TOutputState>::OptionSelected(std::size_t index, const std::vector<bool>& set)
+bool ScattershotThread<TState, TResource, TMetricScript, TOutputState>::OptionSelected(std::size_t index, const std::vector<bool>& set)
 {
     return index < set.size() && set[index];
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
+    std::derived_from<Script<TResource>> TMetricScript,
     class TOutputState>
 template <class TOption>
-void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::DrawOption(std::initializer_list<std::pair<TOption, double>> weightedOptions, std::vector<bool>& set)
+void ScattershotThread<TState, TResource, TMetricScript, TOutputState>::DrawOption(std::initializer_list<std::pair<TOption, double>> weightedOptions, std::vector<bool>& set)
 {
     std::array<std::pair<TOption, double>, MaxWeightedEntries> options;
     std::size_t count = SortedByKey(weightedOptions, options);
@@ -902,10 +902,10 @@ void ScattershotThread<TState, TResource, TStateTracker, TOutputState>::DrawOpti
 }
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
+    std::derived_from<Script<TResource>> TMetricScript,
     class TOutputState>
 template <class TKey>
-std::size_t ScattershotThread<TState, TResource, TStateTracker, TOutputState>::SortedByKey(
+std::size_t ScattershotThread<TState, TResource, TMetricScript, TOutputState>::SortedByKey(
     std::initializer_list<std::pair<TKey, double>> list, std::array<std::pair<TKey, double>, MaxWeightedEntries>& out)
 {
     std::size_t count = 0;

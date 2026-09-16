@@ -27,8 +27,8 @@ one C++23 feature the code relies on is the explicit object parameter (P0847, "d
 this"): `ScattershotThread`'s movement-option calls take the script's own nested
 `CustomMoves` enum from the object they are called on (ARCHITECTURE.md,
 "Scattershot"), which no C++20 shape managed without a word in front of the script author,
-and `Script::GetTrackedState(frame)` takes the tracker from the calling class the same way
-(`TrackerOf`, ARCHITECTURE.md, "State trackers"), so no call names a type.
+and `Script::GetMetrics(frame)` takes the metric script from the calling class the same way
+(`MetricScriptOf`, ARCHITECTURE.md, "Metric scripts"), so no call names a type.
 The floors that sets: MSVC 19.32 (VS 2022 17.2), clang-cl 18, GCC 14 and Clang 18. CMake
 spells the standard `/std:c++latest` for MSVC (no `/std:c++23` exists yet) and `-std=c++23`
 for clang-cl; the Ubuntu 24.04 CI jobs moved from GCC 13 and Clang 17 to GCC 14 and Clang
@@ -264,10 +264,10 @@ Clang need `this->` or the same using-declarations; the using-declarations satis
 
 ### MSVC accepts a missing `template` keyword on dependent member templates
 
-`script->ExecuteStateTracker<T>(...)` where `script` has a dependent type must be written
-`script->template ExecuteStateTracker<T>(...)`; otherwise GCC and Clang parse the `<` as
+`script->ExecuteMetricScript<T>(...)` where `script` has a dependent type must be written
+`script->template ExecuteMetricScript<T>(...)`; otherwise GCC and Clang parse the `<` as
 less-than and fail. MSVC compiles the omission. Found by the first Linux CI run in
-what is now `TopLevelScript::GetTrackedStateInternal` (`Script.t.hpp`). Same rule for
+what is now `TopLevelScript::GetMetricsInternal` (`Script.t.hpp`). Same rule for
 `foo.template bar<T>()` and `typename` on dependent nested types.
 
 ### libstdc++ 13 does not declare the f-suffixed math functions in `std`
@@ -406,15 +406,15 @@ partitioning question (gold, lld, `-flto=1`, `-flto-partition=none`, `-fno-devir
 `TASFW_LTO=OFF` exists, CI's ubuntu-24.04-gcc job passes it, and the LTO build on GCC is
 covered by the ubuntu-26.04-gcc job (GCC 15).
 
-### GCC and Clang: an unused copy of a tracked state
+### GCC and Clang: an unused copy of a script's metrics
 
-`TiltTargetShot::SelectRandomInputs` copied the tracked state into a local it never read,
-`auto state = GetTrackedState<TiltTargetShotMetrics>(GetCurrentFrame());`. While that
+`TiltTargetShot::SelectRandomInputs` copied the metrics into a local it never read,
+`auto state = GetMetrics<TiltTargetShotMetrics>(GetCurrentFrame());`. While that
 status held `std::vector`s no compiler said anything; the day it became `std::array`s
-(2026-09-14, the tracker status change of ROADMAP 3.7) GCC 14 and 15
+(2026-09-14, the metric script status change of ROADMAP 3.7) GCC 14 and 15
 (`-Wunused-but-set-variable`) and Clang 18 and 21 (`-Wunused-variable`) rejected it under
 `-Werror`, while MSVC at `/W3` (C4189 is a level 4 warning) and clang-cl 19.1 at `/W4` did
-not report it. The line is gone; the lookup only primed the tracker's cache for a frame
+not report it. The line is gone; the lookup only primed the metric script's cache for a frame
 nothing read there. Found in the containers before CI saw it: build every compiler.
 
 ### GCC 13: `-Wdangling-reference` on a reference returned past a temporary
@@ -438,7 +438,7 @@ directory are untouched (AGENTS.md hard rule 2 is about layouts).
 
 ### `-Wunused-parameter` at `-Wextra`
 
-The no-op default virtuals on `Script` (`TrackState`, `EraseTrackedStates`, ...), the
+The no-op default virtuals on `Script` (`RecordMetrics`, `EraseMetrics`, ...), the
 generator, comparator and terminator lambdas passed to the compare helpers, and the
 decomp's `get_object_vertices` all have parameters they do not use. The convention is to
 leave the parameter unnamed with the name in a comment, `Type /*name*/`, never

@@ -170,7 +170,7 @@ namespace
 		auto solutions = TiltTargetShot::ConfigureScattershot(config)
 			.ImportResourcePerThread([&](auto threadId) { return &context.resources[threadId]; })
 			.PipeFrom(input)
-			.ConfigureStateTracker(args)
+			.ConfigureMetricScript(args)
 			.Run<TiltTargetShot>(args);
 		return ToSet(context, solutions);
 	}
@@ -221,7 +221,7 @@ namespace
 			return Scattershot_BitfsDr::ConfigureScattershot(config)
 				.ImportResourcePerThread([&](auto threadId) { return &context.resources[threadId]; })
 				.PipeFrom(input)
-				.ConfigureStateTracker(equilibriumFrame, quadrant, specs, minOscillationFrames, targetNx, targetNz)
+				.ConfigureMetricScript(equilibriumFrame, quadrant, specs, minOscillationFrames, targetNx, targetNz)
 				.Run<Scattershot_BitfsDr>(targetOscillation, specs);
 		};
 
@@ -300,7 +300,7 @@ namespace
 		auto solutions = BitfsOscFinal::ConfigureScattershot(config)
 			.ImportResourcePerThread([&](auto threadId) { return &context.resources[threadId]; })
 			.PipeFrom(input)
-			.ConfigureStateTracker(args)
+			.ConfigureMetricScript(args)
 			.Run<BitfsOscFinal>(args);
 		return ToSet(context, solutions);
 	}
@@ -325,7 +325,7 @@ namespace
 		auto solutions = Scattershot_BitfsDrApproach::ConfigureScattershot(config)
 			.ImportResourcePerThread([&](auto threadId) { return &context.resources[threadId]; })
 			.PipeFrom(input)
-			.ConfigureStateTracker(initialFrame, oscQuadrant, targetQuadrant, minXzSum, targetNx, targetNz)
+			.ConfigureMetricScript(initialFrame, oscQuadrant, targetQuadrant, minXzSum, targetNx, targetNz)
 			.Run<Scattershot_BitfsDrApproach>();
 		return ToSet(context, solutions);
 	}
@@ -344,11 +344,11 @@ namespace
 		float minXzSum = float(ArgNumber(a, "minXzSum", context.input, where));
 
 		std::string phaseName = ArgString(a, "phase", "attempt-dr", where);
-		StateTracker_BitfsDrRecover::Phase phase;
+		BitfsDrRecoverMetrics::Phase phase;
 		if (phaseName == "attempt-dr")
-			phase = StateTracker_BitfsDrRecover::Phase::ATTEMPT_DR;
+			phase = BitfsDrRecoverMetrics::Phase::ATTEMPT_DR;
 		else if (phaseName == "c-up-trick")
-			phase = StateTracker_BitfsDrRecover::Phase::C_UP_TRICK;
+			phase = BitfsDrRecoverMetrics::Phase::C_UP_TRICK;
 		else
 			ConfigError("\"phase\" in " + where + " must be \"attempt-dr\" or \"c-up-trick\"");
 
@@ -357,7 +357,7 @@ namespace
 		auto solutions = Scattershot_BitfsDrRecover::ConfigureScattershot(config)
 			.ImportResourcePerThread([&](auto threadId) { return &context.resources[threadId]; })
 			.PipeFrom(input)
-			.ConfigureStateTracker(initialFrame, oscQuadrant, targetQuadrant, minXzSum)
+			.ConfigureMetricScript(initialFrame, oscQuadrant, targetQuadrant, minXzSum)
 			.Run<Scattershot_BitfsDrRecover>(phase);
 		return ToSet(context, solutions);
 	}

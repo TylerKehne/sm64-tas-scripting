@@ -8,118 +8,118 @@
 template <derived_from_specialization_of<TopLevelScript> TTopLevelScript,
 	class TState,
 	class TResourceConfig,
-	typename... TStateTrackerParams>
+	typename... TMetricScriptParams>
 class TopLevelScriptBuilderConfigured;
 
 template <derived_from_specialization_of<TopLevelScript> TTopLevelScript,
 	class TResource,
-	typename... TStateTrackerParams>
+	typename... TMetricScriptParams>
 class TopLevelScriptBuilderImported;
 
 class DefaultState {};
 
 class DefaultResourceConfig {};
 
-template <derived_from_specialization_of<TopLevelScript> TTopLevelScript, typename... TStateTrackerParams>
+template <derived_from_specialization_of<TopLevelScript> TTopLevelScript, typename... TMetricScriptParams>
 class TopLevelScriptBuilder
 {
 public:
-	TopLevelScriptBuilder(M64& m64) : _m64(m64) { _stateTrackerParams = std::make_shared<std::tuple<>>(); }
-	TopLevelScriptBuilder(M64& m64, std::shared_ptr<std::tuple<TStateTrackerParams...>> stateTrackerParams)
-		: _m64(m64), _stateTrackerParams(stateTrackerParams) {}
+	TopLevelScriptBuilder(M64& m64) : _m64(m64) { _metricScriptParams = std::make_shared<std::tuple<>>(); }
+	TopLevelScriptBuilder(M64& m64, std::shared_ptr<std::tuple<TMetricScriptParams...>> metricScriptParams)
+		: _m64(m64), _metricScriptParams(metricScriptParams) {}
 
 	static TopLevelScriptBuilder<TTopLevelScript> Build(M64& m64)
 	{
 		return TopLevelScriptBuilder<TTopLevelScript>(m64);
 	}
 
-	template <typename... UStateTrackerParams>
-	TopLevelScriptBuilder<TTopLevelScript> ConfigureStateTracker(UStateTrackerParams&&... stateTrackerParams)
+	template <typename... UMetricScriptParams>
+	TopLevelScriptBuilder<TTopLevelScript> ConfigureMetricScript(UMetricScriptParams&&... metricScriptParams)
 	{
-		std::shared_ptr<std::tuple<UStateTrackerParams...>> tuplePtr =
-			std::make_shared<std::tuple<UStateTrackerParams...>>(std::forward<UStateTrackerParams>(stateTrackerParams)...);
-		return TopLevelScriptBuilder<TTopLevelScript, UStateTrackerParams...>(_m64, tuplePtr);
+		std::shared_ptr<std::tuple<UMetricScriptParams...>> tuplePtr =
+			std::make_shared<std::tuple<UMetricScriptParams...>>(std::forward<UMetricScriptParams>(metricScriptParams)...);
+		return TopLevelScriptBuilder<TTopLevelScript, UMetricScriptParams...>(_m64, tuplePtr);
 	}
 
 	template <class TState, typename... TStateParams>
-	TopLevelScriptBuilderConfigured<TTopLevelScript, TState, DefaultResourceConfig, TStateTrackerParams...> ImportSave(
+	TopLevelScriptBuilderConfigured<TTopLevelScript, TState, DefaultResourceConfig, TMetricScriptParams...> ImportSave(
 		uint64_t frame, TStateParams&&... stateParams)
 	{
 		ImportedSave<TState> importedSave = ImportedSave(TState(std::forward<TStateParams>(stateParams)...), frame);
-		return TopLevelScriptBuilderConfigured<TTopLevelScript, TState, DefaultResourceConfig, TStateTrackerParams...>(
-			_m64, std::move(importedSave), DefaultResourceConfig(), _stateTrackerParams);
+		return TopLevelScriptBuilderConfigured<TTopLevelScript, TState, DefaultResourceConfig, TMetricScriptParams...>(
+			_m64, std::move(importedSave), DefaultResourceConfig(), _metricScriptParams);
 	}
 
 	// A save a script exported (Script::ExportSave), state and frame together.
 	template <class TState>
-	TopLevelScriptBuilderConfigured<TTopLevelScript, TState, DefaultResourceConfig, TStateTrackerParams...> ImportSave(ImportedSave<TState> save)
+	TopLevelScriptBuilderConfigured<TTopLevelScript, TState, DefaultResourceConfig, TMetricScriptParams...> ImportSave(ImportedSave<TState> save)
 	{
-		return TopLevelScriptBuilderConfigured<TTopLevelScript, TState, DefaultResourceConfig, TStateTrackerParams...>(
-			_m64, std::move(save), DefaultResourceConfig(), _stateTrackerParams);
+		return TopLevelScriptBuilderConfigured<TTopLevelScript, TState, DefaultResourceConfig, TMetricScriptParams...>(
+			_m64, std::move(save), DefaultResourceConfig(), _metricScriptParams);
 	}
 
 	template <typename TResourceConfig>
-	TopLevelScriptBuilderConfigured<TTopLevelScript, DefaultState, TResourceConfig, TStateTrackerParams...> ConfigureResource(TResourceConfig resourceConfig)
+	TopLevelScriptBuilderConfigured<TTopLevelScript, DefaultState, TResourceConfig, TMetricScriptParams...> ConfigureResource(TResourceConfig resourceConfig)
 	{
-		return TopLevelScriptBuilderConfigured<TTopLevelScript, DefaultState, TResourceConfig, TStateTrackerParams...>(
-			_m64, ImportedSave<DefaultState>(DefaultState(), -1), resourceConfig, _stateTrackerParams);
+		return TopLevelScriptBuilderConfigured<TTopLevelScript, DefaultState, TResourceConfig, TMetricScriptParams...>(
+			_m64, ImportedSave<DefaultState>(DefaultState(), -1), resourceConfig, _metricScriptParams);
 	}
 
 	template <class TResource>
-	TopLevelScriptBuilderImported<TTopLevelScript, TResource, TStateTrackerParams...> ImportResource(TResource* resource)
+	TopLevelScriptBuilderImported<TTopLevelScript, TResource, TMetricScriptParams...> ImportResource(TResource* resource)
 	{
-		return TopLevelScriptBuilderImported<TTopLevelScript, TResource, TStateTrackerParams...>(_m64, resource, _stateTrackerParams);
+		return TopLevelScriptBuilderImported<TTopLevelScript, TResource, TMetricScriptParams...>(_m64, resource, _metricScriptParams);
 	}
 
 protected:
 	M64& _m64;
-	std::shared_ptr<std::tuple<TStateTrackerParams...>> _stateTrackerParams;
+	std::shared_ptr<std::tuple<TMetricScriptParams...>> _metricScriptParams;
 };
 
 template <derived_from_specialization_of<TopLevelScript> TTopLevelScript,
 	class TState = DefaultState,
 	class TResourceConfig = DefaultResourceConfig,
-	typename... TStateTrackerParams>
-class TopLevelScriptBuilderConfigured : public TopLevelScriptBuilder<TTopLevelScript, TStateTrackerParams...>
+	typename... TMetricScriptParams>
+class TopLevelScriptBuilderConfigured : public TopLevelScriptBuilder<TTopLevelScript, TMetricScriptParams...>
 {
 public:
-	using TopLevelScriptBuilder<TTopLevelScript, TStateTrackerParams...>::_m64;
-	using TopLevelScriptBuilder<TTopLevelScript, TStateTrackerParams...>::_stateTrackerParams;
+	using TopLevelScriptBuilder<TTopLevelScript, TMetricScriptParams...>::_m64;
+	using TopLevelScriptBuilder<TTopLevelScript, TMetricScriptParams...>::_metricScriptParams;
 
 	TopLevelScriptBuilderConfigured(M64& m64, ImportedSave<TState> importedSave,
-		TResourceConfig resourceConfig, std::shared_ptr<std::tuple<TStateTrackerParams...>> stateTrackerParams)
-		: TopLevelScriptBuilder<TTopLevelScript, TStateTrackerParams...>(m64, stateTrackerParams), _importedSave(std::move(importedSave)), _resourceConfig(resourceConfig) {}
+		TResourceConfig resourceConfig, std::shared_ptr<std::tuple<TMetricScriptParams...>> metricScriptParams)
+		: TopLevelScriptBuilder<TTopLevelScript, TMetricScriptParams...>(m64, metricScriptParams), _importedSave(std::move(importedSave)), _resourceConfig(resourceConfig) {}
 
-	template <typename... UStateTrackerParams>
-	TopLevelScriptBuilderConfigured<TTopLevelScript, TState, TResourceConfig, UStateTrackerParams...> ConfigureStateTracker(
-		TStateTrackerParams&&... stateTrackerParams)
+	template <typename... UMetricScriptParams>
+	TopLevelScriptBuilderConfigured<TTopLevelScript, TState, TResourceConfig, UMetricScriptParams...> ConfigureMetricScript(
+		TMetricScriptParams&&... metricScriptParams)
 	{
-		std::shared_ptr<std::tuple<UStateTrackerParams...>> tuplePtr =
-			std::make_shared<std::tuple<UStateTrackerParams...>>(std::forward<UStateTrackerParams>(stateTrackerParams)...);
-		return TopLevelScriptBuilderConfigured<TTopLevelScript, TState, TResourceConfig, UStateTrackerParams...>(
+		std::shared_ptr<std::tuple<UMetricScriptParams...>> tuplePtr =
+			std::make_shared<std::tuple<UMetricScriptParams...>>(std::forward<UMetricScriptParams>(metricScriptParams)...);
+		return TopLevelScriptBuilderConfigured<TTopLevelScript, TState, TResourceConfig, UMetricScriptParams...>(
 			_m64, std::move(_importedSave), std::move(_resourceConfig), tuplePtr);
 	}
 
 	template <class UState, typename... TStateParams>
-	TopLevelScriptBuilderConfigured<TTopLevelScript, UState, TResourceConfig, TStateTrackerParams...> ImportSave(uint64_t frame, TStateParams&&... stateParams)
+	TopLevelScriptBuilderConfigured<TTopLevelScript, UState, TResourceConfig, TMetricScriptParams...> ImportSave(uint64_t frame, TStateParams&&... stateParams)
 	{
 		ImportedSave<UState> importedSave = ImportedSave(UState(std::forward<TStateParams>(stateParams)...), frame);
-		return TopLevelScriptBuilderConfigured<TTopLevelScript, UState, TResourceConfig, TStateTrackerParams...>(
-			_m64, std::move(importedSave), std::move(_resourceConfig), _stateTrackerParams);
+		return TopLevelScriptBuilderConfigured<TTopLevelScript, UState, TResourceConfig, TMetricScriptParams...>(
+			_m64, std::move(importedSave), std::move(_resourceConfig), _metricScriptParams);
 	}
 
 	template <class UState>
-	TopLevelScriptBuilderConfigured<TTopLevelScript, UState, TResourceConfig, TStateTrackerParams...> ImportSave(ImportedSave<UState> save)
+	TopLevelScriptBuilderConfigured<TTopLevelScript, UState, TResourceConfig, TMetricScriptParams...> ImportSave(ImportedSave<UState> save)
 	{
-		return TopLevelScriptBuilderConfigured<TTopLevelScript, UState, TResourceConfig, TStateTrackerParams...>(
-			_m64, std::move(save), std::move(_resourceConfig), _stateTrackerParams);
+		return TopLevelScriptBuilderConfigured<TTopLevelScript, UState, TResourceConfig, TMetricScriptParams...>(
+			_m64, std::move(save), std::move(_resourceConfig), _metricScriptParams);
 	}
 
 	template <typename UResourceConfig>
-	TopLevelScriptBuilderConfigured<TTopLevelScript, TState, UResourceConfig, TStateTrackerParams...> ConfigureResource(UResourceConfig resourceConfig)
+	TopLevelScriptBuilderConfigured<TTopLevelScript, TState, UResourceConfig, TMetricScriptParams...> ConfigureResource(UResourceConfig resourceConfig)
 	{
-		return TopLevelScriptBuilderConfigured<TTopLevelScript, TState, UResourceConfig, TStateTrackerParams...>(
-			_m64, std::move(_importedSave), resourceConfig, _stateTrackerParams);
+		return TopLevelScriptBuilderConfigured<TTopLevelScript, TState, UResourceConfig, TMetricScriptParams...>(
+			_m64, std::move(_importedSave), resourceConfig, _metricScriptParams);
 	}
 
 	template <typename... TScriptParams>
@@ -129,17 +129,17 @@ public:
 		{
 			if constexpr (std::is_same<TResourceConfig, DefaultResourceConfig>::value)
 				return TTopLevelScript::template Main<TTopLevelScript>(
-					_m64, _stateTrackerParams, std::forward<TScriptParams>(scriptParams)...);
+					_m64, _metricScriptParams, std::forward<TScriptParams>(scriptParams)...);
 			else
 				return TTopLevelScript::template MainConfig<TTopLevelScript, TResourceConfig>(
-					_m64, _stateTrackerParams, std::move(_resourceConfig), std::forward<TScriptParams>(scriptParams)...);
+					_m64, _metricScriptParams, std::move(_resourceConfig), std::forward<TScriptParams>(scriptParams)...);
 		}
 		else if constexpr (std::is_same<TResourceConfig, DefaultResourceConfig>::value)
 			return TTopLevelScript::template MainFromSave<TTopLevelScript, TState>(
-				_m64, _stateTrackerParams, _importedSave, std::forward<TScriptParams>(scriptParams)...);
+				_m64, _metricScriptParams, _importedSave, std::forward<TScriptParams>(scriptParams)...);
 		else
 			return TTopLevelScript::template MainFromSaveConfig<TTopLevelScript, TState, TResourceConfig>(
-				_m64, _stateTrackerParams, _importedSave, std::move(_resourceConfig), std::forward<TScriptParams>(scriptParams)...);
+				_m64, _metricScriptParams, _importedSave, std::move(_resourceConfig), std::forward<TScriptParams>(scriptParams)...);
 	}
 
 private:
@@ -149,22 +149,22 @@ private:
 
 template <derived_from_specialization_of<TopLevelScript> TTopLevelScript,
 	class TResource,
-	typename... TStateTrackerParams>
-class TopLevelScriptBuilderImported : public TopLevelScriptBuilder<TTopLevelScript, TStateTrackerParams...>
+	typename... TMetricScriptParams>
+class TopLevelScriptBuilderImported : public TopLevelScriptBuilder<TTopLevelScript, TMetricScriptParams...>
 {
 public:
-	using TopLevelScriptBuilder<TTopLevelScript, TStateTrackerParams...>::_m64;
-	using TopLevelScriptBuilder<TTopLevelScript, TStateTrackerParams...>::_stateTrackerParams;
+	using TopLevelScriptBuilder<TTopLevelScript, TMetricScriptParams...>::_m64;
+	using TopLevelScriptBuilder<TTopLevelScript, TMetricScriptParams...>::_metricScriptParams;
 
-	TopLevelScriptBuilderImported(M64& m64, TResource* resource, std::shared_ptr<std::tuple<TStateTrackerParams...>> stateTrackerParams)
-		: TopLevelScriptBuilder<TTopLevelScript, TStateTrackerParams...>(m64, stateTrackerParams), _resource(resource) {}
+	TopLevelScriptBuilderImported(M64& m64, TResource* resource, std::shared_ptr<std::tuple<TMetricScriptParams...>> metricScriptParams)
+		: TopLevelScriptBuilder<TTopLevelScript, TMetricScriptParams...>(m64, metricScriptParams), _resource(resource) {}
 
-	template <typename... UStateTrackerParams>
-	TopLevelScriptBuilderImported<TTopLevelScript, TResource, UStateTrackerParams...> ConfigureStateTracker(UStateTrackerParams&&... stateTrackerParams)
+	template <typename... UMetricScriptParams>
+	TopLevelScriptBuilderImported<TTopLevelScript, TResource, UMetricScriptParams...> ConfigureMetricScript(UMetricScriptParams&&... metricScriptParams)
 	{
-		std::shared_ptr<std::tuple<UStateTrackerParams...>> tuplePtr =
-			std::make_shared<std::tuple<UStateTrackerParams...>>(std::forward<UStateTrackerParams>(stateTrackerParams)...);
-		return TopLevelScriptBuilderImported<TTopLevelScript, TResource, UStateTrackerParams...>(
+		std::shared_ptr<std::tuple<UMetricScriptParams...>> tuplePtr =
+			std::make_shared<std::tuple<UMetricScriptParams...>>(std::forward<UMetricScriptParams>(metricScriptParams)...);
+		return TopLevelScriptBuilderImported<TTopLevelScript, TResource, UMetricScriptParams...>(
 			_m64, _resource, tuplePtr);
 	}
 
@@ -172,7 +172,7 @@ public:
 	ScriptStatus<TTopLevelScript> Run(TScriptParams&&... scriptParams)
 	{
 		return TTopLevelScript::template MainImport<TTopLevelScript>(
-			_m64, _stateTrackerParams, _resource, std::forward<TScriptParams>(scriptParams)...);
+			_m64, _metricScriptParams, _resource, std::forward<TScriptParams>(scriptParams)...);
 	}
 
 private:
