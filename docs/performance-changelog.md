@@ -4,6 +4,19 @@ Every hot-path change records its delta table here, newest first; the policy, th
 how to run it are in [performance.md](performance.md). The first measurements (2026-09-07),
 which everything since is compared against, are at the bottom.
 
+## 2026-09-15: state trackers are metric scripts
+
+A rename, no code changed: `StateTracker` is `MetricScript` and `TrackedState` is `Metrics`
+throughout (the maintainer, 2026-09-15: the old words were vague), so `GetTrackedState` is
+`GetMetrics`, `TrackState` is `RecordMetrics`, the BitFS ones are `BitfsDrMetrics` and its
+kin next to `BitfsOscFinalMetrics`, and the three benchmark rows that carried the word are
+`Script_AdvanceFrameWrite_TrivialMetrics`, `_RecursiveMetrics` and `Framework_MetricsSweep`,
+their keys renamed in the committed baselines with the numbers untouched. Entries above this
+one use the new names; entries below keep the names the code had. MSVC 19.51, Release:
+0 regressions, every count identical, the deterministic Tier D run -0.1%; the three renamed
+rows have no reference row and read +4% against the baseline with the machine factor at
+1.04.
+
 ## 2026-09-15: the scattershot's file layout (ROADMAP 3.20)
 
 No functional change, measured because tasfw-scattershot moved: one header per concept out

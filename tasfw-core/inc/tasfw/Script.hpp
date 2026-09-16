@@ -20,7 +20,7 @@
 #include <tasfw/ScriptCompareHelper.hpp>
 #include <tasfw/SlotHandle.hpp>
 #include <tasfw/ScriptMetadata.hpp>
-#include <tasfw/StateTracker.hpp>
+#include <tasfw/MetricScript.hpp>
 
 #ifndef SCRIPT_H
 #define SCRIPT_H
@@ -29,7 +29,7 @@ template <derived_from_specialization_of<Resource> TResource>
 class Script;
 
 template <derived_from_specialization_of<Resource> TResource,
-	std::derived_from<Script<TResource>> TStateTracker>
+	std::derived_from<Script<TResource>> TMetricScript>
 class TopLevelScript;
 
 /// <summary>
@@ -64,7 +64,7 @@ protected:
 		uint64_t initialFrame = GetCurrentFrame();
 
 		TScript script = TScript(std::forward<Us>(params)...);
-		script.isStateTracker = isStateTracker;
+		script.isMetricScript = isMetricScript;
 		script.Initialize(this);
 
 		uint64_t loadCyclesStart = resource->work.loadCycles;
@@ -97,7 +97,7 @@ protected:
 		uint64_t initialFrame = GetCurrentFrame();
 
 		TScript script = TScript(std::forward<Us>(params)...);
-		script.isStateTracker = isStateTracker;
+		script.isMetricScript = isMetricScript;
 		script.Initialize(this);
 
 		uint64_t loadCyclesStart = resource->work.loadCycles;
@@ -176,7 +176,7 @@ protected:
 	void Restore(int64_t frame);
 
 	// State: the resource's memory, the script's state for a run on another resource, and the
-	// tracked state at a frame.
+	// metrics at a frame.
 	// The resource's memory, read only: the address of a symbol (LibSm64: a DLL export,
 	// PyramidUpdate: a field of its own state; an unknown name throws). The one way a script
 	// sees game memory (AGENTS.md, hard rule 9). A write is a hack, a kind of input the
@@ -211,42 +211,42 @@ protected:
 		return save;
 	}
 
-	// The tracked state at `frame`, computed on first request. The reference points into the
+	// The metrics at `frame`, computed on first request. The reference points into the
 	// root's table and stays valid until a write at or before `frame` invalidates it; copy
 	// it (`auto state = ...`) if it has to outlive the next AdvanceFrameWrite/Load.
-	template <std::derived_from<Script<TResource>> TStateTracker>
-		requires std::constructible_from<TStateTracker>
-	const typename TStateTracker::CustomScriptStatus& GetTrackedState(int64_t frame)
+	template <std::derived_from<Script<TResource>> TMetricScript>
+		requires std::constructible_from<TMetricScript>
+	const typename TMetricScript::CustomScriptStatus& GetMetrics(int64_t frame)
 	{
-		return TrackerRoot<TStateTracker>()->GetTrackedStateInternal(this, GetInputsMetadataAndCache(frame));
+		return MetricScriptRoot<TMetricScript>()->GetMetricsInternal(this, GetInputsMetadataAndCache(frame));
 	}
 
-	template <std::derived_from<Script<TResource>> TStateTracker>
-		requires std::constructible_from<TStateTracker>
-	bool TrackedStateExists(int64_t frame)
+	template <std::derived_from<Script<TResource>> TMetricScript>
+		requires std::constructible_from<TMetricScript>
+	bool MetricsExist(int64_t frame)
 	{
-		return TrackerRoot<TStateTracker>()->TrackedStateExistsInternal(this, GetInputsMetadataAndCache(frame));
+		return MetricScriptRoot<TMetricScript>()->MetricsExistInternal(this, GetInputsMetadataAndCache(frame));
 	}
 
-	// The same two with the tracker deduced from the calling class (TrackerOf): a tracker reads
-	// its own state, a root or a stage script its tracker's, with nothing named at the call
+	// The same two with the metric script deduced from the calling class (MetricScriptOf): a metric script reads
+	// its own state, a root or a stage script its metric script's, with nothing named at the call
 	// (C++23 explicit object parameter, docs/compilers.md). The forms above stay for a script
-	// that asks about another tracker; the cast keeps this one from choosing itself.
+	// that asks about another metric script; the cast keeps this one from choosing itself.
 	template <std::derived_from<Script<TResource>> Self>
-	const typename TrackerOf<Self>::type::CustomScriptStatus& GetTrackedState(this Self& self, int64_t frame)
+	const typename MetricScriptOf<Self>::type::CustomScriptStatus& GetMetrics(this Self& self, int64_t frame)
 	{
-		return static_cast<Script<TResource>&>(self).template GetTrackedState<typename TrackerOf<Self>::type>(frame);
+		return static_cast<Script<TResource>&>(self).template GetMetrics<typename MetricScriptOf<Self>::type>(frame);
 	}
 
 	template <std::derived_from<Script<TResource>> Self>
-	bool TrackedStateExists(this Self& self, int64_t frame)
+	bool MetricsExist(this Self& self, int64_t frame)
 	{
-		return static_cast<Script<TResource>&>(self).template TrackedStateExists<typename TrackerOf<Self>::type>(frame);
+		return static_cast<Script<TResource>&>(self).template MetricsExist<typename MetricScriptOf<Self>::type>(frame);
 	}
 
 private:
 	// TopLevelScript is the root of every hierarchy: it starts the lifecycle from outside it
-	// (InitializeAndRun), stores its tracker's tag, and runs the state tracker as a child of
+	// (InitializeAndRun), stores its metric script's tag, and runs the metric script as a child of
 	// whichever script asked for a state. The template-head repeats the primary's,
 	// constraints included; MSVC and Clang reject an unconstrained one (docs/compilers.md).
 	template <derived_from_specialization_of<Resource> R, std::derived_from<Script<R>> T>
@@ -273,9 +273,9 @@ private:
 	LevelStack<FrameSet<int64_t>> loadTracker;// track past loads to know whether a cached save is optimal
 	Script* _parentScript;
 	Script* _rootScript;
-	// Set by TopLevelScript on the root; see StateTrackerTag.
-	const void* _stateTrackerTag = nullptr;
-	bool isStateTracker = false;
+	// Set by TopLevelScript on the root; see MetricScriptTag.
+	const void* _metricScriptTag = nullptr;
+	bool isMetricScript = false;
 	ScriptCompareHelper<TResource> compareHelper = ScriptCompareHelper<TResource>(this);
 
 	// The lifecycle, run by the parent.
@@ -284,12 +284,12 @@ private:
 	template <typename F>
 	BaseScriptStatus ExecuteAdhocBase(F adhocScript);
 
-	template <derived_from_specialization_of<Script> TStateTracker>
-	ScriptStatus<TStateTracker> ExecuteStateTracker(int64_t frame, std::shared_ptr<StateTrackerFactoryBase<TStateTracker>> stateTrackerFactory)
+	template <derived_from_specialization_of<Script> TMetricScript>
+	ScriptStatus<TMetricScript> ExecuteMetricScript(int64_t frame, std::shared_ptr<MetricScriptFactoryBase<TMetricScript>> metricScriptFactory)
 	{
 		uint64_t initialFrame = GetCurrentFrame();
 
-		TStateTracker script = stateTrackerFactory->Generate();
+		TMetricScript script = metricScriptFactory->Generate();
 		script.Initialize(this);
 
 		uint64_t loadCyclesStart = resource->work.loadCycles;
@@ -300,8 +300,8 @@ private:
 		// The information is stored per frame, so we need to make sure we are there before running the state tracking script.
 		script.Load(frame);
 
-		// Set this after the load so states can be tracked efficiently if the state is in the future.
-		script.isStateTracker = true;
+		// Set this after the load so metrics can be recorded efficiently if the state is in the future.
+		script.isMetricScript = true;
 
 		script.Run();
 		uint64_t finish = get_time();
@@ -318,20 +318,20 @@ private:
 		BaseStatus[_adhocLevel].nSaves += script.BaseStatus[0].nSaves;
 		BaseStatus[_adhocLevel].nFrameAdvances += script.BaseStatus[0].nFrameAdvances;
 
-		return ScriptStatus<TStateTracker>(std::move(script.BaseStatus[0]), std::move(script.CustomStatus));
+		return ScriptStatus<TMetricScript>(std::move(script.BaseStatus[0]), std::move(script.CustomStatus));
 	}
 
 	// The root as its TopLevelScript type. Checked by comparing type tags rather than with
-	// dynamic_cast because this runs on every tracked-state lookup (ROADMAP 3.7).
-	template <class TStateTracker>
-	TopLevelScript<TResource, TStateTracker>* TrackerRoot()
+	// dynamic_cast because this runs on every metrics lookup (ROADMAP 3.7).
+	template <class TMetricScript>
+	TopLevelScript<TResource, TMetricScript>* MetricScriptRoot()
 	{
-		if (_rootScript->_stateTrackerTag != &StateTrackerTag<TStateTracker>::value) [[unlikely]]
+		if (_rootScript->_metricScriptTag != &MetricScriptTag<TMetricScript>::value) [[unlikely]]
 		{
-			throw std::runtime_error(std::string("GetTrackedState<") + typeid(TStateTracker).name()
-				+ ">: the root script's state tracker is a different type");
+			throw std::runtime_error(std::string("GetMetrics<") + typeid(TMetricScript).name()
+				+ ">: the root script's metric script is a different type");
 		}
-		return static_cast<TopLevelScript<TResource, TStateTracker>*>(_rootScript);
+		return static_cast<TopLevelScript<TResource, TMetricScript>*>(_rootScript);
 	}
 
 	// The input walk.
@@ -369,20 +369,20 @@ private:
 		return script.saveBank.contains(adhocLevel) ? &script.saveBank[adhocLevel] : nullptr;
 	}
 
-	// The tracker hooks the root overrides.
+	// The metric script hooks the root overrides.
 	// Needed for state tracking. These do nothing, but TopLevelScript overrides them. Can't access explicitly because of lack of template information.
-	// Tracked-state containers are created on first use, so there is no "push"; "pop" drops them.
-	virtual void TrackState(Script<TResource>* /*currentScript*/, const InputsMetadata<TResource>& /*inputsMetadata*/) { return; }
-	virtual bool TrackedStateExistsInternal(Script<TResource>* /*currentScript*/, const InputsMetadata<TResource>& /*inputsMetadata*/) { return false; }
-	virtual void PopTrackedStatesContainer(Script<TResource>* /*currentScript*/, int64_t /*adhocLevel*/) { return; }
-	virtual void MoveSyncedTrackedStates(Script<TResource>* /*sourceScript*/, int64_t /*sourceAdhocLevel*/, Script<TResource>* /*destScript*/, int64_t /*destAdhocLevel*/) { return; }
-	virtual void EraseTrackedStates(Script<TResource>* /*currentScript*/, int64_t /*adhocLevel*/, int64_t /*firstFrame*/) { return; }
+	// Metrics containers are created on first use, so there is no "push"; "pop" drops them.
+	virtual void RecordMetrics(Script<TResource>* /*currentScript*/, const InputsMetadata<TResource>& /*inputsMetadata*/) { return; }
+	virtual bool MetricsExistInternal(Script<TResource>* /*currentScript*/, const InputsMetadata<TResource>& /*inputsMetadata*/) { return false; }
+	virtual void PopMetricsContainer(Script<TResource>* /*currentScript*/, int64_t /*adhocLevel*/) { return; }
+	virtual void MoveSyncedMetrics(Script<TResource>* /*sourceScript*/, int64_t /*sourceAdhocLevel*/, Script<TResource>* /*destScript*/, int64_t /*destAdhocLevel*/) { return; }
+	virtual void EraseMetrics(Script<TResource>* /*currentScript*/, int64_t /*adhocLevel*/, int64_t /*firstFrame*/) { return; }
 };
 
 //Include template method implementations
 #include "tasfw/Script.t.hpp"
 
-// The root and the builders complete what Script declares (GetTrackedState reaches into
+// The root and the builders complete what Script declares (GetMetrics reaches into
 // TopLevelScript through the friend), so a script's translation unit has all three; the two
 // headers are not included on their own.
 #include <tasfw/TopLevelScript.hpp>

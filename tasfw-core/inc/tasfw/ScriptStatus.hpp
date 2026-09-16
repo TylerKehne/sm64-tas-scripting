@@ -60,7 +60,7 @@ public:
 	ScriptStatus() : BaseScriptStatus(), TScript::CustomScriptStatus() {}
 
 	// Forwarding so that a finished script's status and CustomStatus are moved into the
-	// result rather than copied (CustomStatus holds vectors in the real trackers).
+	// result rather than copied (CustomStatus holds vectors in the real metric scripts).
 	template <class TBase, class TCustom>
 		requires(std::derived_from<std::remove_cvref_t<TBase>, BaseScriptStatus>
 			&& std::same_as<std::remove_cvref_t<TCustom>, typename TScript::CustomScriptStatus>)

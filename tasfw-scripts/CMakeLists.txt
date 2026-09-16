@@ -32,7 +32,7 @@ add_library(tasfw-scripts-bitfs-sc-setup STATIC
 
 add_library(tasfw-scripts-scattershot-bitfs-dr STATIC
 	"src/scattershot-bitfsdr/Scattershot_BitfsDr.cpp"
-	"src/scattershot-bitfsdr/StateTracker_BitfsDr.cpp"
+	"src/scattershot-bitfsdr/BitfsDrMetrics.cpp"
 )
 
 target_link_libraries(tasfw-scripts-bitfs-sc-setup PUBLIC tasfw-scripts-general)

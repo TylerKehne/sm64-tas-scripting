@@ -35,7 +35,7 @@ public:
     float regionsMinor = 0;
 };
 
-class StateTracker_BitfsDr : public Script<LibSm64>
+class BitfsDrMetrics : public Script<LibSm64>
 {
 public:
     enum class Phase
@@ -89,10 +89,10 @@ public:
     };
     CustomScriptStatus CustomStatus = CustomScriptStatus();
 
-    static bool ValidateCrossingData(const StateTracker_BitfsDr::CustomScriptStatus& state, float componentThreshold);
+    static bool ValidateCrossingData(const BitfsDrMetrics::CustomScriptStatus& state, float componentThreshold);
 
-    StateTracker_BitfsDr() = default;
-    StateTracker_BitfsDr(int64_t initialFrame, int quadrant, NormalSpecsDto normalSpecsDto, int minOscillationFrames, float targetNx, float targetNz)
+    BitfsDrMetrics() = default;
+    BitfsDrMetrics(int64_t initialFrame, int quadrant, NormalSpecsDto normalSpecsDto, int minOscillationFrames, float targetNx, float targetNz)
     {
         roughTargetAngleA = -8192 + 16384 * (quadrant - 1);
         roughTargetAngleB = 24576 + 16384 * (quadrant - 1);
@@ -122,8 +122,8 @@ private:
     void CalculateARE(Object* pyramid);
 };
 
-using Alias_ScattershotThread_BitfsDr = ScattershotThread<BinaryStateBin<16>, LibSm64, StateTracker_BitfsDr, Scattershot_BitfsDr_Solution>;
-using Alias_Scattershot_BitfsDr = Scattershot<BinaryStateBin<16>, LibSm64, StateTracker_BitfsDr, Scattershot_BitfsDr_Solution>;
+using Alias_ScattershotThread_BitfsDr = ScattershotThread<BinaryStateBin<16>, LibSm64, BitfsDrMetrics, Scattershot_BitfsDr_Solution>;
+using Alias_Scattershot_BitfsDr = Scattershot<BinaryStateBin<16>, LibSm64, BitfsDrMetrics, Scattershot_BitfsDr_Solution>;
 
 class Scattershot_BitfsDr : public Alias_ScattershotThread_BitfsDr
 {

@@ -12,7 +12,7 @@ than necessary. Every design choice below is measured against that.
 ```
 bitfs-turnaround/                config-selected pipeline stages (Stages.cpp) + m64 export
         |
-tasfw-scripts                    BitFS scripts, state trackers, scattershot stages
+tasfw-scripts                    BitFS scripts, metric scripts, scattershot stages
         |
 tasfw-scattershot (header-only)  Scattershot, ScattershotThread, builders
         |
@@ -137,7 +137,7 @@ Running children:
 | `ExecuteAdhoc` / `ModifyAdhoc` / `TestAdhoc` | Same three semantics for a lambda returning bool, run on the *same* script object at `_adhocLevel + 1`. |
 | `Compare<T>` family | Run `T` for each parameter tuple, keep the best by a comparator, optionally stop early. Its 32 entry points are `Script.compare.hpp`, a member include of `Script`, each forwarding to `ScriptCompareHelper.hpp`, where its comparator, terminator, parameter generator and ad-hoc candidate are concepts on the call's result type, so a callable of the wrong shape leaves no viable overload at the call site. |
 
-Both forms manage savestates, reverts, the input diff and tracked-state coherence
+Both forms manage savestates, reverts, the input diff and metrics coherence
 automatically; the author never touches a slot, and never touches the resource: every
 interaction goes through `Script`'s methods. `ReadState("symbol")` is the one way a script
 sees game memory, an untyped address until the Phase 5 contract types and guards it, and
@@ -175,11 +175,11 @@ Entries arrive at increasing frames, are cut as a suffix after a write and are f
 frame or the nearest frame below one, which a sorted vector does with a binary search, an
 append and a resize; a `std::map` did it with a node per entry and, on MSVC, a head node
 allocated whenever a map was constructed or move-constructed, which is what made child
-scripts and trackers expensive (11 allocations for an empty child script, all of them
+scripts and metric scripts expensive (11 allocations for an empty child script, all of them
 head nodes of the `M64Diff` a status object carries through the sandboxes). What differs
 from a map: an insert or erase invalidates iterators and references into the container,
-so nothing holds one across a call that can insert (the tracked states stay a node
-container for that reason: a tracker reads its previous states by reference while it may
+so nothing holds one across a call that can insert (the metrics stay a node
+container for that reason: a metric script reads its previous states by reference while it may
 track another frame).
 
 Input resolution (`GetInputsMetadata`): to find the inputs for frame *f*, walk the current
@@ -227,9 +227,9 @@ Other cursor operations: `Load(f)`, `LongLoad(f)` (no caching, always saves at t
 resolved inputs frame by frame." Anything that writes DLL memory directly breaks replay and
 therefore breaks savestate reuse and scattershot decoding.
 
-## Top-level scripts, builders and state trackers
+## Top-level scripts, builders and metric scripts
 
-`TopLevelScript<TResource, TStateTracker>` is the root of a hierarchy. It owns the `M64`
+`TopLevelScript<TResource, TMetricScript>` is the root of a hierarchy. It owns the `M64`
 pointer and the resource. It is started through `TopLevelScriptBuilder<T>::Build(m64)` with
 one of:
 
@@ -242,34 +242,34 @@ one of:
   the base resource it is exported from).
 
 A script may depend on the game's state in the past or the future of its cursor, not only
-the present. The **state tracker** exists to make that state available automatically and
+the present. The **metric script** exists to make that state available automatically and
 cheaply: a script asks for the state at any frame and never manages the saves, loads,
-replays or caching behind the answer. Trackers are how game state gets decorated with
+replays or caching behind the answer. Metric scripts are how game state gets decorated with
 derived information: whenever a decision rests on a metric more complicated than a raw
-memory variable, it belongs in a tracker rather than in the script, so the metric needs no
+memory variable, it belongs in a metric script rather than in the script, so the metric needs no
 management inside the script and is available at any frame (maintainer, 2026-09-12;
-`StateTracker_BitfsDr` is the model). A tracker is a `Script` whose `CustomScriptStatus`
-describes the game at one frame (e.g. `StateTracker_BitfsDr`: phase, oscillation count,
+`BitfsDrMetrics` is the model). A metric script is a `Script` whose `CustomScriptStatus`
+describes the game at one frame (e.g. `BitfsDrMetrics`: phase, oscillation count,
 crossing history, ARE). The top-level script caches
-`trackedStates[script][adhocLevel][frame]` and fills it lazily: after every frame advance or
-load, `TrackState` runs the tracker at that frame inside a reverted sandbox, and a request
+`metrics[script][adhocLevel][frame]` and fills it lazily: after every frame advance or
+load, `RecordMetrics` runs the metric script at that frame inside a reverted sandbox, and a request
 for a frame ahead of the cursor loads or advances to it in that sandbox and reverts, so the
-requesting script's cursor never moves. Because the tracker is a script, it may itself
+requesting script's cursor never moves. Because the metric script is a script, it may itself
 advance frames to look further ahead (`CalculateOscillations` does).
-Trackers may call `GetTrackedState(frame - 1)` to compute recursive metrics; the cache
-makes this linear. The call names no tracker: a tracker reads its own state, a root or a
-stage script its tracker's (`TopLevelScript` declares `StateTracker` from its template
-parameter, `TrackerOf` in StateTracker.hpp resolves it from the calling class through a C++23
-explicit object parameter), and a child script that reads tracked state declares
-`using StateTracker = X;` once; `GetTrackedState<T>(frame)` still asks about a named tracker. Entries after a modified frame are erased on `AdvanceFrameWrite`,
+Metric scripts may call `GetMetrics(frame - 1)` to compute recursive metrics; the cache
+makes this linear. The call names no metric script: a metric script reads its own state, a root or a
+stage script its metric script's (`TopLevelScript` declares `MetricScript` from its template
+parameter, `MetricScriptOf` in MetricScript.hpp resolves it from the calling class through a C++23
+explicit object parameter), and a child script that reads metrics declares
+`using MetricScript = X;` once; `GetMetrics<T>(frame)` still asks about a named metric script. Entries after a modified frame are erased on `AdvanceFrameWrite`,
 `Apply`, `Rollback`; on `Modify` they move from child to parent with the saves.
-`GetTrackedState` returns a `const` reference into that table and a finished tracker's
+`GetMetrics` returns a `const` reference into that table and a finished metric script's
 `CustomStatus` is moved into it, not copied. A script's entry in the table is created on its
-first tracked frame and dropped when the script's scope ends; the root verifies the
-requested tracker type by comparing a per-type tag (`StateTrackerTag`), not with RTTI.
+first recorded frame and dropped when the script's scope ends; the root verifies the
+requested metric script type by comparing a per-type tag (`MetricScriptTag`), not with RTTI.
 
-`ConfigureStateTracker(args...)` on any builder supplies constructor arguments for the
-tracker; the framework instantiates it through `StateTrackerFactory`.
+`ConfigureMetricScript(args...)` on any builder supplies constructor arguments for the
+metric script; the framework instantiates it through `MetricScriptFactory`.
 
 ## Scattershot
 
@@ -282,13 +282,13 @@ works on individual per-frame inputs, whereas a pellet in TASFW can apply a whol
 move (one of a search's `CustomMoves` may be a script, not just a random stick), so the search can be
 more discerning about which movements it tries. The aim is to find good paths faster and to
 keep the state space from exploding, because each move is a meaningful step rather than a
-random frame. The state tracker is the other contribution: because a thread's state bin,
-fitness and validation can read tracked state, a bin can describe progress that no single
+random frame. The metric script is the other contribution: because a thread's state bin,
+fitness and validation can read metrics, a bin can describe progress that no single
 frame shows (oscillations completed, crossing history, phase) and a fitness can use a
-look-ahead the tracker computed, so the search ranks and distinguishes states by where they
+look-ahead the metric script computed, so the search ranks and distinguishes states by where they
 are going, not only by where they are.
 
-`Scattershot<TState, TResource, TStateTracker, TOutputState>` is the shared search state;
+`Scattershot<TState, TResource, TMetricScript, TOutputState>` is the shared search state;
 `ScattershotThread<...>` is a `TopLevelScript` that each OpenMP thread runs. A concrete
 search subclasses `ScattershotThread` and implements:
 
@@ -435,7 +435,7 @@ Cost hierarchy, most to least: frame advance (`sm64_update`, measured at about 1
 savestate save/load (about 7 us in `dirty` mode for the 122 pages BitFS play touches,
 41 to 49 us for the 1.5 MB `fixed` slices, 190 us for a 7.3 MB `full` copy; memory-bandwidth
 bound now that slot buffers are recycled),
-block decoding (replay from the root every shot), state trackers (run at every frame advance
+block decoding (replay from the root every shot), metric scripts (run at every frame advance
 and load, and may advance frames themselves), `Script` bookkeeping (map operations per frame
 per hierarchy level), synchronization (named critical sections, barriers in deterministic
 mode), and `PyramidUpdate` construction (surface copy and transform per `ImportSave`).
@@ -451,11 +451,11 @@ script author, a person or agent comfortable with coding but not necessarily wit
 writes a class with three lifecycle methods and a status, or a resource with a save, a
 load and an advance, and everything else (savestates, replays, the hierarchy, the search's
 synchronization) happens without their knowledge (AGENTS.md, "Who it is for"). Resource,
-tracker and state-bin types are template
+metric script and state-bin types are template
 parameters constrained by concepts; `if constexpr` compiles state tracking out when the
-tracker is `DefaultStateTracker`; LTO is on for every configuration. Where the code falls
+metric script is `DefaultMetricScript`; LTO is on for every configuration. Where the code falls
 short today (virtual per-frame calls on `Resource`, measured at nothing separable from
-noise; `shared_ptr` segment chains; one `std::map` node per tracked state) is listed in
+noise; `shared_ptr` segment chains; one `std::map` node per metrics) is listed in
 the performance doc and on the roadmap.
 
 Instrumentation already in the code: `Resource::work` (counts, rdtsc cycles and the slot
@@ -466,10 +466,10 @@ Counts are the metrics to trust; they are deterministic and machine-independent.
 ## Sharp edges worth knowing
 
 - `Modify` moves the cursor to the end of the child's diff (see above).
-- `GetTrackedState` throws if the root is not a `TopLevelScript` with that tracker type, the
-  one named or the one deduced from the calling class (its own for a tracker, its
-  `StateTracker` alias otherwise).
-- `GetTrackedState` returns a reference into the root's table. A write at or before that
+- `GetMetrics` throws if the root is not a `TopLevelScript` with that metric script type, the
+  one named or the one deduced from the calling class (its own for a metric script, its
+  `MetricScript` alias otherwise).
+- `GetMetrics` returns a reference into the root's table. A write at or before that
   frame (`AdvanceFrameWrite`, `Apply`, `Rollback`) invalidates it; copy the state
   (`auto state = ...`) when it has to survive one.
 - `SlotManager` limits are per resource; `SlotBudget` bounds their sum, so a resource created

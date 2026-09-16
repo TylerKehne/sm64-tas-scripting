@@ -13,11 +13,11 @@
 // between runs on MSVC. Fixed counts make the sequence deterministic.
 
 // Root script that exposes the protected Script API to a benchmark body.
-template <class Body, class TTracker = DefaultStateTracker<MockResource>>
-class BenchRoot : public TopLevelScript<MockResource, TTracker>
+template <class Body, class TMetricScript = DefaultMetricScript<MockResource>>
+class BenchRoot : public TopLevelScript<MockResource, TMetricScript>
 {
 public:
-	using Base = TopLevelScript<MockResource, TTracker>;
+	using Base = TopLevelScript<MockResource, TMetricScript>;
 	using Base::AdvanceFrameWrite;
 	using Base::Execute;
 	using Base::ExecuteAdhoc;
@@ -53,12 +53,12 @@ private:
 	Body _body;
 };
 
-template <class TTracker = DefaultStateTracker<MockResource>, class Body>
+template <class TMetricScript = DefaultMetricScript<MockResource>, class Body>
 static void RunRoot(benchmark::State& state, Body body)
 {
 	MockResource resource;
 	M64 m64;
-	TopLevelScriptBuilder<BenchRoot<Body, TTracker>>::Build(m64).ImportResource(&resource).Run(state, body);
+	TopLevelScriptBuilder<BenchRoot<Body, TMetricScript>>::Build(m64).ImportResource(&resource).Run(state, body);
 	benchmark::DoNotOptimize(resource.checksum());
 }
 
@@ -316,9 +316,9 @@ static void BM_Script_LongLoad_RewindToRoot_Depth(benchmark::State& state)
 }
 BENCHMARK(BM_Script_LongLoad_RewindToRoot_Depth)->Arg(1)->Arg(4)->Arg(16)->Iterations(50000);
 
-// --- State trackers -----------------------------------------------------------------------
+// --- Metric scripts -----------------------------------------------------------------------
 
-class TrivialTracker : public Script<MockResource>
+class TrivialMetrics : public Script<MockResource>
 {
 public:
 	class CustomScriptStatus
@@ -339,8 +339,8 @@ public:
 	bool assertion() override { return CustomStatus.initialized; }
 };
 
-// Mirrors the real trackers: each frame's state depends on the previous frame's state.
-class RecursiveTracker : public Script<MockResource>
+// Mirrors the real metric scripts: each frame's state depends on the previous frame's state.
+class RecursiveMetrics : public Script<MockResource>
 {
 public:
 	class CustomScriptStatus
@@ -357,29 +357,29 @@ public:
 		int64_t frame = GetCurrentFrame();
 		CustomStatus.sum = uint64_t(frame);
 		if (frame > 0)
-			CustomStatus.sum += GetTrackedState(frame - 1).sum;
+			CustomStatus.sum += GetMetrics(frame - 1).sum;
 		CustomStatus.initialized = true;
 		return true;
 	}
 	bool assertion() override { return CustomStatus.initialized; }
 };
 
-static void BM_Script_AdvanceFrameWrite_TrivialTracker(benchmark::State& state)
+static void BM_Script_AdvanceFrameWrite_TrivialMetrics(benchmark::State& state)
 {
-	RunRoot<TrivialTracker>(state, [](auto& s, benchmark::State& st)
+	RunRoot<TrivialMetrics>(state, [](auto& s, benchmark::State& st)
 		{
 			for (auto _ : st)
 				s.AdvanceFrameWrite(SomeInputs);
 		});
 }
-BENCHMARK(BM_Script_AdvanceFrameWrite_TrivialTracker)->Iterations(100000);
+BENCHMARK(BM_Script_AdvanceFrameWrite_TrivialMetrics)->Iterations(100000);
 
-static void BM_Script_AdvanceFrameWrite_RecursiveTracker(benchmark::State& state)
+static void BM_Script_AdvanceFrameWrite_RecursiveMetrics(benchmark::State& state)
 {
-	RunRoot<RecursiveTracker>(state, [](auto& s, benchmark::State& st)
+	RunRoot<RecursiveMetrics>(state, [](auto& s, benchmark::State& st)
 		{
 			for (auto _ : st)
 				s.AdvanceFrameWrite(SomeInputs);
 		});
 }
-BENCHMARK(BM_Script_AdvanceFrameWrite_RecursiveTracker)->Iterations(100000);
+BENCHMARK(BM_Script_AdvanceFrameWrite_RecursiveMetrics)->Iterations(100000);

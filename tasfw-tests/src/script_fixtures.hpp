@@ -10,17 +10,17 @@
 //   * Execute reverts, Modify persists, ad-hoc scripts sandbox the same way;
 //   * loads restore exact state and replays are bit-identical;
 //   * inputs resolve through the hierarchy and fall back to the movie;
-//   * state trackers compute per-frame state on demand without moving the cursor.
+//   * metric scripts compute per-frame state on demand without moving the cursor.
 // MockResource::checksum() folds every applied input into a rolling hash, so "same
 // checksum" means "same inputs were applied in the same order".
 namespace tasfw::tests
 {
 	// Root script that exposes the protected Script API to a test body.
-	template <class Body, class TTracker = DefaultStateTracker<MockResource>>
-	class TestRoot : public TopLevelScript<MockResource, TTracker>
+	template <class Body, class TMetricScript = DefaultMetricScript<MockResource>>
+	class TestRoot : public TopLevelScript<MockResource, TMetricScript>
 	{
 	public:
-		using Base = TopLevelScript<MockResource, TTracker>;
+		using Base = TopLevelScript<MockResource, TMetricScript>;
 		using Base::AdvanceFrameWrite;
 		using Base::Compare;
 		using Base::CompareAdhoc;
@@ -35,7 +35,7 @@ namespace tasfw::tests
 		using Base::GetCurrentFrame;
 		using Base::GetDiff;
 		using Base::GetInputs;
-		using Base::GetTrackedState;
+		using Base::GetMetrics;
 		using Base::IsDiffEmpty;
 		using Base::Load;
 		using Base::LongLoad;
@@ -46,7 +46,7 @@ namespace tasfw::tests
 		using Base::ModifyCompareAdhoc;
 		using Base::Rollback;
 		using Base::Test;
-		using Base::TrackedStateExists;
+		using Base::MetricsExist;
 
 		// Overloaded with private variants in Script; forward instead of using-declaring.
 		void Save() { Base::Save(); }
@@ -66,10 +66,10 @@ namespace tasfw::tests
 		Body _body;
 	};
 
-	template <class TTracker = DefaultStateTracker<MockResource>, class Body>
+	template <class TMetricScript = DefaultMetricScript<MockResource>, class Body>
 	void RunRoot(MockResource& resource, M64& m64, Body body)
 	{
-		TopLevelScriptBuilder<TestRoot<Body, TTracker>>::Build(m64).ImportResource(&resource).Run(body);
+		TopLevelScriptBuilder<TestRoot<Body, TMetricScript>>::Build(m64).ImportResource(&resource).Run(body);
 	}
 
 	// Distinct inputs for frame i, so a checksum tells which frames were applied.
@@ -120,7 +120,7 @@ namespace tasfw::tests
 		bool assertion() override { return false; } // never accepted
 	};
 
-	class RecursiveTracker : public Script<MockResource>
+	class RecursiveMetrics : public Script<MockResource>
 	{
 	public:
 		class CustomScriptStatus
@@ -137,7 +137,7 @@ namespace tasfw::tests
 			int64_t frame = GetCurrentFrame();
 			CustomStatus.sum = uint64_t(frame);
 			if (frame > 0)
-				CustomStatus.sum += GetTrackedState(frame - 1).sum;
+				CustomStatus.sum += GetMetrics(frame - 1).sum;
 			CustomStatus.initialized = true;
 			return true;
 		}
@@ -169,8 +169,8 @@ namespace tasfw::tests
 		bool assertion() override { return true; }
 	};
 
-	// A tracker type the test roots never install; used to check the type guard.
-	class OtherTracker : public Script<MockResource>
+	// A metric script type the test roots never install; used to check the type guard.
+	class OtherMetrics : public Script<MockResource>
 	{
 	public:
 		class CustomScriptStatus
@@ -186,7 +186,7 @@ namespace tasfw::tests
 	};
 
 	// Asserts only on even frames, so odd frames have no accepted state.
-	class EvenFramesTracker : public Script<MockResource>
+	class EvenFramesMetrics : public Script<MockResource>
 	{
 	public:
 		class CustomScriptStatus

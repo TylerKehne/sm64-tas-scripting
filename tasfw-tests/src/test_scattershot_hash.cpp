@@ -18,7 +18,7 @@
 namespace
 {
 	using Bin = BinaryStateBin<16>;
-	using SS = Scattershot<Bin, MockResource, DefaultStateTracker<MockResource>, DefaultState>;
+	using SS = Scattershot<Bin, MockResource, DefaultMetricScript<MockResource>, DefaultState>;
 	using Solution = ScattershotSolution<DefaultState>;
 
 	const std::vector<Solution> NoInputSolutions;

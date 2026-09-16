@@ -138,7 +138,7 @@ private:
     };
 };
 
-class StateTracker_BitfsDrRecover : public Script<LibSm64>
+class BitfsDrRecoverMetrics : public Script<LibSm64>
 {
 public:
     enum class Phase
@@ -167,8 +167,8 @@ public:
     };
     CustomScriptStatus CustomStatus = CustomScriptStatus();
 
-    StateTracker_BitfsDrRecover() = default;
-    StateTracker_BitfsDrRecover(int64_t initialFrame, int oscQuadrant, int targetQuadrant, float minXzSum)
+    BitfsDrRecoverMetrics() = default;
+    BitfsDrRecoverMetrics(int64_t initialFrame, int oscQuadrant, int targetQuadrant, float minXzSum)
     {
         SetRoughTargetAngle(oscQuadrant, targetQuadrant);
 
@@ -190,7 +190,7 @@ public:
         int64_t currentFrame = GetCurrentFrame();
         CustomScriptStatus lastFrameState;
         if (currentFrame > initialFrame)
-            lastFrameState = GetTrackedState(currentFrame - 1);
+            lastFrameState = GetMetrics(currentFrame - 1);
 
         if (!lastFrameState.initialized)
             return true;
@@ -334,8 +334,8 @@ public:
     float xzSum = 0;
 };
 
-using Alias_ScattershotThread_BitfsDrRecover = ScattershotThread<BinaryStateBin<16>, LibSm64, StateTracker_BitfsDrRecover, Scattershot_BitfsDrRecover_Solution>;
-using Alias_Scattershot_BitfsDrRecover = Scattershot<BinaryStateBin<16>, LibSm64, StateTracker_BitfsDrRecover, Scattershot_BitfsDrRecover_Solution>;
+using Alias_ScattershotThread_BitfsDrRecover = ScattershotThread<BinaryStateBin<16>, LibSm64, BitfsDrRecoverMetrics, Scattershot_BitfsDrRecover_Solution>;
+using Alias_Scattershot_BitfsDrRecover = Scattershot<BinaryStateBin<16>, LibSm64, BitfsDrRecoverMetrics, Scattershot_BitfsDrRecover_Solution>;
 
 class Scattershot_BitfsDrRecover : public Alias_ScattershotThread_BitfsDrRecover
 {
@@ -343,16 +343,16 @@ public:
     // This search's moves; the draw walks a list in this order.
     enum class CustomMoves { NO_SCRIPT, PBD, RUN_DOWNHILL, RUN_DOWNHILL_MIN, REWIND, TURN_UPHILL, QUICKTURN, C_UP_TRICK };
 
-    Scattershot_BitfsDrRecover(Alias_Scattershot_BitfsDrRecover& scattershot, StateTracker_BitfsDrRecover::Phase lastPhase)
+    Scattershot_BitfsDrRecover(Alias_Scattershot_BitfsDrRecover& scattershot, BitfsDrRecoverMetrics::Phase lastPhase)
         : Alias_ScattershotThread_BitfsDrRecover(scattershot), _lastPhase(lastPhase) { }
 
     void SelectMovementOptions() override
     {
 
-        auto state = GetTrackedState(GetCurrentFrame());
+        auto state = GetMetrics(GetCurrentFrame());
         switch (state.phase)
         {
-            case StateTracker_BitfsDrRecover::Phase::ATTEMPT_DR:
+            case BitfsDrRecoverMetrics::Phase::ATTEMPT_DR:
                 AddMovementOption(CustomMoves::NO_SCRIPT);
                 AddMovementOption(BasicMoves::RANDOM_BUTTONS);
 
@@ -371,11 +371,11 @@ public:
                     });
                 break;
 
-            case StateTracker_BitfsDrRecover::Phase::QUICKTURN:
+            case BitfsDrRecoverMetrics::Phase::QUICKTURN:
                 AddMovementOption(CustomMoves::QUICKTURN);
                 break;
 
-            case StateTracker_BitfsDrRecover::Phase::C_UP_TRICK:
+            case BitfsDrRecoverMetrics::Phase::C_UP_TRICK:
                 AddMovementOption(CustomMoves::C_UP_TRICK);
                 break;
 
@@ -446,7 +446,7 @@ public:
     {
         MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
 
-        auto trackedState = GetTrackedState(GetCurrentFrame());
+        auto metrics = GetMetrics(GetCurrentFrame());
 
         int actionValue;
         switch (marioState->action)
@@ -467,12 +467,12 @@ public:
         }
 
         int phaseValue;
-        switch (trackedState.phase)
+        switch (metrics.phase)
         {
-            case StateTracker_BitfsDrRecover::Phase::ATTEMPT_DR: phaseValue = 0; break;
-            case StateTracker_BitfsDrRecover::Phase::QUICKTURN: phaseValue = 1; break;
-            case StateTracker_BitfsDrRecover::Phase::C_UP_TRICK: phaseValue = 2; break;
-            case StateTracker_BitfsDrRecover::Phase::INITIAL: phaseValue = 3; break;
+            case BitfsDrRecoverMetrics::Phase::ATTEMPT_DR: phaseValue = 0; break;
+            case BitfsDrRecoverMetrics::Phase::QUICKTURN: phaseValue = 1; break;
+            case BitfsDrRecoverMetrics::Phase::C_UP_TRICK: phaseValue = 2; break;
+            case BitfsDrRecoverMetrics::Phase::INITIAL: phaseValue = 3; break;
             default: phaseValue = 4;
         }
         
@@ -487,20 +487,20 @@ public:
         uint8_t bitCursor = 0;
         BinaryStateBin<16> state;
 
-        if (trackedState.initialized)
+        if (metrics.initialized)
         {
             state.AddValueBits(bitCursor, 1, 1);
             state.AddValueBits(bitCursor, 4, actionValue);
             state.AddValueBits(bitCursor, 3, phaseValue);
 
-            float posRegionSize = trackedState.phase == StateTracker_BitfsDrRecover::Phase::C_UP_TRICK ? 0.25f
-                : trackedState.phase == StateTracker_BitfsDrRecover::Phase::ATTEMPT_DR ? 1.0f : 5.0f;
+            float posRegionSize = metrics.phase == BitfsDrRecoverMetrics::Phase::C_UP_TRICK ? 0.25f
+                : metrics.phase == BitfsDrRecoverMetrics::Phase::ATTEMPT_DR ? 1.0f : 5.0f;
             state.AddRegionBitsByRegionSize(bitCursor, 12, xPosValue, xMin, xMax, posRegionSize);
             state.AddRegionBitsByRegionSize(bitCursor, 12, zPosValue, zMin, zMax, posRegionSize);
             //state.AddRegionBitsByRegionSize(bitCursor, 7, fSpeedValue, 0.f, 64.0f, 0.5f);
 
-            state.AddRegionBitsByRegionSize(bitCursor, 8, trackedState.xzSum, 0.f, 0.8f, 0.005f);
-            state.AddRegionBitsByRegionSize(bitCursor, 8, trackedState.pyraNormX, -0.7f, 0.7f, 0.01f);
+            state.AddRegionBitsByRegionSize(bitCursor, 8, metrics.xzSum, 0.f, 0.8f, 0.005f);
+            state.AddRegionBitsByRegionSize(bitCursor, 8, metrics.pyraNormX, -0.7f, 0.7f, 0.01f);
 
             state.AddValueBits(bitCursor, 16, uint16_t(marioState->faceAngle[1]));
             //state.AddRegionBitsByRegionSize(bitCursor, 15, int(marioState->faceAngle[1]), -32768, 32767, 16);
@@ -573,11 +573,11 @@ public:
         }
 
         // Check custom metrics
-        auto state = GetTrackedState(GetCurrentFrame());
+        auto state = GetMetrics(GetCurrentFrame());
 
         // Was an empty statement (`if (...);`) until 2026-09; Clang's -Wempty-body found it.
         // Reject sitting in first person during the C-up trick phase.
-        if (state.initialized && state.phase == StateTracker_BitfsDrRecover::Phase::C_UP_TRICK
+        if (state.initialized && state.phase == BitfsDrRecoverMetrics::Phase::C_UP_TRICK
             && state.marioAction == ACT_FIRST_PERSON)
             return false;
 
@@ -596,7 +596,7 @@ public:
     float GetStateFitness() override
     {
 
-        auto state = GetTrackedState(GetCurrentFrame());
+        auto state = GetMetrics(GetCurrentFrame());
         if (state.initialized)
         {
             return -float(GetCurrentFrame());
@@ -621,15 +621,15 @@ public:
         Object* objectPool = (Object*)(ReadState("gObjectPool"));
         Object* pyramid = &objectPool[84];
 
-        auto state = GetTrackedState(GetCurrentFrame());
+        auto state = GetMetrics(GetCurrentFrame());
 
         int phaseValue;
         switch (state.phase)
         {
-            case StateTracker_BitfsDrRecover::Phase::ATTEMPT_DR: phaseValue = 0; break;
-            case StateTracker_BitfsDrRecover::Phase::QUICKTURN: phaseValue = 1; break;
-            case StateTracker_BitfsDrRecover::Phase::C_UP_TRICK: phaseValue = 2; break;
-            case StateTracker_BitfsDrRecover::Phase::INITIAL: phaseValue = 3; break;
+            case BitfsDrRecoverMetrics::Phase::ATTEMPT_DR: phaseValue = 0; break;
+            case BitfsDrRecoverMetrics::Phase::QUICKTURN: phaseValue = 1; break;
+            case BitfsDrRecoverMetrics::Phase::C_UP_TRICK: phaseValue = 2; break;
+            case BitfsDrRecoverMetrics::Phase::INITIAL: phaseValue = 3; break;
             default: phaseValue = 4;
         }
 
@@ -653,22 +653,22 @@ public:
     bool IsSolution() override
     {
         MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
-        const auto& state = GetTrackedState(GetCurrentFrame());
-        const auto& prevState = GetTrackedState(GetCurrentFrame());
+        const auto& state = GetMetrics(GetCurrentFrame());
+        const auto& prevState = GetMetrics(GetCurrentFrame());
 
         switch (_lastPhase)
         {
-            case StateTracker_BitfsDrRecover::Phase::ATTEMPT_DR:
+            case BitfsDrRecoverMetrics::Phase::ATTEMPT_DR:
             {
-                if (state.phase == StateTracker_BitfsDrRecover::Phase::C_UP_TRICK)
+                if (state.phase == BitfsDrRecoverMetrics::Phase::C_UP_TRICK)
                     return true;
 
                 break;
             }
 
-            case StateTracker_BitfsDrRecover::Phase::C_UP_TRICK:
+            case BitfsDrRecoverMetrics::Phase::C_UP_TRICK:
             {
-                if (state.phase != StateTracker_BitfsDrRecover::Phase::C_UP_TRICK)
+                if (state.phase != BitfsDrRecoverMetrics::Phase::C_UP_TRICK)
                     return false;
 
                 if (marioState->action != ACT_FREEFALL_LAND && marioState->vel[1] == -4.0f)
@@ -696,7 +696,7 @@ public:
 
     Scattershot_BitfsDrRecover_Solution GetSolutionState() override
     {
-        const auto& state = GetTrackedState(GetCurrentFrame());
+        const auto& state = GetMetrics(GetCurrentFrame());
 
         auto solution = Scattershot_BitfsDrRecover_Solution();
         solution.fSpd = state.fSpd;
@@ -709,7 +709,7 @@ public:
     }
 
 private:
-    StateTracker_BitfsDrRecover::Phase _lastPhase = StateTracker_BitfsDrRecover::Phase::C_UP_TRICK;
+    BitfsDrRecoverMetrics::Phase _lastPhase = BitfsDrRecoverMetrics::Phase::C_UP_TRICK;
 
     bool Pbd()
     {
@@ -745,7 +745,7 @@ private:
                 if (marioState->action != ACT_TURNING_AROUND && marioState->action != ACT_FINISH_TURNING_AROUND && marioState->action != ACT_WALKING)
                     return true;
 
-                auto state = GetTrackedState(GetCurrentFrame());
+                auto state = GetMetrics(GetCurrentFrame());
 
                 auto m64 = M64();
                 auto status = TopLevelScriptBuilder<BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>::Build(m64)

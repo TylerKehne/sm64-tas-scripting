@@ -11,10 +11,10 @@ record of what the suite (`tasfw-perf`, `scripts/perf.ps1`, ROADMAP 1.3) measure
 ## Design principle: zero-cost abstractions
 
 The target is abstractions that disappear at compile time. The framework already leans that
-way: `Script<TResource>`, `TopLevelScript<TResource, TStateTracker>` and the scattershot
-classes are templates constrained by concepts, so the resource type, the tracker type and
+way: `Script<TResource>`, `TopLevelScript<TResource, TMetricScript>` and the scattershot
+classes are templates constrained by concepts, so the resource type, the metric script type and
 the state bin type are all static; `if constexpr` compiles state tracking out entirely when
-the tracker is `DefaultStateTracker`; the whole build uses LTO. Keep going in that direction.
+the metric script is `DefaultMetricScript`; the whole build uses LTO. Keep going in that direction.
 
 Concretely, in code that runs per frame or per script:
 
@@ -40,7 +40,7 @@ Places where the code pays (or paid) for an abstraction it should not, gated by 
   and 45 ns at 16 threads against 61 ns and 5.6 us through the loader (the `Addr` rows of
   Tier B; performance-changelog.md 2026-09-14). The scripts still ask per execution, which
   is now what the contract allows (`Resource::addr`).
-- ~~`Script::GetTrackedState` performs a `dynamic_cast` on the root script per call.~~ Fixed:
+- ~~`Script::GetMetrics` performs a `dynamic_cast` on the root script per call.~~ Fixed:
   a per-type tag compare (ROADMAP 3.7). Tracking still goes through virtual hooks on
   `_rootScript` on every frame advance.
 - `Resource::save` / `load` / `advance` / `setInputs` are virtual and called per frame.
@@ -52,15 +52,15 @@ Places where the code pays (or paid) for an abstraction it should not, gated by 
   `TAS_FW_NOINLINE` (docs/compilers.md), so the accessor inlines everywhere again, and the
   walk writes into the caller's object (ROADMAP 3.19; performance-changelog.md).
 - Block segments are `std::shared_ptr<Segment>` chains, touched on every decode.
-- Tracker scripts are constructed per tracked frame: three lifecycle sandboxes and a
+- Metric scripts are constructed per recorded frame: three lifecycle sandboxes and a
   `CustomStatus` move. The per-level containers are created on first use and, with
   `M64Diff::frames`, are `FrameMap`s (ROADMAP 3.7, 2026-09-14): a sandbox allocates
-  nothing and a tracked frame 3 times instead of 14. The BitFS trackers' status objects
-  (`TiltTargetShotMetrics`, `BitfsOscFinalMetrics`, `StateTracker_BitfsDr`) hold their
+  nothing and a recorded frame 3 times instead of 14. The BitFS metric scripts' status objects
+  (`TiltTargetShotMetrics`, `BitfsOscFinalMetrics`, `BitfsDrMetrics`) hold their
   per-axis values in `std::array`s since the same day; as `std::vector`s they were
-  thirteen allocations per construction and per copy in the tilt-target tracker, 7% of
+  thirteen allocations per construction and per copy in the tilt-target metric script, 7% of
   the throughput Tier D run (ROADMAP 3.8, performance-changelog.md). What remains per
-  tracked frame is the node per tracked state.
+  recorded frame is the node per metrics.
 
 ## What costs what
 
@@ -77,11 +77,11 @@ Ordered by how much they dominate a typical scattershot run:
 3. **Block decoding.** Every scattershot shot replays the base block's segment chain from the
    root by re-running scripts. Cost grows with block depth over the run and shows up as
    "Overhead" in the end-of-run summary.
-4. **State trackers.** They run at every frame advance and load. A tracker that itself advances
-   frames (for example `StateTracker_BitfsDr::CalculateOscillations` runs up to 50 frames per
+4. **Metric scripts.** They run at every frame advance and load. A metric script that itself advances
+   frames (for example `BitfsDrMetrics::CalculateOscillations` runs up to 50 frames per
    crossing) multiplies the cost of every frame it is evaluated on.
 5. **Script bookkeeping.** `GetInputsMetadata`, `GetLatestSave`, the per-level caches and
-   tracked-state maps are `std::map` operations per frame, per hierarchy level (the per-level
+   metrics maps are `std::map` operations per frame, per hierarchy level (the per-level
    containers themselves are a `LevelStack` and cost nothing to enter).
 6. **Synchronization.** Named `omp critical` sections in scattershot; `Deterministic` mode
    serves every script's upsert, and each shot's block selection and stop check, in thread
@@ -92,12 +92,12 @@ Ordered by how much they dominate a typical scattershot run:
    outside the resource is about 24%, ROADMAP 3.15).
 7. **`PyramidUpdate` construction.** `ExportSave<PyramidUpdateMem>` reads and transforms every
    pyramid surface out of the DLL each time it is called, which is once per frame in
-   `RunDownhill` and once per crossing in the trackers.
+   `RunDownhill` and once per crossing in the metric scripts.
 
 Measured on the tilt-target workloads (2026-09-14, "Known hotspots, measured" below): the
 order holds, with the game at 62% of the production run's CPU, loads at 13%, and the
 replays of item 1 being the search's evaluation after each script rather than block
-decoding, which is 2 to 3%; the tracker's cost is mostly its status object's allocations.
+decoding, which is 2 to 3%; the metric script's cost is mostly its status object's allocations.
 
 ### What the game writes per frame (2026-09-08)
 
@@ -251,12 +251,12 @@ Fixed workloads on the source movie:
 - `DownhillAngle_PyramidUpdate`: 1,000 calls of
   `BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle` on a `PyramidUpdate` imported from
   the game, exactly as `BitFsPyramidOscillation::execution` does, 3 iterations.
-- `TrackerSweep`: `StateTracker_BitfsDr` (the committed dr-oscillations parameters) over 500
+- `MetricsSweep`: `BitfsDrMetrics` (the committed dr-oscillations parameters) over 500
   consecutive `AdvanceFrameRead`s, 3 iterations.
 
 Metrics per row: wall time (fastest of nine, as in Tier A); `allocs`; the counters
 `frameAdvances`, `saves`, `loads` (per iteration, exact); **replay ratio** = frames advanced
-per frame of output diff (per frame swept for the tracker); **overhead %** = 1 minus
+per frame of output diff (per frame swept for the metric script); **overhead %** = 1 minus
 (advance + save + load time) / wall, all in rdtsc cycles.
 
 Gate: counts exactly equal to baseline (an increase fails; a decrease is printed for review
@@ -370,13 +370,13 @@ otherwise; the resource's own advance, save and load take 76% of it and the rest
    `GetMinimumDownhillWalkingAngle` call (56 before the FrameMap), which the downhill
    scripts make once per frame: about 30% the construction itself, 5% the stand-in's
    physics, the rest the `TopLevelScript`, resource and slot manager built and torn down
-   around one frame. On the `dr-oscillations` stage, where the DR tracker imports it per
+   around one frame. On the `dr-oscillations` stage, where the DR metric script imports it per
    frame of its crossing lookahead, it is below one sample in 25,000 (performance-changelog.md,
    "where the `dr-oscillations` stage's CPU time goes"): the stage crosses rarely for what
    it advances. Not a hotspot on any workload measured.
-3. `CalculateOscillations` advancing up to 50 frames inside a tracker evaluation: not on the
+3. `CalculateOscillations` advancing up to 50 frames inside a metric script evaluation: not on the
    tilt-target workload, the Tier C sweep never crosses (500 frames, 500 advances), and on
-   the `dr-oscillations` stage it is 0.01% of the CPU, the whole DR tracker 2.1%. Not a
+   the `dr-oscillations` stage it is 0.01% of the CPU, the whole DR metric script 2.1%. Not a
    hotspot. What that stage pays for instead is per script, since its scripts are one frame
    each: `SelectMovementOptions` 4.1% (the `std::map<MovementOption, double>` of weights
    `AddRandomMovementOption` took by value, built from a braced list per call, and the
@@ -387,10 +387,10 @@ otherwise; the resource's own advance, save and load take 76% of it and the rest
    (item 1).
 4. `UpsertBlock` hashing and probing while holding the `blocks` critical section: 0.04%.
 5. `std::map` bookkeeping in `Script`: 5.0% in map code, 3.3% inclusive in
-   `GetInputsMetadata` (the root's lookup in the movie's map per replayed and tracked
+   `GetInputsMetadata` (the root's lookup in the movie's map per replayed and recorded
    frame is 2.3% on its own), and about 3.5% of heap time for the framework's own
    allocations: `BaseScriptStatus` per sandbox, `Script::Run`, the inputs-cache, save-cache,
-   load-tracker and tracked-state nodes, `LevelStack::Grow`. Together the remainder of
+   load-tracker and metrics nodes, `LevelStack::Grow`. Together the remainder of
    ROADMAP 3.7, about 9%. Fixed the same day by `FrameMap` (ARCHITECTURE.md, "Script
    hierarchy"): the throughput run's CPU outside the resource went from 22.7% to 19.2%
    and its wall time -2.9%, the deterministic run's wall time -4.1%, with every count
@@ -416,17 +416,17 @@ Found by the profile rather than suspected:
 9. **Replays are the game time.** 95% of the frame advances replay known inputs
    (`AdvanceFrameRead` 68% of the CPU against 3.7% for `AdvanceFrameWrite`): the
    `TiltTargetShot` evaluation runs the game to the pyramid's equilibrium after every script
-   (`GetEquilibriumTrackedState`, 67% inclusive, about 33 frames), plus the rewinds
-   `ApplyMovement` makes. The later calls of the same lookahead find their tracked states
+   (`GetEquilibriumMetrics`, 67% inclusive, about 33 frames), plus the rewinds
+   `ApplyMovement` makes. The later calls of the same lookahead find their metrics
    cached, so the cost is one evaluation per script; only fewer or cheaper evaluation frames
    change it (ROADMAP 4.3, `PyramidUpdate` as the stand-in).
-10. **The tracker's status object is the heap**: `TiltTargetShotMetrics::CustomScriptStatus`
-    held thirteen `std::vector`s for three-element arrays, constructed per tracked frame
-    and copied whole wherever a `GetTrackedState` result was taken by value: 7.0% of the CPU
+10. **The metric script's status object is the heap**: `TiltTargetShotMetrics::CustomScriptStatus`
+    held thirteen `std::vector`s for three-element arrays, constructed per recorded frame
+    and copied whole wherever a `GetMetrics` result was taken by value: 7.0% of the CPU
     in the allocator alone (11.1% is heap in total), and most of the 8.9% in `std::vector`
     code. Fixed the same day in the stage scripts: the per-axis values are `std::array`s
-    in the tilt-target, osc-final and DR trackers and their solutions, and the tilt-target
-    tracker reads its previous states by reference (performance-changelog.md).
+    in the tilt-target, osc-final and DR metric scripts and their solutions, and the tilt-target
+    metric script reads its previous states by reference (performance-changelog.md).
 11. **`resource->addr()` per call**: 1.5%, and `LdrGetProcedureAddressForCaller` takes the
     loader lock, so 16 threads contend on it (`RtlEnterCriticalSection`, `RtlBackoff`):
     5.6 us per call at 16 threads against 61 ns alone. Fixed the same day: `LibSm64::addr`

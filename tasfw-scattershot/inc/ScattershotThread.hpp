@@ -12,16 +12,16 @@ concept HasCustomMoves = requires { typename T::CustomMoves; }
     && std::is_enum_v<typename T::CustomMoves>;
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker = DefaultStateTracker<TResource>,
+    std::derived_from<Script<TResource>> TMetricScript = DefaultMetricScript<TResource>,
     class TOutputState = DefaultState>
-class ScattershotThread : public TopLevelScript<TResource, TStateTracker>
+class ScattershotThread : public TopLevelScript<TResource, TMetricScript>
 {
 public:
-    using TopLevelScript<TResource, TStateTracker>::MainConfig;
+    using TopLevelScript<TResource, TMetricScript>::MainConfig;
 
-    static ScattershotBuilder<TState, TResource, TStateTracker, TOutputState> ConfigureScattershot(const Configuration& config)
+    static ScattershotBuilder<TState, TResource, TMetricScript, TOutputState> ConfigureScattershot(const Configuration& config)
     {
-        return ScattershotBuilder<TState, TResource, TStateTracker, TOutputState>(config, nullptr);
+        return ScattershotBuilder<TState, TResource, TMetricScript, TOutputState>(config, nullptr);
     }
 
     template <typename F>
@@ -36,7 +36,7 @@ public:
     }
 
 protected:
-    //friend class Scattershot<TState, TResource, TStateTracker, TOutputState>;
+    //friend class Scattershot<TState, TResource, TMetricScript, TOutputState>;
 
     // Using directives needed for MSVC >:(
     using Script<TResource>::LongLoad;
@@ -45,7 +45,7 @@ protected:
 
     const Configuration& config;
 
-    ScattershotThread(Scattershot<TState, TResource, TStateTracker, TOutputState>& scattershot);
+    ScattershotThread(Scattershot<TState, TResource, TMetricScript, TOutputState>& scattershot);
 
     // What a scattershot script implements: its movement options and a move, its state bin, its
     // validation and fitness, and what a solution carries; the CSV hooks have defaults.
@@ -110,7 +110,7 @@ protected:
     virtual bool assertion();
 
 private:
-    Scattershot<TState, TResource, TStateTracker, TOutputState>& scattershot;
+    Scattershot<TState, TResource, TMetricScript, TOutputState>& scattershot;
     int Id;
     uint64_t QueueCalls = 0; // tickets taken so far (deterministic mode)
     uint64_t RngHash = 0;

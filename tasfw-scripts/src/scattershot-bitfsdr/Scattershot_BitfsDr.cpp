@@ -28,14 +28,14 @@ void Scattershot_BitfsDr::SelectMovementOptions()
             {BasicMoves::RANDOM_BUTTONS, 10}
         });
 
-    auto state = GetTrackedState(GetCurrentFrame());
+    auto state = GetMetrics(GetCurrentFrame());
     switch (state.phase)
     {
-        case StateTracker_BitfsDr::Phase::INITIAL:
+        case BitfsDrMetrics::Phase::INITIAL:
             AddMovementOption(CustomMoves::NO_SCRIPT);
             break;
 
-        case StateTracker_BitfsDr::Phase::RUN_DOWNHILL:
+        case BitfsDrMetrics::Phase::RUN_DOWNHILL:
             AddRandomMovementOption(
                 {
                     {CustomMoves::NO_SCRIPT, 0},
@@ -44,7 +44,7 @@ void Scattershot_BitfsDr::SelectMovementOptions()
                 });
             break;
 
-        case StateTracker_BitfsDr::Phase::RUN_DOWNHILL_PRE_CROSSING:
+        case BitfsDrMetrics::Phase::RUN_DOWNHILL_PRE_CROSSING:
             AddRandomMovementOption(
                 {
                     {CustomMoves::RUN_DOWNHILL_MIN, 1},
@@ -52,9 +52,9 @@ void Scattershot_BitfsDr::SelectMovementOptions()
                 });
             break;
 
-        case StateTracker_BitfsDr::Phase::TURN_UPHILL:
+        case BitfsDrMetrics::Phase::TURN_UPHILL:
         {
-            auto prevState = GetTrackedState(GetCurrentFrame() - 1);
+            auto prevState = GetMetrics(GetCurrentFrame() - 1);
             bool avoidDoubleTurnaround = prevState.marioAction == ACT_FINISH_TURNING_AROUND && state.marioAction == ACT_WALKING;
 
             AddRandomMovementOption(
@@ -68,15 +68,15 @@ void Scattershot_BitfsDr::SelectMovementOptions()
             break;
         }
 
-        case StateTracker_BitfsDr::Phase::TURN_AROUND:
+        case BitfsDrMetrics::Phase::TURN_AROUND:
             AddMovementOption(CustomMoves::TURN_AROUND);
             break;
 
-        case StateTracker_BitfsDr::Phase::ATTEMPT_DR:
+        case BitfsDrMetrics::Phase::ATTEMPT_DR:
             AddMovementOption(CustomMoves::NO_SCRIPT);
             break;
 
-        case StateTracker_BitfsDr::Phase::QUICKTURN:
+        case BitfsDrMetrics::Phase::QUICKTURN:
             AddMovementOption(CustomMoves::QUICKTURN);
             break;
 
@@ -89,7 +89,7 @@ bool Scattershot_BitfsDr::ApplyMovement()
 {
     MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
     Camera* camera = *(Camera**)(ReadState("gCamera"));
-    auto state = GetTrackedState(GetCurrentFrame());
+    auto state = GetMetrics(GetCurrentFrame());
 
     // Scripts
     if (!CheckMovementOptions(CustomMoves::NO_SCRIPT))
@@ -116,9 +116,9 @@ bool Scattershot_BitfsDr::ApplyMovement()
             return true;
         else if (CheckMovementOptions(CustomMoves::TURN_UPHILL))
         {
-            //auto state = GetTrackedState(GetCurrentFrame());
+            //auto state = GetMetrics(GetCurrentFrame());
 
-            if (state.phase == StateTracker_BitfsDr::Phase::TURN_UPHILL && (GetTempRng() % 4) == 0)
+            if (state.phase == BitfsDrMetrics::Phase::TURN_UPHILL && (GetTempRng() % 4) == 0)
             {
                 int64_t intendedYaw = marioState->faceAngle[1] + ((GetTempRng() % 2048) - 1024);
                 auto stick = Inputs::GetClosestInputByYawHau(int16_t(intendedYaw), 32, camera->yaw);
@@ -168,7 +168,7 @@ BinaryStateBin<16> Scattershot_BitfsDr::GetStateBin()
 {
     MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
 
-    auto trackedState = GetTrackedState(GetCurrentFrame());
+    auto metrics = GetMetrics(GetCurrentFrame());
 
     int actionValue;
     switch (marioState->action)
@@ -189,15 +189,15 @@ BinaryStateBin<16> Scattershot_BitfsDr::GetStateBin()
     }
 
     int phaseValue;
-    switch (trackedState.phase)
+    switch (metrics.phase)
     {
-        case StateTracker_BitfsDr::Phase::INITIAL: phaseValue = 0; break;
-        case StateTracker_BitfsDr::Phase::ATTEMPT_DR: phaseValue = 1; break;
-        case StateTracker_BitfsDr::Phase::QUICKTURN: phaseValue = 2; break;
-        case StateTracker_BitfsDr::Phase::RUN_DOWNHILL: phaseValue = 3; break;
-        case StateTracker_BitfsDr::Phase::TURN_AROUND: phaseValue = 4; break;
-        case StateTracker_BitfsDr::Phase::TURN_UPHILL: phaseValue = 5; break;
-        case StateTracker_BitfsDr::Phase::RUN_DOWNHILL_PRE_CROSSING: phaseValue = 6; break;
+        case BitfsDrMetrics::Phase::INITIAL: phaseValue = 0; break;
+        case BitfsDrMetrics::Phase::ATTEMPT_DR: phaseValue = 1; break;
+        case BitfsDrMetrics::Phase::QUICKTURN: phaseValue = 2; break;
+        case BitfsDrMetrics::Phase::RUN_DOWNHILL: phaseValue = 3; break;
+        case BitfsDrMetrics::Phase::TURN_AROUND: phaseValue = 4; break;
+        case BitfsDrMetrics::Phase::TURN_UPHILL: phaseValue = 5; break;
+        case BitfsDrMetrics::Phase::RUN_DOWNHILL_PRE_CROSSING: phaseValue = 6; break;
         default: phaseValue = 7;
     }
         
@@ -212,20 +212,20 @@ BinaryStateBin<16> Scattershot_BitfsDr::GetStateBin()
     uint8_t bitCursor = 0;
     BinaryStateBin<16> state;
 
-    if (trackedState.initialized && trackedState.reachedNormRegime && trackedState.phase > StateTracker_BitfsDr::Phase::INITIAL)
+    if (metrics.initialized && metrics.reachedNormRegime && metrics.phase > BitfsDrMetrics::Phase::INITIAL)
     {
         state.AddValueBits(bitCursor, 2, 0);
         state.AddValueBits(bitCursor, 4, actionValue);
         state.AddValueBits(bitCursor, 3, phaseValue);
-        state.AddValueBits(bitCursor, 4, std::clamp(trackedState.currentCrossing, 0, 15));
+        state.AddValueBits(bitCursor, 4, std::clamp(metrics.currentCrossing, 0, 15));
         state.AddRegionBitsByRegionSize(bitCursor, 10, xPosValue, xMin, xMax, 5.0f);
         state.AddRegionBitsByRegionSize(bitCursor, 10, zPosValue, zMin, zMax, 5.0f);
         //state.AddValueBits(bitCursor, 13, std::abs(marioState->faceAngle[1]) >> 4);
         state.AddRegionBitsByNRegions(bitCursor, 7, int(marioState->faceAngle[1]), -32768, 32767, 32);
 
-        if (trackedState.currentCrossing > 0)
+        if (metrics.currentCrossing > 0)
         {
-            if (!_normalSpecsDto.onlyMinMajor && trackedState.currentOscillation >= _targetOscillation)
+            if (!_normalSpecsDto.onlyMinMajor && metrics.currentOscillation >= _targetOscillation)
             {
                 state.AddValueBits(bitCursor, 1, 1);
                 unsigned int minimumBitsMajor = static_cast<unsigned int>(std::log2(_normalSpecsDto.regionsMajor)) + 1;
@@ -233,15 +233,15 @@ BinaryStateBin<16> Scattershot_BitfsDr::GetStateBin()
 
                 float nMajor = 0;
                 float nMinor = 0;
-                if (std::fabs(trackedState.crossingData.rbegin()->nZ) >= std::fabs(trackedState.crossingData.rbegin()->nX))
+                if (std::fabs(metrics.crossingData.rbegin()->nZ) >= std::fabs(metrics.crossingData.rbegin()->nX))
                 {
-                    nMajor = std::clamp(std::fabs(trackedState.crossingData.rbegin()->nZ), _normalSpecsDto.minMajor, _normalSpecsDto.maxMajor);
-                    nMinor = std::clamp(std::fabs(trackedState.crossingData.rbegin()->nX), _normalSpecsDto.minMinor, _normalSpecsDto.maxMinor);
+                    nMajor = std::clamp(std::fabs(metrics.crossingData.rbegin()->nZ), _normalSpecsDto.minMajor, _normalSpecsDto.maxMajor);
+                    nMinor = std::clamp(std::fabs(metrics.crossingData.rbegin()->nX), _normalSpecsDto.minMinor, _normalSpecsDto.maxMinor);
                 }
                 else
                 {
-                    nMajor = std::clamp(std::fabs(trackedState.crossingData.rbegin()->nX), _normalSpecsDto.minMajor, _normalSpecsDto.maxMajor);
-                    nMinor = std::clamp(std::fabs(trackedState.crossingData.rbegin()->nZ), _normalSpecsDto.minMinor, _normalSpecsDto.maxMinor);
+                    nMajor = std::clamp(std::fabs(metrics.crossingData.rbegin()->nX), _normalSpecsDto.minMajor, _normalSpecsDto.maxMajor);
+                    nMinor = std::clamp(std::fabs(metrics.crossingData.rbegin()->nZ), _normalSpecsDto.minMinor, _normalSpecsDto.maxMinor);
                 }
 
                 state.AddRegionBitsByNRegions(bitCursor, minimumBitsMajor, nMajor, _normalSpecsDto.minMajor, _normalSpecsDto.maxMajor, uint64_t(_normalSpecsDto.regionsMajor));
@@ -250,12 +250,12 @@ BinaryStateBin<16> Scattershot_BitfsDr::GetStateBin()
             else
             {
                 state.AddValueBits(bitCursor, 1, 0);
-                state.AddRegionBitsByRegionSize(bitCursor, 8, trackedState.crossingData.rbegin()->nZ, -0.7f, 0.7f, 0.005f);
-                state.AddRegionBitsByRegionSize(bitCursor, 8, trackedState.crossingData.rbegin()->nX, -0.7f, 0.7f, 0.005f);
+                state.AddRegionBitsByRegionSize(bitCursor, 8, metrics.crossingData.rbegin()->nZ, -0.7f, 0.7f, 0.005f);
+                state.AddRegionBitsByRegionSize(bitCursor, 8, metrics.crossingData.rbegin()->nX, -0.7f, 0.7f, 0.005f);
             }
 
-            int framesSinceCrossing = std::clamp(int(GetCurrentFrame() - trackedState.crossingData.rbegin()->frame), 0, 63);
-            if (trackedState.phase == StateTracker_BitfsDr::Phase::RUN_DOWNHILL_PRE_CROSSING)
+            int framesSinceCrossing = std::clamp(int(GetCurrentFrame() - metrics.crossingData.rbegin()->frame), 0, 63);
+            if (metrics.phase == BitfsDrMetrics::Phase::RUN_DOWNHILL_PRE_CROSSING)
                 state.AddValueBits(bitCursor, 6, framesSinceCrossing);
         }
     }
@@ -264,8 +264,8 @@ BinaryStateBin<16> Scattershot_BitfsDr::GetStateBin()
         state.AddValueBits(bitCursor, 2, 1);
         state.AddValueBits(bitCursor, 4, actionValue);
         state.AddValueBits(bitCursor, 3, phaseValue);
-        //state.AddRegionBitsByRegionSize(bitCursor, 8, trackedState.pyraNormX, -0.7f, 0.7f, 0.005f);
-        //state.AddRegionBitsByRegionSize(bitCursor, 8, trackedState.pyraNormZ, -0.7f, 0.7f, 0.005f);
+        //state.AddRegionBitsByRegionSize(bitCursor, 8, metrics.pyraNormX, -0.7f, 0.7f, 0.005f);
+        //state.AddRegionBitsByRegionSize(bitCursor, 8, metrics.pyraNormZ, -0.7f, 0.7f, 0.005f);
         state.AddRegionBitsByRegionSize(bitCursor, 8, xPosValue, xMin, xMax, 5.0f);
         state.AddRegionBitsByRegionSize(bitCursor, 8, zPosValue, zMin, zMax, 5.0f);
         state.AddValueBits(bitCursor, 13, std::abs(marioState->faceAngle[1]) >> 13);
@@ -319,8 +319,8 @@ bool Scattershot_BitfsDr::ValidateState()
     // Check custom metrics
     float xNorm = pyramid->oTiltingPyramidNormalX;
     float zNorm = pyramid->oTiltingPyramidNormalZ;
-    auto state = GetTrackedState(GetCurrentFrame());
-    auto lastFrameState = GetTrackedState(GetCurrentFrame() - 1);
+    auto state = GetMetrics(GetCurrentFrame());
+    auto lastFrameState = GetMetrics(GetCurrentFrame() - 1);
 
     //Herd to correct quadrant initially
     //if (!state.reachedNormRegime && marioState->pos[0] >= -2000.0f)
@@ -331,7 +331,7 @@ bool Scattershot_BitfsDr::ValidateState()
     //if (_targetOscillation == 3)
     //    minXzSum += 0.02f;
 
-    if (state.phase != StateTracker_BitfsDr::Phase::INITIAL
+    if (state.phase != BitfsDrMetrics::Phase::INITIAL
         && state.reachedNormRegime
         && fabs(xNorm) + fabs(zNorm) < minXzSum)// - 0.02f)
         return false;
@@ -362,29 +362,29 @@ bool Scattershot_BitfsDr::ValidateState()
 
     // Reject untimely turnarounds
     if (marioState->action == ACT_TURNING_AROUND
-        && state.phase != StateTracker_BitfsDr::Phase::RUN_DOWNHILL_PRE_CROSSING
-        && state.phase != StateTracker_BitfsDr::Phase::TURN_AROUND
-        && state.phase != StateTracker_BitfsDr::Phase::INITIAL)
+        && state.phase != BitfsDrMetrics::Phase::RUN_DOWNHILL_PRE_CROSSING
+        && state.phase != BitfsDrMetrics::Phase::TURN_AROUND
+        && state.phase != BitfsDrMetrics::Phase::INITIAL)
         return false;
 
     //If outside of norm regime, force norm to increase
-    if (state.phase != StateTracker_BitfsDr::Phase::INITIAL &&
+    if (state.phase != BitfsDrMetrics::Phase::INITIAL &&
         !state.reachedNormRegime
         && state.xzSumStartedIncreasing
         && state.xzSum <= lastFrameState.xzSum - 0.f)
         return false;
 
-    if (state.phase == StateTracker_BitfsDr::Phase::TURN_UPHILL && marioState->forwardVel <= 16.0f)
+    if (state.phase == BitfsDrMetrics::Phase::TURN_UPHILL && marioState->forwardVel <= 16.0f)
         return false;
 
     // Ensure we gain speed each crossing. Check both directions separately to account for axis asymmetry
-    if (!StateTracker_BitfsDr::ValidateCrossingData(state, _normalSpecsDto.minMajor))
+    if (!BitfsDrMetrics::ValidateCrossingData(state, _normalSpecsDto.minMajor))
         return false;
 
     // Conserve ARE
     if (GetCurrentFrame() - state.initialFrame >= 2)
     {
-        auto initialState = GetTrackedState(state.initialFrame + 1);
+        auto initialState = GetMetrics(state.initialFrame + 1);
         if (state.adjustedRemainderError[0] != initialState.adjustedRemainderError[0])
             return false;
 
@@ -401,7 +401,7 @@ bool Scattershot_BitfsDr::ValidateState()
             && std::abs(state.incrementFrames[0]) % 2 != std::abs(state.incrementFrames[2]) % 2)
             return false;
 
-        //if (state.phase > StateTracker_BitfsDr::Phase::INITIAL
+        //if (state.phase > BitfsDrMetrics::Phase::INITIAL
         //    && std::abs(state.incrementFrames[0]) + std::abs(state.incrementFrames[2])
         //        > std::abs(lastFrameState.incrementFrames[0]) + std::abs(lastFrameState.incrementFrames[2]))
         //    return false;
@@ -414,27 +414,27 @@ float Scattershot_BitfsDr::GetStateFitness()
 {
     MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
 
-    auto state = GetTrackedState(GetCurrentFrame());
+    auto state = GetMetrics(GetCurrentFrame());
     if (state.initialized)
     {
         switch (state.phase)
         {
-        case StateTracker_BitfsDr::Phase::INITIAL:
+        case BitfsDrMetrics::Phase::INITIAL:
             //return state.xzSum;
             return -float(GetCurrentFrame());
             //return -std::abs(state.incrementFrames[0] - state.incrementFrames[2]);
             //return marioState->forwardVel;
 
-        case StateTracker_BitfsDr::Phase::RUN_DOWNHILL:
+        case BitfsDrMetrics::Phase::RUN_DOWNHILL:
             return marioState->forwardVel;
 
-        case StateTracker_BitfsDr::Phase::RUN_DOWNHILL_PRE_CROSSING:
+        case BitfsDrMetrics::Phase::RUN_DOWNHILL_PRE_CROSSING:
             if (marioState->action == ACT_TURNING_AROUND)
                 return 0;
             else
                 return marioState->forwardVel;
 
-        case StateTracker_BitfsDr::Phase::TURN_UPHILL:
+        case BitfsDrMetrics::Phase::TURN_UPHILL:
         default:
             if (state.crossingData.empty())
                 return -float(GetCurrentFrame());
@@ -467,18 +467,18 @@ std::string Scattershot_BitfsDr::GetCsvRow()
     Object* objectPool = (Object*)(ReadState("gObjectPool"));
     Object* pyramid = &objectPool[84];
 
-    auto state = GetTrackedState(GetCurrentFrame());
+    auto state = GetMetrics(GetCurrentFrame());
 
     int phaseValue;
     switch (state.phase)
     {
-    case StateTracker_BitfsDr::Phase::INITIAL: phaseValue = 0; break;
-    case StateTracker_BitfsDr::Phase::ATTEMPT_DR: phaseValue = 1; break;
-    case StateTracker_BitfsDr::Phase::QUICKTURN: phaseValue = 2; break;
-    case StateTracker_BitfsDr::Phase::RUN_DOWNHILL: phaseValue = 3; break;
-    case StateTracker_BitfsDr::Phase::TURN_AROUND: phaseValue = 4; break;
-    case StateTracker_BitfsDr::Phase::TURN_UPHILL: phaseValue = 5; break;
-    case StateTracker_BitfsDr::Phase::RUN_DOWNHILL_PRE_CROSSING: phaseValue = 6; break;
+    case BitfsDrMetrics::Phase::INITIAL: phaseValue = 0; break;
+    case BitfsDrMetrics::Phase::ATTEMPT_DR: phaseValue = 1; break;
+    case BitfsDrMetrics::Phase::QUICKTURN: phaseValue = 2; break;
+    case BitfsDrMetrics::Phase::RUN_DOWNHILL: phaseValue = 3; break;
+    case BitfsDrMetrics::Phase::TURN_AROUND: phaseValue = 4; break;
+    case BitfsDrMetrics::Phase::TURN_UPHILL: phaseValue = 5; break;
+    case BitfsDrMetrics::Phase::RUN_DOWNHILL_PRE_CROSSING: phaseValue = 6; break;
     default: phaseValue = 7;
     }
 
@@ -502,19 +502,19 @@ std::string Scattershot_BitfsDr::GetCsvRow()
 
 bool Scattershot_BitfsDr::IsSolution()
 {
-    const auto& state = GetTrackedState(GetCurrentFrame());
+    const auto& state = GetMetrics(GetCurrentFrame());
     if (!state.initialized)
         return false;
 
     if (_targetOscillation == 0)
-        return state.phase > StateTracker_BitfsDr::Phase::INITIAL;
+        return state.phase > BitfsDrMetrics::Phase::INITIAL;
 
     return _targetOscillation > 0 && state.currentOscillation >= _targetOscillation;
 }
 
 Scattershot_BitfsDr_Solution Scattershot_BitfsDr::GetSolutionState()
 {
-    const auto& state = GetTrackedState(GetCurrentFrame());
+    const auto& state = GetMetrics(GetCurrentFrame());
 
     auto solution = Scattershot_BitfsDr_Solution();
     solution.fSpd = state.fSpd;
@@ -622,12 +622,12 @@ bool Scattershot_BitfsDr::TurnAroundThenRunDownhill()
             // Run downhill until past equilibrium point
             for (int i = 0; i < 30; i++)
             {
-                auto state = GetTrackedState(GetCurrentFrame());
+                auto state = GetMetrics(GetCurrentFrame());
 
                 if (!RunDownhill_1f())
                     return true;
 
-                auto nextState = GetTrackedState(GetCurrentFrame());
+                auto nextState = GetMetrics(GetCurrentFrame());
                 if (nextState.currentCrossing > state.currentCrossing)
                     break;
             }
@@ -650,7 +650,7 @@ bool Scattershot_BitfsDr::TurnAround()
 
             for (int i = 0; i < 30; i++)
             {
-                auto state = GetTrackedState(GetCurrentFrame());
+                auto state = GetMetrics(GetCurrentFrame());
 
                 // Turn 2048 towrds uphill
                 auto m64 = M64();
@@ -688,7 +688,7 @@ bool Scattershot_BitfsDr::RunDownhill_1f(bool min)
             if (marioState->action != ACT_TURNING_AROUND && marioState->action != ACT_FINISH_TURNING_AROUND && marioState->action != ACT_WALKING)
                 return true;
 
-            auto state = GetTrackedState(GetCurrentFrame());
+            auto state = GetMetrics(GetCurrentFrame());
 
             auto m64 = M64();
             auto status = TopLevelScriptBuilder<BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>::Build(m64)

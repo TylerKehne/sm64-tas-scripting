@@ -59,7 +59,7 @@ documented-but-unsupported features before. Rules:
 - Treat Clang-only warnings as signal; on first contact Clang pointed at two real bugs.
 
 Design principle: **as close to zero-cost abstractions as we can get.** The framework is
-templates and concepts on purpose, so that scripts, resources and state trackers resolve at
+templates and concepts on purpose, so that scripts, resources and metric scripts resolve at
 compile time and `if constexpr` removes what is unused. In anything executed per frame,
 prefer static dispatch over virtual calls, `std::function`, `dynamic_cast`, string-keyed
 lookups or heap allocation. An abstraction that costs at runtime in a hot path has to earn
@@ -243,8 +243,8 @@ its place with numbers, and "it is cleaner" is not a number.
   inputs, saves and loads, state; then friends, data, and the internals grouped by concern,
   a one-line comment naming each group; the `.t.hpp` defines in that order.
 - A script is `class X : public Script<LibSm64>` with a nested `CustomScriptStatus` and the
-  three lifecycle methods. One that reads tracked state names its tracker once,
-  `using StateTracker = T;`, and calls `GetTrackedState(frame)`; a tracker and a root name
+  three lifecycle methods. One that reads metrics names its metric script once,
+  `using MetricScript = T;`, and calls `GetMetrics(frame)`; a metric script and a root name
   nothing. Child scripts are run with `Execute<X>` (revert), `Modify<X>`
   (keep diff if asserted) or `Test<X>` (revert and drop the diff from the status).
 - Ad-hoc lambdas use `ExecuteAdhoc` / `ModifyAdhoc` / `TestAdhoc` with the same semantics.

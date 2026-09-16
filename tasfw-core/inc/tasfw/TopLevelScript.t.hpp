@@ -3,14 +3,14 @@
 #error "TopLevelScript.t.hpp should only be included by TopLevelScript.hpp"
 #else
 
-template <derived_from_specialization_of<Resource> TResource, std::derived_from<Script<TResource>> TStateTracker>
-M64Metadata TopLevelScript<TResource, TStateTracker>::GetM64Metadata() const
+template <derived_from_specialization_of<Resource> TResource, std::derived_from<Script<TResource>> TMetricScript>
+M64Metadata TopLevelScript<TResource, TMetricScript>::GetM64Metadata() const
 {
 	return _m64->metadata;
 }
 
-template <derived_from_specialization_of<Resource> TResource, std::derived_from<Script<TResource>> TStateTracker>
-void TopLevelScript<TResource, TStateTracker>::GetInputsMetadata(int64_t frame, InputsMetadata<TResource>& metadata)
+template <derived_from_specialization_of<Resource> TResource, std::derived_from<Script<TResource>> TMetricScript>
+void TopLevelScript<TResource, TMetricScript>::GetInputsMetadata(int64_t frame, InputsMetadata<TResource>& metadata)
 {
 	//State owner determines what frame counter needs to be incremented
 	int64_t stateOwnerAdhocLevel = -1;
@@ -88,97 +88,97 @@ void TopLevelScript<TResource, TStateTracker>::GetInputsMetadata(int64_t frame, 
 	metadata = InputsMetadata<TResource>(Inputs(0, 0, 0), frame, this, stateOwnerAdhocLevel, InputsMetadata<TResource>::InputsSource::DEFAULT);
 }
 
-template <derived_from_specialization_of<Resource> TResource, std::derived_from<Script<TResource>> TStateTracker>
-void TopLevelScript<TResource, TStateTracker>::TrackState(Script<TResource>* currentScript, const InputsMetadata<TResource>& inputsMetadata)
+template <derived_from_specialization_of<Resource> TResource, std::derived_from<Script<TResource>> TMetricScript>
+void TopLevelScript<TResource, TMetricScript>::RecordMetrics(Script<TResource>* currentScript, const InputsMetadata<TResource>& inputsMetadata)
 {
-	if constexpr (std::is_same<TStateTracker, DefaultStateTracker<TResource>>::value)
+	if constexpr (std::is_same<TMetricScript, DefaultMetricScript<TResource>>::value)
 		return;
 
-	GetTrackedStateInternal(currentScript, inputsMetadata);
+	GetMetricsInternal(currentScript, inputsMetadata);
 }
 
-// Tracked states live in trackedStates[owner][adhocLevel][frame]. Entries are created on
+// Metrics live in metrics[owner][adhocLevel][frame]. Entries are created on
 // first insert; the read-only paths below use find() so that a script which never tracks
-// anything (a tracker itself, a validation sandbox) never gets an entry.
+// anything (a metric script itself, a validation sandbox) never gets an entry.
 
-template <derived_from_specialization_of<Resource> TResource, std::derived_from<Script<TResource>> TStateTracker>
-bool TopLevelScript<TResource, TStateTracker>::TrackedStateExistsInternal(Script<TResource>* /*currentScript*/, const InputsMetadata<TResource>& inputsMetadata)
+template <derived_from_specialization_of<Resource> TResource, std::derived_from<Script<TResource>> TMetricScript>
+bool TopLevelScript<TResource, TMetricScript>::MetricsExistInternal(Script<TResource>* /*currentScript*/, const InputsMetadata<TResource>& inputsMetadata)
 {
-	auto owner = trackedStates.find(inputsMetadata.stateOwner);
-	if (owner == trackedStates.end() || !owner->second.contains(inputsMetadata.stateOwnerAdhocLevel))
+	auto owner = metrics.find(inputsMetadata.stateOwner);
+	if (owner == metrics.end() || !owner->second.contains(inputsMetadata.stateOwnerAdhocLevel))
 		return false;
 
 	return owner->second[inputsMetadata.stateOwnerAdhocLevel].contains(inputsMetadata.frame);
 }
 
-template <derived_from_specialization_of<Resource> TResource, std::derived_from<Script<TResource>> TStateTracker>
-void TopLevelScript<TResource, TStateTracker>::PopTrackedStatesContainer(Script<TResource>* currentScript, int64_t adhocLevel)
+template <derived_from_specialization_of<Resource> TResource, std::derived_from<Script<TResource>> TMetricScript>
+void TopLevelScript<TResource, TMetricScript>::PopMetricsContainer(Script<TResource>* currentScript, int64_t adhocLevel)
 {
-	if constexpr (std::is_same<TStateTracker, DefaultStateTracker<TResource>>::value)
+	if constexpr (std::is_same<TMetricScript, DefaultMetricScript<TResource>>::value)
 		return;
 
-	auto owner = trackedStates.find(currentScript);
-	if (owner == trackedStates.end())
+	auto owner = metrics.find(currentScript);
+	if (owner == metrics.end())
 		return;
 
 	if (adhocLevel == 0)
-		trackedStates.erase(owner);
+		metrics.erase(owner);
 	else
 		owner->second.erase(adhocLevel);
 }
 
-template <derived_from_specialization_of<Resource> TResource, std::derived_from<Script<TResource>> TStateTracker>
-void TopLevelScript<TResource, TStateTracker>::MoveSyncedTrackedStates(Script<TResource>* sourceScript, int64_t sourceAdhocLevel, Script<TResource>* destScript, int64_t destAdhocLevel)
+template <derived_from_specialization_of<Resource> TResource, std::derived_from<Script<TResource>> TMetricScript>
+void TopLevelScript<TResource, TMetricScript>::MoveSyncedMetrics(Script<TResource>* sourceScript, int64_t sourceAdhocLevel, Script<TResource>* destScript, int64_t destAdhocLevel)
 {
-	if constexpr (std::is_same<TStateTracker, DefaultStateTracker<TResource>>::value)
+	if constexpr (std::is_same<TMetricScript, DefaultMetricScript<TResource>>::value)
 		return;
 
-	auto sourceOwner = trackedStates.find(sourceScript);
-	if (sourceOwner != trackedStates.end() && sourceOwner->second.contains(sourceAdhocLevel))
+	auto sourceOwner = metrics.find(sourceScript);
+	if (sourceOwner != metrics.end() && sourceOwner->second.contains(sourceAdhocLevel))
 	{
 		// Take the reference before touching the destination: inserting a new owner may
 		// rehash, which invalidates iterators but not references to elements.
 		auto& source = sourceOwner->second[sourceAdhocLevel];
 		if (!source.empty())
 		{
-			auto& dest = trackedStates[destScript][destAdhocLevel];
+			auto& dest = metrics[destScript][destAdhocLevel];
 			std::move(source.begin(), source.end(), std::insert_iterator(dest, dest.end()));
 		}
 	}
 
 	// If source was an ad-hoc script, pop the save bank
-	auto destOwner = trackedStates.find(destScript);
-	if (destOwner != trackedStates.end() && destOwner->second.contains(destAdhocLevel + 1))
+	auto destOwner = metrics.find(destScript);
+	if (destOwner != metrics.end() && destOwner->second.contains(destAdhocLevel + 1))
 		destOwner->second.erase(destAdhocLevel + 1);
 }
 
-template <derived_from_specialization_of<Resource> TResource, std::derived_from<Script<TResource>> TStateTracker>
-void TopLevelScript<TResource, TStateTracker>::EraseTrackedStates(Script<TResource>* currentScript, int64_t adhocLevel, int64_t firstFrame)
+template <derived_from_specialization_of<Resource> TResource, std::derived_from<Script<TResource>> TMetricScript>
+void TopLevelScript<TResource, TMetricScript>::EraseMetrics(Script<TResource>* currentScript, int64_t adhocLevel, int64_t firstFrame)
 {
-	if constexpr (std::is_same<TStateTracker, DefaultStateTracker<TResource>>::value)
+	if constexpr (std::is_same<TMetricScript, DefaultMetricScript<TResource>>::value)
 		return;
 
-	auto owner = trackedStates.find(currentScript);
-	if (owner == trackedStates.end() || !owner->second.contains(adhocLevel))
+	auto owner = metrics.find(currentScript);
+	if (owner == metrics.end() || !owner->second.contains(adhocLevel))
 		return;
 
 	auto& states = owner->second[adhocLevel];
 	states.erase(states.upper_bound(firstFrame), states.end());
 }
 
-template <derived_from_specialization_of<Resource> TResource, std::derived_from<Script<TResource>> TStateTracker>
-const typename TStateTracker::CustomScriptStatus& TopLevelScript<TResource, TStateTracker>
-	::GetTrackedStateInternal(Script<TResource>* currentScript, const InputsMetadata<TResource>& inputsMetadata)
+template <derived_from_specialization_of<Resource> TResource, std::derived_from<Script<TResource>> TMetricScript>
+const typename TMetricScript::CustomScriptStatus& TopLevelScript<TResource, TMetricScript>
+	::GetMetricsInternal(Script<TResource>* currentScript, const InputsMetadata<TResource>& inputsMetadata)
 {
-	if constexpr (std::is_same<TStateTracker, DefaultStateTracker<TResource>>::value)
+	if constexpr (std::is_same<TMetricScript, DefaultMetricScript<TResource>>::value)
 	{
-		static const typename TStateTracker::CustomScriptStatus none {};
+		static const typename TMetricScript::CustomScriptStatus none {};
 		return none;
 	}
 	else
 	{
 		{
-			auto& states = trackedStates[inputsMetadata.stateOwner][inputsMetadata.stateOwnerAdhocLevel];
+			auto& states = metrics[inputsMetadata.stateOwner][inputsMetadata.stateOwnerAdhocLevel];
 			auto found = states.find(inputsMetadata.frame);
 			if (found != states.end())
 				return found->second;
@@ -186,15 +186,15 @@ const typename TStateTracker::CustomScriptStatus& TopLevelScript<TResource, TSta
 
 		// `template` is required: `currentScript` has a dependent type, so without it GCC and
 		// Clang parse `<` as less-than. MSVC accepts the omission (docs/compilers.md).
-		auto status = currentScript->template ExecuteStateTracker<TStateTracker>(inputsMetadata.frame, stateTrackerFactory);
+		auto status = currentScript->template ExecuteMetricScript<TMetricScript>(inputsMetadata.frame, metricScriptFactory);
 
-		// Looked up again: the tracker may have tracked other frames meanwhile. A state that
+		// Looked up again: the metric script may have recorded other frames meanwhile. A state that
 		// was not asserted is stored as a default so it is not recomputed.
-		auto& state = trackedStates[inputsMetadata.stateOwner][inputsMetadata.stateOwnerAdhocLevel][inputsMetadata.frame];
+		auto& state = metrics[inputsMetadata.stateOwner][inputsMetadata.stateOwnerAdhocLevel][inputsMetadata.frame];
 		if (status.asserted)
-			state = std::move(static_cast<typename TStateTracker::CustomScriptStatus&>(status));
+			state = std::move(static_cast<typename TMetricScript::CustomScriptStatus&>(status));
 		else
-			state = typename TStateTracker::CustomScriptStatus();
+			state = typename TMetricScript::CustomScriptStatus();
 
 		return state;
 	}

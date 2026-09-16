@@ -63,41 +63,41 @@ public:
 };
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
+    std::derived_from<Script<TResource>> TMetricScript,
     class TOutputState>
 class Scattershot;
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
+    std::derived_from<Script<TResource>> TMetricScript,
     class TOutputState>
 class ScattershotThread;
 
 template <class TState,
     derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
+    std::derived_from<Script<TResource>> TMetricScript,
     class TOutputState,
-    typename... TStateTrackerParams>
+    typename... TMetricScriptParams>
 class ScattershotBuilder;
 
 template <class TState,
     derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
+    std::derived_from<Script<TResource>> TMetricScript,
     class TOutputState,
     class TResourceConfig = DefaultResourceConfig,
     typename FResourceConfigGenerator = TResourceConfig(*)(int),
-    typename... TStateTrackerParams>
+    typename... TMetricScriptParams>
 class ScattershotBuilderConfig;
 
 template <class TState,
     derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker,
+    std::derived_from<Script<TResource>> TMetricScript,
     class TOutputState,
     typename FResourceImportGenerator = TResource*(*)(int),
-    typename... TStateTrackerParams>
+    typename... TMetricScriptParams>
 class ScattershotBuilderImport;
 
 template <class TState, derived_from_specialization_of<Resource> TResource,
-    std::derived_from<Script<TResource>> TStateTracker = DefaultStateTracker<TResource>,
+    std::derived_from<Script<TResource>> TMetricScript = DefaultMetricScript<TResource>,
     class TOutputState = DefaultState>
 class Scattershot
 {
@@ -109,50 +109,50 @@ public:
 
     // How a search starts, from a configuration or from imported resources (the builders call
     // these).
-    template <std::derived_from<ScattershotThread<TState, TResource, TStateTracker, TOutputState>> TScattershotThread,
-        class TResourceConfig, typename F, typename... TParams, typename... TStateTrackerParams>
+    template <std::derived_from<ScattershotThread<TState, TResource, TMetricScript, TOutputState>> TScattershotThread,
+        class TResourceConfig, typename F, typename... TParams, typename... TMetricScriptParams>
         requires std::same_as<std::invoke_result_t<F, int>, TResourceConfig>
     static std::vector<ScattershotSolution<TOutputState>> RunConfig(
         const Configuration& configuration, const std::vector<ScattershotSolution<TOutputState>>& inputSolutions, F resourceConfigGenerator,
-        std::shared_ptr<std::tuple<TStateTrackerParams...>> stateTrackerParams, TParams&&... params)
+        std::shared_ptr<std::tuple<TMetricScriptParams...>> metricScriptParams, TParams&&... params)
     {
         return RunBase<TScattershotThread>(configuration, inputSolutions,
-            [&](Scattershot<TState, TResource, TStateTracker, TOutputState>& scattershot, M64& m64, int threadId)
+            [&](Scattershot<TState, TResource, TMetricScript, TOutputState>& scattershot, M64& m64, int threadId)
             {
                 return std::apply(
                     [&]<typename... Ts>(Ts&&... args) -> ScriptStatus<TScattershotThread>
                     {
                         return TopLevelScriptBuilder<TScattershotThread>::Build(m64)
                             .template ConfigureResource<TResourceConfig>(resourceConfigGenerator(threadId)) // `template`: dependent object (docs/compilers.md)
-                            .ConfigureStateTracker(std::forward<Ts>(args)...)
+                            .ConfigureMetricScript(std::forward<Ts>(args)...)
                             .Run(scattershot, std::forward<TParams>(params)...);
-                    }, *stateTrackerParams);
+                    }, *metricScriptParams);
             });
     }
 
-    template <std::derived_from<ScattershotThread<TState, TResource, TStateTracker, TOutputState>> TScattershotThread,
-        typename F, typename... TParams, typename... TStateTrackerParams>
+    template <std::derived_from<ScattershotThread<TState, TResource, TMetricScript, TOutputState>> TScattershotThread,
+        typename F, typename... TParams, typename... TMetricScriptParams>
         requires std::same_as<std::invoke_result_t<F, int>, TResource*>
     static std::vector<ScattershotSolution<TOutputState>> RunImport(
         const Configuration& configuration, const std::vector<ScattershotSolution<TOutputState>>& inputSolutions, F resourceImportGenerator,
-        std::shared_ptr<std::tuple<TStateTrackerParams...>> stateTrackerParams, TParams&&... params)
+        std::shared_ptr<std::tuple<TMetricScriptParams...>> metricScriptParams, TParams&&... params)
     {
         return RunBase<TScattershotThread>(configuration, inputSolutions,
-            [&](Scattershot<TState, TResource, TStateTracker, TOutputState>& scattershot, M64& m64, int threadId)
+            [&](Scattershot<TState, TResource, TMetricScript, TOutputState>& scattershot, M64& m64, int threadId)
             {
                 return std::apply(
                     [&]<typename... Ts>(Ts&&... args) -> ScriptStatus<TScattershotThread>
                     {
                         return TopLevelScriptBuilder<TScattershotThread>::Build(m64)
                             .template ImportResource<TResource>(resourceImportGenerator(threadId)) // `template`: dependent object (docs/compilers.md)
-                            .ConfigureStateTracker(std::forward<Ts>(args)...)
+                            .ConfigureMetricScript(std::forward<Ts>(args)...)
                             .Run(scattershot, std::forward<TParams>(params)...);
-                    }, *stateTrackerParams);
+                    }, *metricScriptParams);
             });
     }
 
 private:
-    friend class ScattershotThread<TState, TResource, TStateTracker, TOutputState>;
+    friend class ScattershotThread<TState, TResource, TMetricScript, TOutputState>;
     friend class PerfAccess; // tasfw-perf benchmarks and tasfw-tests (tasfw/testing/PerfAccess.hpp); see docs/performance.md
 
     // Global State
@@ -186,8 +186,8 @@ private:
     uint64_t ValidationFailures = 0;
 
     // The search: the run, its threads, the block table, the status line and the CSV.
-    template <std::derived_from<ScattershotThread<TState, TResource, TStateTracker, TOutputState>> TScattershotThread, typename F>
-        requires std::same_as<std::invoke_result_t<F, Scattershot<TState, TResource, TStateTracker, TOutputState>&, M64&, int>, ScriptStatus<TScattershotThread>>
+    template <std::derived_from<ScattershotThread<TState, TResource, TMetricScript, TOutputState>> TScattershotThread, typename F>
+        requires std::same_as<std::invoke_result_t<F, Scattershot<TState, TResource, TMetricScript, TOutputState>&, M64&, int>, ScriptStatus<TScattershotThread>>
     static std::vector<ScattershotSolution<TOutputState>> RunBase(const Configuration& configuration, const std::vector<ScattershotSolution<TOutputState>>& inputSolutions, F scriptRunner)
     {
         auto start = std::chrono::high_resolution_clock::now();
