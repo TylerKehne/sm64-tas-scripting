@@ -4,6 +4,18 @@ Every hot-path change records its delta table here, newest first; the policy, th
 how to run it are in [performance.md](performance.md). The first measurements (2026-09-07),
 which everything since is compared against, are at the bottom.
 
+## 2026-09-15: the scattershot's file layout (ROADMAP 3.20)
+
+No functional change, measured because tasfw-scattershot moved: one header per concept out
+of Scattershot.hpp, and one member order for Scattershot and ScattershotThread with their
+.t.hpp files in the header's order. MSVC 19.51, Release, against the reference saved from
+35ebcc8: 0 regressions, every Tier C and D count identical, the Scattershot and
+BinaryStateBin rows within 2.2%, the deterministic Tier D run -0.8% and the throughput run
+-3.3%. The Script family, which the change does not touch, keeps the day's swing
+(`AdvanceFrameWrite_Save` +8.2% against a reference that itself reads above the baseline,
+`GetInputs_Uncached` +7% at depths 4 and 16, `ExecuteAdhoc_Empty` +5%), placement as in
+the runs before it.
+
 ## 2026-09-15: `GetTrackedState(frame)` names no tracker
 
 `Script` gained overloads of `GetTrackedState` and `TrackedStateExists` that take the tracker

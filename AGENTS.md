@@ -72,7 +72,7 @@ its place with numbers, and "it is cleaner" is not a number.
 | `tasfw-core/` | Engine: `Script`, `TopLevelScript`, `Resource`, savestate slots, m64 I/O, input math. Header-heavy templates, one header per concept under `inc/tasfw/`; `<tasfw/Script.hpp>` is a script's one include, it pulls in the root and the builders at its bottom. |
 | `tasfw-core/inc/sm64/` | Hand-copied decomp structs, enums and trig tables. Must match the DLL's x64 layout. |
 | `tasfw-resources/` | `LibSm64` (drives the game DLL) and `PyramidUpdate` (standalone reimplementation of pyramid tilt physics used as a fast stand-in). |
-| `tasfw-scattershot/` | Header-only OpenMP brute-force search (blocks, segments, solutions, CSV export). |
+| `tasfw-scattershot/` | Header-only OpenMP brute-force search (blocks, segments, solutions, CSV export). One header per concept under `inc/`; `<Scattershot.hpp>` is the one include, it pulls in the thread and the builders at its bottom. |
 | `tasfw-scripts/` | Reusable BitFS scripts (pyramid oscillation, downhill angle search, dive-recover attempts), scattershot stages, and the scripts that look at the game rather than play it (`VerifyLayout`, `LevelTransitions`, `MarioTrace`, `SpliceMovie`), which the tools and tests run. |
 | `tasfw-bruteforcers/bitfs-turnaround/` | The only executable (`bitfs-turn.exe`): the BitFS pipeline as config-selected stages (`config.json`, `Stages.cpp`, `PipelineConfig`). `--list`, `--dry-run`, `--stage`. |
 | `tasfw-perf/` | Performance suite (Tier A microbenchmarks on an in-memory mock resource). Release only. |
