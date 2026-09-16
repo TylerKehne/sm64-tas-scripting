@@ -13,10 +13,14 @@
 #include <tasfw/LevelStack.hpp>
 #include <tasfw/Resource.hpp>
 #include <tasfw/Inputs.hpp>
+#include <tasfw/M64.hpp>
 #include <sm64/Types.hpp>
 #include <tasfw/ScriptStatus.hpp>
-#include <tasfw/SharedLib.hpp>
+#include <tasfw/Concepts.hpp>
 #include <tasfw/ScriptCompareHelper.hpp>
+#include <tasfw/SlotHandle.hpp>
+#include <tasfw/ScriptMetadata.hpp>
+#include <tasfw/StateTracker.hpp>
 
 #ifndef SCRIPT_H
 #define SCRIPT_H
@@ -24,123 +28,9 @@
 template <derived_from_specialization_of<Resource> TResource>
 class Script;
 
-template <derived_from_specialization_of<Resource> TResource>
-class DefaultStateTracker;
-
 template <derived_from_specialization_of<Resource> TResource,
 	std::derived_from<Script<TResource>> TStateTracker>
 class TopLevelScript;
-
-template <derived_from_specialization_of<TopLevelScript> TTopLevelScript,
-	class TState,
-	class TResourceConfig,
-	typename... TStateTrackerParams>
-class TopLevelScriptBuilderConfigured;
-
-template <derived_from_specialization_of<TopLevelScript> TTopLevelScript,
-	class TResource,
-	typename... TStateTrackerParams>
-class TopLevelScriptBuilderImported;
-
-template <derived_from_specialization_of<Script> TStateTracker>
-class StateTrackerFactoryBase;
-
-// Identity of a state-tracker type without RTTI: `&StateTrackerTag<T>::value` is one
-// address per T for the whole program. TopLevelScript stores its tracker's tag in the root
-// and GetTrackedState compares against it instead of a dynamic_cast on every lookup.
-template <class T>
-struct StateTrackerTag
-{
-	static constexpr char value = 0;
-};
-
-// Owns one savestate slot: destroying the handle erases the slot. slotId -1 with a resource
-// is the start save, which is never erased.
-template <derived_from_specialization_of<Resource> TResource>
-class SlotHandle
-{
-public:
-	SlotHandle(TResource* resource, int64_t slotId) : resource(resource), slotId(slotId) { }
-
-	// A move transfers ownership: the source forgets its resource, so its destructor
-	// releases nothing. With the defaulted move the source kept the id and erased the slot
-	// the destination had just received, which lost every save a child handed to its
-	// parent on Modify (they were then replayed instead of loaded; see test_script.cpp).
-	SlotHandle(SlotHandle<TResource>&& other) noexcept : resource(other.resource), slotId(other.slotId)
-	{
-		other.resource = nullptr;
-		other.slotId = -1;
-	}
-
-	SlotHandle<TResource>& operator=(SlotHandle<TResource>&& other) noexcept
-	{
-		if (this != &other)
-		{
-			Release();
-			resource = other.resource;
-			slotId = other.slotId;
-			other.resource = nullptr;
-			other.slotId = -1;
-		}
-		return *this;
-	}
-
-	SlotHandle(const SlotHandle<TResource>&) = delete;
-	SlotHandle<TResource>& operator= (const SlotHandle<TResource>&) = delete;
-
-	~SlotHandle() { Release(); }
-
-	bool isValid();
-
-private:
-	friend class Script<TResource>; // reads the id to load the slot
-
-	TResource* resource = nullptr;
-	int64_t slotId = -1;
-
-	void Release();
-};
-
-template <derived_from_specialization_of<Resource> TResource>
-class InputsMetadata
-{
-public:
-	enum class InputsSource : int8_t
-	{
-		DIFF = 0,
-		ORIGINAL = 1,
-		DEFAULT = 2
-	};
-
-	Inputs inputs;
-	int64_t frame = -1;
-	Script<TResource>* stateOwner = nullptr;
-	int64_t stateOwnerAdhocLevel = -1;
-	InputsSource source = InputsSource::DIFF;
-
-	InputsMetadata() = default;
-
-	InputsMetadata(Inputs inputs, int64_t frame, Script<TResource>* stateOwner, int64_t stateOwnerAdhocLevel, InputsSource source = InputsSource::DIFF)
-		: inputs(inputs), frame(frame), stateOwner(stateOwner), stateOwnerAdhocLevel(stateOwnerAdhocLevel), source(source) {}
-};
-
-template <derived_from_specialization_of<Resource> TResource>
-class SaveMetadata
-{
-public:
-	Script<TResource>* script = nullptr; //ancestor script that won't go out of scope
-	int64_t frame = -1;
-	int64_t adhocLevel = -1;
-	bool isStartSave = false;
-
-	SaveMetadata() = default;
-
-	SaveMetadata(Script<TResource>* script, int64_t frame, int64_t adhocLevel, bool isStartSave = false)
-		: script(script), frame(frame), adhocLevel(adhocLevel), isStartSave(isStartSave) { }
-
-	SlotHandle<TResource>* GetSlotHandle();
-	bool IsValid();
-};
 
 /// <summary>
 /// Execute a state-changing operation on the resource. Parameters should correspond
@@ -159,6 +49,14 @@ public:
 	Script& operator= (const Script<TResource>&) = delete;
 
 protected:
+	// The lifecycle, in the order it runs: validation and assertion in a sandbox the framework
+	// reverts, execution the one phase whose input diff can persist (AGENTS.md, hard rule 4).
+	virtual bool validation() = 0;
+	virtual bool execution() = 0;
+	virtual bool assertion() = 0;
+
+	// Child scripts: run one and revert it (Execute), keep its diff if it asserted (Modify), or
+	// revert it and drop the diff from its status (Test).
 	template <derived_from_specialization_of<Script> TScript, typename... Us>
 		requires(std::constructible_from<TScript, Us...>)
 	ScriptStatus<TScript> Execute(Us&&... params)
@@ -233,6 +131,7 @@ protected:
 		return status;
 	}
 
+	// The same three for an ad-hoc lambda.
 	AdhocBaseScriptStatus ExecuteAdhoc(AdhocScript auto adhocScript);
 
 	template <class TAdhocCustomScriptStatus, AdhocCustomStatusScript<TAdhocCustomScriptStatus> F>
@@ -248,401 +147,26 @@ protected:
 	template <class TAdhocCustomScriptStatus, AdhocCustomStatusScript<TAdhocCustomScriptStatus> F>
 	AdhocScriptStatus<TAdhocCustomScriptStatus> TestAdhoc(F&& adhocScript);
 
-	#pragma region Compare Methods
+	// The compare family: run a script or an ad-hoc candidate over parameter tuples and keep the
+	// best by a comparator, with the Modify and Dynamic variants. Its 32 entry points are in
+	// Script.compare.hpp, part of this class body.
+	#include "tasfw/Script.compare.hpp"
 
-	template <derived_from_specialization_of<Script> TScript,
-		class TTupleContainer,
-		typename TTuple = typename TTupleContainer::value_type,
-		ScriptComparator<TScript> F,
-		ScriptTerminator<TScript> G>
-		requires (constructible_from_tuple<TScript, TTuple>)
-	ScriptStatus<TScript> Compare(const TTupleContainer& paramsList, F&& comparator, G&& terminator)
-	{
-		return compareHelper.template Compare<TScript>(paramsList, std::forward<F>(comparator), std::forward<G>(terminator));
-	}
-
-	template <derived_from_specialization_of<Script> TScript,
-		class TTupleContainer,
-		typename TTuple = typename TTupleContainer::value_type,
-		ScriptComparator<TScript> F>
-	requires (constructible_from_tuple<TScript, TTuple>)
-	ScriptStatus<TScript> Compare(const TTupleContainer& paramsList, F&& comparator)
-	{
-		return compareHelper.template Compare<TScript>(paramsList, std::forward<F>(comparator), [](const ScriptStatus<TScript>*) { return false; });
-	}
-
-	template <derived_from_specialization_of<Script> TScript,
-		typename TTuple,
-		ScriptParamsGenerator<TTuple> F,
-		ScriptComparator<TScript> G,
-		ScriptTerminator<TScript> H>
-		requires (constructible_from_tuple<TScript, TTuple>)
-	ScriptStatus<TScript> Compare(F&& paramsGenerator, G&& comparator, H&& terminator)
-	{
-		return compareHelper.template Compare<TScript, TTuple>(std::forward<F>(paramsGenerator), std::forward<G>(comparator), std::forward<H>(terminator));
-	}
-
-	template <derived_from_specialization_of<Script> TScript,
-		typename TTuple,
-		ScriptParamsGenerator<TTuple> F,
-		ScriptComparator<TScript> G>
-		requires (constructible_from_tuple<TScript, TTuple>)
-	ScriptStatus<TScript> Compare(F&& paramsGenerator, G&& comparator)
-	{
-		return compareHelper.template Compare<TScript, TTuple>(std::forward<F>(paramsGenerator), std::forward<G>(comparator), [](const ScriptStatus<TScript>*) { return false; });
-	}
-
-	template <derived_from_specialization_of<Script> TScript,
-		class TTupleContainer,
-		typename TTuple = typename TTupleContainer::value_type,
-		ScriptComparator<TScript> F,
-		ScriptTerminator<TScript> G>
-		requires (constructible_from_tuple<TScript, TTuple>)
-	ScriptStatus<TScript> ModifyCompare(const TTupleContainer& paramsList, F&& comparator, G&& terminator)
-	{
-		return compareHelper.template ModifyCompare<TScript>(paramsList, std::forward<F>(comparator), std::forward<G>(terminator));
-	}
-
-	template <derived_from_specialization_of<Script> TScript,
-		class TTupleContainer,
-		typename TTuple = typename TTupleContainer::value_type,
-		ScriptComparator<TScript> F>
-		requires (constructible_from_tuple<TScript, TTuple>)
-	ScriptStatus<TScript> ModifyCompare(const TTupleContainer& paramsList, F&& comparator)
-	{
-		return compareHelper.template ModifyCompare<TScript>(paramsList, std::forward<F>(comparator), [](const ScriptStatus<TScript>*) { return false; });
-	}
-
-	template <derived_from_specialization_of<Script> TScript,
-		typename TTuple,
-		ScriptParamsGenerator<TTuple> F,
-		ScriptComparator<TScript> G,
-		ScriptTerminator<TScript> H>
-		requires (constructible_from_tuple<TScript, TTuple>)
-	ScriptStatus<TScript> ModifyCompare(F&& paramsGenerator, G&& comparator, H&& terminator)
-	{
-		return compareHelper.template ModifyCompare<TScript, TTuple>(std::forward<F>(paramsGenerator), std::forward<G>(comparator), std::forward<H>(terminator));
-	}
-
-	template <derived_from_specialization_of<Script> TScript,
-		typename TTuple,
-		ScriptParamsGenerator<TTuple> F,
-		ScriptComparator<TScript> G>
-	requires (constructible_from_tuple<TScript, TTuple>)
-	ScriptStatus<TScript> ModifyCompare(F&& paramsGenerator, G&& comparator)
-	{
-		return compareHelper.template ModifyCompare<TScript, TTuple>(std::forward<F>(paramsGenerator), std::forward<G>(comparator), [](const ScriptStatus<TScript>*) { return false; });
-	}
-
-	template <derived_from_specialization_of<Script> TScript,
-		class TTupleContainer,
-		typename TTuple = typename TTupleContainer::value_type,
-		AdhocScript F,
-		ScriptComparator<TScript> G,
-		ScriptTerminator<TScript> H>
-		requires (constructible_from_tuple<TScript, TTuple>)
-	AdhocScriptStatus<Substatus<TScript>> DynamicCompare(const TTupleContainer& paramsList, F&& mutator, G&& comparator, H&& terminator)
-	{
-		return compareHelper.template DynamicCompare<TScript>(paramsList, std::forward<F>(mutator), std::forward<G>(comparator), std::forward<H>(terminator));
-	}
-
-	template <derived_from_specialization_of<Script> TScript,
-		class TTupleContainer,
-		typename TTuple = typename TTupleContainer::value_type,
-		AdhocScript F,
-		ScriptComparator<TScript> G>
-		requires (constructible_from_tuple<TScript, TTuple>)
-	AdhocScriptStatus<Substatus<TScript>> DynamicCompare(const TTupleContainer& paramsList, F&& mutator, G&& comparator)
-	{
-		return compareHelper.template DynamicCompare<TScript>(paramsList, std::forward<F>(mutator), std::forward<G>(comparator), [](const ScriptStatus<TScript>*) { return false; });
-	}
-
-	template <derived_from_specialization_of<Script> TScript,
-		typename TTuple,
-		ScriptParamsGenerator<TTuple> F,
-		AdhocScript G,
-		ScriptComparator<TScript> H,
-		ScriptTerminator<TScript> I>
-		requires (constructible_from_tuple<TScript, TTuple>)
-	AdhocScriptStatus<Substatus<TScript>> DynamicCompare(F&& paramsGenerator, G&& mutator, H&& comparator, I&& terminator)
-	{
-		return compareHelper.template DynamicCompare<TScript, TTuple>(std::forward<F>(paramsGenerator), std::forward<G>(mutator), std::forward<H>(comparator), std::forward<I>(terminator));
-	}
-
-	template <derived_from_specialization_of<Script> TScript,
-		typename TTuple,
-		ScriptParamsGenerator<TTuple> F,
-		AdhocScript G,
-		ScriptComparator<TScript> H>
-		requires (constructible_from_tuple<TScript, TTuple>)
-	AdhocScriptStatus<Substatus<TScript>> DynamicCompare(F&& paramsGenerator, G&& mutator, H&& comparator)
-	{
-		return compareHelper.template DynamicCompare<TScript, TTuple>(std::forward<F>(paramsGenerator), std::forward<G>(mutator), std::forward<H>(comparator), [](const ScriptStatus<TScript>*) { return false; });
-	}
-
-	template <derived_from_specialization_of<Script> TScript,
-		class TTupleContainer,
-		typename TTuple = typename TTupleContainer::value_type,
-		AdhocScript F,
-		ScriptComparator<TScript> G,
-		ScriptTerminator<TScript> H>
-		requires (constructible_from_tuple<TScript, TTuple>)
-	AdhocScriptStatus<Substatus<TScript>> DynamicModifyCompare(const TTupleContainer& paramsList, F&& mutator, G&& comparator, H&& terminator)
-	{
-		return compareHelper.template DynamicModifyCompare<TScript>(paramsList, std::forward<F>(mutator), std::forward<G>(comparator), std::forward<H>(terminator));
-	}
-
-	template <derived_from_specialization_of<Script> TScript,
-		class TTupleContainer,
-		typename TTuple = typename TTupleContainer::value_type,
-		AdhocScript F,
-		ScriptComparator<TScript> G>
-		requires (constructible_from_tuple<TScript, TTuple>)
-	AdhocScriptStatus<Substatus<TScript>> DynamicModifyCompare(const TTupleContainer& paramsList, F&& mutator, G&& comparator)
-	{
-		return compareHelper.template DynamicModifyCompare<TScript>(paramsList, std::forward<F>(mutator), std::forward<G>(comparator), [](const ScriptStatus<TScript>*) { return false; });
-	}
-
-	template <derived_from_specialization_of<Script> TScript,
-		typename TTuple,
-		ScriptParamsGenerator<TTuple> F,
-		AdhocScript G,
-		ScriptComparator<TScript> H,
-		ScriptTerminator<TScript> I>
-		requires (constructible_from_tuple<TScript, TTuple>)
-	AdhocScriptStatus<Substatus<TScript>> DynamicModifyCompare(F&& paramsGenerator, G&& mutator, H&& comparator, I&& terminator)
-	{
-		return compareHelper.template DynamicModifyCompare<TScript, TTuple>(std::forward<F>(paramsGenerator), std::forward<G>(mutator), std::forward<H>(comparator), std::forward<I>(terminator));
-	}
-
-	template <derived_from_specialization_of<Script> TScript,
-		typename TTuple,
-		ScriptParamsGenerator<TTuple> F,
-		AdhocScript G,
-		ScriptComparator<TScript> H>
-		requires (constructible_from_tuple<TScript, TTuple>)
-	AdhocScriptStatus<Substatus<TScript>> DynamicModifyCompare(F&& paramsGenerator, G&& mutator, H&& comparator)
-	{
-		return compareHelper.template DynamicModifyCompare<TScript, TTuple>(std::forward<F>(paramsGenerator), std::forward<G>(mutator), std::forward<H>(comparator), [](const ScriptStatus<TScript>*) { return false; });
-	}
-
-	template <class TCompareStatus,
-		class TTupleContainer,
-		typename TTuple = typename TTupleContainer::value_type,
-		AdhocCompareScript<TCompareStatus, TTuple> F,
-		AdhocScriptComparator<TCompareStatus> G,
-		AdhocScriptTerminator<TCompareStatus> H>
-	AdhocScriptStatus<TCompareStatus> CompareAdhoc(const TTupleContainer& paramsList, F&& adhocScript, G&& comparator, H&& terminator)
-	{
-		return compareHelper.template CompareAdhoc<TCompareStatus>(paramsList, std::forward<F>(adhocScript), std::forward<G>(comparator), std::forward<H>(terminator));
-	}
-
-	template <class TCompareStatus,
-		class TTupleContainer,
-		typename TTuple = typename TTupleContainer::value_type,
-		AdhocCompareScript<TCompareStatus, TTuple> F,
-		AdhocScriptComparator<TCompareStatus> G>
-	AdhocScriptStatus<TCompareStatus> CompareAdhoc(const TTupleContainer& paramsList, F&& adhocScript, G&& comparator)
-	{
-		return compareHelper.template CompareAdhoc<TCompareStatus>(paramsList, std::forward<F>(adhocScript), std::forward<G>(comparator), [](const AdhocScriptStatus<TCompareStatus>*) { return false; });
-	}
-
-	template <class TCompareStatus,
-		typename TTuple,
-		ScriptParamsGenerator<TTuple> F,
-		AdhocCompareScript<TCompareStatus, TTuple> G,
-		AdhocScriptComparator<TCompareStatus> H,
-		AdhocScriptTerminator<TCompareStatus> I>
-	AdhocScriptStatus<TCompareStatus> CompareAdhoc(F&& paramsGenerator, G&& adhocScript, H&& comparator, I&& terminator)
-	{
-		return compareHelper.template CompareAdhoc<TCompareStatus, TTuple>(
-			std::forward<F>(paramsGenerator), std::forward<G>(adhocScript), std::forward<H>(comparator), std::forward<I>(terminator));
-	}
-
-	template <class TCompareStatus,
-		typename TTuple,
-		ScriptParamsGenerator<TTuple> F,
-		AdhocCompareScript<TCompareStatus, TTuple> G,
-		AdhocScriptComparator<TCompareStatus> H>
-	AdhocScriptStatus<TCompareStatus> CompareAdhoc(F&& paramsGenerator, G&& adhocScript, H&& comparator)
-	{
-		return compareHelper.template CompareAdhoc<TCompareStatus, TTuple>(
-			std::forward<F>(paramsGenerator), std::forward<G>(adhocScript), std::forward<H>(comparator), [](const AdhocScriptStatus<TCompareStatus>*) { return false; });
-	}
-
-	template <class TCompareStatus,
-		class TTupleContainer,
-		typename TTuple = typename TTupleContainer::value_type,
-		AdhocCompareScript<TCompareStatus, TTuple> F,
-		AdhocScriptComparator<TCompareStatus> G,
-		AdhocScriptTerminator<TCompareStatus> H>
-	AdhocScriptStatus<TCompareStatus> ModifyCompareAdhoc(const TTupleContainer& paramsList, F&& adhocScript, G&& comparator, H&& terminator)
-	{
-		return compareHelper.template ModifyCompareAdhoc<TCompareStatus>(
-			paramsList, std::forward<F>(adhocScript), std::forward<G>(comparator), std::forward<H>(terminator));
-	}
-
-	template <class TCompareStatus,
-		class TTupleContainer,
-		typename TTuple = typename TTupleContainer::value_type,
-		AdhocCompareScript<TCompareStatus, TTuple> F,
-		AdhocScriptComparator<TCompareStatus> G>
-	AdhocScriptStatus<TCompareStatus> ModifyCompareAdhoc(const TTupleContainer& paramsList, F&& adhocScript, G&& comparator)
-	{
-		return compareHelper.template ModifyCompareAdhoc<TCompareStatus>(
-			paramsList, std::forward<F>(adhocScript), std::forward<G>(comparator), [](const AdhocScriptStatus<TCompareStatus>*) { return false; });
-	}
-
-	template <class TCompareStatus,
-		typename TTuple,
-		ScriptParamsGenerator<TTuple> F,
-		AdhocCompareScript<TCompareStatus, TTuple> G,
-		AdhocScriptComparator<TCompareStatus> H,
-		AdhocScriptTerminator<TCompareStatus> I>
-	AdhocScriptStatus<TCompareStatus> ModifyCompareAdhoc(F&& paramsGenerator, G&& adhocScript, H&& comparator, I&& terminator)
-	{
-		return compareHelper.template ModifyCompareAdhoc<TCompareStatus, TTuple>(
-			std::forward<F>(paramsGenerator), std::forward<G>(adhocScript), std::forward<H>(comparator), std::forward<I>(terminator));
-	}
-
-	template <class TCompareStatus,
-		typename TTuple,
-		ScriptParamsGenerator<TTuple> F,
-		AdhocCompareScript<TCompareStatus, TTuple> G,
-		AdhocScriptComparator<TCompareStatus> H>
-	AdhocScriptStatus<TCompareStatus> ModifyCompareAdhoc(F&& paramsGenerator, G&& adhocScript, H&& comparator)
-	{
-		return compareHelper.template ModifyCompareAdhoc<TCompareStatus, TTuple>(
-			std::forward<F>(paramsGenerator), std::forward<G>(adhocScript), std::forward<H>(comparator), [](const AdhocScriptStatus<TCompareStatus>*) { return false; });
-	}
-
-	template <class TCompareStatus,
-		class TTupleContainer,
-		typename TTuple = typename TTupleContainer::value_type,
-		AdhocCompareScript<TCompareStatus, TTuple> F,
-		AdhocScript G,
-		AdhocScriptComparator<TCompareStatus> H,
-		AdhocScriptTerminator<TCompareStatus> I>
-	AdhocScriptStatus<AdhocSubstatus<TCompareStatus>> DynamicCompareAdhoc(const TTupleContainer& paramsList, F&& adhocScript, G&& mutator, H&& comparator, I&& terminator)
-	{
-		return compareHelper.template DynamicCompareAdhoc<TCompareStatus>(
-			paramsList, std::forward<F>(adhocScript), std::forward<G>(mutator), std::forward<H>(comparator), std::forward<I>(terminator));
-	}
-
-	template <class TCompareStatus,
-		class TTupleContainer,
-		typename TTuple = typename TTupleContainer::value_type,
-		AdhocCompareScript<TCompareStatus, TTuple> F,
-		AdhocScript G,
-		AdhocScriptComparator<TCompareStatus> H>
-	AdhocScriptStatus<AdhocSubstatus<TCompareStatus>> DynamicCompareAdhoc(const TTupleContainer& paramsList, F&& adhocScript, G&& mutator, H&& comparator)
-	{
-		return compareHelper.template DynamicCompareAdhoc<TCompareStatus>(
-			paramsList, std::forward<F>(adhocScript), std::forward<G>(mutator), std::forward<H>(comparator), [](const AdhocScriptStatus<TCompareStatus>*) { return false; });
-	}
-
-	template <class TCompareStatus,
-		typename TTuple,
-		ScriptParamsGenerator<TTuple> F,
-		AdhocCompareScript<TCompareStatus, TTuple> G,
-		AdhocScript H,
-		AdhocScriptComparator<TCompareStatus> I,
-		AdhocScriptTerminator<TCompareStatus> J>
-	AdhocScriptStatus<AdhocSubstatus<TCompareStatus>> DynamicCompareAdhoc(F&& paramsGenerator, G&& adhocScript, H&& mutator, I&& comparator, J&& terminator)
-	{
-		return compareHelper.template DynamicCompareAdhoc<TCompareStatus, TTuple>(
-			std::forward<F>(paramsGenerator), std::forward<G>(adhocScript), std::forward<H>(mutator), std::forward<I>(comparator), std::forward<J>(terminator));
-	}
-
-	template <class TCompareStatus,
-		typename TTuple,
-		ScriptParamsGenerator<TTuple> F,
-		AdhocCompareScript<TCompareStatus, TTuple> G,
-		AdhocScript H,
-		AdhocScriptComparator<TCompareStatus> I>
-	AdhocScriptStatus<AdhocSubstatus<TCompareStatus>> DynamicCompareAdhoc(F&& paramsGenerator, G&& adhocScript, H&& mutator, I&& comparator)
-	{
-		return compareHelper.template DynamicCompareAdhoc<TCompareStatus, TTuple>(
-			std::forward<F>(paramsGenerator), std::forward<G>(adhocScript), std::forward<H>(mutator), std::forward<I>(comparator), [](const AdhocScriptStatus<TCompareStatus>*) { return false; });
-	}
-
-	template <class TCompareStatus,
-		class TTupleContainer,
-		typename TTuple = typename TTupleContainer::value_type,
-		AdhocCompareScript<TCompareStatus, TTuple> F,
-		AdhocScript G,
-		AdhocScriptComparator<TCompareStatus> H,
-		AdhocScriptTerminator<TCompareStatus> I>
-	AdhocScriptStatus<AdhocSubstatus<TCompareStatus>> DynamicModifyCompareAdhoc(const TTupleContainer& paramsList, F&& adhocScript, G&& mutator, H&& comparator, I&& terminator)
-	{
-		return compareHelper.template DynamicModifyCompareAdhoc<TCompareStatus>(
-			paramsList, std::forward<F>(adhocScript), std::forward<G>(mutator), std::forward<H>(comparator), std::forward<I>(terminator));
-	}
-
-	template <class TCompareStatus,
-		class TTupleContainer,
-		typename TTuple = typename TTupleContainer::value_type,
-		AdhocCompareScript<TCompareStatus, TTuple> F,
-		AdhocScript G,
-		AdhocScriptComparator<TCompareStatus> H>
-	AdhocScriptStatus<AdhocSubstatus<TCompareStatus>> DynamicModifyCompareAdhoc(const TTupleContainer& paramsList, F&& adhocScript, G&& mutator, H&& comparator)
-	{
-		return compareHelper.template DynamicModifyCompareAdhoc<TCompareStatus>(
-			paramsList, std::forward<F>(adhocScript), std::forward<G>(mutator), std::forward<H>(comparator), [](const AdhocScriptStatus<TCompareStatus>*) { return false; });
-	}
-
-	template <class TCompareStatus,
-		typename TTuple,
-		ScriptParamsGenerator<TTuple> F,
-		AdhocCompareScript<TCompareStatus, TTuple> G,
-		AdhocScript H,
-		AdhocScriptComparator<TCompareStatus> I,
-		AdhocScriptTerminator<TCompareStatus> J>
-	AdhocScriptStatus<AdhocSubstatus<TCompareStatus>> DynamicModifyCompareAdhoc(F&& paramsGenerator, G&& adhocScript, H&& mutator, I&& comparator, J&& terminator)
-	{
-		return compareHelper.template DynamicModifyCompareAdhoc<TCompareStatus, TTuple>(
-			std::forward<F>(paramsGenerator), std::forward<G>(adhocScript), std::forward<H>(mutator), std::forward<I>(comparator), std::forward<J>(terminator));
-	}
-
-	template <class TCompareStatus,
-		typename TTuple,
-		ScriptParamsGenerator<TTuple> F,
-		AdhocCompareScript<TCompareStatus, TTuple> G,
-		AdhocScript H,
-		AdhocScriptComparator<TCompareStatus> I>
-	AdhocScriptStatus<AdhocSubstatus<TCompareStatus>> DynamicModifyCompareAdhoc(F&& paramsGenerator, G&& adhocScript, H&& mutator, I&& comparator)
-	{
-		return compareHelper.template DynamicModifyCompareAdhoc<TCompareStatus, TTuple>(
-			std::forward<F>(paramsGenerator), std::forward<G>(adhocScript), std::forward<H>(mutator), std::forward<I>(comparator), [](const AdhocScriptStatus<TCompareStatus>*) { return false; });
-	}
-
-	#pragma endregion
-
-	// The tracked state at `frame`, computed on first request. The reference points into the
-	// root's table and stays valid until a write at or before `frame` invalidates it; copy
-	// it (`auto state = ...`) if it has to outlive the next AdvanceFrameWrite/Load.
-	template <std::derived_from<Script<TResource>> TStateTracker>
-		requires std::constructible_from<TStateTracker>
-	const typename TStateTracker::CustomScriptStatus& GetTrackedState(int64_t frame)
-	{
-		return TrackerRoot<TStateTracker>()->GetTrackedStateInternal(this, GetInputsMetadataAndCache(frame));
-	}
-
-	template <std::derived_from<Script<TResource>> TStateTracker>
-		requires std::constructible_from<TStateTracker>
-	bool TrackedStateExists(int64_t frame)
-	{
-		return TrackerRoot<TStateTracker>()->TrackedStateExistsInternal(this, GetInputsMetadataAndCache(frame));
-	}
-
+	// The cursor and the inputs.
 	uint64_t GetCurrentFrame();
+	void AdvanceFrameRead();
+	void AdvanceFrameWrite(Inputs inputs);
+	Inputs GetInputs(int64_t frame);
+	M64Diff GetInputs(int64_t firstFrame, int64_t lastFrame);
 	bool IsDiffEmpty();
 	M64Diff GetDiff();
 	M64Diff GetTotalDiff();
 	M64Diff GetBaseDiff();
 	void Apply(const M64Diff& m64Diff);
-	void AdvanceFrameRead();
-	void AdvanceFrameWrite(Inputs inputs);
+	bool ExportM64(std::filesystem::path fileName);
+	bool ExportM64(std::filesystem::path fileName, int64_t maxFrame);
+
+	// Saves and loads: automatic in the normal case, these are the escape hatches.
 	void OptionalSave();
 	void Save();
 	void Load(uint64_t frame);
@@ -650,11 +174,9 @@ protected:
 	void Rollback(uint64_t frame);
 	void RollForward(int64_t frame);
 	void Restore(int64_t frame);
-	Inputs GetInputs(int64_t frame);
-	M64Diff GetInputs(int64_t firstFrame, int64_t lastFrame);
-	bool ExportM64(std::filesystem::path fileName);
-	bool ExportM64(std::filesystem::path fileName, int64_t maxFrame);
 
+	// State: the resource's memory, the script's state for a run on another resource, and the
+	// tracked state at a frame.
 	// The resource's memory, read only: the address of a symbol (LibSm64: a DLL export,
 	// PyramidUpdate: a field of its own state; an unknown name throws). The one way a script
 	// sees game memory (AGENTS.md, hard rule 9). A write is a hack, a kind of input the
@@ -686,9 +208,22 @@ protected:
 		return save;
 	}
 
-	virtual bool validation() = 0;
-	virtual bool execution() = 0;
-	virtual bool assertion() = 0;
+	// The tracked state at `frame`, computed on first request. The reference points into the
+	// root's table and stays valid until a write at or before `frame` invalidates it; copy
+	// it (`auto state = ...`) if it has to outlive the next AdvanceFrameWrite/Load.
+	template <std::derived_from<Script<TResource>> TStateTracker>
+		requires std::constructible_from<TStateTracker>
+	const typename TStateTracker::CustomScriptStatus& GetTrackedState(int64_t frame)
+	{
+		return TrackerRoot<TStateTracker>()->GetTrackedStateInternal(this, GetInputsMetadataAndCache(frame));
+	}
+
+	template <std::derived_from<Script<TResource>> TStateTracker>
+		requires std::constructible_from<TStateTracker>
+	bool TrackedStateExists(int64_t frame)
+	{
+		return TrackerRoot<TStateTracker>()->TrackedStateExistsInternal(this, GetInputsMetadataAndCache(frame));
+	}
 
 private:
 	// TopLevelScript is the root of every hierarchy: it starts the lifecycle from outside it
@@ -697,7 +232,7 @@ private:
 	// constraints included; MSVC and Clang reject an unconstrained one (docs/compilers.md).
 	template <derived_from_specialization_of<Resource> R, std::derived_from<Script<R>> T>
 	friend class TopLevelScript;
-	
+
 	friend class SaveMetadata<TResource>;
 	friend class InputsMetadata<TResource>;
 	friend class ScriptCompareHelper<TResource>;
@@ -707,7 +242,7 @@ private:
 	// The resource the hierarchy runs on, set by TopLevelScript when it starts. Every
 	// interaction goes through the operations above; scripts never hold it (hard rule 9).
 	TResource* resource = nullptr;
-	
+
 	int64_t _adhocLevel = 0;
 	int64_t _initialFrame = 0;
 	// One entry per ad-hoc level (see LevelStack.hpp); level 0 is the script itself.
@@ -724,52 +259,9 @@ private:
 	bool isStateTracker = false;
 	ScriptCompareHelper<TResource> compareHelper = ScriptCompareHelper<TResource>(this);
 
+	// The lifecycle, run by the parent.
 	bool Run();
-
 	void Initialize(Script<TResource>* parentScript);
-	SaveMetadata<TResource> GetLatestSave(int64_t frame);
-	SaveMetadata<TResource> GetLatestSaveAndCache(int64_t frame);
-	// The inputs of a frame and who owns the state there. The walk is the second form: it
-	// writes into the caller's object and asks the parent to write into the same one, so
-	// nothing is copied per level; the first form is that object, built in the caller's
-	// return slot (a named return value optimization every compiler applies to one named
-	// object returned once). Returning temporaries on some paths and a named local on
-	// another made MSVC copy the 40 bytes at the end of every level, a third of the walk's
-	// time (docs/performance-changelog.md, 2026-09-15).
-	InputsMetadata<TResource> GetInputsMetadata(int64_t frame);
-	virtual void GetInputsMetadata(int64_t frame, InputsMetadata<TResource>& metadata);
-	InputsMetadata<TResource> GetInputsMetadataAndCache(int64_t frame);
-	void DeleteSave(int64_t frame, int64_t adhocLevel);
-	void SetInputs(Inputs inputs);
-	void Revert(uint64_t frame, const M64Diff& m64, FrameMap<int64_t, SlotHandle<TResource>>* childSaveBank, Script<TResource>* childScript);
-	void AdvanceFrameRead(uint64_t& counter);
-	uint64_t GetFrameCounter(InputsMetadata<TResource> cachedInputs);
-	uint64_t IncrementFrameCounter(InputsMetadata<TResource> cachedInputs);
-	void ApplyChildDiff(const BaseScriptStatus& status, FrameMap<int64_t, SlotHandle<TResource>>* childSaveBank, int64_t initialFrame, Script<TResource>* childScript);
-	SaveMetadata<TResource> Save(int64_t adhocLevel);
-	void LoadBase(uint64_t frame, bool desync);
-
-	// A child's save bank at `adhocLevel`, or nullptr if the child never saved (the level was
-	// never created). Reverting through a pointer avoids constructing an empty map just to
-	// find out it is empty.
-	static FrameMap<int64_t, SlotHandle<TResource>>* SaveBankIfCreated(Script<TResource>& script, int64_t adhocLevel)
-	{
-		return script.saveBank.contains(adhocLevel) ? &script.saveBank[adhocLevel] : nullptr;
-	}
-
-	// The root as its TopLevelScript type. Checked by comparing type tags rather than with
-	// dynamic_cast because this runs on every tracked-state lookup (ROADMAP 3.7).
-	template <class TStateTracker>
-	TopLevelScript<TResource, TStateTracker>* TrackerRoot()
-	{
-		if (_rootScript->_stateTrackerTag != &StateTrackerTag<TStateTracker>::value) [[unlikely]]
-		{
-			throw std::runtime_error(std::string("GetTrackedState<") + typeid(TStateTracker).name()
-				+ ">: the root script's state tracker is a different type");
-		}
-		return static_cast<TopLevelScript<TResource, TStateTracker>*>(_rootScript);
-	}
-
 	template <typename F>
 	BaseScriptStatus ExecuteAdhocBase(F adhocScript);
 
@@ -810,6 +302,55 @@ private:
 		return ScriptStatus<TStateTracker>(std::move(script.BaseStatus[0]), std::move(script.CustomStatus));
 	}
 
+	// The root as its TopLevelScript type. Checked by comparing type tags rather than with
+	// dynamic_cast because this runs on every tracked-state lookup (ROADMAP 3.7).
+	template <class TStateTracker>
+	TopLevelScript<TResource, TStateTracker>* TrackerRoot()
+	{
+		if (_rootScript->_stateTrackerTag != &StateTrackerTag<TStateTracker>::value) [[unlikely]]
+		{
+			throw std::runtime_error(std::string("GetTrackedState<") + typeid(TStateTracker).name()
+				+ ">: the root script's state tracker is a different type");
+		}
+		return static_cast<TopLevelScript<TResource, TStateTracker>*>(_rootScript);
+	}
+
+	// The input walk.
+	// The inputs of a frame and who owns the state there. The walk is the second form: it
+	// writes into the caller's object and asks the parent to write into the same one, so
+	// nothing is copied per level; the first form is that object, built in the caller's
+	// return slot (a named return value optimization every compiler applies to one named
+	// object returned once). Returning temporaries on some paths and a named local on
+	// another made MSVC copy the 40 bytes at the end of every level, a third of the walk's
+	// time (docs/performance-changelog.md, 2026-09-15).
+	InputsMetadata<TResource> GetInputsMetadata(int64_t frame);
+	virtual void GetInputsMetadata(int64_t frame, InputsMetadata<TResource>& metadata);
+	InputsMetadata<TResource> GetInputsMetadataAndCache(int64_t frame);
+	void SetInputs(Inputs inputs);
+	uint64_t GetFrameCounter(InputsMetadata<TResource> cachedInputs);
+	uint64_t IncrementFrameCounter(InputsMetadata<TResource> cachedInputs);
+	// What the source movie's header says (its game), for ExportM64: a script asks the root,
+	// and the root, a TopLevelScript, answers from its movie. Once per export, never per frame.
+	virtual M64Metadata GetM64Metadata() const;
+
+	// Saves, loads and reverts.
+	SaveMetadata<TResource> GetLatestSave(int64_t frame);
+	SaveMetadata<TResource> GetLatestSaveAndCache(int64_t frame);
+	SaveMetadata<TResource> Save(int64_t adhocLevel);
+	void DeleteSave(int64_t frame, int64_t adhocLevel);
+	void LoadBase(uint64_t frame, bool desync);
+	void Revert(uint64_t frame, const M64Diff& m64, FrameMap<int64_t, SlotHandle<TResource>>* childSaveBank, Script<TResource>* childScript);
+	void ApplyChildDiff(const BaseScriptStatus& status, FrameMap<int64_t, SlotHandle<TResource>>* childSaveBank, int64_t initialFrame, Script<TResource>* childScript);
+
+	// A child's save bank at `adhocLevel`, or nullptr if the child never saved (the level was
+	// never created). Reverting through a pointer avoids constructing an empty map just to
+	// find out it is empty.
+	static FrameMap<int64_t, SlotHandle<TResource>>* SaveBankIfCreated(Script<TResource>& script, int64_t adhocLevel)
+	{
+		return script.saveBank.contains(adhocLevel) ? &script.saveBank[adhocLevel] : nullptr;
+	}
+
+	// The tracker hooks the root overrides.
 	// Needed for state tracking. These do nothing, but TopLevelScript overrides them. Can't access explicitly because of lack of template information.
 	// Tracked-state containers are created on first use, so there is no "push"; "pop" drops them.
 	virtual void TrackState(Script<TResource>* /*currentScript*/, const InputsMetadata<TResource>& /*inputsMetadata*/) { return; }
@@ -817,362 +358,15 @@ private:
 	virtual void PopTrackedStatesContainer(Script<TResource>* /*currentScript*/, int64_t /*adhocLevel*/) { return; }
 	virtual void MoveSyncedTrackedStates(Script<TResource>* /*sourceScript*/, int64_t /*sourceAdhocLevel*/, Script<TResource>* /*destScript*/, int64_t /*destAdhocLevel*/) { return; }
 	virtual void EraseTrackedStates(Script<TResource>* /*currentScript*/, int64_t /*adhocLevel*/, int64_t /*firstFrame*/) { return; }
-	
-	// What the source movie's header says (its game), for ExportM64: a script asks the root,
-	// and the root, a TopLevelScript, answers from its movie. Once per export, never per frame.
-	virtual M64Metadata GetM64Metadata() const;
-};
-
-template <derived_from_specialization_of<Script> TStateTracker>
-class StateTrackerFactoryBase
-{
-public:
-	virtual ~StateTrackerFactoryBase() = default;
-	virtual TStateTracker Generate() = 0;
-};
-
-template <derived_from_specialization_of<Script> TStateTracker, typename... TStateTrackerParams>
-	requires (std::constructible_from<TStateTracker, TStateTrackerParams...>)
-class StateTrackerFactory : public StateTrackerFactoryBase<TStateTracker>
-{
-public:
-	StateTrackerFactory(std::shared_ptr<std::tuple<TStateTrackerParams...>> stateTrackerParams) : _stateTrackerParams(stateTrackerParams) {}
-
-	TStateTracker Generate()
-	{
-		return std::apply(
-			[]<typename... Ts>(Ts&&... params) -> TStateTracker { return TStateTracker(std::forward<Ts>(params)...); },
-			*_stateTrackerParams);
-	}
-
-private:
-	std::shared_ptr<std::tuple<TStateTrackerParams...>> _stateTrackerParams;
-};
-
-template <derived_from_specialization_of<Resource> TResource>
-class DefaultStateTracker : public Script<TResource>
-{
-public:
-	DefaultStateTracker() = default;
-
-	bool validation() { return true; }
-	bool execution() { return true; }
-	bool assertion() { return true; }
-};
-
-template <derived_from_specialization_of<Resource> TResource,
-	std::derived_from<Script<TResource>> TStateTracker = DefaultStateTracker<TResource>>
-class TopLevelScript : public Script<TResource>
-{
-public:
-	TopLevelScript()
-	{
-		this->_stateTrackerTag = &StateTrackerTag<TStateTracker>::value;
-	}
-
-	template <derived_from_specialization_of<TopLevelScript> TTopLevelScript, typename... TStateTrackerParams, typename... Ts>
-		requires(std::constructible_from<TTopLevelScript, Ts...> && std::constructible_from<TResource> && std::constructible_from<TStateTracker, TStateTrackerParams...>)
-	static ScriptStatus<TTopLevelScript> Main(M64& m64, std::shared_ptr<std::tuple<TStateTrackerParams...>> stateTrackerParams, Ts&&... params)
-	{
-		TTopLevelScript script = TTopLevelScript(std::forward<Ts>(params)...);
-		script.stateTrackerFactory = std::make_shared<StateTrackerFactory<TStateTracker, TStateTrackerParams...>>(stateTrackerParams);
-
-		TResource resource = TResource();
-		resource.SaveStart(0);
-
-		return InitializeAndRun(m64, script, &resource);
-	}
-
-	template <derived_from_specialization_of<TopLevelScript> TTopLevelScript, typename... TStateTrackerParams, typename... Ts>
-		requires(std::constructible_from<TTopLevelScript, Ts...> && std::constructible_from<TStateTracker, TStateTrackerParams...>)
-	static ScriptStatus<TTopLevelScript> MainImport(M64& m64, std::shared_ptr<std::tuple<TStateTrackerParams...>> stateTrackerParams, TResource* resource, Ts&&... params)
-	{
-		TTopLevelScript script = TTopLevelScript(std::forward<Ts>(params)...);
-		script.stateTrackerFactory = std::make_shared<StateTrackerFactory<TStateTracker, TStateTrackerParams...>>(stateTrackerParams);
-
-		// Initialize start save if resource is new. If not, load start save to reset resource.
-		if (resource->InitialFrame() == -1)
-			resource->SaveStart(0);
-		else
-			resource->LoadStart();
-
-		return InitializeAndRun(m64, script, resource);
-	}
-
-	template <derived_from_specialization_of<TopLevelScript> TTopLevelScript, typename TResourceConfig, typename... TStateTrackerParams, typename... Ts>
-		requires(std::constructible_from<TTopLevelScript, Ts...> && std::constructible_from<TResource, TResourceConfig> && std::constructible_from<TStateTracker, TStateTrackerParams...>)
-	static ScriptStatus<TTopLevelScript> MainConfig(M64& m64, std::shared_ptr<std::tuple<TStateTrackerParams...>> stateTrackerParams, TResourceConfig config, Ts&&... params)
-	{
-		TTopLevelScript script = TTopLevelScript(std::forward<Ts>(params)...);
-		script.stateTrackerFactory = std::make_shared<StateTrackerFactory<TStateTracker, TStateTrackerParams...>>(stateTrackerParams);
-
-		TResource resource = TResource(config);
-		resource.SaveStart(0);
-
-		return InitializeAndRun(m64, script, &resource);
-	}
-
-	template <derived_from_specialization_of<TopLevelScript> TTopLevelScript, class TState,
-		typename... TStateTrackerParams, typename... Ts>
-		requires(std::constructible_from<TTopLevelScript, Ts...>
-			&& std::constructible_from<TResource>
-			&& std::derived_from<TResource, Resource<TState>>
-			&& std::constructible_from<TStateTracker, TStateTrackerParams...>)
-	static ScriptStatus<TTopLevelScript> MainFromSave(M64& m64, std::shared_ptr<std::tuple<TStateTrackerParams...>> stateTrackerParams, ImportedSave<TState>& save, Ts&&... params)
-	{
-		TTopLevelScript script = TTopLevelScript(std::forward<Ts>(params)...);
-		script.stateTrackerFactory = std::make_shared<StateTrackerFactory<TStateTracker, TStateTrackerParams...>>(stateTrackerParams);
-
-		TResource resource = TResource();
-		resource.load(save.state);
-		resource.SaveStart(save.initialFrame);
-
-		return InitializeAndRun(m64, script, &resource);
-	}
-
-	template <derived_from_specialization_of<TopLevelScript> TTopLevelScript, class TState,
-		typename TResourceConfig, typename... TStateTrackerParams, typename... Ts>
-		requires(std::constructible_from<TTopLevelScript, Ts...>
-			&& std::constructible_from<TResource, TResourceConfig>
-			&& std::derived_from<TResource, Resource<TState>>
-			&& std::constructible_from<TStateTracker, TStateTrackerParams...>)
-	static ScriptStatus<TTopLevelScript> MainFromSaveConfig(
-		M64& m64, std::shared_ptr<std::tuple<TStateTrackerParams...>> stateTrackerParams, ImportedSave<TState>& save, TResourceConfig config, Ts&&... params)
-	{
-		TTopLevelScript script = TTopLevelScript(std::forward<Ts>(params)...);
-		script.stateTrackerFactory = std::make_shared<StateTrackerFactory<TStateTracker, TStateTrackerParams...>>(stateTrackerParams);
-
-		TResource resource = TResource(config);
-		resource.load(save.state);
-		resource.SaveStart(save.initialFrame);
-
-		return InitializeAndRun(m64, script, &resource);
-	}
-
-	virtual bool validation() override = 0;
-	virtual bool execution() override = 0;
-	virtual bool assertion() override = 0;
-
-private:
-	friend class Script<TResource>;
-	M64* _m64 = nullptr;
-	M64Metadata GetM64Metadata() const override;
-	// The root's walk over its own levels, then the movie. The same walk as Script's, and it
-	// stays a copy on purpose: one walk for both, ending in a private virtual the root
-	// overrides for the movie (the GetM64Metadata shape), measured 7 to 18 ns more per
-	// uncached lookup on MSVC 19.51 in three forms, with the root's own walk flat
-	// (docs/performance-changelog.md, 2026-09-15).
-	void GetInputsMetadata(int64_t frame, InputsMetadata<TResource>& metadata) override;
-	// (No self-friend declaration: a class is always its own friend, and GCC warns about it.)
-
-	// Data: trackedStates[script][adhocLevel][frame] = state;
-	std::shared_ptr<StateTrackerFactoryBase<TStateTracker>> stateTrackerFactory = nullptr;
-	std::unordered_map<Script<TResource>*, LevelStack<std::map<int64_t, typename TStateTracker::CustomScriptStatus>>> trackedStates;
-
-	void TrackState(Script<TResource>* currentScript, const InputsMetadata<TResource>& inputsMetadata) override;
-	bool TrackedStateExistsInternal(Script<TResource>* currentScript, const InputsMetadata<TResource>& inputsMetadata) override;
-	void PopTrackedStatesContainer(Script<TResource>* currentScript, int64_t adhocLevel) override;
-	void MoveSyncedTrackedStates(Script<TResource>* sourceScript, int64_t sourceAdhocLevel, Script<TResource>* destScript, int64_t destAdhocLevel) override;
-	void EraseTrackedStates(Script<TResource>* currentScript, int64_t adhocLevel, int64_t firstFrame) override;
-	const typename TStateTracker::CustomScriptStatus& GetTrackedStateInternal(Script<TResource>* currentScript, const InputsMetadata<TResource>& inputsMetadata);
-
-	template <std::derived_from<TopLevelScript<TResource, TStateTracker>> TTopLevelScript>
-	static ScriptStatus<TTopLevelScript> InitializeAndRun(M64& m64, TTopLevelScript& script, TResource* resource)
-	{
-		// Script's names through the base, where nothing a TTopLevelScript declares hides them
-		// (ScattershotThread has an Initialize() of its own).
-		Script<TResource>& base = script;
-		script._m64 = &m64;
-		base.resource = resource;
-		base.Initialize(nullptr);
-
-		base.TrackState(&base, base.GetInputsMetadata(base.GetCurrentFrame()));
-
-		uint64_t loadCyclesStart = resource->work.loadCycles;
-		uint64_t saveCyclesStart = resource->work.saveCycles;
-		uint64_t advanceCyclesStart = resource->work.advanceCycles;
-
-		uint64_t start = get_time();
-		base.Run();
-		uint64_t finish = get_time();
-
-		auto& baseStatus = base.BaseStatus[0];
-		baseStatus.loadDuration = resource->work.loadCycles - loadCyclesStart;
-		baseStatus.saveDuration = resource->work.saveCycles - saveCyclesStart;
-		baseStatus.advanceFrameDuration = resource->work.advanceCycles - advanceCyclesStart;
-		baseStatus.totalDuration = finish - start;
-
-		//Dispose of slot handles before resource goes out of scope because they trigger destructor events in the resource.
-		base.saveBank[0].erase(base.saveBank[0].begin(), base.saveBank[0].end());
-
-		return ScriptStatus<TTopLevelScript>(std::move(baseStatus), std::move(script.CustomStatus));
-	}
-};
-
-class DefaultState {};
-
-class DefaultResourceConfig {};
-
-template <derived_from_specialization_of<TopLevelScript> TTopLevelScript, typename... TStateTrackerParams>
-class TopLevelScriptBuilder
-{
-public:
-	TopLevelScriptBuilder(M64& m64) : _m64(m64) { _stateTrackerParams = std::make_shared<std::tuple<>>(); }
-	TopLevelScriptBuilder(M64& m64, std::shared_ptr<std::tuple<TStateTrackerParams...>> stateTrackerParams)
-		: _m64(m64), _stateTrackerParams(stateTrackerParams) {}
-
-	static TopLevelScriptBuilder<TTopLevelScript> Build(M64& m64)
-	{
-		return TopLevelScriptBuilder<TTopLevelScript>(m64);
-	}
-
-	template <typename... UStateTrackerParams>
-	TopLevelScriptBuilder<TTopLevelScript> ConfigureStateTracker(UStateTrackerParams&&... stateTrackerParams)
-	{
-		std::shared_ptr<std::tuple<UStateTrackerParams...>> tuplePtr =
-			std::make_shared<std::tuple<UStateTrackerParams...>>(std::forward<UStateTrackerParams>(stateTrackerParams)...);
-		return TopLevelScriptBuilder<TTopLevelScript, UStateTrackerParams...>(_m64, tuplePtr);
-	}
-
-	template <class TState, typename... TStateParams>
-	TopLevelScriptBuilderConfigured<TTopLevelScript, TState, DefaultResourceConfig, TStateTrackerParams...> ImportSave(
-		uint64_t frame, TStateParams&&... stateParams)
-	{
-		ImportedSave<TState> importedSave = ImportedSave(TState(std::forward<TStateParams>(stateParams)...), frame);
-		return TopLevelScriptBuilderConfigured<TTopLevelScript, TState, DefaultResourceConfig, TStateTrackerParams...>(
-			_m64, std::move(importedSave), DefaultResourceConfig(), _stateTrackerParams);
-	}
-
-	// A save a script exported (Script::ExportSave), state and frame together.
-	template <class TState>
-	TopLevelScriptBuilderConfigured<TTopLevelScript, TState, DefaultResourceConfig, TStateTrackerParams...> ImportSave(ImportedSave<TState> save)
-	{
-		return TopLevelScriptBuilderConfigured<TTopLevelScript, TState, DefaultResourceConfig, TStateTrackerParams...>(
-			_m64, std::move(save), DefaultResourceConfig(), _stateTrackerParams);
-	}
-
-	template <typename TResourceConfig>
-	TopLevelScriptBuilderConfigured<TTopLevelScript, DefaultState, TResourceConfig, TStateTrackerParams...> ConfigureResource(TResourceConfig resourceConfig)
-	{
-		return TopLevelScriptBuilderConfigured<TTopLevelScript, DefaultState, TResourceConfig, TStateTrackerParams...>(
-			_m64, ImportedSave<DefaultState>(DefaultState(), -1), resourceConfig, _stateTrackerParams);
-	}
-
-	template <class TResource>
-	TopLevelScriptBuilderImported<TTopLevelScript, TResource, TStateTrackerParams...> ImportResource(TResource* resource)
-	{
-		return TopLevelScriptBuilderImported<TTopLevelScript, TResource, TStateTrackerParams...>(_m64, resource, _stateTrackerParams);
-	}
-
-protected:
-	M64& _m64;
-	std::shared_ptr<std::tuple<TStateTrackerParams...>> _stateTrackerParams;
-};
-
-template <derived_from_specialization_of<TopLevelScript> TTopLevelScript,
-	class TState = DefaultState,
-	class TResourceConfig = DefaultResourceConfig,
-	typename... TStateTrackerParams>
-class TopLevelScriptBuilderConfigured : public TopLevelScriptBuilder<TTopLevelScript, TStateTrackerParams...>
-{
-public:
-	using TopLevelScriptBuilder<TTopLevelScript, TStateTrackerParams...>::_m64;
-	using TopLevelScriptBuilder<TTopLevelScript, TStateTrackerParams...>::_stateTrackerParams;
-
-	TopLevelScriptBuilderConfigured(M64& m64, ImportedSave<TState> importedSave,
-		TResourceConfig resourceConfig, std::shared_ptr<std::tuple<TStateTrackerParams...>> stateTrackerParams)
-		: TopLevelScriptBuilder<TTopLevelScript, TStateTrackerParams...>(m64, stateTrackerParams), _importedSave(std::move(importedSave)), _resourceConfig(resourceConfig) {}
-
-	template <typename... UStateTrackerParams>
-	TopLevelScriptBuilderConfigured<TTopLevelScript, TState, TResourceConfig, UStateTrackerParams...> ConfigureStateTracker(
-		TStateTrackerParams&&... stateTrackerParams)
-	{
-		std::shared_ptr<std::tuple<UStateTrackerParams...>> tuplePtr =
-			std::make_shared<std::tuple<UStateTrackerParams...>>(std::forward<UStateTrackerParams>(stateTrackerParams)...);
-		return TopLevelScriptBuilderConfigured<TTopLevelScript, TState, TResourceConfig, UStateTrackerParams...>(
-			_m64, std::move(_importedSave), std::move(_resourceConfig), tuplePtr);
-	}
-
-	template <class UState, typename... TStateParams>
-	TopLevelScriptBuilderConfigured<TTopLevelScript, UState, TResourceConfig, TStateTrackerParams...> ImportSave(uint64_t frame, TStateParams&&... stateParams)
-	{
-		ImportedSave<UState> importedSave = ImportedSave(UState(std::forward<TStateParams>(stateParams)...), frame);
-		return TopLevelScriptBuilderConfigured<TTopLevelScript, UState, TResourceConfig, TStateTrackerParams...>(
-			_m64, std::move(importedSave), std::move(_resourceConfig), _stateTrackerParams);
-	}
-
-	template <class UState>
-	TopLevelScriptBuilderConfigured<TTopLevelScript, UState, TResourceConfig, TStateTrackerParams...> ImportSave(ImportedSave<UState> save)
-	{
-		return TopLevelScriptBuilderConfigured<TTopLevelScript, UState, TResourceConfig, TStateTrackerParams...>(
-			_m64, std::move(save), std::move(_resourceConfig), _stateTrackerParams);
-	}
-
-	template <typename UResourceConfig>
-	TopLevelScriptBuilderConfigured<TTopLevelScript, TState, UResourceConfig, TStateTrackerParams...> ConfigureResource(UResourceConfig resourceConfig)
-	{
-		return TopLevelScriptBuilderConfigured<TTopLevelScript, TState, UResourceConfig, TStateTrackerParams...>(
-			_m64, std::move(_importedSave), resourceConfig, _stateTrackerParams);
-	}
-
-	template <typename... TScriptParams>
-	ScriptStatus<TTopLevelScript> Run(TScriptParams&&... scriptParams)
-	{
-		if constexpr (std::is_same<TState, DefaultState>::value)
-		{
-			if constexpr (std::is_same<TResourceConfig, DefaultResourceConfig>::value)
-				return TTopLevelScript::template Main<TTopLevelScript>(
-					_m64, _stateTrackerParams, std::forward<TScriptParams>(scriptParams)...);
-			else
-				return TTopLevelScript::template MainConfig<TTopLevelScript, TResourceConfig>(
-					_m64, _stateTrackerParams, std::move(_resourceConfig), std::forward<TScriptParams>(scriptParams)...);
-		}
-		else if constexpr (std::is_same<TResourceConfig, DefaultResourceConfig>::value)
-			return TTopLevelScript::template MainFromSave<TTopLevelScript, TState>(
-				_m64, _stateTrackerParams, _importedSave, std::forward<TScriptParams>(scriptParams)...);
-		else
-			return TTopLevelScript::template MainFromSaveConfig<TTopLevelScript, TState, TResourceConfig>(
-				_m64, _stateTrackerParams, _importedSave, std::move(_resourceConfig), std::forward<TScriptParams>(scriptParams)...);
-	}
-
-private:
-	ImportedSave<TState> _importedSave { TState(), -1 };
-	TResourceConfig _resourceConfig;
-};
-
-template <derived_from_specialization_of<TopLevelScript> TTopLevelScript,
-	class TResource,
-	typename... TStateTrackerParams>
-class TopLevelScriptBuilderImported : public TopLevelScriptBuilder<TTopLevelScript, TStateTrackerParams...>
-{
-public:
-	using TopLevelScriptBuilder<TTopLevelScript, TStateTrackerParams...>::_m64;
-	using TopLevelScriptBuilder<TTopLevelScript, TStateTrackerParams...>::_stateTrackerParams;
-
-	TopLevelScriptBuilderImported(M64& m64, TResource* resource, std::shared_ptr<std::tuple<TStateTrackerParams...>> stateTrackerParams)
-		: TopLevelScriptBuilder<TTopLevelScript, TStateTrackerParams...>(m64, stateTrackerParams), _resource(resource) {}
-
-	template <typename... UStateTrackerParams>
-	TopLevelScriptBuilderImported<TTopLevelScript, TResource, UStateTrackerParams...> ConfigureStateTracker(UStateTrackerParams&&... stateTrackerParams)
-	{
-		std::shared_ptr<std::tuple<UStateTrackerParams...>> tuplePtr =
-			std::make_shared<std::tuple<UStateTrackerParams...>>(std::forward<UStateTrackerParams>(stateTrackerParams)...);
-		return TopLevelScriptBuilderImported<TTopLevelScript, TResource, UStateTrackerParams...>(
-			_m64, _resource, tuplePtr);
-	}
-
-	template <typename... TScriptParams>
-	ScriptStatus<TTopLevelScript> Run(TScriptParams&&... scriptParams)
-	{
-		return TTopLevelScript::template MainImport<TTopLevelScript>(
-			_m64, _stateTrackerParams, _resource, std::forward<TScriptParams>(scriptParams)...);
-	}
-
-private:
-	TResource* _resource;
 };
 
 //Include template method implementations
 #include "tasfw/Script.t.hpp"
+
+// The root and the builders complete what Script declares (GetTrackedState reaches into
+// TopLevelScript through the friend), so a script's translation unit has all three; the two
+// headers are not included on their own.
+#include <tasfw/TopLevelScript.hpp>
+#include <tasfw/TopLevelScriptBuilder.hpp>
 
 #endif

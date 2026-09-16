@@ -424,7 +424,7 @@ item is done except 3.2, in progress, and 3.17, which follows it; then Phase 4.
       pyramid behaviors, now bridged by `LibSm64SymbolAliases`, and doctest's `<ciso646>`
       include is a `#warning` under Clang 21 (docs/compilers.md).
 - [x] **3.5 Savestate memory budget.** Done 2026-09-14. The 8 GB cap was per resource, so
-      16 threads could address 128 GB. Now `SlotBudget` in `Resource.hpp` is a process-wide
+      16 threads could address 128 GB. Now `SlotBudget` in `SlotBudget.hpp` is a process-wide
       budget and its balance: a resource subtracts its limit from the balance when it is
       created (the one argument of `Resource`'s constructor; `LibSm64Config::savestateBudgetBytes`,
       16 MB for `PyramidUpdate`, 64 MB for the mock), or throws if the balance is too low,
@@ -545,7 +545,7 @@ item is done except 3.2, in progress, and 3.17, which follows it; then Phase 4.
       that the expression is well-formed and never that it holds: a comparator, terminator or
       parameter generator that could not be called at all was rejected, but any return type
       passed; and `AdhocCompareScript` there and `constructible_from_tuple` in
-      `SharedLib.hpp`, which unpacked the tuple with `std::apply` around a lambda whose
+      `SharedLib.hpp` (`Concepts.hpp` now), which unpacked the tuple with `std::apply` around a lambda whose
       `static_assert` a requires-expression never instantiates, accepted every tuple and
       made a non-tuple a hard error inside `std::tuple_size`. Each is now a constraint on the
       call's result type, the two tuple ones through a partial specialization for
@@ -730,6 +730,25 @@ item is done except 3.2, in progress, and 3.17, which follows it; then Phase 4.
       -18.3%, the rest within noise. The accessor's inlining was verified in MSVC's
       disassembly and clang's by measurement; GCC runs only in CI, whose Tier C gate is
       counts. The placement sensitivity went with the cause (3.18).
+- [x] **3.20 Core file layout.** Done 2026-09-15 on the maintainer's decisions, no functional
+      change, three commits so history survives: the multi-class headers of tasfw-core split
+      into one header per concept (`Concepts.hpp` out of `SharedLib.hpp`; `M64.hpp` and `M64.cpp`
+      out of `Inputs`; `SlotBudget.hpp`, `ResourceWork.hpp` with `get_time` and `SlotManager.hpp`
+      out of `Resource.hpp`; `SlotHandle.hpp`, `ScriptMetadata.hpp`, `StateTracker.hpp`,
+      `TopLevelScript.hpp` and `TopLevelScriptBuilder.hpp` out of `Script.hpp`, each with its
+      `.t.hpp` where it has definitions), every declaration's text and relative order kept;
+      then one member order for every class and the `.t.hpp` files in the header's order
+      (AGENTS.md, "Conventions"), data members untouched so no layout moved; then the compare
+      family's 32 entry points as `Script.compare.hpp`, a member include of `Script` (the
+      maintainer's choice over a base class), since a constrained member template has to be
+      defined in its class on MSVC. `<tasfw/Script.hpp>` stays a script's one include and
+      pulls in the root and the builders at its bottom: `GetTrackedState` reaches into
+      `TopLevelScript`, so a script's translation unit needs both. Verified on MSVC 19.51,
+      clang-cl 22 and GCC 14 (the container), tests unchanged, the suite flat
+      (docs/performance-changelog.md). A declaration without a definition or a caller,
+      `Script::AdvanceFrameRead(uint64_t&)`, went with it (the maintainer: meant for cost
+      modelling once, never written). tasfw-scattershot's `Scattershot.hpp` has the same
+      multi-class shape and could get the same treatment.
 
 ## Phase 4: the squish-cancel brute forcer
 

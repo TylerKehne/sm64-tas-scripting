@@ -5,6 +5,7 @@
 #include <LibSm64.hpp>
 #include <tasfw/testing/PerfAccess.hpp>
 #include <tasfw/Inputs.hpp>
+#include <tasfw/M64.hpp>
 #include <tasfw/testing/Env.hpp>
 
 #include <cctype>

@@ -125,7 +125,7 @@ copy it saves; tracking has to accumulate and reset at coarse points (a stage's 
 
 Use it and extend it rather than adding ad-hoc timers:
 
-- `Resource::work` (`ResourceWork`, `tasfw/Resource.hpp`): frame advances, saves and loads
+- `Resource::work` (`ResourceWork`, `tasfw/ResourceWork.hpp`): frame advances, saves and loads
   with the rdtsc cycles each cost, and the slot manager's high-water marks (slots and bytes
   live at once), pool reuses and evictions. Tier C snapshots it per workload, `bitfs-turn`
   per stage; the difference of two snapshots is the work between them (the maxima stay
@@ -141,7 +141,7 @@ Use it and extend it rather than adding ad-hoc timers:
   durations, save/load/advance durations, and counts.
 - Scattershot end-of-run summary: Load / Save / Frame Advance / Overhead / Other percentages,
   plus Futility / Redundancy / Discovery ratios and CSV row counts.
-- Every duration is rdtsc cycles, read through `get_time()` in `Resource.t.hpp`; divide by
+- Every duration is rdtsc cycles, read through `get_time()` in `ResourceWork.hpp`; divide by
   the machine's TSC rate for seconds. (Until ROADMAP 3.6, `ExecuteAdhocBase` alone recorded
   its `executionDuration` in milliseconds through `std::chrono`.)
 

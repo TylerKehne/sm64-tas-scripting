@@ -12,6 +12,7 @@
 
 #include <nlohmann/json.hpp>
 #include <tasfw/Inputs.hpp>
+#include <tasfw/M64.hpp>
 
 struct SolutionRecord
 {

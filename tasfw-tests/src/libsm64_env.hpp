@@ -1,6 +1,7 @@
 #pragma once
 #include <LibSm64.hpp>
 #include <tasfw/Inputs.hpp>
+#include <tasfw/M64.hpp>
 #include <tasfw/testing/Env.hpp>
 
 #include <cstdint>

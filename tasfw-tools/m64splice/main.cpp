@@ -41,6 +41,7 @@
 #include <MarioTrace.hpp>
 #include <SpliceMovie.hpp>
 #include <tasfw/Inputs.hpp>
+#include <tasfw/M64.hpp>
 
 namespace fs = std::filesystem;
 

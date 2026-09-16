@@ -51,6 +51,7 @@
 #include <sm64/ObjectFields.hpp>
 #include <sm64/Types.hpp>
 #include <tasfw/Inputs.hpp>
+#include <tasfw/M64.hpp>
 
 namespace
 {
