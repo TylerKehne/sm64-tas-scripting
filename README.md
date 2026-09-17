@@ -13,6 +13,7 @@ Still very much a work in progress. Start with:
 - [docs/decomp.md](docs/decomp.md): what was copied from the decompilation, at which revision, and how the copies and the DLL are checked against each other.
 - [docs/performance.md](docs/performance.md): performance is a correctness requirement; how it is measured and gated.
 - [docs/performance-changelog.md](docs/performance-changelog.md): the measured history, one delta table per hot-path change.
+- [docs/tasing.md](docs/tasing.md): how to TAS with the framework: which tool to reach for, how a goal becomes a script and a run, how a result is checked.
 
 These files are kept current by design: a Claude Code hook in [.claude/](.claude/) reviews
 them after every change (see AGENTS.md, "Documentation must match the repository").

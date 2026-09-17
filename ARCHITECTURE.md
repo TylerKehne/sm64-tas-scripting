@@ -248,7 +248,9 @@ replays or caching behind the answer. Metric scripts are how game state gets dec
 derived information: whenever a decision rests on a metric more complicated than a raw
 memory variable, it belongs in a metric script rather than in the script, so the metric needs no
 management inside the script and is available at any frame (maintainer, 2026-09-12;
-`BitfsDrMetrics` is the model). A metric script is a `Script` whose `CustomScriptStatus`
+`BitfsDrMetrics` is the model). They are also how a script reads a raw variable at a past
+frame without a rewind, and a look into the future can be worth the sandboxed run to that
+frame (the maintainer, 2026-09-16; docs/tasing.md). A metric script is a `Script` whose `CustomScriptStatus`
 describes the game at one frame (e.g. `BitfsDrMetrics`: phase, oscillation count,
 crossing history, ARE). The top-level script caches
 `metrics[script][adhocLevel][frame]` and fills it lazily: after every frame advance or

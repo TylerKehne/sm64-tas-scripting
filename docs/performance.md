@@ -189,9 +189,9 @@ baseline (counted on every benchmark).
 
 ### Tier B: resource benchmarks (DLL required)
 
-Implemented in `tasfw-perf/src/bench_libsm64.cpp` as three families that `perf.ps1` runs
-in their own processes (a DLL path loads once per process): `^BM_LibSm64Full` and
-`^BM_LibSm64Light`, one per save mode, and `^BM_LibSm64Scaling`. They run when
+Implemented in `tasfw-perf/src/bench_libsm64.cpp` as four families that `perf.ps1` runs
+in their own processes (a DLL path loads once per process): `^BM_LibSm64Full`,
+`^BM_LibSm64Fixed` and `^BM_LibSm64Dirty`, one per save mode, and `^BM_LibSm64Scaling`. They run when
 `TASFW_LIBSM64`/`TASFW_M64` name a DLL and a movie (`perf.ps1` finds them in `res\` like
 `test.ps1` does) and are skipped otherwise, so the suite still runs in CI. The save-mode
 families play the movie to `TASFW_FRAME` (default 3330) once, then measure:
