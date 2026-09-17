@@ -1,8 +1,9 @@
 # Roadmap
 
-Status as of 2026-09-15: Phases 1 and 2 are done; of Phase 3 only 3.17 (guidelines for
-TASing with the framework, after 3.2) remains, the rest landed in #94, #95, #97 and #98
-and 3.2's access contract last; Phase 4 has 4.1 and 4.5
+Status as of 2026-09-15: Phases 1 and 2 are done; Phase 3 is done but for 3.21, a latent
+defect in the bare scattershot builder found while writing 3.17 (the guidelines for TASing
+with the framework, docs/tasing.md, the phase's last item; the rest landed in #94, #95, #97
+and #98 and 3.2's access contract last); Phase 4 has 4.1 and 4.5
 done; Phase 5 has its first item, per-scenario movement options, done. Items are ordered; each phase makes the next one safe to do with an AI
 agent. Check boxes as work lands and keep "Done when" honest.
 
@@ -341,7 +342,7 @@ Goal: the DLL becomes a reproducible, swappable artifact instead of a mystery bi
 ## Phase 3: framework hardening
 
 Goal: the core's implicit invariants become explicit and enforced. Status 2026-09-15: every
-item is done except 3.2, in progress, and 3.17, which follows it; then Phase 4.
+item is done except 3.21, a defect found while writing 3.17; then Phase 4.
 
 - [x] **3.1 Frame cursor semantics.** Decided by the maintainer 2026-09-08: `Modify` leaves the
       cursor at the end of the child's diff on purpose, because the common case is to keep
@@ -686,17 +687,36 @@ item is done except 3.2, in progress, and 3.17, which follows it; then Phase 4.
       builds only the tests: the perf binary was the old one every time (AGENTS.md, "Build
       and run").
 
-- [ ] **3.17 Agent instructions for TASing with the framework.** Added 2026-09-14 (the
-      maintainer): guidelines, for an agent or a person, on how to TAS with the framework
+- [x] **3.17 Agent instructions for TASing with the framework.** Done 2026-09-15:
+      [docs/tasing.md](docs/tasing.md), with the maintainer's rules (use the framework's
+      idioms and do not hack around it; bring up what seems impossible; the existing
+      scripts as a guideline, not a constraint; the compare family; the fastest TAS and the
+      most efficient script from the framework, the decomp and algorithms; ad-hoc for
+      one-offs; metrics for decisions) as a section of AGENTS.md, "TASing with the
+      framework", pointing to it. The shape decided as both: the rules where every agent
+      reads first, the how-to where long-form material lives. The page covers the four
+      things this item asked for below, with the pitfalls the committed scripts encode, and
+      it states that there is no general-purpose script runner (a new script runs as a
+      stage type, a test, a benchmark, a tool, or its own executable in a new folder with
+      a `main.cpp`). The maintainer's clarifications of 2026-09-16 are written in: the
+      speed-versus-efficiency tradeoff is contextual (movie frames usually, overall
+      performance for the squish-cancel brute forcer), metrics also serve raw variables in
+      the past and looks ahead, scattershot is a route finder in general, simulating the
+      relevant subset of the game as a resource is often worth it, a rewind generally costs
+      more than a frame advance. Writing it found 3.21 and 4.9. Added
+      2026-09-14 (the maintainer): guidelines, for an agent or a person, on how to TAS
+      with the framework
       once the pieces above are settled, so that Phase 4 starts from an agreed way of
       working rather than from the code alone: which tool to reach for (an ad-hoc attempt,
       a script class, a metric script, a scattershot stage), how a goal turns into a script
       and a run, how a result is checked (counts, reproduction, exports) and which of the
-      hard rules bite while TASing. Not complicated, the maintainer's words; to be written
-      after 3.2, whose encapsulation the guidelines should describe as settled, and before
-      Phase 4. Shape (a docs page or a section of AGENTS.md) to be decided then.
+      hard rules bite while TASing. Not complicated, the maintainer's words; written
+      after 3.2, whose encapsulation the guidelines describe as settled, and before
+      Phase 4.
       *Done when:* the guidelines exist and an agent given the repository and them can
-      create, run and check a new script without further instruction.
+      create, run and check a new script without further instruction. The first half
+      holds; the second is borne out, or not, by the first Phase 4 script written from the
+      page alone.
 - [x] **3.18 Perf baselines on the Visual Studio 2026 toolset.** Done 2026-09-15. With
       Visual Studio 2026 installed, `scripts\build.ps1` (vswhere, latest install) builds with
       its MSVC 19.51 and clang-cl 22; `perf\baselines\tyler-desktop*` and the references
@@ -758,6 +778,18 @@ item is done except 3.2, in progress, and 3.17, which follows it; then Phase 4.
       pulls in the thread and the builders at its bottom; `Scattershot` and `ScattershotThread`
       declare in the convention's order and their `.t.hpp` files follow; two commented-out
       blocks and two redundant forward declarations went.
+- [ ] **3.21 The bare scattershot builder does not compile when used.** Found 2026-09-15
+      writing 3.17. `ScattershotBuilder::ConfigureMetricScript` (ScattershotBuilder.hpp)
+      calls `std::make_shared` without its template argument, and the same class's
+      `PipeFrom` names a return type without the metric-script parameters it constructs
+      with. Both are members of a class template no caller instantiates: every committed
+      stage calls `ImportResourcePerThread` first, and the import and config builders
+      override both members correctly, so the bare order has never been compiled and a
+      stage written in the other order fails to build with an error deep in the header.
+      Fix: the two forms the derived builders use, and a case in `test_scattershot_mock.cpp`
+      that builds a search in the bare order. A bug fix behind an unchanged interface
+      (hard rule 10 does not apply); the suite's delta table is still owed (rule 8), and
+      docs/tasing.md drops its note on the order once it holds.
 
 ## Phase 4: the squish-cancel brute forcer
 
@@ -814,6 +846,19 @@ goals are (status as stated by the maintainer, 2026-09-08):
 - [ ] **4.8 Fine-tuned targeting.** A squish-cancel brute forcer that hits floating-point
       precise target values when given a sufficiently close starting m64 (the ARE machinery
       in `TiltTargetShot` is the seed of this). Progress exists.
+- [ ] **4.9 Defects in the stage scripts.** Found 2026-09-15 writing 3.17; docs/tasing.md
+      lists them as not to copy. `Scattershot_BitfsDrRecover::IsSolution` reads its
+      previous state from the current frame (`prevState`,
+      Scattershot_BitfsDrRecover.hpp:657), so the `c-up-trick` phase's `ACT_DECELERATING`
+      check compares a frame with itself. `Scattershot_BitfsDrApproach` offers
+      `CustomMoves::C_UP_TRICK` in its C-up phase and `ApplyMovement` never dispatches it,
+      so `CUpTrick()` there is dead and the phase runs on random inputs. `CustomMoves::REWIND`
+      is checked by all three searches' `ApplyMovement` and offered by none of their
+      `SelectMovementOptions`. `BitFsPyramidOscillation_TurnThenRunDownhill.cpp:150` reseeds
+      the fine sweep's uphill half from the coarse midpoint (`midHau`) rather than the
+      coarse winner (`midHau2`), which may or may not be intended. None is fixed here: each
+      changes what a stage searches, so each needs that stage's counts before and after,
+      and the dive-recover chain the first two belong to has never run to completion (4.1).
 
 ## Phase 5: toward a game- and console-agnostic framework
 

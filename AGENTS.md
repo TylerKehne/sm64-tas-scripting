@@ -85,7 +85,7 @@ its place with numbers, and "it is cleaner" is not a number.
 | `movies/` | The committed source movies: `bitfs-pyramid-jp.m64` (JP, 3,804 frames; the tests, the perf suite, CI and `config.json` use it), `bitfs-osc-final-jp.m64` (JP, 3,726 frames; the `osc-final-test3` stage), `1keyU.m64` (US, 7,628 frames; a whole 1-key run, the source of the US way into BitFS) and `bitfs-pyramid-us.m64` (US, 3,871 frames; `1keyU.m64` to its BitFS entry, then the JP movie from its own: its frame 3397 is the JP movie's 3330, the libsm64 tests run on it when `res\` has the US DLL). |
 | `scripts/` | `build.ps1` (the supported build entry point on Windows), `test.ps1`, `perf.ps1` and its compare script, `unlock_libsm64.py` (the game from a ROM or the CI key), `perf_scaling_hang.ps1`, `dll_symbols.py`, `dll_layout.py` (the layout table from a DLL's DWARF), `dll_game_bytes.py` (a build's `LibSm64KnownGameBytes` entry from its COFF symbols: where the game's bytes of `.data` and `.bss` end and the C runtime's begin), `decomp_diff.py` with `decomp_pin.json` (the copied decomp files against their pinned upstream revision; docs/decomp.md). |
 | `cmake/` | `AddOptimizationFlags` (arch flag, FP determinism, LTO unless `TASFW_LTO=OFF`, OpenMP; applied to every first-party target), `Warnings` (`/W3`, `/W4`, `-Wall -Wextra` on every first-party target, and `TASFW_WARNINGS_AS_ERRORS`) and `SystemIncludes` (fetched dependencies as system headers, so their warnings never count). |
-| `docs/` | Provenance of the DLL (libsm64.md), what was copied from the decomp and at which revision (decomp.md), compiler pitfalls, performance. |
+| `docs/` | Provenance of the DLL (libsm64.md), what was copied from the decomp and at which revision (decomp.md), compiler pitfalls, performance, and how to TAS with the framework (tasing.md). |
 
 ## Build and run
 
@@ -254,6 +254,28 @@ its place with numbers, and "it is cleaner" is not a number.
   public result object.
 - Compiler workarounds exist (`using` directives in `ScattershotThread`, the named static in
   `Inputs.cpp`). Each is catalogued in docs/compilers.md; add yours there.
+
+## TASing with the framework
+
+[docs/tasing.md](docs/tasing.md) is the how-to: which tool to reach for, how a goal becomes
+a script and a run, how a result is checked, and the pitfalls. The maintainer's rules
+(2026-09-15, clarified 2026-09-16):
+
+- Use the framework's methods and idioms for TASing; do not hack around it.
+- If something you want to do seems impossible, bring it up: it may be, with some direction.
+- Use the existing scripts as a guideline, not a constraint; there may be better ways within
+  the framework. Experiment.
+- The compare methods may help even though they are not used much.
+- Use the framework, the game's mechanics from the decompilation and general algorithmic
+  knowledge to make TASes as fast as possible and scripts that perform well and are efficient.
+  The two trade off and it is not always possible to improve one without hurting the other;
+  which matters more depends on the context: usually, in a TASing context, saving movie
+  frames; for the squish-cancel brute forcer, overall performance.
+- Ad-hoc scripts for simple or one-off tasks; script classes for heavy or modular ones that
+  other scripts may want to use.
+- Metrics are a powerful feature for making informed decisions within a script, in a
+  performant and organized way; also for raw variables a script wants to look at in the
+  past without rewinding, and looking into the future can sometimes be worth it too.
 
 ## Verifying a change
 
