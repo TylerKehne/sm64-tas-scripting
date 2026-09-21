@@ -1,0 +1,49 @@
+#include <General.hpp>
+
+#include <sm64/Camera.hpp>
+#include <sm64/Sm64.hpp>
+#include <sm64/Types.hpp>
+
+#include <tasfw/Script.hpp>
+#include <ScriptMath.hpp>
+
+#include <cmath>
+
+bool TryHackedWalkOutOfBounds::validation()
+{
+	return true;
+}
+
+bool TryHackedWalkOutOfBounds::execution()
+{
+	MarioState* marioState = (MarioState*) (ReadState("gMarioStates"));
+	Camera* camera		   = *(Camera**) (ReadState("gCamera"));
+
+	CustomStatus.startSpeed = _speed;
+	ScriptMath::CopyVec3f(CustomStatus.startPos, marioState->pos);
+
+	// Attempt to walk OOB to prevent QStep position updates
+	marioState->forwardVel = _speed;
+	marioState->action	   = ACT_WALKING;
+	auto inputs			   = Inputs::GetClosestInputByYawHau(
+				   marioState->faceAngle[1], 32, camera->yaw);
+	AdvanceFrameWrite(Inputs(0, inputs.first, inputs.second));
+
+	CustomStatus.endSpeed = marioState->forwardVel;
+	ScriptMath::CopyVec3f(CustomStatus.endPos, marioState->pos);
+	CustomStatus.endAction	= marioState->action;
+	CustomStatus.floorAngle = marioState->floorAngle;
+
+	return true;
+}
+
+bool TryHackedWalkOutOfBounds::assertion()
+{
+	float hDistMoved = sqrtf(float(
+		pow(CustomStatus.endPos[0] - CustomStatus.startPos[0], 2) +
+		pow(CustomStatus.endPos[2] - CustomStatus.startPos[2], 2)));
+	if (hDistMoved >= std::abs(_speed * 0.01f))
+		return false;
+
+	return CustomStatus.endAction == ACT_WALKING;
+}

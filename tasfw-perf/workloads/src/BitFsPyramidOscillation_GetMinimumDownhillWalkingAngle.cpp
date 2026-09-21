@@ -1,0 +1,91 @@
+#include <BitFSPyramidOscillation.hpp>
+
+#include <cmath>
+#include <tasfw/Script.hpp>
+#include <sm64/Sm64.hpp>
+#include <sm64/Types.hpp>
+#include <sm64/Pyramid.hpp>
+#include <sm64/Surface.hpp>
+#include <sm64/Trig.hpp>
+
+bool BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle::validation()
+{
+	// Check if Mario is on the pyramid platform
+	auto marioObj = (PyramidUpdateMem::Sm64Object*)(ReadState("gMarioObject"));
+	auto marioState = (PyramidUpdateMem::Sm64MarioState*)(ReadState("gMarioStates"));
+	if (!marioObj->platformIsPyramid || marioState->floorId == -1)
+		return false;
+
+	_pyramid = marioObj;
+	_floorId = marioState->floorId;
+
+	return true;
+}
+
+bool BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle::execution()
+{
+	AdvanceFrameRead();
+
+	auto marioState = (PyramidUpdateMem::Sm64MarioState*)(ReadState("gMarioStates"));
+	auto pyramid = (PyramidUpdateMem::Sm64Object*)(ReadState("Pyramid"));
+
+	/*
+	if (marioState->floorId == -1 || marioState->isFloorStatic)
+	{
+		CustomStatus.floorAngle = 0;
+		CustomStatus.isSlope = false;
+		return false;
+	}
+	*/
+
+	auto floor = &pyramid->surfaces[1][_floorId];
+	short floorAngle = atan2s(floor->normal.z, floor->normal.x);
+	CustomStatus.isSlope = PyramidUpdateMem::FloorIsSlope(floor, marioState->action);
+	// std::sqrt(float) overload, not std::sqrtf: libstdc++ 13 does not declare the f-suffixed
+	// names in namespace std (docs/compilers.md). Same instruction, same result.
+	CustomStatus.steepness = std::sqrt(floor->normal.x * floor->normal.x + floor->normal.z * floor->normal.z);
+
+	// m->floorAngle - m->faceAngle[1] >= -0x3FFF && m->floorAngle -
+	// m->faceAngle[1] <= 0x3FFF
+	int32_t lowerAngle = floorAngle + 0x3FFF;
+	int32_t upperAngle = floorAngle - 0x3FFF;
+
+	int32_t lowerAngleDiff = abs(int16_t(lowerAngle - _targetAngle));
+	int32_t upperAngleDiff = abs(int16_t(upperAngle - _targetAngle));
+
+	if (lowerAngleDiff <= upperAngleDiff)
+	{
+		CustomStatus.angleFacing = lowerAngle;
+		CustomStatus.angleNotFacing = upperAngle;
+		CustomStatus.downhillRotation = lowerAngleDiff < upperAngleDiff ? Rotation::CLOCKWISE : Rotation::NONE;
+	}
+	else
+	{
+		CustomStatus.angleFacing = upperAngle;
+		CustomStatus.angleNotFacing = lowerAngle;
+		CustomStatus.downhillRotation = Rotation::COUNTERCLOCKWISE;
+	}
+
+	// Get optimal angle for switching from turnaround to finish turnaround
+	int16_t facingDYaw = _faceAngle - CustomStatus.angleFacing;
+	if (abs(int32_t(facingDYaw)) <= 0x471C)
+		CustomStatus.angleFacingAnalogBack = _faceAngle + 0x471D * CustomStatus.downhillRotation;
+	else
+		CustomStatus.angleFacingAnalogBack = CustomStatus.angleFacing;
+
+	int16_t notFacingDYaw = _faceAngle - CustomStatus.angleNotFacing;
+	if (abs(int32_t(notFacingDYaw)) <= 0x471C)
+		CustomStatus.angleNotFacingAnalogBack = _faceAngle + 0x471D * CustomStatus.downhillRotation.Negate();
+	else
+		CustomStatus.angleNotFacingAnalogBack = CustomStatus.angleNotFacing;
+
+	CustomStatus.floorAngle = floorAngle;
+
+	return true;
+}
+
+bool BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle::assertion()
+{
+	return true;
+	//return CustomStatus.isSlope;
+}

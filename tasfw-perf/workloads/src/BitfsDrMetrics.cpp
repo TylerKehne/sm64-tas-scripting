@@ -1,0 +1,262 @@
+#include <BitfsDrMetrics.hpp>
+#include <ScriptMath.hpp>
+
+bool BitfsDrMetrics::ValidateCrossingData(const BitfsDrMetrics::CustomScriptStatus& state, float componentThreshold)
+{
+    int crossings = int(state.crossingData.size());
+    if (crossings > 2)
+    {
+        auto lastCrossing0 = state.crossingData.rbegin();
+        auto lastCrossing2 = ++(++state.crossingData.rbegin());
+        if (lastCrossing0->speed <= lastCrossing2->speed || lastCrossing0->maxDownhillSpeed <= lastCrossing2->maxSpeed)
+            return false;
+
+        if (std::fabs(lastCrossing0->nX) < componentThreshold && std::fabs(lastCrossing0->nZ) < componentThreshold)
+            return false;
+    }
+
+    return true;
+}
+
+bool BitfsDrMetrics::validation() { return int64_t(GetCurrentFrame()) >= initialFrame; }
+
+bool BitfsDrMetrics::execution()
+{
+    MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
+    Object* objectPool = (Object*)(ReadState("gObjectPool"));
+    Object* pyramid = &objectPool[84];
+
+    CustomStatus.initialFrame = initialFrame;
+    SetStateVariables(marioState, pyramid);
+
+    CalculateARE(pyramid);
+
+    // Calculate recursive metrics
+    int64_t currentFrame = GetCurrentFrame();
+    CustomScriptStatus lastFrameState;
+    if (currentFrame > initialFrame)
+        lastFrameState = GetMetrics(currentFrame - 1);
+
+    if (!lastFrameState.initialized)
+        return true;
+
+    CustomStatus.reachedNormRegime = lastFrameState.reachedNormRegime;
+    if (CustomStatus.xzSum > normalSpecsDto.minXzSum)
+        CustomStatus.reachedNormRegime |= true;
+
+    CustomStatus.xzSumStartedIncreasing = lastFrameState.xzSumStartedIncreasing;
+    if (CustomStatus.xzSum > lastFrameState.xzSum + 0.001f)
+        CustomStatus.xzSumStartedIncreasing |= true;
+
+    CustomStatus.roughTargetAngle = lastFrameState.roughTargetAngle;
+    CustomStatus.phase = lastFrameState.phase;
+    CalculateOscillations(lastFrameState, marioState, pyramid);
+
+    CalculatePhase(lastFrameState, marioState, pyramid);
+
+    return true;
+}
+
+bool BitfsDrMetrics::assertion() { return CustomStatus.initialized == true; }
+
+void BitfsDrMetrics::SetStateVariables(MarioState* marioState, Object* pyramid)
+{
+    CustomStatus.marioX = marioState->pos[0];
+    CustomStatus.marioY = marioState->pos[1];
+    CustomStatus.marioZ = marioState->pos[2];
+    CustomStatus.fSpd = marioState->forwardVel;
+    CustomStatus.pyraNormX = pyramid->oTiltingPyramidNormalX;
+    CustomStatus.pyraNormY = pyramid->oTiltingPyramidNormalY;
+    CustomStatus.pyraNormZ = pyramid->oTiltingPyramidNormalZ;
+    CustomStatus.xzSum = fabs(pyramid->oTiltingPyramidNormalX) + fabs(pyramid->oTiltingPyramidNormalZ);
+    CustomStatus.marioAction = marioState->action;
+    CustomStatus.initialized = true;
+    CustomStatus.frame = GetCurrentFrame();
+}
+
+void BitfsDrMetrics::CalculateOscillations(CustomScriptStatus lastFrameState, MarioState* marioState, Object* pyramid)
+{
+    if (CustomStatus.phase == Phase::INITIAL)
+        return;
+
+    int targetXDirection = ScriptMath::Sign(gSineTable[(uint16_t)(CustomStatus.roughTargetAngle) >> 4]);
+    int targetZDirection = ScriptMath::Sign(gCosineTable[(uint16_t)(CustomStatus.roughTargetAngle) >> 4]);
+
+    int tiltDirectionX, tiltDirectionZ, targetTiltDirectionX, targetTiltDirectionZ;
+    float normalDiffX, normalDiffZ;
+
+    tiltDirectionX = ScriptMath::Sign(CustomStatus.pyraNormX - lastFrameState.pyraNormX);
+    targetTiltDirectionX = targetXDirection;
+    normalDiffX = fabs(CustomStatus.pyraNormX - lastFrameState.pyraNormX);
+
+    tiltDirectionZ = ScriptMath::Sign(CustomStatus.pyraNormZ - lastFrameState.pyraNormZ);
+    targetTiltDirectionZ = targetZDirection;
+    normalDiffZ = fabs(CustomStatus.pyraNormZ - lastFrameState.pyraNormZ);
+
+    CustomStatus.crossingData = lastFrameState.crossingData;
+    CustomStatus.currentOscillation = lastFrameState.currentOscillation;
+    CustomStatus.currentCrossing = lastFrameState.currentCrossing;
+    if (tiltDirectionX == targetTiltDirectionX && normalDiffX >= 0.0099999f
+        && tiltDirectionZ == targetTiltDirectionZ && normalDiffZ >= 0.0099999f)
+    {
+        // toggle target angle unless we are already facing it initially
+        if (CustomStatus.phase != Phase::RUN_DOWNHILL || CustomStatus.currentCrossing > 1)
+        {
+            if (CustomStatus.roughTargetAngle == roughTargetAngleA)
+                CustomStatus.roughTargetAngle = roughTargetAngleB;
+            else
+                CustomStatus.roughTargetAngle = roughTargetAngleA;
+        }
+
+        // Calulate max downhill speed (slow but new crossings are relatively rare)
+        float maxDownhillSpeed = 0;
+        Camera* camera = *(Camera**)(ReadState("gCamera"));
+        ExecuteAdhoc([&]()
+            {
+                //No point in doing all this if it won't validate anyway
+                if (CustomStatus.currentCrossing > 1 && CustomStatus.crossingData[CustomStatus.currentCrossing - 1].speed >= marioState->forwardVel)
+                    return false;
+
+                for (int i = 0; i < 50; i++)
+                {
+                    maxDownhillSpeed = marioState->forwardVel;
+
+                    auto m64 = M64();
+                    auto status = TopLevelScriptBuilder<BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>::Build(m64)
+                        .ImportSave(ExportSave<PyramidUpdateMem>(pyramid))
+                        .Run(marioState->faceAngle[1]);
+                    if (!status.asserted)
+                        return true;
+
+                    // Attempt to run downhill with minimum angle
+                    int16_t intendedYaw = status.angleFacing;
+                    auto stick = Inputs::GetClosestInputByYawExact(
+                        intendedYaw, 32, camera->yaw, status.downhillRotation);
+                    AdvanceFrameWrite(Inputs(0, stick.first, stick.second));
+
+                    if ((marioState->action != ACT_FINISH_TURNING_AROUND && marioState->action != ACT_WALKING) || marioState->forwardVel <= maxDownhillSpeed)
+                        return true;
+                }
+
+                return true;
+            });
+
+        CustomStatus.crossingData.emplace_back(
+            GetCurrentFrame(), CustomStatus.fSpd, CustomStatus.xzSum, CustomStatus.pyraNormX, CustomStatus.pyraNormZ, marioState->forwardVel, maxDownhillSpeed);
+        CustomStatus.currentCrossing++;
+
+        if (!lastFrameState.crossingData.empty())
+        {
+            // Get number of frames since last crossing
+            int64_t lastCrossing = lastFrameState.crossingData.rbegin()->frame;
+
+            if (int64_t(GetCurrentFrame() - lastCrossing) >= minOscillationFrames)
+                CustomStatus.currentOscillation++;
+        }
+    }
+    else if (!CustomStatus.crossingData.empty() && marioState->forwardVel > CustomStatus.crossingData.rbegin()->maxSpeed)
+        CustomStatus.crossingData.rbegin()->maxSpeed = marioState->forwardVel;
+}
+
+void BitfsDrMetrics::CalculatePhase(CustomScriptStatus lastFrameState, MarioState* marioState, Object* /*pyramid*/)
+{
+    int32_t targetAngleDiffA = abs(int16_t(roughTargetAngleA - marioState->faceAngle[1]));
+    int32_t targetAngleDiffB = abs(int16_t(roughTargetAngleB - marioState->faceAngle[1]));
+
+    switch (lastFrameState.phase)
+    {
+    case Phase::INITIAL:
+        if (lastFrameState.initialized && CustomStatus.xzSum >= normalSpecsDto.minXzSum//CustomStatus.reachedNormRegime
+            && CustomStatus.pyraNormX < 0 && CustomStatus.pyraNormZ > 0
+            && std::abs(CustomStatus.incrementFrames[0]) % 2 == std::abs(CustomStatus.incrementFrames[2]) % 2
+            //&& std::abs(lastFrameState.incrementFrames[0] - lastFrameState.incrementFrames[2]) == 0
+            //&& CustomStatus.incrementFrames[0] >= 0
+            //&& std::abs(CustomStatus.incrementFrames[0] - CustomStatus.incrementFrames[2]) == 0
+            )
+        {
+            CustomStatus.crossingData.emplace_back(
+                GetCurrentFrame(), 0.f, CustomStatus.xzSum, CustomStatus.pyraNormX, CustomStatus.pyraNormZ, marioState->forwardVel, 0.f);
+            CustomStatus.currentCrossing++;
+
+            // choose further target angle
+            CustomStatus.roughTargetAngle =
+                targetAngleDiffA <= targetAngleDiffB ? roughTargetAngleB : roughTargetAngleA;
+            CustomStatus.phase = Phase::RUN_DOWNHILL;
+        }
+        break;
+
+    case Phase::RUN_DOWNHILL:
+        if (lastFrameState.fSpd > CustomStatus.fSpd)
+            CustomStatus.phase = Phase::TURN_UPHILL;
+        break;
+
+    case Phase::TURN_UPHILL:
+        if (marioState->action == ACT_TURNING_AROUND)
+            CustomStatus.phase = Phase::TURN_AROUND;
+        else if (marioState->action == ACT_DIVE || marioState->action == ACT_DIVE_SLIDE)
+            CustomStatus.phase = Phase::ATTEMPT_DR;
+        break;
+
+    case Phase::TURN_AROUND:
+        if (marioState->action == ACT_TURNING_AROUND)
+            CustomStatus.phase = Phase::RUN_DOWNHILL_PRE_CROSSING;
+        else if (marioState->action == ACT_FINISH_TURNING_AROUND)
+            CustomStatus.phase = Phase::RUN_DOWNHILL;
+        break;
+
+    case Phase::RUN_DOWNHILL_PRE_CROSSING:
+        if (CustomStatus.currentCrossing > lastFrameState.currentCrossing)
+            CustomStatus.phase = Phase::RUN_DOWNHILL;
+        break;
+
+    case Phase::ATTEMPT_DR:
+        if (marioState->action == ACT_FREEFALL_LAND_STOP)
+            CustomStatus.phase = Phase::QUICKTURN;
+        break;
+
+    case Phase::QUICKTURN:
+        if (marioState->action == ACT_IDLE)
+            CustomStatus.phase = Phase::RUN_DOWNHILL;
+        break;
+    }
+
+    if (targetAngleDiffA <= targetAngleDiffB)
+        CustomStatus.facingRoughTargetAngle = CustomStatus.roughTargetAngle == roughTargetAngleA;
+    else
+        CustomStatus.facingRoughTargetAngle = CustomStatus.roughTargetAngle == roughTargetAngleB;
+}
+
+void BitfsDrMetrics::CalculateARE(Object* pyramid)
+{
+    float errorIncX = std::fabs(std::nextafter(targetNormal[0], INFINITY) - targetNormal[0]);
+    float errorIncZ = std::fabs(std::nextafter(targetNormal[2], INFINITY) - targetNormal[2]);
+
+    float errorX = (targetNormal[0] - pyramid->oTiltingPyramidNormalX) / errorIncX;
+    float errorZ = (targetNormal[2] - pyramid->oTiltingPyramidNormalZ) / errorIncZ;
+
+    float normalX = pyramid->oTiltingPyramidNormalX;
+    for (int i = 0; i < 200; i++)
+    {
+        if (std::fabs(targetNormal[0] - normalX) <= 0.005f)
+        {
+            CustomStatus.adjustedRemainderError[0] = (targetNormal[0] - normalX) / errorIncX;
+            CustomStatus.incrementFrames[0] = i * ScriptMath::Sign(errorX);
+            break;
+        }
+
+        normalX += ScriptMath::Sign(errorX) * 0.01f;
+    }
+
+    float normalZ = pyramid->oTiltingPyramidNormalZ;
+    for (int i = 0; i < 200; i++)
+    {
+        if (std::fabs(targetNormal[2] - normalZ) <= 0.005f)
+        {
+            CustomStatus.adjustedRemainderError[2] = (targetNormal[2] - normalZ) / errorIncZ;
+            CustomStatus.incrementFrames[2] = i * ScriptMath::Sign(errorZ);
+            break;
+        }
+
+        normalZ += ScriptMath::Sign(errorZ) * 0.01f;
+    }
+}
