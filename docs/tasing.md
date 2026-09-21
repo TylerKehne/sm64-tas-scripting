@@ -39,6 +39,10 @@ The maintainer's rules for TASing with the framework (2026-09-15):
   2026-09-16). Say which one a change serves.
 - **Ad-hoc scripts for simple or one-off tasks, script classes for heavy or modular ones**
   that other scripts may want to use (AGENTS.md, "Conventions").
+- **No A press after the BitFS entry.** The setup is for an A-button-challenge run (the
+  maintainer, 2026-09-21). The airborne moves a BitFS script may use are the dive (B while
+  walking at 29 or more with the stick past 48; airborne for about ten frames) and the
+  rollout (B in the dive slide; it rests where it lands).
 - **Metrics are a powerful feature.** A metric script makes state about the game
   available at any frame, computed once and cached: derived quantities, so a decision
   that rests on more than a raw memory variable is made in one place and the script that
@@ -58,6 +62,7 @@ The maintainer's rules for TASing with the framework (2026-09-15):
 | State about the game at another frame: a raw variable in the past without a rewind, or a derived quantity (phase, oscillation count, distance to a target) | A metric script, read with `GetMetrics(frame)` |
 | What the game would compute, without playing it | A resource that simulates the part of the game that matters (`PyramidUpdate`), reached through `ExportSave<PyramidUpdateMem>(pyramid)` into a `TopLevelScript<PyramidUpdate>`; or `simulate_platform_tilt` from `tasfw-core/src/decomp` (see "Simulating the part of the game that matters") |
 | Explore a large input space, or find a near-optimal route | A scattershot search, a proven route finder for SM64 in general: a metric script, a `ScattershotThread` subclass and a solution type, run as a stage of `bitfs-turn` |
+| Put Mario at rest at a float-precise position | `BitFsAreFixer`'s way (ROADMAP 4.8): a dive recover, the rollout's air frames steered and resting where it lands; the last air frames' sticks measured one frame at a time from the game, combined with the forward speed each leaves behind and the fraction of the landing frame's velocity that reaches the floor, and the combination predicted nearest the target played out |
 | Run a script on the game | A stage type in `Stages.cpp` (run by `bitfs-turn --stage`), a doctest case under `libsm64:`, a tool, or a new folder with its own `main.cpp` (see "Running a script") |
 | Look at the game rather than play it | `VerifyLayout`, `LevelTransitions`, `MarioTrace` through `dllcheck`; `--objects`, `--trace`, `--levels` (docs/libsm64.md) |
 
@@ -186,6 +191,11 @@ seek to its start frame (a long replay, uncached, with a save at the end). `Save
 `OptionalSave`, `RollForward` and `Restore` are escape hatches for cases the automatic
 management does not cover; none of the committed scripts needs them, and a script that
 does is worth a second look. A load to a frame before the script's initial frame throws.
+A script that reaches for `Load` or `Rollback` to undo its own trial is reaching for the
+wrong thing (the maintainer, 2026-09-21): an ad-hoc body that returns false is reverted to
+where it began, so a search keeps its cursor where the plan starts, tries each variant in
+an `ExecuteAdhoc`, `TestAdhoc` or compare call, and applies the one to keep once
+(`BitFsAreFixer` is the model: its cursor never moves during the search).
 
 **Child scripts.** `Modify<X>(args...)` runs `X` and keeps its diff if it asserted, and the
 cursor ends after the diff's last frame (by design: the common case is to keep going;
@@ -331,7 +341,9 @@ carries between levels; `--objects` lists every active object with behavior, pos
 home; `--levels` lists the frames a movie changes level, which is how a start frame is
 found (docs/libsm64.md, "Checking a DLL"). The committed movies and their known states are
 in AGENTS.md ("Repo map", `movies/`): the JP movie's frame 3330 (idle on the pyramid) is
-where the tilt stages, the libsm64 tests and the DLL benchmarks start.
+where the libsm64 tests, the DLL benchmarks and the Tier D tilt-target workloads start,
+and its frame 3269 (the dive slide of the movie's own dive onto the platform) is where the
+pipeline does.
 
 ## From a goal to a script and a run
 
@@ -397,7 +409,11 @@ There is no general-purpose script runner. The ways to run a new script on the g
   `TestFrame()`, `Env("TASFW_M64")` from `libsm64_env.hpp` when it is
   (`test_libsm64_pyramid.cpp` is the end-to-end model: build the resource, load the movie,
   `ImportResource`, run, assert on the results). `scripts\test.ps1 -Config Release -Filter
-  'libsm64*'` runs the group.
+  'libsm64*'` runs the group. A check of a pipeline stage on the game belongs in
+  `bitfs-turn`'s own optional tests instead (`bitfs-turn --test`, `Tests.cpp`: doctest cases
+  that load the config, build one resource on its first DLL with the cost model off and run
+  the stage through `RunStage`), which neither CI nor the framework's suite runs (the
+  maintainer, 2026-09-21).
 - **As a benchmark**, when the script is a hot path or a fixed workload worth gating
   (docs/performance.md, "Tier C": `bench_framework.cpp` is the model, with the cost model
   off so counts are exact).
@@ -566,6 +582,14 @@ The full list is in AGENTS.md; these are the ones a script author meets.
 
 - `gMarioState` is `MarioState**`, `gMarioStates` is `MarioState*`. Mixing them reads garbage
   silently; `VerifyLayout`'s first check exists for this.
+- The platform's tilt follows Mario by 0.01 a frame, so wherever he runs for long he climbs
+  the slope it made for where he was: from a rest, straight at the center is uphill for
+  good, circling wide stalls under 20 speed, and while he circles the direction to the
+  center turns as fast as his face can. Speed on the pyramid comes from the oscillation
+  stage's turnarounds, not from a run; a dive needs 29.
+- Off the platform the pyramid tilts back toward flat by 0.01 a frame, and once Mario is on
+  it again it tilts to the goal his position defines and carries him with it (tens of units
+  for the resting tilts the setup uses), so where he lands is not where he rests.
 - A `GetMetrics` reference dies at the next write at or before its frame; copy it.
 - `ModifyAdhoc` reverts when the lambda returns false, and reports `executed == false`.
 - Check `asserted`, not `executed`; a metric script that did not assert stores a default

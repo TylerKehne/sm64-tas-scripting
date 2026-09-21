@@ -28,9 +28,12 @@ add_executable(tasfw-bitfs-turnaround
 	"src/SelfPath.hpp"
 	"src/TiltTargetShot.hpp"
 	"src/BitfsOscFinal.hpp"
+	"src/Tests.cpp"
+	"src/Tests.hpp"
 )
 target_compile_features(tasfw-bitfs-turnaround PRIVATE cxx_std_23)
 target_link_libraries(tasfw-bitfs-turnaround PRIVATE
+	doctest::doctest
 	tasfw::bitfs_pipeline
 	tasfw::core
 	tasfw::resources
@@ -44,6 +47,12 @@ set_target_properties(tasfw-bitfs-turnaround PROPERTIES
 	RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/out"
 )
 add_optimization_flags(tasfw-bitfs-turnaround)
+
+# Tests.cpp includes doctest: the same Clang 21 / libstdc++ 15 `<ciso646>` #warning as
+# tasfw-tests (tasfw-tests/CMakeLists.txt, docs/compilers.md).
+if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND NOT CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
+	target_compile_options(tasfw-bitfs-turnaround PRIVATE "-Wno-#warnings")
+endif()
 
 # config.json next to the executable, with "baseDirectory" set to this directory so that
 # the committed file's relative paths keep working from the build tree.

@@ -371,9 +371,14 @@ boundary as diffs only; the new stage's solution data starts out default.
 
 Stage types, in the order the committed config uses them:
 
-1. **tilt-target** (`TiltTargetShot`), three stages: hit the target normal in X, then in Z with
-   the X ARE fixed to what the first found, then constrain to a normal box. The last keeps the
-   best by ARE and exports.
+1. **are-fixer** (`BitFsAreFixer`, ROADMAP 4.8), one stage on the first resource and no
+   search: from the movie's dive onto the platform (frame 3269, its dive slide), a dive
+   recover whose rollout is steered to land where the resting normal carries the target's
+   ARE on both axes with the step parity the oscillations need; it exports. Every later
+   stage starts at 3269, since its solutions do. It replaced the three `tilt-target` stages
+   (`TiltTargetShot`: the target normal in X, then in Z with the X ARE fixed to what the
+   first found, then a normal box), which remain a stage type for the Tier D workloads
+   (`perf/tierd-*.json`, from frame 3330).
 2. **dr-oscillations** (`Scattershot_BitfsDr`) once per target oscillation from the
    equilibrium frame, piping solutions forward, committing to the direction the first
    oscillation took, keeping the fastest few between oscillations, and requiring

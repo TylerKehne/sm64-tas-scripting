@@ -1,21 +1,8 @@
-# Correctness tests (ROADMAP 1.2). doctest via FetchContent. One file per subject; the
+# Correctness tests (ROADMAP 1.2). doctest is fetched by the top-level CMakeLists.txt (the
+# bitfs-turn executable's own optional tests use it too). One file per subject; the
 # script engine tests share src/script_fixtures.hpp and the libsm64 tests src/libsm64_env.hpp.
 # DLL-free tests always run. The libsm64 tests run only when TASFW_LIBSM64 and TASFW_M64
 # point at a DLL and a movie (scripts/test.ps1 sets them when res/ has them).
-
-include(FetchContent)
-
-set(DOCTEST_WITH_TESTS OFF CACHE BOOL "" FORCE)
-set(DOCTEST_NO_INSTALL ON CACHE BOOL "" FORCE)
-FetchContent_Declare(doctest
-	DOWNLOAD_EXTRACT_TIMESTAMP ON
-	DOWNLOAD_DIR "${TASFW_DOWNLOAD_DIR}"
-	DOWNLOAD_NAME doctest-2.4.11.tar.gz
-	URL https://github.com/doctest/doctest/archive/refs/tags/v2.4.11.tar.gz
-	URL_HASH SHA256=632ed2c05a7f53fa961381497bf8069093f0d6628c5f26286161fbd32a560186
-)
-FetchContent_MakeAvailable(doctest)
-tasfw_system_includes(doctest)
 
 add_executable(tasfw-tests
 	"src/main.cpp"

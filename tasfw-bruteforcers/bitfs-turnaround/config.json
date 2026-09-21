@@ -28,49 +28,19 @@
 	},
 	"stages": [
 		{
-			"_comment": "Hit the target normal in X.",
-			"name": "tilt-x",
-			"type": "tilt-target",
-			"startFrame": 3330,
-			"scattershot": { "maxShots": 30000, "maxSolutions": 1, "deterministic": true, "seed": 111, "csvSamplePeriod": 100 },
-			"args": { "targetNx": -0.17944, "targetNz": 0.3936, "neighborhood": 100, "errorType": "adjusted", "targetDimension": "x" },
-			"visualize": {}
-		},
-		{
-			"_comment": "Then in Z, with the X adjusted remainder error fixed to what tilt-x found.",
-			"name": "tilt-z",
-			"type": "tilt-target",
-			"startFrame": 3330,
-			"input": "tilt-x",
-			"scattershot": { "maxShots": 1000000, "maxSolutions": 1, "shotsPerUpdate": 300, "seed": 10, "csvSamplePeriod": 100 },
-			"args": {
-				"targetNx": -0.17944, "targetNz": 0.3936, "neighborhood": 100, "targetDimension": "z",
-				"fixNonTargetDimensionARE": true, "targetARE": "input:adjustedRemainderError0"
-			},
-			"visualize": {}
-		},
-		{
-			"_comment": "Then constrain the normal to a box, keeping both AREs fixed. Best by ARE, one solution forward.",
-			"name": "tilt-range",
-			"type": "tilt-target",
-			"startFrame": 3330,
-			"input": "tilt-z",
-			"scattershot": { "maxShots": 1000000, "maxSolutions": 1, "shotsPerUpdate": 300, "seed": 10, "csvSamplePeriod": 100 },
-			"args": {
-				"targetNx": -0.17944, "targetNz": 0.3936, "neighborhood": 100, "targetDimension": "z",
-				"fixNonTargetDimensionARE": true, "fixTargetDimensionARE": true, "targetARE": "input:adjustedRemainderError0",
-				"minNx": -0.2, "maxNx": -0.1, "minNz": -0.2, "maxNz": 0.1
-			},
-			"select": { "sortBy": ["adjustedRemainderError0", "adjustedRemainderError2"], "take": 1 },
-			"visualize": {},
+			"_comment": "The ARE fixer (ROADMAP 4.8), no search: from the movie's dive onto the platform (frame 3269 is its dive slide), a dive recover whose rollout is steered in the air (no A: the run is an A button challenge) to land where the pyramid rests with the target's adjusted remainder error on both axes and the step parity the oscillations need. Every later stage starts at 3269 too, since its solutions do. bitfs-turn --test checks it.",
+			"name": "are-fix",
+			"type": "are-fixer",
+			"startFrame": 3269,
+			"args": { "targetNx": -0.17944, "targetNz": 0.3936, "tolerance": 100, "restX": -2020, "restZ": -740 },
 			"export": true
 		},
 		{
-			"_comment": "Build up oscillations one at a time from the equilibrium frame tilt-range found.",
+			"_comment": "Build up oscillations one at a time from the equilibrium frame the ARE fixer found.",
 			"name": "dr",
 			"type": "dr-oscillations",
-			"startFrame": 3330,
-			"input": "tilt-range",
+			"startFrame": 3269,
+			"input": "are-fix",
 			"scattershot": { "maxSolutions": 100, "csvSamplePeriod": 10, "fitnessTieGoesToNewBlock": false, "deterministic": false },
 			"args": {
 				"equilibriumFrame": "input:equilibriumFrame",
@@ -91,7 +61,7 @@
 			"_comment": "The final oscillation into the target quadrant, from the oscillation solutions.",
 			"name": "osc-final",
 			"type": "osc-final",
-			"startFrame": 3330,
+			"startFrame": 3269,
 			"input": "dr",
 			"scattershot": { "csvSamplePeriod": 10, "maxShots": 50000, "maxSolutions": 1000 },
 			"args": { "initialFrame": "input:equilibriumFrame", "oscQuadrant": 4, "targetQuadrant": 1, "targetNx": -0.17944, "targetNz": 0.3936 },
@@ -102,7 +72,7 @@
 			"_comment": "The dive-recover chain, disabled in the old main.cpp and never run to completion: dive from the oscillation solutions, land it, then the C-up trick.",
 			"name": "dr-approach",
 			"type": "dr-approach",
-			"startFrame": 3330,
+			"startFrame": 3269,
 			"input": "dr",
 			"scattershot": { "csvSamplePeriod": 10, "maxShots": 50000, "maxSolutions": 1000 },
 			"args": { "initialFrame": "input:equilibriumFrame", "oscQuadrant": 4, "targetQuadrant": 1, "minXzSum": 0.69, "targetNx": -0.17944, "targetNz": 0.3936 },
@@ -112,7 +82,7 @@
 		{
 			"name": "dr-recover",
 			"type": "dr-recover",
-			"startFrame": 3330,
+			"startFrame": 3269,
 			"input": "dr-approach",
 			"scattershot": { "csvSamplePeriod": 1, "maxShots": 50000, "maxSolutions": 100 },
 			"args": { "oscQuadrant": 4, "targetQuadrant": 1, "minXzSum": 0.69, "phase": "attempt-dr" },
@@ -121,7 +91,7 @@
 		{
 			"name": "dr-nut",
 			"type": "dr-recover",
-			"startFrame": 3330,
+			"startFrame": 3269,
 			"input": "dr-recover",
 			"scattershot": { "csvSamplePeriod": 1, "maxShots": 10000, "maxSolutions": 100 },
 			"args": { "oscQuadrant": 4, "targetQuadrant": 1, "minXzSum": 0.69, "phase": "c-up-trick" },
