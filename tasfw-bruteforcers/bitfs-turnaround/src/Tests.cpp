@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <map>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <LibSm64.hpp>
@@ -39,14 +40,17 @@ namespace
 		resources.back().useCostModel = false;
 	}
 
-	const StageConfig& StageOfType(const PipelineConfig& pipeline, const std::string& type)
+	// `type` by value as a string_view: a `const std::string&` bound to a literal makes GCC's
+	// -Wdangling-reference take the returned reference for one into that temporary
+	// (docs/compilers.md).
+	const StageConfig& StageOfType(const PipelineConfig& pipeline, std::string_view type)
 	{
 		for (const StageConfig& stage : pipeline.stages)
 		{
 			if (stage.type == type)
 				return stage;
 		}
-		throw std::runtime_error("config has no stage of type \"" + type + "\"");
+		throw std::runtime_error("config has no stage of type \"" + std::string(type) + "\"");
 	}
 
 	double Metric(const SolutionRecord& record, const char* name)
@@ -91,8 +95,10 @@ TEST_CASE("are-fixer: the config's stage solves within its tolerance without an 
 	CHECK(std::fmod(std::fabs(Metric(solution, "incrementFrames0")), 2.0) == std::fmod(std::fabs(Metric(solution, "incrementFrames2")), 2.0));
 	CHECK(Metric(solution, "equilibriumFrame") > double(stage.startFrame));
 	CHECK(!solution.m64Diff.frames.empty());
-	for (const auto& [frame, inputs] : solution.m64Diff.frames)
+	// The pair is named, not destructured: the message's lambda cannot capture a structured
+	// binding under Clang 18 with OpenMP (docs/compilers.md).
+	for (const auto& entry : solution.m64Diff.frames)
 	{
-		CHECK_MESSAGE((inputs.buttons & Buttons::A) == 0, "A pressed at frame ", frame);
+		CHECK_MESSAGE((entry.second.buttons & Buttons::A) == 0, "A pressed at frame ", entry.first);
 	}
 }

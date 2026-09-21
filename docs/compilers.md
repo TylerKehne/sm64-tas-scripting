@@ -309,7 +309,9 @@ capture whenever OpenMP is enabled, with "capturing a structured binding is not 
 supported in OpenMP", and every first-party target is built with `-fopenmp`. MSVC, clang-cl
 19.1, GCC 13 and 15 and Clang 21 accept it; CI's ubuntu-24.04-clang job was the only one
 to fail (2026-09-13). The loop names the pair (`entry.first`, `entry.second`) instead. Any lambda, including the ones
-behind `INFO`, `CAPTURE` and the compare helpers, gets the same treatment.
+behind `INFO`, `CAPTURE` and the compare helpers, gets the same treatment. Clang 18 on
+ubuntu-24.04 still rejects it: `bitfs-turn`'s `Tests.cpp` hit it with a `CHECK_MESSAGE` on
+2026-09-21 and names its pair the same way.
 
 ### Clang 21 with libstdc++ 15: doctest's `<ciso646>` include is a `#warning`
 
@@ -427,7 +429,9 @@ returns a reference into `parent`, but a call with a string literal binds a temp
 to that temporary. The warning is in `-Wall` and there was no real bug. The fix that keeps
 the function honest is to take `where` by value as a `std::string_view`, which the heuristic
 does not consider; GCC 14 narrowed the check, and 13 was the CI compiler when this was
-found (2026-09-13). The fix stays.
+found (2026-09-13). The fix stays, and GCC 14 and 15 still fire on the same shape:
+`bitfs-turn`'s `Tests.cpp` got the warning on a `const std::string&` type name looked up
+in the config (2026-09-21) and takes a `std::string_view` now too.
 
 ### `static` function declarations in a header
 
