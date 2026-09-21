@@ -60,3 +60,6 @@ add_custom_command(
 	VERBATIM
 )
 add_custom_target(tasfw-bitfs-turnaround-config ALL DEPENDS "${_config_out}")
+# Building the executable alone (Visual Studio's play button builds only the startup target)
+# must stamp the config too, or the copy beside the executable goes stale.
+add_dependencies(tasfw-bitfs-turnaround tasfw-bitfs-turnaround-config)

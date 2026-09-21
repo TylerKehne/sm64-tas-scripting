@@ -8,6 +8,11 @@
 	},
 	"m64": "../../movies/bitfs-pyramid-jp.m64",
 	"outputDirectory": "../../analysis",
+	"visualizer": "../../analysis/visualizer.py",
+	"visualize": {
+		"_comment": "Defaults for every stage's visualize block: a 900-by-900 window centered on the pyramid (home x -1945, z -715; the plot's x is MarioZ and its y MarioX), never rescaled.",
+		"view": { "x": -715, "y": -1945, "width": 900, "height": 900 }
+	},
 	"scattershot": {
 		"pelletMaxScripts": 20,
 		"pelletMaxFrameDistance": 50,
@@ -23,22 +28,13 @@
 	},
 	"stages": [
 		{
-			"_comment": "Experiment in progress: the final oscillation straight from frame 3604 of movies/bitfs-osc-final-jp.m64 (formerly test3.m64).",
-			"name": "osc-final-test3",
-			"type": "osc-final",
-			"startFrame": 3604,
-			"m64": "../../movies/bitfs-osc-final-jp.m64",
-			"scattershot": { "csvSamplePeriod": 10, "shotsPerUpdate": 300, "maxShots": 1000000, "maxSolutions": 1000 },
-			"args": { "initialFrame": 3604, "oscQuadrant": 4, "targetQuadrant": 1, "targetNx": -0.17944, "targetNz": 0.3936 },
-			"export": true
-		},
-		{
 			"_comment": "Hit the target normal in X.",
 			"name": "tilt-x",
 			"type": "tilt-target",
 			"startFrame": 3330,
-			"scattershot": { "maxShots": 30000, "maxSolutions": 1, "deterministic": true, "seed": 111 },
-			"args": { "targetNx": -0.17944, "targetNz": 0.3936, "neighborhood": 100, "errorType": "adjusted", "targetDimension": "x" }
+			"scattershot": { "maxShots": 30000, "maxSolutions": 1, "deterministic": true, "seed": 111, "csvSamplePeriod": 100 },
+			"args": { "targetNx": -0.17944, "targetNz": 0.3936, "neighborhood": 100, "errorType": "adjusted", "targetDimension": "x" },
+			"visualize": {}
 		},
 		{
 			"_comment": "Then in Z, with the X adjusted remainder error fixed to what tilt-x found.",
@@ -46,11 +42,12 @@
 			"type": "tilt-target",
 			"startFrame": 3330,
 			"input": "tilt-x",
-			"scattershot": { "maxShots": 1000000, "maxSolutions": 1, "shotsPerUpdate": 300, "seed": 10 },
+			"scattershot": { "maxShots": 1000000, "maxSolutions": 1, "shotsPerUpdate": 300, "seed": 10, "csvSamplePeriod": 100 },
 			"args": {
 				"targetNx": -0.17944, "targetNz": 0.3936, "neighborhood": 100, "targetDimension": "z",
 				"fixNonTargetDimensionARE": true, "targetARE": "input:adjustedRemainderError0"
-			}
+			},
+			"visualize": {}
 		},
 		{
 			"_comment": "Then constrain the normal to a box, keeping both AREs fixed. Best by ARE, one solution forward.",
@@ -58,13 +55,14 @@
 			"type": "tilt-target",
 			"startFrame": 3330,
 			"input": "tilt-z",
-			"scattershot": { "maxShots": 1000000, "maxSolutions": 1, "shotsPerUpdate": 300, "seed": 10 },
+			"scattershot": { "maxShots": 1000000, "maxSolutions": 1, "shotsPerUpdate": 300, "seed": 10, "csvSamplePeriod": 100 },
 			"args": {
 				"targetNx": -0.17944, "targetNz": 0.3936, "neighborhood": 100, "targetDimension": "z",
 				"fixNonTargetDimensionARE": true, "fixTargetDimensionARE": true, "targetARE": "input:adjustedRemainderError0",
 				"minNx": -0.2, "maxNx": -0.1, "minNz": -0.2, "maxNz": 0.1
 			},
 			"select": { "sortBy": ["adjustedRemainderError0", "adjustedRemainderError2"], "take": 1 },
+			"visualize": {},
 			"export": true
 		},
 		{
@@ -73,7 +71,7 @@
 			"type": "dr-oscillations",
 			"startFrame": 3330,
 			"input": "tilt-range",
-			"scattershot": { "maxSolutions": 1000, "csvSamplePeriod": 0, "fitnessTieGoesToNewBlock": false, "deterministic": false },
+			"scattershot": { "maxSolutions": 100, "csvSamplePeriod": 10, "fitnessTieGoesToNewBlock": false, "deterministic": false },
 			"args": {
 				"equilibriumFrame": "input:equilibriumFrame",
 				"quadrant": 4, "minOscillationFrames": 15,
@@ -86,6 +84,7 @@
 					"minMinor": 0.19, "maxMinor": 0.2, "regionsMinor": 10000
 				}
 			},
+			"visualize": {},
 			"export": true
 		},
 		{
@@ -96,6 +95,7 @@
 			"input": "dr",
 			"scattershot": { "csvSamplePeriod": 10, "maxShots": 50000, "maxSolutions": 1000 },
 			"args": { "initialFrame": "input:equilibriumFrame", "oscQuadrant": 4, "targetQuadrant": 1, "targetNx": -0.17944, "targetNz": 0.3936 },
+			"visualize": { "filters": [{ "column": "NormalDistance", "min": 0, "max": 100 }] },
 			"export": true
 		},
 		{
@@ -106,6 +106,7 @@
 			"input": "dr",
 			"scattershot": { "csvSamplePeriod": 10, "maxShots": 50000, "maxSolutions": 1000 },
 			"args": { "initialFrame": "input:equilibriumFrame", "oscQuadrant": 4, "targetQuadrant": 1, "minXzSum": 0.69, "targetNx": -0.17944, "targetNz": 0.3936 },
+			"visualize": {},
 			"export": true
 		},
 		{
@@ -114,7 +115,8 @@
 			"startFrame": 3330,
 			"input": "dr-approach",
 			"scattershot": { "csvSamplePeriod": 1, "maxShots": 50000, "maxSolutions": 100 },
-			"args": { "oscQuadrant": 4, "targetQuadrant": 1, "minXzSum": 0.69, "phase": "attempt-dr" }
+			"args": { "oscQuadrant": 4, "targetQuadrant": 1, "minXzSum": 0.69, "phase": "attempt-dr" },
+			"visualize": {}
 		},
 		{
 			"name": "dr-nut",
@@ -123,6 +125,7 @@
 			"input": "dr-recover",
 			"scattershot": { "csvSamplePeriod": 1, "maxShots": 10000, "maxSolutions": 100 },
 			"args": { "oscQuadrant": 4, "targetQuadrant": 1, "minXzSum": 0.69, "phase": "c-up-trick" },
+			"visualize": {},
 			"export": true
 		}
 	]

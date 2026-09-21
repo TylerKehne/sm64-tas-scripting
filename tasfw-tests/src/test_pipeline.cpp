@@ -212,6 +212,78 @@ TEST_CASE("Select sorts by metrics in order and keeps the first n")
 	CHECK_THROWS_AS(bad.Select(json::parse(R"({"takes": 1})"), "test"), std::runtime_error);
 }
 
+TEST_CASE("A stage's visualize block is a Visualization with the pipeline's viewer and the stage's name")
+{
+	json config = BaseConfig();
+	config["visualizer"] = "../analysis/visualizer.py";
+	config["stages"][1]["visualize"] = json::parse(R"({ "binX": 5, "filters": [{ "column": "NormalDistance", "min": 0, "max": 100 }] })");
+	PipelineConfig p = PipelineConfig::Parse(config, fs::path("base/cfg"));
+	REQUIRE(p.visualizer.has_value());
+	CHECK(p.visualizer->generic_string() == "base/analysis/visualizer.py");
+	CHECK(!p.stages[0].visualize.has_value());
+	REQUIRE(p.stages[1].visualize.has_value());
+	const Visualization& v = *p.stages[1].visualize;
+	CHECK(fs::path(v.script).generic_string() == "base/analysis/visualizer.py");
+	CHECK(v.title == "second");
+	CHECK(v.binX == 5);
+	CHECK(v.binY == 0.1);
+	CHECK(v.x == "MarioZ");
+	REQUIRE(v.filters.size() == 1);
+	CHECK(v.filters[0].column == "NormalDistance");
+	CHECK(v.filters[0].min == 0);
+	CHECK(v.filters[0].max == 100);
+
+	config["stages"][1]["visualize"]["title"] = "the final oscillation";
+	CHECK(PipelineConfig::Parse(config, fs::path("base/cfg")).stages[1].visualize->title == "the final oscillation");
+
+	auto parse = [](json j) { return PipelineConfig::Parse(j, fs::path("base/cfg")); };
+	json noViewer = config;
+	noViewer.erase("visualizer");
+	CHECK_THROWS_WITH_AS(parse(noViewer), doctest::Contains("visualizer"), std::runtime_error);
+	json badKey = config;
+	badKey["stages"][1]["visualize"]["refresh"] = 5; // the refresh rate is the viewer's own setting
+	CHECK_THROWS_WITH_AS(parse(badKey), doctest::Contains("refresh"), std::runtime_error);
+	json badFilter = config;
+	badFilter["stages"][1]["visualize"]["filters"][0].erase("column");
+	CHECK_THROWS_WITH_AS(parse(badFilter), doctest::Contains("stages[second].visualize"), std::runtime_error);
+	json badFilterKey = config;
+	badFilterKey["stages"][1]["visualize"]["filters"][0]["colum"] = "Phase";
+	CHECK_THROWS_WITH_AS(parse(badFilterKey), doctest::Contains("colum"), std::runtime_error);
+}
+
+TEST_CASE("The top level's visualize block is the default a stage's own block overrides key by key")
+{
+	json config = BaseConfig();
+	config["visualizer"] = "../analysis/visualizer.py";
+	config["visualize"] = json::parse(R"({ "binX": 5, "view": { "x": -715, "y": -1945, "width": 900, "height": 900 } })");
+	config["stages"][1]["visualize"] = json::parse(R"({ "binX": 7 })");
+	PipelineConfig p = PipelineConfig::Parse(config, fs::path("base/cfg"));
+	CHECK(!p.stages[0].visualize.has_value()); // defaults enable nothing: a stage opts in with its own block
+	REQUIRE(p.stages[1].visualize.has_value());
+	const Visualization& v = *p.stages[1].visualize;
+	CHECK(v.binX == 7);
+	CHECK(v.title == "second");
+	REQUIRE(v.view.has_value());
+	CHECK(v.view->x == -715);
+	CHECK(v.view->y == -1945);
+	CHECK(v.view->width == 900);
+	CHECK(v.view->height == 900);
+
+	config["stages"][1]["visualize"]["view"] = json::parse(R"({ "x": 0, "y": 0, "width": 100, "height": 50 })");
+	CHECK(PipelineConfig::Parse(config, fs::path("base/cfg")).stages[1].visualize->view->height == 50); // a stage's view replaces the default's whole
+
+	auto parse = [](json j) { return PipelineConfig::Parse(j, fs::path("base/cfg")); };
+	json badDefault = config;
+	badDefault["visualize"]["refresh"] = 5;
+	CHECK_THROWS_WITH_AS(parse(badDefault), doctest::Contains("refresh"), std::runtime_error);
+	json shortView = config;
+	shortView["visualize"]["view"].erase("height");
+	CHECK_THROWS_WITH_AS(parse(shortView), doctest::Contains("height"), std::runtime_error);
+	json flatView = config;
+	flatView["stages"][1]["visualize"]["view"]["width"] = 0;
+	CHECK_THROWS_WITH_AS(parse(flatView), doctest::Contains("positive"), std::runtime_error);
+}
+
 TEST_CASE("Stage arguments come from the JSON or from the input's first solution")
 {
 	SolutionSet input;

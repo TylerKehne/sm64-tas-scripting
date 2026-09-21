@@ -163,4 +163,30 @@ void Scattershot<TState, TResource, TMetricScript, TOutputState>::OpenCsv()
         std::cout << "Unable to create CSV file.";
 }
 
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TMetricScript,
+    class TOutputState>
+void Scattershot<TState, TResource, TMetricScript, TOutputState>::StartVisualizer(const Visualization& visualization)
+{
+    if (!CsvEnabled)
+        return;
+
+    Visualizer = visualization;
+    VisualizerParams = std::filesystem::path(CsvFileName).replace_extension(".visualizer.json");
+    Visualizer->Write(VisualizerParams, CsvFileName, false, 0);
+    Visualizer->Launch(VisualizerParams);
+}
+
+template <class TState, derived_from_specialization_of<Resource> TResource,
+    std::derived_from<Script<TResource>> TMetricScript,
+    class TOutputState>
+void Scattershot<TState, TResource, TMetricScript, TOutputState>::FinishVisualizer()
+{
+    if (!Visualizer)
+        return;
+
+    Csv.flush();
+    Visualizer->Write(VisualizerParams, CsvFileName, true, CsvRows < 0 ? 0 : CsvRows);
+}
+
 #endif

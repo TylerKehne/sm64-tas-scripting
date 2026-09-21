@@ -133,6 +133,20 @@ jobs:
         shell: bash
         run: ${{ matrix.bindir }}/out/tasfw-tests
 
+      - name: The viewer renders a CSV headless (analysis/visualizer.py --once, ROADMAP 4.4)
+        shell: bash
+        env:
+          TASFW_VISUALIZER_NO_BOOTSTRAP: 1 # the packages come from pip here and apt on Linux, not the viewer's own venv
+        run: |
+          py=python3
+          if [ "$RUNNER_OS" = "Windows" ]; then py=python; $py -m pip install --quiet -r analysis/requirements.txt; fi
+          $py analysis/visualizer.py --once --csv tasfw-tests/data/scattershot_sample.csv --out viewer.png
+          test -s viewer.png
+          # The headless follow mode the perf suite gates (ROADMAP 4.10): a finished run drains on the first tick.
+          $py -c "import json; json.dump({'csv': 'tasfw-tests/data/scattershot_sample.csv', 'title': 'ci', 'finished': True, 'rows': 600}, open('ci.visualizer.json', 'w'))"
+          TASFW_VISUALIZER_HEADLESS=1 $py analysis/visualizer.py ci.visualizer.json
+          test -s ci.visualizer.summary.json && test -s ci.visualizer.png
+
       - name: Decomp pin (the copied sm64 headers against n64decomp/sm64 at their pinned commits)
         if: matrix.name == 'ubuntu-24.04-gcc'
         shell: bash
@@ -247,7 +261,7 @@ jobs:
       - name: Install toolchain
         run: |
           apt-get update -qq
-          DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ninja-build cmake git ca-certificates python3 python3-cryptography ${{ matrix.apt }}
+          DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ninja-build cmake git ca-certificates python3 python3-cryptography python3-numpy python3-matplotlib ${{ matrix.apt }}
 
       - uses: actions/checkout@v5
 

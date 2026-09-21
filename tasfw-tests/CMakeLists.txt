@@ -37,6 +37,7 @@ add_executable(tasfw-tests
 	"src/test_libsm64_savemodes.cpp"
 	"src/test_libsm64_pyramid.cpp"
 	"src/test_pipeline.cpp"
+	"src/test_visualization.cpp"
 )
 target_link_libraries(tasfw-tests PRIVATE tasfw::core tasfw::resources tasfw::scattershot tasfw::testing tasfw::scripts_general tasfw::bitfs_pipeline doctest::doctest)
 target_compile_features(tasfw-tests PRIVATE cxx_std_23)

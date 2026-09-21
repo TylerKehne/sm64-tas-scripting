@@ -72,7 +72,7 @@ its place with numbers, and "it is cleaner" is not a number.
 | `tasfw-core/` | Engine: `Script`, `TopLevelScript`, `Resource`, savestate slots, m64 I/O, input math. Header-heavy templates, one header per concept under `inc/tasfw/`; `<tasfw/Script.hpp>` is a script's one include, it pulls in the root and the builders at its bottom. |
 | `tasfw-core/inc/sm64/` | Hand-copied decomp structs, enums and trig tables. Must match the DLL's x64 layout. |
 | `tasfw-resources/` | `LibSm64` (drives the game DLL) and `PyramidUpdate` (standalone reimplementation of pyramid tilt physics used as a fast stand-in). |
-| `tasfw-scattershot/` | Header-only OpenMP brute-force search (blocks, segments, solutions, CSV export). One header per concept under `inc/`; `<Scattershot.hpp>` is the one include, it pulls in the thread and the builders at its bottom. |
+| `tasfw-scattershot/` | Header-only OpenMP brute-force search (blocks, segments, solutions, CSV export, and the launch of the CSV's viewer: `Visualization.hpp`). One header per concept under `inc/`; `<Scattershot.hpp>` is the one include, it pulls in the thread and the builders at its bottom. |
 | `tasfw-scripts/` | Reusable BitFS scripts (pyramid oscillation, downhill angle search, dive-recover attempts), scattershot stages, and the scripts that look at the game rather than play it (`VerifyLayout`, `LevelTransitions`, `MarioTrace`, `SpliceMovie`), which the tools and tests run. |
 | `tasfw-bruteforcers/bitfs-turnaround/` | The only executable (`bitfs-turn.exe`): the BitFS pipeline as config-selected stages (`config.json`, `Stages.cpp`, `PipelineConfig`). `--list`, `--dry-run`, `--stage`. |
 | `tasfw-perf/` | Performance suite (Tier A microbenchmarks on an in-memory mock resource). Release only. |
@@ -80,10 +80,10 @@ its place with numbers, and "it is cleaner" is not a number.
 | `tasfw-tests/` | Correctness tests (doctest), one file per subject; `script_fixtures.hpp` and `libsm64_env.hpp` hold what the `test_script_*` and `test_libsm64_*` files share. DLL-free tests always run; the libsm64 tests run when `res\` has the DLL and movie. `test_sm64_layout.cpp` compiles `sm64_layout.inc`, the pinned DLL's field offsets and struct sizes, against the copied headers, so the layout is checked without the game (docs/libsm64.md, "Struct layouts"). |
 | `tasfw-testing/` | Header-only test support shared by tests and benchmarks: `MockResource`, and `PerfAccess`, the friend through which a test or benchmark whose subject is Scattershot's table or the resource's slot manager reaches their internals (everything else uses the public operations). |
 | `perf/` | Committed benchmark baselines, one directory per machine and compiler (`tyler-desktop\`, `tyler-desktop-clang\`): a JSON file per benchmark family plus `context.json`, written by `scripts\perf.ps1 -SaveBaseline` and read through `perf_compare.py compare`, not by hand (the one hand edit is a renamed benchmark's row key, numbers untouched, as when the metric-script rows were renamed); `tierd-ci.json` is CI's Tier D baseline. `perf/results/` is gitignored. |
-| `analysis/` | R script that plots scattershot CSV output; also the pipeline's default output directory (CSVs, `solutions/*.json`, `m64/`), all gitignored. |
+| `analysis/` | `visualizer.py`, the scattershot viewer (a live plot of a run's CSV, one tab per run; the search launches it, README.md "The viewer") with `requirements.txt`, which it installs into its own `analysis/.venv` on first start; also the pipeline's default output directory (CSVs, their `*.visualizer.json`, `solutions/*.json`, `m64/`), all gitignored. |
 | `res/` | Gitignored runtime inputs: 24 copies of the libsm64 DLL (made by `scripts/unlock_libsm64.py`), other source .m64 files, and thousands of exported solution .m64 files. |
-| `movies/` | The committed source movies: `bitfs-pyramid-jp.m64` (JP, 3,804 frames; the tests, the perf suite, CI and `config.json` use it), `bitfs-osc-final-jp.m64` (JP, 3,726 frames; the `osc-final-test3` stage), `1keyU.m64` (US, 7,628 frames; a whole 1-key run, the source of the US way into BitFS) and `bitfs-pyramid-us.m64` (US, 3,871 frames; `1keyU.m64` to its BitFS entry, then the JP movie from its own: its frame 3397 is the JP movie's 3330, the libsm64 tests run on it when `res\` has the US DLL). |
-| `scripts/` | `build.ps1` (the supported build entry point on Windows), `test.ps1`, `perf.ps1` and its compare script, `unlock_libsm64.py` (the game from a ROM or the CI key), `perf_scaling_hang.ps1`, `dll_symbols.py`, `dll_layout.py` (the layout table from a DLL's DWARF), `dll_game_bytes.py` (a build's `LibSm64KnownGameBytes` entry from its COFF symbols: where the game's bytes of `.data` and `.bss` end and the C runtime's begin), `decomp_diff.py` with `decomp_pin.json` (the copied decomp files against their pinned upstream revision; docs/decomp.md). |
+| `movies/` | The committed source movies: `bitfs-pyramid-jp.m64` (JP, 3,804 frames; the tests, the perf suite, CI and `config.json` use it), `bitfs-osc-final-jp.m64` (JP, 3,726 frames; the oscillations done by hand to frame 3604, once the source of a final-oscillation experiment, unreferenced now), `1keyU.m64` (US, 7,628 frames; a whole 1-key run, the source of the US way into BitFS) and `bitfs-pyramid-us.m64` (US, 3,871 frames; `1keyU.m64` to its BitFS entry, then the JP movie from its own: its frame 3397 is the JP movie's 3330, the libsm64 tests run on it when `res\` has the US DLL). |
+| `scripts/` | `build.ps1` (the supported build entry point on Windows), `test.ps1`, `perf.ps1` and its compare script, `unlock_libsm64.py` (the game from a ROM or the CI key), `perf_scaling_hang.ps1`, `dll_symbols.py`, `dll_layout.py` (the layout table from a DLL's DWARF), `dll_game_bytes.py` (a build's `LibSm64KnownGameBytes` entry from its COFF symbols: where the game's bytes of `.data` and `.bss` end and the C runtime's begin), `decomp_diff.py` with `decomp_pin.json` (the copied decomp files against their pinned upstream revision; docs/decomp.md), `decode_cache_model.py` (a model of a scattershot run's block tree and what a per-thread savestate cache would save of its decoding; ROADMAP 4.3). |
 | `cmake/` | `AddOptimizationFlags` (arch flag, FP determinism, LTO unless `TASFW_LTO=OFF`, OpenMP; applied to every first-party target), `Warnings` (`/W3`, `/W4`, `-Wall -Wextra` on every first-party target, and `TASFW_WARNINGS_AS_ERRORS`) and `SystemIncludes` (fetched dependencies as system headers, so their warnings never count). |
 | `docs/` | Provenance of the DLL (libsm64.md), what was copied from the decomp and at which revision (decomp.md), compiler pitfalls, performance, and how to TAS with the framework (tasing.md). |
 
@@ -117,7 +117,8 @@ its place with numbers, and "it is cleaner" is not a number.
   hardcoded object slots included; it exits 1 on a `FAIL`. A real run makes the same check
   before its first stage). **Running it without
   arguments runs every configured stage**: 16 threads, hours, thousands of .m64 files under
-  `analysis/m64/`. `--stage <name>` runs one stage from the previous stage's saved solutions
+  `analysis/m64/`, and the viewer's window, a tab per stage (README.md, "The viewer").
+  `--stage <name>` runs one stage from the previous stage's saved solutions
   (README.md, "Running the pipeline").
 - Tests: `powershell -ExecutionPolicy Bypass -File scripts\test.ps1` (add `-Config Release`,
   `-Compiler clang`, `-Filter '*Script*'`). Under a second without the DLL, a few seconds with it.
@@ -147,7 +148,8 @@ its place with numbers, and "it is cleaner" is not a number.
   needs nothing; the Tier B and C (libsm64) families run when `res\` has the DLL and movie,
   or pass `-Dll`/`-M64` (thread scaling also needs the copies `sm64_jp_1.dll` to
   `sm64_jp_16.dll`); Tier D runs `bitfs-turn` on `perf\tierd-*.json` when the 16 DLL
-  copies exist (about ten minutes with the reference; `-NoTierD` skips it). Anything missing
+  copies exist, the two workloads plain and again with the viewer tailing them headless
+  (about ten minutes with the reference; `-NoTierD` skips it). Anything missing
   is skipped. Time gates against the baseline commit's own binaries, which `-SaveBaseline`
   keeps under `perf\reference\` (gitignored) and every run launches interleaved with the
   current build, so the machine's drift cancels; without them the compare is absolute and

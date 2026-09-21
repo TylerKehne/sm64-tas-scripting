@@ -4,6 +4,72 @@ Every hot-path change records its delta table here, newest first; the policy, th
 how to run it are in [performance.md](performance.md). The first measurements (2026-09-07),
 which everything since is compared against, are at the bottom.
 
+## 2026-09-19: the viewer's cost, gated (ROADMAP 4.10)
+
+Two Tier D rows more, `TierD_DeterministicViewer` and `TierD_ThroughputViewer`: the same
+workloads with a CSV every tenth novel block and the viewer tailing the run headless
+(`TASFW_VISUALIZER_HEADLESS=1`, the window's polling, binning and redraw schedule on the Agg
+backend, a summary of the cost beside the CSV). The current binary only, gated within the
+session: the viewer's CPU at 10% of one core, its longest redraw at a second, the wall
+against the plain row at the 10% threshold, the deterministic counts identical
+(docs/performance.md, "Tier D"). Two sessions on MSVC Release, High performance plan, the
+second with the viewer stretching its interval to keep a redraw under 5% of the wait
+before it:
+
+| | Deterministic, with the viewer | Throughput, with the viewer |
+|---|---|---|
+| Viewer CPU, share of one core | 1.71%, then 1.66% | 4.08%, then 5.50% |
+| Longest redraw | 117 ms, 118 ms | 259 ms, 274 ms |
+| Redraws, rows read | 20, 16,596 | 13, 25,991 |
+| Wall against the plain run | +0.3%, +0.6% | +1.7%, -0.2% |
+| Counts | identical to the baseline both times | rates only |
+
+The throughput viewer's share moved from 4.1 to 5.5% between the sessions for the same
+redraws and rows: the viewer runs at below-normal priority and unpinned while the sixteen
+search threads hold the performance cores, so where the scheduler puts it decides how many
+CPU seconds its work takes. The 5% gate first planned had no room for that; the maintainer
+set 10%. The plain rows were unchanged: the deterministic run 93.6 s against 93.6 s of
+reference, the throughput run 59.8 s against 61.2 s.
+
+## 2026-09-19: the run's viewer (ROADMAP 4.4)
+
+`Visualization` and `Visualize()` on the scattershot builders: the launch of
+`analysis/visualizer.py` when a run's CSV opens and the rewrite of its parameters file when
+the run ends (ARCHITECTURE.md, "Viewer"). Nothing per frame, per script or per shot: one
+JSON file and one detached `std::system` at the start of a run, one file at its end, and
+only for a run with a CSV and a viewer configured; the Tier D workloads have neither. The
+suite against the reference binaries, MSVC Release, the same session: 0 regressions over
+10%, 1 improvement, 0 allocation, count or efficiency regressions, and the deterministic
+run's counts are the baseline's to the frame advance (17,800,136; 608 saves; 1,045,094
+loads; 111,860 blocks; 52 solutions; 524,380 scripts).
+
+| | Reference | Current |
+|---|---|---|
+| Deterministic: wall | 97.6 s | 94.2 s (-3.5%) |
+| Throughput: wall | 61.0 s | 59.0 s (-3.3%) |
+
+The viewer's cost is the machine's, not the run's: below-normal priority, a `stat` per tab
+per tick on a quiet CSV, and a redraw of the selected tab only when rows arrived.
+
+## 2026-09-19: a savestate cache per block, assessed and closed (ROADMAP 4.3)
+
+No code changed. The 3.8 profiles put block decoding at 2.3% of the throughput run and
+8.4% of the `dr-oscillations` stage's first pass, so the cache 4.3 asked for was sized
+before it was built: `scripts/decode_cache_model.py` models the block tree under the
+search's own selection rule with a least-recently-used cache of decoded chain states per
+thread (per thread because a `LibSm64Mem` cannot leave its DLL copy, docs/libsm64.md).
+Share of the replayed decode scripts saved:
+
+| Cache per thread (16 threads, `fixed` states) | `dr` pass, 30,000 shots | 200,000 shots | Tier D tilt-target |
+|---|---|---|---|
+| 64 states, 1.5 GB | 35% | 26% | 45% |
+| 256 states, 6 GB | 49% | 37% | 52% |
+| 1,024 states, 24 GB | 60% | 46% | 52% |
+
+The cache costs 2 to 6 extra saves per shot. About 4% of the `dr` stage for 6 GB. Closed by the maintainer with the numbers, with the
+obstacles a build would have met (states carrying their metrics, an import into a running
+level) recorded at ROADMAP 4.3.
+
 ## 2026-09-15: state trackers are metric scripts
 
 A rename, no code changed: `StateTracker` is `MetricScript` and `TrackedState` is `Metrics`

@@ -1,0 +1,18 @@
+{
+	"_comment": "Tier D deterministic run with the viewer attached (docs/performance.md, ROADMAP 4.10): the deterministic stage with a CSV every tenth novel block and a visualize block; scripts/perf.ps1 runs it with TASFW_VISUALIZER_HEADLESS=1 and gates its counts against the plain deterministic run's, which the CSV and the viewer must leave identical. Paths resolve against this file.",
+	"resources": { "dllDirectory": "../res", "dllPattern": "sm64_jp_{}.dll", "threads": 8, "saveMode": "fixed", "costModel": false },
+	"m64": "../movies/bitfs-pyramid-jp.m64",
+	"outputDirectory": "results/tierd-deterministic-viewer",
+	"visualizer": "../analysis/visualizer.py",
+	"scattershot": {
+		"maxShots": 600, "pelletsPerShot": 100, "shotsPerUpdate": 200, "maxSolutions": 100000,
+		"deterministic": true, "seed": 3, "csvSamplePeriod": 10
+	},
+	"stages": [
+		{
+			"name": "tierd-deterministic-viewer", "type": "tilt-target", "startFrame": 3330,
+			"args": { "targetNx": -0.17944, "targetNz": 0.3936, "neighborhood": 100, "targetDimension": "x" },
+			"visualize": {}
+		}
+	]
+}

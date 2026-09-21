@@ -49,6 +49,10 @@ sm64-tas-scripting/x64/
 res/
 analysis/*.csv
 analysis/*.png
+analysis/*.visualizer.json
+analysis/.venv/
+analysis/visualizer_settings.json
+analysis/visualizer.log
 analysis/solutions/
 analysis/m64/
 
