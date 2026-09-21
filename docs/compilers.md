@@ -455,6 +455,21 @@ Classes that mark some overriding functions `override` and not others warn on Cl
 scattershot script classes in `tasfw-scripts` and the bruteforcer do this. Fix is mechanical:
 mark every override.
 
+### Clang 18 with `-march=native` on an AVX10 CPU: `-Winvalid-feature-combination`
+
+On a CPU that reports AVX10.1, which some GitHub `ubuntu-24.04` runners do since
+2026-09-21, Clang 18 expands `-march=native` to a feature set with `+avx10.1-256` and its
+driver then warns that it will promote the combination to `avx10.1-512`; with `-Werror`
+every translation unit fails, and only on the runs that land on such a machine. The
+promotion is harmless and the warning is the driver's about its own expansion, so
+`cmake/AddOptimizationFlags.cmake` passes `-Wno-invalid-feature-combination` beside
+`-march=native` on Clang. The exact counts have never depended on the target (they match
+on every compiler and machine with `-ffp-contract=off`, docs/performance.md), so a job that
+builds AVX10 code gates the same numbers. The module keeps the detected flags in an internal
+cache entry (`_arch_flags`) and skips detection while one exists, so a change to the
+detection reaches an existing build directory only under a new entry name or after
+`-Clean`; the entry was renamed for this change for that reason.
+
 ### MSVC: a hot accessor stops inlining when its slow path grows
 
 `LevelStack::operator[]` is called on every bookkeeping access in `Script`. When its body
@@ -573,5 +588,6 @@ without any `/arch` flag while clang-cl got `-march=native`. Fixed 2026-09-07; a
   enabled by `cmake/AddOptimizationFlags.cmake` through CMake's IPO support; `-DTASFW_LTO=OFF`
   turns it off for a toolchain whose LTO is broken (GCC 14, below).
 - `-march=native` is accepted by clang-cl and detected as such; MSVC gets an `/arch` flag
-  from a configure-time probe.
+  from a configure-time probe. Clang builds add `-Wno-invalid-feature-combination` beside it
+  (the AVX10 pitfall below).
 - `__rdtsc` comes from `<intrin.h>` on MSVC and `<x86intrin.h>` elsewhere (`ResourceWork.hpp`).
