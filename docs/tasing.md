@@ -446,7 +446,8 @@ three types and a stage (ARCHITECTURE.md for the vocabulary):
      phase (speed, frames since a crossing, `-frame` for "sooner"). `IsSolution()` and
      `GetSolutionState()` say what a solution is and what it carries out (a plain struct of
      the numbers the next stage sorts by). `GetCsvLabels`, `GetCsvRow`, `ForceAddToCsv` feed
-     the CSV the R script plots (`csvSamplePeriod` in the config enables it).
+     the CSV the viewer plots live (`csvSamplePeriod` in the config enables it, a stage's
+     `visualize` block opens the viewer on it; README.md, "The viewer").
 3. **The solution type**, that plain struct, and its `Metrics(...)` overload in `Stages.cpp`.
 4. **The stage function**, in this order:
 

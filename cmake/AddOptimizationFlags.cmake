@@ -10,10 +10,10 @@ function(msvc_arch_check)
 	message(STATUS "Detecting MSVC /arch flag - done (${msvc_flag})")
 
 	if(compile_result AND run_result EQUAL 0)
-		set(_arch_flag "${msvc_flag}" CACHE INTERNAL "Architecture optimization flag.")
+		set(_arch_flags "${msvc_flag}" CACHE INTERNAL "Architecture optimization flag.")
 	else()
 		message(WARNING "MSVC /arch probe failed to compile or run; building without an /arch flag.")
-		set(_arch_flag "" CACHE INTERNAL "Architecture optimization flag.")
+		set(_arch_flags "" CACHE INTERNAL "Architecture optimization flag.")
 	endif()
 endfunction()
 
@@ -21,13 +21,21 @@ function(generic_arch_check)
 	check_cxx_compiler_flag("-march=native" has_march_native)
 
 	if(${has_march_native})
-		set(_arch_flag "-march=native" CACHE INTERNAL "Architecture optimization flag.")
+		set(_flags "-march=native")
+		# Clang 18 on a CPU that reports AVX10.1 (some CI runners since 2026-09) turns
+		# -march=native into "+avx10.1-256" and then warns that it will promote the combination
+		# to avx10.1-512 (-Winvalid-feature-combination), which -Werror makes fatal. The
+		# promotion is harmless; the warning is not ours to fix (docs/compilers.md).
+		if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+			list(APPEND _flags "-Wno-invalid-feature-combination")
+		endif()
+		set(_arch_flags "${_flags}" CACHE INTERNAL "Architecture optimization flag.")
 	else()
-		set(_arch_flag "" CACHE INTERNAL "Architecture optimization flag.")
+		set(_arch_flags "" CACHE INTERNAL "Architecture optimization flag.")
 	endif()
 endfunction()
 
-if(NOT _arch_flag)
+if(NOT _arch_flags)
 	# Note the quoting: an unquoted ${CMAKE_CXX_COMPILER_ID} expands to the token MSVC, which
 	# if() then dereferences as the variable MSVC (= 1), so the comparison was always false and
 	# MSVC builds silently got no /arch flag at all. Compare the variable by name instead.
@@ -73,8 +81,8 @@ function(add_optimization_flags target)
 	get_target_property(target_type ${target} TYPE)
 	if (target_type STREQUAL "INTERFACE_LIBRARY")
 		# for header-only libraries
-		if(_arch_flag)
-			target_compile_options(${target} INTERFACE ${_arch_flag})
+		if(_arch_flags)
+			target_compile_options(${target} INTERFACE ${_arch_flags})
 		endif()
 		target_compile_options(${target} INTERFACE ${_fp_flags})
 
@@ -82,8 +90,8 @@ function(add_optimization_flags target)
 		target_link_libraries(${target} INTERFACE OpenMP::OpenMP_CXX)
 	else()
 		# for libraries with compiled sources
-		if(_arch_flag)
-			target_compile_options(${target} PUBLIC ${_arch_flag})
+		if(_arch_flags)
+			target_compile_options(${target} PUBLIC ${_arch_flags})
 		endif()
 		target_compile_options(${target} PUBLIC ${_fp_flags})
 

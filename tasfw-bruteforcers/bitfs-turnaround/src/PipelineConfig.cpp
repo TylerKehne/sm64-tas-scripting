@@ -114,9 +114,40 @@ PipelineConfig PipelineConfig::Load(const fs::path& file)
 	return pipeline;
 }
 
+// A "visualize" block, the top level's defaults or a stage's own: the viewer's parameters
+// (Visualization.hpp), checked key by key before the merged block becomes a Visualization.
+static void CheckVisualizeKeys(const json& block, const std::string& where)
+{
+	RejectUnknownKeys(block,
+		{ "title", "interpreter", "x", "y", "angle", "speed", "binX", "binY", "binAngle", "binSpeed", "filters", "view", "sampledOnly" }, where);
+	if (block.contains("filters"))
+	{
+		if (!block.at("filters").is_array())
+			ConfigError("\"filters\" in " + where + " must be an array of { column, min, max }");
+		for (const json& filter : block.at("filters"))
+		{
+			if (!filter.is_object())
+				ConfigError("\"filters\" in " + where + " must be an array of { column, min, max }");
+			RejectUnknownKeys(filter, { "column", "min", "max" }, where + ".filters");
+		}
+	}
+	if (block.contains("view"))
+	{
+		const json& view = RequireObject(block, "view", where);
+		RejectUnknownKeys(view, { "x", "y", "width", "height" }, where + ".view");
+		for (const char* key : { "x", "y", "width", "height" })
+		{
+			if (!view.contains(key) || !view.at(key).is_number())
+				ConfigError(std::string("\"view\" in ") + where + " needs a number \"" + key + "\" (a width-by-height window centered on x, y)");
+		}
+		if (view.at("width").get<double>() <= 0 || view.at("height").get<double>() <= 0)
+			ConfigError("\"view\" in " + where + " must have a positive width and height");
+	}
+}
+
 PipelineConfig PipelineConfig::Parse(const json& root, const fs::path& configDirectory)
 {
-	RejectUnknownKeys(root, { "baseDirectory", "resources", "m64", "outputDirectory", "scattershot", "stages" }, "the top level");
+	RejectUnknownKeys(root, { "baseDirectory", "resources", "m64", "outputDirectory", "visualizer", "visualize", "scattershot", "stages" }, "the top level");
 
 	PipelineConfig pipeline;
 	pipeline.baseDirectory = root.contains("baseDirectory")
@@ -142,6 +173,11 @@ PipelineConfig PipelineConfig::Parse(const json& root, const fs::path& configDir
 
 	pipeline.m64 = pipeline.Resolve(Require<std::string>(root, "m64", "the top level"));
 	pipeline.outputDirectory = pipeline.Resolve(Optional<std::string>(root, "outputDirectory", ".", "the top level"));
+	if (root.contains("visualizer"))
+		pipeline.visualizer = pipeline.Resolve(Require<std::string>(root, "visualizer", "the top level"));
+	pipeline.visualizeDefaults = root.value("visualize", json::object());
+	if (root.contains("visualize"))
+		CheckVisualizeKeys(pipeline.visualizeDefaults, "visualize");
 
 	pipeline.scattershotDefaults = root.value("scattershot", json());
 	{
@@ -156,7 +192,7 @@ PipelineConfig PipelineConfig::Parse(const json& root, const fs::path& configDir
 	for (const json& item : root.at("stages"))
 	{
 		std::string where = "stages[" + std::to_string(pipeline.stages.size()) + "]";
-		RejectUnknownKeys(item, { "name", "type", "startFrame", "m64", "input", "scattershot", "args", "select", "export" }, where);
+		RejectUnknownKeys(item, { "name", "type", "startFrame", "m64", "input", "scattershot", "args", "select", "export", "visualize" }, where);
 
 		StageConfig stage;
 		stage.name = Require<std::string>(item, "name", where);
@@ -186,6 +222,35 @@ PipelineConfig PipelineConfig::Parse(const json& root, const fs::path& configDir
 			ConfigError("\"args\" in " + where + " must be an object");
 		stage.select = item.value("select", json());
 		stage.exportM64 = Optional<bool>(item, "export", false, where);
+
+		// The run's viewer (ROADMAP 4.4): the plot's columns, bins, filters and view; the top
+		// level's "visualize" supplies defaults the stage's block overrides key by key, the script
+		// is the pipeline's, the title the stage's name unless given. Only a stage with a
+		// csvSamplePeriod shows anything.
+		if (item.contains("visualize"))
+		{
+			const json& visualize = RequireObject(item, "visualize", where);
+			std::string visualizeWhere = where + ".visualize";
+			CheckVisualizeKeys(visualize, visualizeWhere);
+			if (!pipeline.visualizer)
+				ConfigError("stage \"" + stage.name + "\" has \"visualize\" but the top level has no \"visualizer\" (the viewer's path, analysis/visualizer.py)");
+
+			json merged = pipeline.visualizeDefaults;
+			merged.update(visualize);
+			Visualization visualization;
+			try
+			{
+				visualization = merged.get<Visualization>();
+			}
+			catch (const json::exception& e)
+			{
+				ConfigError(visualizeWhere + ": " + e.what());
+			}
+			visualization.script = pipeline.visualizer->string();
+			if (visualization.title.empty())
+				visualization.title = stage.name;
+			stage.visualize = std::move(visualization);
+		}
 
 		pipeline.stages.push_back(std::move(stage));
 	}

@@ -283,6 +283,40 @@ def cmd_baseline(args):
     return 0
 
 
+VIEWER_SUFFIX = "Viewer"
+
+
+def viewer_checks(name, row, cur, args):
+    """The viewer rows (ROADMAP 4.10): absolute gates on what the viewer cost, and the run
+    against the plain row of the same session (this name without its suffix): wall within the
+    threshold, exact counts identical. Returns (problems, detail lines)."""
+    problems = []
+    details = []
+    cpu = float(row["viewerCpuPct"])
+    details.append("viewerCpuPct %s of one core (gate %s)" % (fmt_count(cpu), fmt_count(args.viewer_cpu_tolerance)))
+    if cpu > args.viewer_cpu_tolerance:
+        problems.append("VIEWER CPU")
+    redraw = float(row.get("viewerMaxRedrawMs", 0.0))
+    details.append("viewerMaxRedrawMs %s (gate %s)" % (fmt_count(redraw), fmt_count(args.viewer_redraw_ms)))
+    if redraw > args.viewer_redraw_ms:
+        problems.append("VIEWER REDRAW")
+    plain_name = name[:-len(VIEWER_SUFFIX)] if name.endswith(VIEWER_SUFFIX) else None
+    plain = cur.get(plain_name) if plain_name else None
+    if plain is None:
+        details.append("no plain row to compare the run against in this session")
+        return problems, details
+    pv, cv = float(plain[args.metric]), float(row[args.metric])
+    delta = (cv - pv) / pv * 100.0 if pv else 0.0
+    details.append("wall vs %s %+.1f%% (gate %.0f%%)" % (plain_name, delta, args.threshold))
+    if not args.counts_only and delta > args.threshold:
+        problems.append("VIEWER WALL")
+    for key, plain_v, viewer_v in count_changes(plain, row):
+        details.append("%s %s without the viewer, %s with it" % (key, fmt_count(plain_v), fmt_count(viewer_v)))
+        if "VIEWER COUNTS" not in problems:
+            problems.append("VIEWER COUNTS")
+    return problems, details
+
+
 def cmd_compare(args):
     base_data = read(args.baseline)
     cur_data = read(args.current)
@@ -354,6 +388,7 @@ def cmd_compare(args):
     alloc_regressions = []
     count_regressions = []
     efficiency_regressions = []
+    viewer_regressions = []
     for name in base:
         if name not in cur:
             print(row_line(name, "", "", "", "", "", "", "", "MISSING"))
@@ -369,8 +404,11 @@ def cmd_compare(args):
         delta_base = (cv - bv) / bv * 100.0 if bv else 0.0
         delta = (cv - av) / av * 100.0 if av else 0.0
         abs_ns = abs(cv - av) * UNIT_TO_NS.get(unit, 1.0)
+        is_viewer = "viewerCpuPct" in c
         if args.counts_only:
             status = "ok (counts only)"
+        elif is_viewer:
+            status = "ok (viewer row: time gated within the run)"
         elif abs_ns < args.min_abs_ns:
             status = "ok (below %.1f ns)" % args.min_abs_ns
         elif delta > args.threshold:
@@ -415,27 +453,45 @@ def cmd_compare(args):
                 status = "EFFICIENCY REGRESSION" if "REGRESSION" not in status else status + " + EFFICIENCY"
                 efficiency_regressions.append(name)
 
+        viewer_details = []
+        if is_viewer:
+            problems, viewer_details = viewer_checks(name, c, cur, args)
+            if problems:
+                status = " + ".join(problems) if "REGRESSION" not in status else status + " + " + " + ".join(problems)
+                viewer_regressions.append(name)
+
         print(row_line(name, fmt(bv, unit), fmt(float(r[args.metric]), unit) if r is not None else "-", fmt(cv, unit),
                        "%+.1f%%" % delta if r is not None else "-", "%+.1f%%" % delta_base,
                        cycles_cell(anchor, c), allocs, status))
         for key, base_v, cur_v in changes:
             print("%-*s   %s %s -> %s" % (name_w, "", key, fmt_count(base_v), fmt_count(cur_v)))
+        for line in viewer_details:
+            print("%-*s   %s" % (name_w, "", line))
 
     for name in cur:
         if name not in base:
             c = cur[name]
+            status = "NEW"
+            viewer_details = []
+            if "viewerCpuPct" in c:
+                problems, viewer_details = viewer_checks(name, c, cur, args)
+                if problems:
+                    status = "NEW, " + " + ".join(problems)
+                    viewer_regressions.append(name)
             print(row_line(name, "", "", fmt(float(c[args.metric]), c.get("time_unit", "ns")), "", "", "-",
-                           alloc_cell(None, c), "NEW"))
+                           alloc_cell(None, c), status))
             if counts_of(c):
                 print("%-*s   %s" % (name_w, "", counts_of(c)))
             if name in cur_eff:
                 print("%-*s   efficiencyPct %s" % (name_w, "", fmt_count(cur_eff[name])))
+            for line in viewer_details:
+                print("%-*s   %s" % (name_w, "", line))
 
     print()
-    print("%d regression(s) over %.0f%%, %d improvement(s), %d allocation regression(s) over %.2f/iter, %d count regression(s), %d efficiency regression(s) over %.0f points"
+    print("%d regression(s) over %.0f%%, %d improvement(s), %d allocation regression(s) over %.2f/iter, %d count regression(s), %d efficiency regression(s) over %.0f points, %d viewer regression(s)"
           % (len(regressions), args.threshold, len(improvements), len(alloc_regressions), args.alloc_tolerance,
-             len(count_regressions), len(efficiency_regressions), args.efficiency_tolerance))
-    return 1 if regressions or alloc_regressions or count_regressions or efficiency_regressions else 0
+             len(count_regressions), len(efficiency_regressions), args.efficiency_tolerance, len(viewer_regressions)))
+    return 1 if regressions or alloc_regressions or count_regressions or efficiency_regressions or viewer_regressions else 0
 
 
 TIERD_FOUND_RE = re.compile(r"^Found (\d+) solutions in (\d+) shots, (\d+) blocks, (\d+) scripts \((\d+) base-block validation failures\)")
@@ -445,8 +501,9 @@ TIERD_CYCLES_RE = re.compile(r"^\s*process cycles (\d+)")
 TIERD_CPU_RE = re.compile(r"^\s*CPU time [\d.]+ s: .*outside the resource ([\d.]+)%")
 
 
-def tierd_row(lines, name, exact, peak_mb=None):
-    """One benchmark row from a bitfs-turn stage log (the last stage in it)."""
+def tierd_row(lines, name, exact, peak_mb=None, viewer_summary=None):
+    """One benchmark row from a bitfs-turn stage log (the last stage in it); with the viewer's
+    headless summary (ROADMAP 4.10), what the viewer cost beside the run."""
     found = stage = work = cycles = cpu = None
     for line in lines:
         m = TIERD_FOUND_RE.match(line)
@@ -490,13 +547,24 @@ def tierd_row(lines, name, exact, peak_mb=None):
         row["overheadPct"] = float(cpu.group(1))
     if peak_mb is not None:
         row["peakResidentMB"] = peak_mb
+    if viewer_summary is not None:
+        # The viewer's CPU as a share of one core over the run, and its longest redraw.
+        cpu = float(viewer_summary.get("cpuSeconds", 0.0))
+        row["viewerCpuPct"] = round(cpu / seconds * 100.0, 2) if seconds else 0.0
+        row["viewerMaxRedrawMs"] = float(viewer_summary.get("maxRedrawMs", 0.0))
+        row["viewerRedraws"] = float(viewer_summary.get("redraws", 0))
+        row["viewerRows"] = float(viewer_summary.get("rows", 0))
     return row
 
 
 def cmd_tierd(args):
     with open(args.log, "r", encoding="utf-8", errors="replace") as f:
         lines = f.read().splitlines()
-    row = tierd_row(lines, args.name, args.exact, args.peak_mb)
+    viewer_summary = None
+    if args.viewer_summary:
+        with open(args.viewer_summary, "r", encoding="utf-8") as f:
+            viewer_summary = json.load(f)
+    row = tierd_row(lines, args.name, args.exact, args.peak_mb, viewer_summary)
     with open(args.output, "w", encoding="utf-8") as f:
         json.dump({"context": {"tier": "D"}, "benchmarks": [row]}, f, indent=2)
     print("%s: %s s, %s" % (args.name, fmt_count(row["real_time"] / 1000.0), counts_of(row) or "rates only"))
@@ -533,6 +601,11 @@ def main(argv):
     cp.add_argument("--efficiency-tolerance", type=float, default=5.0,
                     help="allowed drop of thread-scaling efficiency (per-thread rate at N threads over the "
                          "single-thread rate), in percentage points")
+    cp.add_argument("--viewer-cpu-tolerance", type=float, default=10.0,
+                    help="the viewer rows (ROADMAP 4.10): allowed viewer CPU over the run, in percent of one core "
+                         "(the viewer bounds its redrawing at 5 by stretching its interval; parsing and start-up are the rest)")
+    cp.add_argument("--viewer-redraw-ms", type=float, default=1000.0,
+                    help="the viewer rows: allowed longest redraw, in milliseconds")
     cp.set_defaults(func=cmd_compare)
 
     mp = sub.add_parser("merge", help="merge several result files into one")
@@ -554,6 +627,9 @@ def main(argv):
     tp.add_argument("--exact", action="store_true",
                     help="carry the exact counts (deterministic workloads); otherwise the rates")
     tp.add_argument("--peak-mb", type=float, help="peak resident set in MB, sampled by the caller")
+    tp.add_argument("--viewer-summary",
+                    help="the headless viewer's summary JSON for this run (ROADMAP 4.10): the row then carries "
+                         "viewerCpuPct, the viewer's CPU as a share of one core over the run, and viewerMaxRedrawMs")
     tp.set_defaults(func=cmd_tierd)
 
     args = ap.parse_args(argv)

@@ -72,6 +72,21 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # The dependency tarballs, cached between runs and fetched with retries before CMake
+      # asks for them: GitHub's release and archive downloads return 504 now and then, and
+      # FetchContent gives up on the first (scripts/fetch_deps.py).
+      - name: Cache the fetched dependencies
+        uses: actions/cache@v4
+        with:
+          path: build/downloads
+          key: downloads-${{ hashFiles('CMakeLists.txt', 'tasfw-tests/CMakeLists.txt', 'tasfw-perf/CMakeLists.txt') }}
+      - name: Fetch the dependencies with retries
+        shell: bash
+        run: |
+          py=python3
+          if [ "$RUNNER_OS" = "Windows" ]; then py=python; fi
+          $py scripts/fetch_deps.py
+
       # ---------------------------------------------------------------- Linux
       - name: Install Linux toolchain
         if: runner.os == 'Linux'
@@ -79,7 +94,7 @@ jobs:
           sudo apt-get update
           # GCC 14 and Clang 18: the first with C++23's explicit object parameters (deducing
           # this), which the scattershot's per-script movement options use (docs/compilers.md).
-          sudo apt-get install -y ninja-build gcc-14 g++-14 clang-18 libomp-18-dev
+          sudo apt-get install -y ninja-build gcc-14 g++-14 clang-18 libomp-18-dev python3-numpy python3-matplotlib
           echo "::add-matcher::.github/matchers/gcc.json"
 
       - name: Configure (Linux)
@@ -132,6 +147,20 @@ jobs:
       - name: Correctness tests (DLL-free)
         shell: bash
         run: ${{ matrix.bindir }}/out/tasfw-tests
+
+      - name: The viewer renders a CSV headless (analysis/visualizer.py --once, ROADMAP 4.4)
+        shell: bash
+        env:
+          TASFW_VISUALIZER_NO_BOOTSTRAP: 1 # the packages come from pip here and apt on Linux, not the viewer's own venv
+        run: |
+          py=python3
+          if [ "$RUNNER_OS" = "Windows" ]; then py=python; $py -m pip install --quiet -r analysis/requirements.txt; fi
+          $py analysis/visualizer.py --once --csv tasfw-tests/data/scattershot_sample.csv --out viewer.png
+          test -s viewer.png
+          # The headless follow mode the perf suite gates (ROADMAP 4.10): a finished run drains on the first tick.
+          $py -c "import json; json.dump({'csv': 'tasfw-tests/data/scattershot_sample.csv', 'title': 'ci', 'finished': True, 'rows': 600}, open('ci.visualizer.json', 'w'))"
+          TASFW_VISUALIZER_HEADLESS=1 $py analysis/visualizer.py ci.visualizer.json
+          test -s ci.visualizer.summary.json && test -s ci.visualizer.png
 
       - name: Decomp pin (the copied sm64 headers against n64decomp/sm64 at their pinned commits)
         if: matrix.name == 'ubuntu-24.04-gcc'
@@ -250,6 +279,15 @@ jobs:
           DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ninja-build cmake git ca-certificates python3 python3-cryptography ${{ matrix.apt }}
 
       - uses: actions/checkout@v5
+
+      - name: Cache the fetched dependencies
+        uses: actions/cache@v4
+        with:
+          path: build/downloads
+          key: downloads-${{ hashFiles('CMakeLists.txt', 'tasfw-tests/CMakeLists.txt', 'tasfw-perf/CMakeLists.txt') }}
+      - name: Fetch the dependencies with retries
+        shell: bash
+        run: python3 scripts/fetch_deps.py
 
       - name: Configure and build
         shell: bash

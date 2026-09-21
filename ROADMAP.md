@@ -803,13 +803,86 @@ Goal: finish the thing the framework was built for.
       after `osc-final`. Verified to link and run a few shots from a config; whether the
       chain finds anything is unknown (it never ran to completion in `main.cpp` either), so
       the stage descriptions say "unverified" until a real run says otherwise.
-- [ ] **4.2 Persist search state.** Serialize blocks/segments so a multi-hour run can be
-      resumed. Solutions already persist per stage (1.4); blocks and segments do not.
-- [ ] **4.3 Faster block decoding.** Each shot replays the whole segment chain from the root.
-      Cache savestates per block (bounded by the memory budget) and measure the gain with the
-      Tier D throughput run; the deterministic run must produce identical counts.
-- [ ] **4.4 Analysis.** Keep the R plotting script working from the new CSV paths, or port it to
-      Python so it can run in CI. Record which columns each stage emits.
+- [x] **4.2 Persist search state.** Assessed and closed 2026-09-19, not built. The ask was
+      to serialize blocks and segments so a multi-hour run can be resumed; solutions already
+      persist per stage (1.4), and that is the mechanism that stays: a stage's solutions
+      become the next stage's root blocks, `--stage` reruns one stage from its input's file
+      and `input` may name any earlier stage, so a search continues as a new stage entry of
+      the same type with `input` set to the stopped one, and work is broken up judiciously
+      with configurations (the maintainer, 2026-09-19). What that loses is the non-solution
+      blocks. A checkpoint of the table would be small to write (a bin, a fitness and a
+      segment per block, a seed and a script count per segment; the index rehashes) but
+      tied to one binary and one stage entry, since a segment's seed decodes only by
+      rerunning the identical `ApplyMovement`, so an edit to a stage script between save
+      and resume turns every decoded block into a validation failure; it could not
+      reproduce a deterministic run; and the `dr` stage's passes live in Stages.cpp, so a
+      resume would carry the pass and its kept solutions too. The one run it would rescue
+      is a stage that dies before its first solution, the tilt stages' shape
+      (`maxSolutions` 1, up to a million shots, about ten shots a second at 200 pellets),
+      whose fitness climb a restart loses; accepted. What an interruption loses today is
+      everything, since solutions are written when the stage returns and nothing handles
+      Ctrl+C: a cancellation that exports the solutions found so far is a Phase 5 item.
+- [x] **4.3 Faster block decoding.** Assessed and closed 2026-09-19, not built. Each shot
+      replays the base block's segment chain from the root (`DecodeBaseBlockDiffAndApply`),
+      and the ask was a savestate cache per block, bounded by the memory budget. What there
+      is to gain (docs/performance.md, "Known hotspots, measured"): 2.3% of the tilt-target
+      throughput run, 8.4% of the `dr-oscillations` stage at 30,000 shots and 281,650
+      blocks, growing with the log of the shot count; each oscillation pass of that stage
+      restarts its table from the previous pass's solutions, so about 9% of the `dr` stage
+      is the ceiling. What a bounded cache recovers, by `scripts/decode_cache_model.py`
+      (the block tree under the search's own rule, a uniformly random base block and the
+      root every 100th shot at the run's novelty rate, with a per-thread least-recently-used
+      cache of decoded chain states that also keeps the ancestors a decode passes through;
+      the ancestors many blocks share are the shallow ones, which are also the cheapest part
+      of a chain): 64 states per thread (1.5 GB over 16 threads of 1.5 MB `fixed` states)
+      save 35% of the replayed decode scripts on the profiled pass and 26% over a
+      200,000-shot pass, 256 states (6 GB) 49% and 37%, 1,024 states (24 GB) 60% and 46%,
+      and 52% at most on the Tier D tilt-target run whatever the size: about 4% of one
+      stage for 6 GB, at 3 to 5 extra saves per shot. Three things stood between that and
+      "add a cache". A `LibSm64Mem` is the bytes of its own DLL copy, the game's pointers
+      included, and the copies sit at different base addresses, so a state cannot cross
+      threads (docs/libsm64.md, "Why one copy per thread"). The DR metric script reads the
+      previous frame's metrics (`BitfsDrMetrics.cpp`) and metrics are erased with the
+      sandbox that recorded them, so a cached state arriving without its metrics makes the
+      first `GetMetrics` on a hit walk back to the equilibrium frame, a load or a replay per
+      step, on the one stage where the cache pays. And a savestate belongs to a level and is
+      valid while that level's earlier inputs are unchanged (ARCHITECTURE.md, "Savestate
+      ownership"), where a block cache is states from different input histories outliving
+      their sandbox: `ExportSave` and `GetTotalDiff` cover the export, but the only import
+      is the builder's at the start of a run, so the cache needs a new `Script` member that
+      imports a state with its inputs and metrics into a running level (hard rule 10).
+      Determinism was not the obstacle: decoding draws from the temp RNG seeded per segment
+      and never from the thread's, and the deterministic queue takes one turn per decoded
+      script, which a cache would still take, so shots, scripts, blocks and solutions would
+      not change. The replay cost that does matter is item 9 of the hotspot list, the
+      evaluation to the pyramid's equilibrium after every tilt-target script, 95% of that
+      run's frame advances; fewer or cheaper evaluation frames (`PyramidUpdate` as the
+      stand-in) is a stage-script change, not scheduled.
+- [x] **4.4 Analysis.** Done 2026-09-19: the R script is `analysis/visualizer.py`, a live
+      viewer rather than a plot at the end (the maintainer's ask, 2026-09-19: live updates
+      at a rate set in a very lightweight app that starts itself when a run is configured
+      for it, a tab per run so an earlier run stays in view, and no compute taken from the
+      brute forcer). The search's side is a `Visualization` (`Visualization.hpp`: the
+      viewer's path and interpreter, the plot's four columns, its bin sizes, range filters,
+      and an optional fixed view, a window centered on a point that is never rescaled,
+      which the maintainer asked for on 2026-09-19 so the BitFS stages show a 900-by-900
+      square on the pyramid while other scripts choose their own) given to a builder's
+      `Visualize()`: when the CSV opens the run writes it with the
+      CSV's path to a JSON file beside the CSV and launches the viewer, detached, with that
+      file, and at the end rewrites the file with `finished` and the row count; nothing on
+      any hot path, nothing without a CSV. The pipeline takes a top-level `visualizer` (the
+      script's path) and a per-stage `visualize` block, the `dr` stage titling a tab per
+      pass. The viewer owns a localhost port; a later launch hands its file to the running
+      viewer and exits, so a pipeline's runs are tabs of one window. It reads the CSV
+      incrementally, folds rows into a newest-per-bin table (the R script's grouping, once
+      per row, raw rows dropped), redraws only the selected tab and only when rows came in,
+      at the refresh rate in the window, lowers its own priority, stops polling a finished
+      tab and doubles a tab's bins past a segment cap; `--once` renders a PNG headless,
+      which CI does on `tasfw-tests/data/scattershot_sample.csv`. Setup is none: with
+      `python` on PATH (the unlock script's and the doc hook's requirement already) the
+      viewer creates `analysis/.venv` and installs `requirements.txt` there on first start.
+      The columns each stage emits are in README.md ("The viewer"). `test_visualization.cpp`
+      pins the parameters file and the launch command, `test_pipeline.cpp` the config block.
 
 - [x] **4.5 Base-block validation failures.** Done 2026-09-08. `ValidateBaseBlock` found
       state-bin mismatches on about 2% of shots (5 to 9 per 400-shot deterministic
@@ -859,6 +932,33 @@ goals are (status as stated by the maintainer, 2026-09-08):
       coarse winner (`midHau2`), which may or may not be intended. None is fixed here: each
       changes what a stage searches, so each needs that stage's counts before and after,
       and the dive-recover chain the first two belong to has never run to completion (4.1).
+- [x] **4.10 The viewer's cost, gated.** Done 2026-09-19. The suite proved the search's side
+      of 4.4 costs nothing (its Tier D runs had no viewer), and CI's `--once` that the viewer
+      draws; nothing measured the viewer while it tailed a live run, which is the cost the
+      maintainer cares about (2026-09-19: no compute taken from the brute forcer). Now the
+      suite runs both Tier D workloads a second time with the viewer tailing them headless
+      and gates the viewer's CPU, its longest redraw, the run's wall against the plain run
+      and the deterministic counts (docs/performance.md, "Tier D"); two runs the same evening
+      (performance-changelog.md): the viewer at 1.7% of one core on the deterministic
+      workload and 4.1% then 5.5% on the throughput one, redraws of 118 and 274 ms at most,
+      the walls within 2% of the plain runs and the deterministic counts identical to the
+      frame advance. The window shows the same cost next to its refresh rate, its own CPU
+      over the last 30 seconds (the maintainer, 2026-09-19: the measured figure alone, no
+      estimate, since the process clock resolves to 0.05% of one core over the window). Done
+      as planned: the viewer has a headless follow mode
+      (`TASFW_VISUALIZER_HEADLESS=1`, so the search's launch command needs nothing new): the
+      same polling loop and newest-per-bin table, the Agg backend redrawing on the same
+      schedule with no window, one PNG at the end and a summary JSON beside the parameters
+      file with its CPU seconds, ticks, rows, redraws and the longest redraw; and the perf
+      suite runs the throughput workload once more with a CSV every tenth novel block and
+      the viewer attached headless, interleaved with the plain run like the reference and
+      current binaries are, gating the viewer's CPU at 10% of one core over the run (the
+      maintainer's choice, 2026-09-19, over the 5% first planned: the viewer stretches its
+      interval so that a redraw is at most 5% of the wait before it, and parsing the rows
+      and starting the interpreter are the rest, a third of a one-minute run's share) and
+      its longest redraw at one second, the run's wall against the plain run under the
+      existing 10% gate, and, on the deterministic workload with the viewer attached, every
+      count identical. docs/performance.md gets the row and the gates.
 
 ## Phase 5: toward a game- and console-agnostic framework
 
@@ -888,6 +988,18 @@ Not scheduled. Listed so decisions in earlier phases do not paint us into a corn
   already Python (`scripts/unlock_libsm64.py`, `perf_compare.py`, the DLL scripts), so a
   `scripts/new_script.py` and `new_resource.py` are the natural shape, with the skeletons
   kept as templates the generator fills in, not as strings in the script.
+- **A cancellation handler that exports solutions** (from 4.2's close, 2026-09-19). An
+  interrupted stage writes nothing: solutions are saved when the stage returns
+  (`main.cpp`), and nothing handles Ctrl+C, so a million-shot stage killed with 900
+  solutions in memory loses them all. The design as discussed: a stop request on
+  `Scattershot`, an atomic flag each thread reads in the per-shot stop check it already
+  makes beside the shot and solution counts (in deterministic mode inside the queued turn,
+  so every thread stops at the same round); the pipeline sets it from a SIGINT handler,
+  the stage returns what it has, `Save` runs as it does now, the `dr` stage's pass loop
+  checks the same flag before its next pass, and the pipeline exits non-zero rather than
+  run the next stage on a partial set. One relaxed atomic load per shot; the handler is
+  optional and the pipeline's only. A rule 10 change to the search's surface, agreed before
+  it is written; a continuation is then a stage entry with `input` set to the stopped one.
 - **Per-scenario movement options** (done 2026-09-14: `CustomMoves`, on C++23).
   `BasicMoves` (then `MovementOption`) was one enum for every scenario's scripted moves plus the framework's
   three input groups (stick magnitude, direction, buttons, which `RandomInputs` reads), a

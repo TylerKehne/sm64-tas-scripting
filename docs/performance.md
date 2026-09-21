@@ -76,7 +76,8 @@ Ordered by how much they dominate a typical scattershot run:
    pages leave the cache sooner than `fixed`'s contiguous ranges.
 3. **Block decoding.** Every scattershot shot replays the base block's segment chain from the
    root by re-running scripts. Cost grows with block depth over the run and shows up as
-   "Overhead" in the end-of-run summary.
+   "Overhead" in the end-of-run summary (a savestate cache per block was assessed and
+   closed, ROADMAP 4.3).
 4. **Metric scripts.** They run at every frame advance and load. A metric script that itself advances
    frames (for example `BitfsDrMetrics::CalculateOscillations` runs up to 50 frames per
    crossing) multiplies the cost of every frame it is evaluated on.
@@ -276,6 +277,23 @@ Run by `scripts/perf.ps1` through `bitfs-turn` on two configs under `perf/`, eac
   The row `TierD_Throughput` carries `shotsPerSecond`, `scriptsPerSecond`,
   `frameAdvancesPerSecond`, `peakResidentMB` (reported) and `validationFailures` (exact, 0);
   wall within 10%.
+- `tierd-deterministic-viewer.json` and `tierd-throughput-viewer.json` (ROADMAP 4.10): the
+  same two stages with a CSV every tenth novel block and a `visualize` block, run with
+  `TASFW_VISUALIZER_HEADLESS=1` in the environment, so the viewer tails each run with no
+  window, on the window's polling and redraw schedule with fixed defaults, and writes what
+  it cost beside the CSV (`*.visualizer.summary.json`: CPU seconds, ticks, redraws, the
+  longest redraw). The rows `TierD_DeterministicViewer` and `TierD_ThroughputViewer` carry
+  the plain rows' fields plus `viewerCpuPct`, the viewer's CPU as a share of one core over
+  the run, and `viewerMaxRedrawMs`. They run the current binary only and gate within the
+  session instead of against the reference: the viewer's CPU at `--viewer-cpu-tolerance`
+  (10% of one core: the viewer stretches its interval so that a redraw is at most 5% of the
+  wait before it, whatever a tab's size, and parsing the rows and starting the interpreter
+  are the rest), its longest redraw at `--viewer-redraw-ms` (1,000), the run's wall against
+  the plain row of the same session under the 10% threshold, and, for the deterministic
+  pair, every exact count identical (the CSV's rows are sandboxes that read state and move
+  nothing, and the viewer is another process). Measured 2026-09-19 (performance-changelog.md):
+  1.7% and 4.1% of one core, redraws of 117 and 259 ms at most, walls within 2% of the
+  plain runs, the deterministic counts identical.
 
 A third config, `tierd-ci.json` (and `tierd-ci-linux.json` with the `.so` pattern and
 `dirty` saves), is the deterministic workload cut to 100 shots on 4 threads for CI, where
@@ -313,8 +331,9 @@ change that alters the spread of a script's cost moves it too.
 
 The deterministic run has the cost model off because automatic savestates depend on measured
 timings: with it on the search outcome is still identical (ROADMAP 4.5), but `frameAdvances`
-and `saves` are not. Both runs are skipped with `-Filter`, with `-NoTierD`, or when
-`res\sm64_jp_0.dll` .. `sm64_jp_15.dll` are missing; together they take about five minutes.
+and `saves` are not. All four runs are skipped with `-Filter`, with `-NoTierD`, or when
+`res\sm64_jp_0.dll` .. `sm64_jp_15.dll` are missing; together they take about eight
+minutes with the reference.
 Neither uses the full pipeline in `config.json`.
 
 The interleaved reference exists because of what this machine did before it had one. On
@@ -361,10 +380,13 @@ and a sampled profile of both Tier D workloads and the Tier C family put a numbe
 time on the throughput run (16 threads, cost model on, the pipeline's shape) unless said
 otherwise; the resource's own advance, save and load take 76% of it and the rest is 24%.
 
-1. Block decoding replaying from the root on every shot (ROADMAP 4.3): 2.3% (3.0% on the
+1. Block decoding replaying from the root on every shot: 2.3% (3.0% on the
    deterministic run). Chains are short at 600 to 1,200 shots; the replays that matter are
    item 9. On the `dr-oscillations` stage it is 8.4% at 281,650 blocks after 30,000 shots,
-   and grows with the run: that stage is where 4.3 pays.
+   and grows with the log of the shot count. A savestate cache per block was assessed and
+   closed on 2026-09-19 (ROADMAP 4.3, the numbers there): by `scripts/decode_cache_model.py`
+   a per-thread cache recovers about half of that share for gigabytes of states, the states
+   cannot cross threads, and on this stage they would have to carry their metrics.
 2. `PyramidUpdateMem` construction copying and transforming all surfaces per call: not on
    the tilt-target workload. The Tier C row says 3.2 us and 42 allocations per
    `GetMinimumDownhillWalkingAngle` call (56 before the FrameMap), which the downhill
@@ -419,7 +441,8 @@ Found by the profile rather than suspected:
    (`GetEquilibriumMetrics`, 67% inclusive, about 33 frames), plus the rewinds
    `ApplyMovement` makes. The later calls of the same lookahead find their metrics
    cached, so the cost is one evaluation per script; only fewer or cheaper evaluation frames
-   change it (ROADMAP 4.3, `PyramidUpdate` as the stand-in).
+   change it (`PyramidUpdate` as the stand-in; a stage-script change, not scheduled, noted
+   where ROADMAP 4.3 closed).
 10. **The metric script's status object is the heap**: `TiltTargetShotMetrics::CustomScriptStatus`
     held thirteen `std::vector`s for three-element arrays, constructed per recorded frame
     and copied whole wherever a `GetMetrics` result was taken by value: 7.0% of the CPU

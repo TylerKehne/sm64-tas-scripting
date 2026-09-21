@@ -171,6 +171,7 @@ namespace
 			.ImportResourcePerThread([&](auto threadId) { return &context.resources[threadId]; })
 			.PipeFrom(input)
 			.ConfigureMetricScript(args)
+			.Visualize(context.stage.visualize)
 			.Run<TiltTargetShot>(args);
 		return ToSet(context, solutions);
 	}
@@ -218,10 +219,14 @@ namespace
 
 		auto run = [&](int targetOscillation, const std::vector<Solution>& input)
 		{
+			std::optional<Visualization> visualize = context.stage.visualize; // one viewer tab per pass
+			if (visualize)
+				visualize->title += " (oscillation " + std::to_string(targetOscillation) + ")";
 			return Scattershot_BitfsDr::ConfigureScattershot(config)
 				.ImportResourcePerThread([&](auto threadId) { return &context.resources[threadId]; })
 				.PipeFrom(input)
 				.ConfigureMetricScript(equilibriumFrame, quadrant, specs, minOscillationFrames, targetNx, targetNz)
+				.Visualize(visualize)
 				.Run<Scattershot_BitfsDr>(targetOscillation, specs);
 		};
 
@@ -301,6 +306,7 @@ namespace
 			.ImportResourcePerThread([&](auto threadId) { return &context.resources[threadId]; })
 			.PipeFrom(input)
 			.ConfigureMetricScript(args)
+			.Visualize(context.stage.visualize)
 			.Run<BitfsOscFinal>(args);
 		return ToSet(context, solutions);
 	}
@@ -326,6 +332,7 @@ namespace
 			.ImportResourcePerThread([&](auto threadId) { return &context.resources[threadId]; })
 			.PipeFrom(input)
 			.ConfigureMetricScript(initialFrame, oscQuadrant, targetQuadrant, minXzSum, targetNx, targetNz)
+			.Visualize(context.stage.visualize)
 			.Run<Scattershot_BitfsDrApproach>();
 		return ToSet(context, solutions);
 	}
@@ -358,6 +365,7 @@ namespace
 			.ImportResourcePerThread([&](auto threadId) { return &context.resources[threadId]; })
 			.PipeFrom(input)
 			.ConfigureMetricScript(initialFrame, oscQuadrant, targetQuadrant, minXzSum)
+			.Visualize(context.stage.visualize)
 			.Run<Scattershot_BitfsDrRecover>(phase);
 		return ToSet(context, solutions);
 	}

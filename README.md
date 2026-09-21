@@ -22,6 +22,10 @@ them after every change (see AGENTS.md, "Documentation must match the repository
 CMake 3.22+ and a C++23 compiler with OpenMP (MSVC 2022, GCC 14 or Clang 18 and newer). The dependencies (nlohmann/json; doctest and
 Google Benchmark for the tests and benchmarks) are downloaded by CMake, verified by hash and
 cached in `build\downloads`, so later builds work offline; no vcpkg needed.
+`python scripts\fetch_deps.py` fills that directory with retries, reading the names, URLs
+and hashes from the CMake files; CI restores the directory from its cache and runs it
+before configuring, so a run does not fail on the 504 GitHub's downloads return now and
+then, and it is how to prepare an offline build.
 
 **Windows (supported path)**
 
@@ -59,9 +63,10 @@ The executable needs files that are not in git (see [docs/libsm64.md](docs/libsm
   (on Linux `.so` copies and `"dllPattern": "sm64_{version}_{}.so"`). One command makes them from
   a ROM: `python scripts\unlock_libsm64.py --rom <sm64 jp>.z64 --out res --copies 24`
   (docs/libsm64.md); never commit a ROM or an unlocked binary.
-- The source movies `config.json` names are committed under `movies/` (`bitfs-pyramid-jp.m64`,
-  which CI, the tests and the perf suite use too, and `bitfs-osc-final-jp.m64` for the
-  `osc-final-test3` stage), with two US movies next to them: `1keyU.m64`, a whole 1-key run,
+- The source movie `config.json` names is committed under `movies/` (`bitfs-pyramid-jp.m64`,
+  which CI, the tests and the perf suite use too), beside `bitfs-osc-final-jp.m64`, the
+  oscillations done by hand to frame 3604, which nothing runs today (it was the source of a
+  final-oscillation experiment), and two US movies: `1keyU.m64`, a whole 1-key run,
   and `bitfs-pyramid-us.m64`, the JP movie's BitFS part on the US way there, which the tests
   run on the US game (`unlock_libsm64.py --version us` makes `res/sm64_us_0.dll`) when it is
   there (docs/libsm64.md, "A movie for the US game").
@@ -75,19 +80,26 @@ bitfs-turn [--config <file>] [--stage <name>] [--list] [--dry-run]
 `bitfs-turn.exe` runs the BitFS squish-cancel pipeline described by its config: every
 stage in order, or one stage with `--stage <name>`. Without `--config` it reads the
 `config.json` next to the executable, which the build writes from
-[tasfw-bruteforcers/bitfs-turnaround/config.json](tasfw-bruteforcers/bitfs-turnaround/config.json).
+[tasfw-bruteforcers/bitfs-turnaround/config.json](tasfw-bruteforcers/bitfs-turnaround/config.json)
+whenever the executable target builds, so a Visual Studio play button, which builds only
+that target, keeps the copy current too.
 `--list` prints the stage types and the configured stages; `--dry-run` resolves every path,
 checks the files exist, loads one DLL, runs the `VerifyLayout` script to the first stage's
 start frame and prints its report (struct layout, the hardcoded object slots), exiting 1 on
 any `FAIL`; a real run makes the same check before its first stage. Both are safe. A full
-run is not a smoke test: 16 threads, hours,
-and thousands of exported `.m64` files.
+run is not a smoke test: 16 threads, hours, thousands of exported `.m64` files, and the
+viewer's window with a tab per stage and per `dr` pass ("The viewer").
 
 Each stage writes its solutions to `<outputDirectory>/solutions/<stage>.json` (input diffs
 plus named metrics). A stage run alone reads its input from the file its input stage wrote
-last time, so a long pipeline can be advanced one stage at a time. Stages with
+last time, so a long pipeline can be advanced one stage at a time, and a search that needs
+more shots continues as a new stage entry of the same type with `input` set to the earlier
+one: its solutions become the new run's root blocks. The blocks themselves are never saved
+(ROADMAP 4.2), and solutions are written when a stage finishes, so an interrupted stage
+writes nothing (a cancellation that exports what was found is a Phase 5 item). Stages with
 `"export": true` also write one movie per solution under `<outputDirectory>/m64/<stage>/`.
-Scattershot CSVs and the `error.m64` dump go to `<outputDirectory>` as well. The stage
+Scattershot CSVs and the `error.m64` dump go to `<outputDirectory>` as well, and a stage
+with a `visualize` block opens the viewer on its CSV as it is written ("The viewer"). The stage
 summary prints wall time and the frame advances, saves and loads summed over threads, which
 are the fixed-workload numbers a performance change has to report (AGENTS.md, hard rule 8),
 then the slot manager's line: the most savestates and bytes any thread held at once, and the
@@ -107,6 +119,8 @@ One JSON file. Relative paths resolve against the file's own directory, unless t
 	"resources": { "dllDirectory": "../../res", "dllPattern": "sm64_{version}_{}.dll", "threads": 16, "saveMode": "fixed" },
 	"m64": "../../res/source.m64",
 	"outputDirectory": "../../analysis",
+	"visualizer": "../../analysis/visualizer.py",
+	"visualize": { "view": { "x": -715, "y": -1945, "width": 900, "height": 900 } },
 	"scattershot": { "maxShots": 3000, "maxSolutions": 100, "seed": 6, "deterministic": false, "...": "any Configuration field" },
 	"stages": [
 		{
@@ -119,6 +133,7 @@ One JSON file. Relative paths resolve against the file's own directory, unless t
 			"args": { "targetNx": -0.17944, "targetNz": 0.3936, "targetDimension": "z",
 			          "fixNonTargetDimensionARE": true, "targetARE": "input:adjustedRemainderError0" },
 			"select": { "sortBy": ["adjustedRemainderError0"], "take": 1 },
+			"visualize": { "filters": [{ "column": "MarioFSpd", "max": 8 }] },
 			"export": true
 		}
 	]
@@ -143,11 +158,82 @@ One JSON file. Relative paths resolve against the file's own directory, unless t
   `shotsPerUpdate`, `startFromRootEveryNShots`, `maxConsecutiveFailedPellets`,
   `maxSolutions`, `seed`, `fitnessTieGoesToNewBlock`, `deterministic`, `csvSamplePeriod`).
   A stage's own `scattershot` object overrides them.
+- `visualizer`: the viewer's path (`analysis/visualizer.py`), which a stage's `visualize`
+  needs ("The viewer"). `visualize` at the top level holds defaults for every stage's
+  block, overridden key by key by the stage's own; it enables nothing on its own. The
+  committed one fixes a 900-by-900 window on the pyramid.
 - A stage has a unique `name`, a `type` (`bitfs-turn --list`), a `startFrame`, optionally its
   own `m64`, an `input` (the name of an earlier stage), `args` for the stage type, a `select`
-  applied to its output, and `export`.
+  applied to its output, `export`, and a `visualize` block that opens the viewer on the
+  stage's CSV: `title` (the stage's name unless given), `interpreter` (`pythonw` on Windows,
+  `python3` elsewhere), the plot's columns `x`, `y`, `angle` and `speed` (`MarioZ`,
+  `MarioX`, `MarioFYaw`, `MarioFSpd`), its bin sizes `binX`, `binY`, `binAngle` and
+  `binSpeed` (0.1, 0.1, 16, 0.1), `filters` (`[{ "column", "min", "max" }]`, either bound
+  optional), `view` (`{ "x", "y", "width", "height" }`: a fixed window of the plot's units
+  centered on x, y, drawn square to its units and never rescaled; without one the plot
+  follows its data) and `sampledOnly` (true). An empty block takes every default; only a
+  stage with a `csvSamplePeriod` has a CSV to show.
 - Numeric `args` accept a number or `"input:<metric>"`, which takes that metric from the
   first solution of the input stage (for example the equilibrium frame the tilt search found).
   The argument names of each type are checked in `Stages.cpp`; an unknown one is an error.
 
-The committed config reproduces the pipeline exactly as it was last run.
+The committed config is the pipeline as it was last run: the three tilt stages that fix
+the adjusted remainder errors, the oscillations, the final oscillation, then the
+dive-recover chain, with a CSV and the viewer on every stage (every hundredth novel block
+on the tilt stages, whose novelty is high, every tenth elsewhere).
+
+# The viewer
+
+`analysis/visualizer.py` plots a run's CSV live: an arrow per state bin at Mario's position,
+pointing along his facing yaw with his speed as its length, colored from orange for the
+oldest shot to green for the newest (the CSV's `Shot` is each thread's own count, so the
+first minute of a run is one shot and all green) and fading with the frame. A stage with a
+`visualize` block
+starts it when the run's CSV opens: the search writes the plot's parameters and the CSV's
+path to `<csv>.visualizer.json` beside the CSV and launches the viewer detached, so nothing
+is run by hand. One window holds a tab per run: the first viewer owns a localhost port, a
+later launch hands its run to it and exits, and a viewer left open collects the next
+pipeline's runs too. A tab closes with the "Close tab" button, Ctrl+W or a middle click on
+its header, and the window stays for the next run. A tab whose run configured a `view`
+keeps that window on every redraw, square to its units; the Autoscale box applies to the
+other tabs. The refresh rate is set in the window and kept in
+`analysis/visualizer_settings.json` with the port and the segment cap, and next to it the
+window shows what the viewer costs: its own CPU time over the last 30 seconds as a share
+of one core and of the machine, from the process clock, which resolves to about 0.05% of
+one core over that window. The viewer reads
+only what the CSV gained since its last look, redraws only the selected tab and only when
+rows came in, runs at below-normal priority so the brute forcer's threads win any
+contested core, stops polling a run that finished (the search rewrites the parameters
+file with `finished` and the row count), doubles a tab's bins past the cap, and stretches
+its interval so that a redraw is never more than 5% of the wait before it: a big tab
+redraws less often, not more expensively.
+
+Setup is none beyond `python` on PATH (3.9 or newer; the unlock script and the doc hook
+need it already): on first start the viewer creates `analysis/.venv`, installs
+`analysis/requirements.txt` (numpy, matplotlib) into it and re-executes itself from there;
+later starts skip the install until the requirements file changes.
+A small window says so while it installs, and `analysis/visualizer.log` has the details
+when nothing appears (on Windows the viewer is two `pythonw` processes, the venv's launcher
+and the interpreter it runs). `TASFW_VISUALIZER_NO_BOOTSTRAP=1` disables the install,
+which is how CI runs it. On Linux the window needs `python3-tk`. Headless,
+`python analysis/visualizer.py --once --csv <file> [--out <png>] [--rows N]` renders one
+PNG, which CI does on `tasfw-tests/data/scattershot_sample.csv`. With
+`TASFW_VISUALIZER_HEADLESS=1` in the environment the viewer tails a run with no window
+instead, on the window's schedule with fixed defaults, and writes what it cost beside the
+parameters file (`*.visualizer.summary.json`), which the perf suite gates
+(docs/performance.md, "Tier D"); CI runs that mode too, on the sample with a finished
+parameters file, and checks the summary and the image.
+
+The CSV's columns are `Shot`, `Frame`, `Sampled` (1 for a row the sample period chose, 0 for
+one the search forced) and then the stage type's own:
+
+| Stage type | Columns after the first three |
+|---|---|
+| every type | `MarioX`, `MarioY`, `MarioZ`, `MarioFYaw`, `MarioFSpd`, `MarioAction`, `PlatNormX`, `PlatNormY`, `PlatNormZ` |
+| `tilt-target` | plus `MarioYVel` |
+| `osc-final` | plus `Phase`, `MarioYVel`, `NormalDistance` |
+| `dr-oscillations` | plus `Oscillation`, `Crossing`, `Phase` |
+| `dr-approach`, `dr-recover` | plus `Phase`, `MarioYVel` |
+
+A `visualize` column or filter the stage does not emit is reported in the tab's title and the
+log, and that tab stays empty.

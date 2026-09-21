@@ -26,6 +26,7 @@ struct StageConfig
 	nlohmann::json args;                      // stage-type-specific; see Stages.cpp
 	nlohmann::json select;                    // SolutionSet::Select, applied to the output
 	bool exportM64 = false;                   // write one .m64 per solution
+	std::optional<Visualization> visualize;   // the run's viewer (ROADMAP 4.4): the pipeline's viewer script, this stage's plot
 };
 
 struct PipelineConfig
@@ -40,6 +41,8 @@ struct PipelineConfig
 	int64_t savestateBudgetMB = 8192; // the process cap on savestate memory (SlotBudget), shared by the threads' resources (README.md, "Configuration")
 	std::filesystem::path m64;
 	std::filesystem::path outputDirectory;
+	std::optional<std::filesystem::path> visualizer; // "visualizer": the viewer's path (analysis/visualizer.py), required by a stage's "visualize"
+	nlohmann::json visualizeDefaults;                // "visualize" at the top level: defaults a stage's own block overrides key by key
 	nlohmann::json scattershotDefaults;
 	std::vector<StageConfig> stages;
 

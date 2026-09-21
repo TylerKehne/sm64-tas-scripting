@@ -339,8 +339,17 @@ Vocabulary:
   rounds keyed on the thread id, one queue call per thread per round, so a run with them
   is in the queue too. A run is reproducible for a given `Seed` and thread count. Not in
   the queue, and not reproducible: the CSV rows (sampled and written in arrival order).
-- **CSV**: every `CsvSamplePeriod`-th novel block per thread is written as a row; the R script
-  in `analysis/` plots them. `CsvRows` is printed so plotting can run mid-search.
+- **CSV**: every `CsvSamplePeriod`-th novel block per thread is written as a row: `Shot`,
+  `Frame`, `Sampled`, then the search's own columns (`GetCsvLabels`). `CsvRows` is printed
+  so plotting can run mid-search.
+- **Viewer**: a `Visualization` (`Visualization.hpp`: the viewer's path and interpreter, the
+  four columns the plot reads, the bin sizes, range filters, an optional fixed view) handed to a builder's
+  `Visualize()` makes the run write it with the CSV's path to a JSON file beside the CSV
+  when the CSV opens and launch the viewer, detached, with that file; at the end the file
+  is rewritten with `finished` and the row count. The search never waits for the viewer or
+  reads from it, and a run without a CSV launches nothing. The viewer is
+  `analysis/visualizer.py` (README.md, "The viewer"): one window, a tab per run, reading
+  the CSV incrementally at its own refresh rate.
 
 Threads: `MultiThread` opens an OpenMP parallel region of `TotalThreads`. Each thread must
 have its own `LibSm64` (own DLL file) supplied by `ImportResourcePerThread`. Shared state is
@@ -362,16 +371,16 @@ boundary as diffs only; the new stage's solution data starts out default.
 
 Stage types, in the order the committed config uses them:
 
-1. **osc-final** (`BitfsOscFinal`) from frame 3604 of `test3.m64`: an experiment in progress.
-2. **tilt-target** (`TiltTargetShot`), three stages: hit the target normal in X, then in Z with
+1. **tilt-target** (`TiltTargetShot`), three stages: hit the target normal in X, then in Z with
    the X ARE fixed to what the first found, then constrain to a normal box. The last keeps the
    best by ARE and exports.
-3. **dr-oscillations** (`Scattershot_BitfsDr`) once per target oscillation from the
+2. **dr-oscillations** (`Scattershot_BitfsDr`) once per target oscillation from the
    equilibrium frame, piping solutions forward, committing to the direction the first
    oscillation took, keeping the fastest few between oscillations, and requiring
    increment-frame parity at the end.
-4. **osc-final** again from the equilibrium frame, piped from the oscillation solutions.
-5. **dr-approach** (`Scattershot_BitfsDrApproach`): dive from the oscillation solutions;
+3. **osc-final** (`BitfsOscFinal`) from the equilibrium frame, piped from the oscillation
+   solutions.
+4. **dr-approach** (`Scattershot_BitfsDrApproach`): dive from the oscillation solutions;
    then **dr-recover** (`Scattershot_BitfsDrRecover`) twice, phase `attempt-dr` to land the
    dive and phase `c-up-trick` after it. This chain was disabled in the old `main.cpp` and
    has never run to completion; it links and runs, nothing more is known.

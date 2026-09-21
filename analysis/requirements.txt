@@ -1,0 +1,4 @@
+# The viewer's packages (analysis/visualizer.py). It installs them itself into analysis/.venv
+# on first start; CI installs them beforehand and sets TASFW_VISUALIZER_NO_BOOTSTRAP=1.
+numpy>=1.26
+matplotlib>=3.8

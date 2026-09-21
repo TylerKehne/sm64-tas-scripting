@@ -312,6 +312,22 @@ function Invoke-TierD([string]$Exe, [string]$ConfigPath, [string]$Log, [uint64]$
     return @{ Lines = $lines; PeakMB = [math]::Round($peakBytes / 1MB, 1) }
 }
 
+# The headless viewer's summary for a run that launched it (ROADMAP 4.10): written beside the
+# run's CSV in the config's output directory once the viewer has read the run's end, which is
+# a refresh interval or two after bitfs-turn exits.
+function Wait-ViewerSummary([string]$ConfigPath, [datetime]$Since) {
+    $cfg = Get-Content $ConfigPath -Raw | ConvertFrom-Json
+    $outDir = Join-Path (Split-Path -Parent $ConfigPath) $cfg.outputDirectory
+    $deadline = (Get-Date).AddSeconds(120)
+    while ((Get-Date) -lt $deadline) {
+        $summary = Get-ChildItem -Path $outDir -Filter '*.visualizer.summary.json' -ErrorAction SilentlyContinue |
+            Where-Object { $_.LastWriteTime -gt $Since } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+        if ($summary) { return $summary.FullName }
+        Start-Sleep -Seconds 2
+    }
+    throw "the viewer wrote no summary under $outDir within 120 s of the run (see analysis\visualizer.log)"
+}
+
 # ------------------------------------------------------------------ Defender set-up
 
 $defenderPaths = @("$root\build", "$root\res", "$root\perf\reference", "$root\perf\results")
@@ -618,8 +634,12 @@ try {
         $tierD = @()
         $tierDRef = @()
         $specs = @(
-            @{ Name = 'TierD_Deterministic'; Config = 'tierd-deterministic.json'; Exact = $true; OnePerCore = $true },
-            @{ Name = 'TierD_Throughput'; Config = 'tierd-throughput.json'; Exact = $false; OnePerCore = $false }
+            @{ Name = 'TierD_Deterministic'; Config = 'tierd-deterministic.json'; Exact = $true; OnePerCore = $true; Viewer = $false },
+            @{ Name = 'TierD_Throughput'; Config = 'tierd-throughput.json'; Exact = $false; OnePerCore = $false; Viewer = $false },
+            # The same two with the viewer tailing the run headless (ROADMAP 4.10): the current
+            # binary only, gated within the session against the plain rows and on the viewer's cost.
+            @{ Name = 'TierD_DeterministicViewer'; Config = 'tierd-deterministic-viewer.json'; Exact = $true; OnePerCore = $true; Viewer = $true },
+            @{ Name = 'TierD_ThroughputViewer'; Config = 'tierd-throughput-viewer.json'; Exact = $false; OnePerCore = $false; Viewer = $true }
         )
         foreach ($spec in $specs) {
             $configPath = Join-Path $root ("perf\" + $spec.Config)
@@ -634,18 +654,30 @@ try {
             if ($mask -ne 0) { $pinText = "pinned to $(Format-Mask $mask) (one thread per performance core)" }
             $contextArgs += @("--context", "$($spec.Name)_affinity=$(Format-Mask $mask)")
             $binaries = @()
-            if ($useRefTurn) { $binaries += @{ Exe = $refTurn; Tag = 'ref' } }
+            if ($useRefTurn -and -not $spec.Viewer) { $binaries += @{ Exe = $refTurn; Tag = 'ref' } }
             $binaries += @{ Exe = $turn; Tag = 'cur' }
             $best = @{}
             for ($a = 1; $a -le $Alternations; $a++) {
                 foreach ($binary in $binaries) {
                     Write-Host "Tier D $($spec.Name) [$($binary.Tag) $a/$Alternations]: $($binary.Exe) --config $configPath, $threads threads, $pinText"
                     $log = Join-Path $resultsDir "$stamp-$sha-$($spec.Name)-$($binary.Tag)$a.log"
-                    $run = Invoke-TierD $binary.Exe $configPath $log $mask
+                    $runStart = Get-Date
+                    if ($spec.Viewer) { $env:TASFW_VISUALIZER_HEADLESS = '1' }
+                    try {
+                        $run = Invoke-TierD $binary.Exe $configPath $log $mask
+                    } finally {
+                        if ($spec.Viewer) { Remove-Item Env:TASFW_VISUALIZER_HEADLESS -ErrorAction SilentlyContinue }
+                    }
                     # perf_compare.py tierd turns the stage log into the row (CI uses the same parser).
                     $rowFile = "$log.row.json"
                     $tierdArgs = @('tierd', $log, '-o', $rowFile, '--name', $spec.Name, '--peak-mb', "$($run.PeakMB)")
                     if ($spec.Exact) { $tierdArgs += '--exact' }
+                    if ($spec.Viewer) {
+                        $summary = Wait-ViewerSummary $configPath $runStart
+                        Write-Host "viewer summary: $summary"
+                        Get-Content $summary | ForEach-Object { Write-Host "  $_" }
+                        $tierdArgs += @('--viewer-summary', $summary)
+                    }
                     & $python.Source $compareScript @tierdArgs | Out-Null
                     if ($LASTEXITCODE -ne 0) { throw "perf_compare.py tierd could not read $log" }
                     $row = (Get-Content $rowFile -Raw | ConvertFrom-Json).benchmarks[0]

@@ -11,6 +11,8 @@
 #include <stdexcept>
 #include <cmath>
 #include <BinaryStateBin.hpp>
+#include <Visualization.hpp>
+#include <optional>
 #include <tasfw/Script.hpp>
 #include <tasfw/Concepts.hpp>
 #include <omp.h>
@@ -114,9 +116,9 @@ public:
         requires std::same_as<std::invoke_result_t<F, int>, TResourceConfig>
     static std::vector<ScattershotSolution<TOutputState>> RunConfig(
         const Configuration& configuration, const std::vector<ScattershotSolution<TOutputState>>& inputSolutions, F resourceConfigGenerator,
-        std::shared_ptr<std::tuple<TMetricScriptParams...>> metricScriptParams, TParams&&... params)
+        std::shared_ptr<std::tuple<TMetricScriptParams...>> metricScriptParams, const std::optional<Visualization>& visualization, TParams&&... params)
     {
-        return RunBase<TScattershotThread>(configuration, inputSolutions,
+        return RunBase<TScattershotThread>(configuration, inputSolutions, visualization,
             [&](Scattershot<TState, TResource, TMetricScript, TOutputState>& scattershot, M64& m64, int threadId)
             {
                 return std::apply(
@@ -135,9 +137,9 @@ public:
         requires std::same_as<std::invoke_result_t<F, int>, TResource*>
     static std::vector<ScattershotSolution<TOutputState>> RunImport(
         const Configuration& configuration, const std::vector<ScattershotSolution<TOutputState>>& inputSolutions, F resourceImportGenerator,
-        std::shared_ptr<std::tuple<TMetricScriptParams...>> metricScriptParams, TParams&&... params)
+        std::shared_ptr<std::tuple<TMetricScriptParams...>> metricScriptParams, const std::optional<Visualization>& visualization, TParams&&... params)
     {
-        return RunBase<TScattershotThread>(configuration, inputSolutions,
+        return RunBase<TScattershotThread>(configuration, inputSolutions, visualization,
             [&](Scattershot<TState, TResource, TMetricScript, TOutputState>& scattershot, M64& m64, int threadId)
             {
                 return std::apply(
@@ -175,6 +177,8 @@ private:
     int64_t CsvCounter = 0;
     int64_t CsvRows = -1; // Print this each merge so analysis can be run at the same time w/o dealing with partial rows
     bool CsvEnabled = false;
+    std::optional<Visualization> Visualizer;    // the run's viewer once launched (ROADMAP 4.4)
+    std::filesystem::path VisualizerParams;     // its parameters file, beside the CSV
 
     uint64_t TotalShots = 0;
     uint64_t ScriptCount = 0;
@@ -188,12 +192,15 @@ private:
     // The search: the run, its threads, the block table, the status line and the CSV.
     template <std::derived_from<ScattershotThread<TState, TResource, TMetricScript, TOutputState>> TScattershotThread, typename F>
         requires std::same_as<std::invoke_result_t<F, Scattershot<TState, TResource, TMetricScript, TOutputState>&, M64&, int>, ScriptStatus<TScattershotThread>>
-    static std::vector<ScattershotSolution<TOutputState>> RunBase(const Configuration& configuration, const std::vector<ScattershotSolution<TOutputState>>& inputSolutions, F scriptRunner)
+    static std::vector<ScattershotSolution<TOutputState>> RunBase(const Configuration& configuration, const std::vector<ScattershotSolution<TOutputState>>& inputSolutions,
+        const std::optional<Visualization>& visualization, F scriptRunner)
     {
         auto start = std::chrono::high_resolution_clock::now();
-        
+
         auto scattershot = Scattershot(configuration, inputSolutions);
         scattershot.OpenCsv();
+        if (visualization)
+            scattershot.StartVisualizer(*visualization);
 
         std::vector<ScriptStatus<TScattershotThread>> statuses;
         std::vector<uint64_t> totalCycleCounts;
@@ -216,6 +223,8 @@ private:
                     }
                 }
             });
+
+        scattershot.FinishVisualizer();
 
         // Parsed by scripts/perf.ps1 (Tier D); keep the format if you change it.
         printf("Found %llu solutions in %llu shots, %llu blocks, %llu scripts (%llu base-block validation failures).\n",
@@ -282,6 +291,9 @@ private:
     }
     void PrintStatus();
     void OpenCsv();
+    // The viewer: written its parameters and launched when the CSV is open, told the run ended.
+    void StartVisualizer(const Visualization& visualization);
+    void FinishVisualizer();
 
     static std::unordered_set<int> GetStateBinRuntimeFillerBytes()
     {
