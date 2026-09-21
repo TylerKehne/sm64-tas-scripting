@@ -100,7 +100,9 @@ its place with numbers, and "it is cleaner" is not a number.
 - Output: `build\<Config>\out\bitfs-turn.exe` with `config.json` written next to it (the
   committed one plus a `baseDirectory`, so its relative paths resolve into the source tree).
 - Dependencies (nlohmann/json; doctest and Google Benchmark for tests and perf) are fetched
-  by CMake, hash-pinned and cached in `build\downloads` for offline builds. OpenMP is required.
+  by CMake, hash-pinned and cached in `build\downloads` for offline builds;
+  `python scripts\fetch_deps.py` fills that directory with retries, which CI does after
+  restoring it from its cache, since GitHub's downloads fail now and then. OpenMP is required.
 - The game is not in git. You need `res\sm64_jp_0.dll` .. `res\sm64_jp_23.dll` (on Linux,
   `.so` copies): `python scripts\unlock_libsm64.py --rom <sm64 jp>.z64 --out res --copies 24`
   fetches the pinned bitfs-sbb build, unlocks it and writes the copies
