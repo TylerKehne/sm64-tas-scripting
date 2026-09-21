@@ -4,6 +4,39 @@ Every hot-path change records its delta table here, newest first; the policy, th
 how to run it are in [performance.md](performance.md). The first measurements (2026-09-07),
 which everything since is compared against, are at the bottom.
 
+## 2026-09-21: the ARE fixer (ROADMAP 4.8)
+
+Not a framework change and no suite delta: a new stage whose work replaces the three
+tilt-target stages' searches. `BitFsAreFixer` (`are-fixer` stage type, `are-fix` in
+config.json) on the pinned movie from frame 3269, the movie's dive slide, with the config's
+target and the ±100 ULP tolerance, MSVC Release, cost model on: solved in two rounds, ARE
+(-57, 21), steps (13, 49), equilibrium frame 3331, about 6,000 frame advances (6,017 and
+6,035 in two runs: the automatic saves are timing-dependent), 8 saves, 3,055 loads, 0.4 s
+of one thread. Cost model off (`bitfs-turn --test`, the resource's counters
+including the 3,269-frame seek): 51,090 frame advances, 1 save, 3,055 loads, identical on
+MSVC and clang-cl; as a stage, 47,821 frame advances, 0 saves, 3,055 loads and 1.1 s
+against 0.4 s. The loads are the same either way, one per lattice stick, from the
+`TestAdhoc` that reverts it; with the cost model on the framework's 8 saves make each a
+restore (load 34% of the CPU time at 46 us, advance 40%), and off, each replays some
+fifteen frames from the one save at the rollout's start (advance 78%), 2.75 times the wall
+for the same result. The Tier D tilt-target run for comparison: 17.8 million frame advances
+and 1.05 million loads for 52 solutions on one axis (perf/baselines/tyler-desktop/TierD.json).
+Where the fixer's frames go: about 100 in Newton on the rollout's constant stick, 200 in the
+two probe landings that measure the rest's response to the landing, 1,500 per round in the
+three fine frames' lattices (a `TestAdhoc` per stick: a load and an advance), and about 95
+per played landing, each flown from the rollout's first frame since the script's cursor
+never leaves it.
+
+The branch's one framework change, the pointer the status-carrying `ExecuteAdhoc<T>` and
+`ModifyAdhoc<T>` hand their body (ROADMAP 4.8), went through the suite's Tiers A to C
+against the e20b01b reference the same afternoon: every count, allocation and efficiency
+row unchanged, and one time row over the gate, `BM_LibSm64Fixed_Addr` at 14.4 ns against
+the reference's 12.2. Master's own binary (6f1ce5d, built in a worktree for the check)
+reads 14.3 ns on that row, 0.1% from the branch: the reference is 34 commits behind master
+and the drift is master's, not the branch's. The Tier D workloads did not run (`-NoTierD`;
+the machine was in use, and the pre-flight refused the attribution run until it was skipped
+for that relative comparison).
+
 ## 2026-09-21: Tier C on frozen copies of its scripts
 
 The Tier C workloads run on frozen copies of the scripts under `tasfw-perf/workloads/`

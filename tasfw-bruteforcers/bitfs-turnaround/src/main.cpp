@@ -2,11 +2,12 @@
 // order or a single one (ROADMAP 1.4). See README.md ("Configuration") for the file format
 // and Stages.cpp for what each stage type does.
 //
-//   bitfs-turn [--config <file>] [--stage <name>] [--list] [--dry-run]
+//   bitfs-turn [--config <file>] [--stage <name>] [--list] [--dry-run] [--test [doctest args]]
 //
 // Without --config the file is config.json next to the executable. Every stage writes its
 // solutions to <outputDirectory>/solutions/<stage>.json; a stage run alone reads its input
-// from the file its input stage wrote last time.
+// from the file its input stage wrote last time. --test runs the executable's own optional
+// tests on the config's game (Tests.cpp) and hands the arguments after it to doctest.
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
@@ -28,6 +29,7 @@
 #include "SolutionSet.hpp"
 #include "StageArgs.hpp"
 #include "Stages.hpp"
+#include "Tests.hpp"
 
 namespace fs = std::filesystem;
 
@@ -40,18 +42,22 @@ namespace
 		bool list = false;
 		bool dryRun = false;
 		bool help = false;
+		bool test = false;
+		int testArguments = 0; // index of the first argument after --test
 	};
 
 	void PrintUsage()
 	{
 		std::printf(
-			"usage: bitfs-turn [--config <file>] [--stage <name>] [--list] [--dry-run]\n"
+			"usage: bitfs-turn [--config <file>] [--stage <name>] [--list] [--dry-run] [--test [doctest args]]\n"
 			"  --config <file>  pipeline config (default: config.json next to the executable)\n"
 			"  --stage <name>   run only this stage, reading its input from the solutions file\n"
 			"                   its input stage wrote earlier\n"
 			"  --list           print the stage types and the configured stages, then exit\n"
 			"  --dry-run        resolve paths, check the files exist, load one DLL and print its\n"
-			"                   layout report, then exit without searching\n");
+			"                   layout report, then exit without searching\n"
+			"  --test           run the executable's own optional tests on the config's game;\n"
+			"                   everything after it goes to doctest (e.g. -tc=*are-fixer*)\n");
 	}
 
 	bool ParseOptions(int argc, char** argv, Options& options)
@@ -86,6 +92,12 @@ namespace
 				options.dryRun = true;
 			else if (arg == "--help" || arg == "-h")
 				options.help = true;
+			else if (arg == "--test")
+			{
+				options.test = true;
+				options.testArguments = i + 1;
+				break;
+			}
 			else
 				return false;
 		}
@@ -413,6 +425,13 @@ int main(int argc, char** argv)
 
 	try
 	{
+		if (options.test)
+		{
+			std::vector<char*> arguments { argv[0] }; // doctest's own command line: the program, then what followed --test
+			for (int i = options.testArguments; i < argc; i++)
+				arguments.push_back(argv[i]);
+			return RunTests(options.config, int(arguments.size()), arguments.data());
+		}
 		return Run(options);
 	}
 	catch (const std::exception& e)

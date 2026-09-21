@@ -14,8 +14,10 @@ is to make TASing a game easier and more organized, without managing the overhea
 more than necessary; every design choice serves that.
 
 The concrete goal driving the code today is a brute forcer for the squish-cancel setup on
-the BitFS tilting pyramid. The framework is intended to become game- and console-agnostic
-later.
+the BitFS tilting pyramid. That setup is for an A-button-challenge run: the source movie
+presses A on its way to the level, and nothing after the BitFS entry may (the maintainer,
+2026-09-21), so no BitFS script or stage presses A. The framework is intended to become
+game- and console-agnostic later.
 
 ## Who it is for
 
@@ -73,8 +75,8 @@ its place with numbers, and "it is cleaner" is not a number.
 | `tasfw-core/inc/sm64/` | Hand-copied decomp structs, enums and trig tables. Must match the DLL's x64 layout. |
 | `tasfw-resources/` | `LibSm64` (drives the game DLL) and `PyramidUpdate` (standalone reimplementation of pyramid tilt physics used as a fast stand-in). |
 | `tasfw-scattershot/` | Header-only OpenMP brute-force search (blocks, segments, solutions, CSV export, and the launch of the CSV's viewer: `Visualization.hpp`). One header per concept under `inc/`; `<Scattershot.hpp>` is the one include, it pulls in the thread and the builders at its bottom. |
-| `tasfw-scripts/` | Reusable BitFS scripts (pyramid oscillation, downhill angle search, dive-recover attempts), scattershot stages, and the scripts that look at the game rather than play it (`VerifyLayout`, `LevelTransitions`, `MarioTrace`, `SpliceMovie`), which the tools and tests run. |
-| `tasfw-bruteforcers/bitfs-turnaround/` | The only executable (`bitfs-turn.exe`): the BitFS pipeline as config-selected stages (`config.json`, `Stages.cpp`, `PipelineConfig`). `--list`, `--dry-run`, `--stage`. |
+| `tasfw-scripts/` | Reusable BitFS scripts (pyramid oscillation, downhill angle search, dive-recover attempts, the ARE fixer of ROADMAP 4.8: `BitFsAreFixer`, a rest with the target's adjusted remainder error from the movie's dive onto the platform, its rollout steered), scattershot stages, and the scripts that look at the game rather than play it (`VerifyLayout`, `LevelTransitions`, `MarioTrace`, `SpliceMovie`), which the tools and tests run. |
+| `tasfw-bruteforcers/bitfs-turnaround/` | The only executable (`bitfs-turn.exe`): the BitFS pipeline as config-selected stages (`config.json`, `Stages.cpp`, `PipelineConfig`). `--list`, `--dry-run`, `--stage`, and `--test`, its own optional doctest cases on the config's game (`Tests.cpp`), which neither CI nor `tasfw-tests` runs. |
 | `tasfw-perf/` | Performance suite: Tier A microbenchmarks on an in-memory mock resource, Tier B on the game DLL, Tier C framework workloads through the frozen script copies under `workloads/` (docs/performance.md, "Tier C"; they do not follow `tasfw-scripts/`). Release only. |
 | `tasfw-tools/` | `dllcheck`: runs the `VerifyLayout` script against a DLL, reports fixed-slice coverage and what a savestate holds of the sections (`bytes:`, docs/libsm64.md "The game's bytes"), measures frame-advance and savestate cost, and lists a movie's level transitions (`--levels`) or Mario and the camera around a frame (`--trace`). `m64splice`: a movie for one game version out of two, the first up to the frame it enters a level, the second from its own, played and checked frame by frame (docs/libsm64.md, "A movie for the US game"). |
 | `tasfw-tests/` | Correctness tests (doctest), one file per subject; `script_fixtures.hpp` and `libsm64_env.hpp` hold what the `test_script_*` and `test_libsm64_*` files share. DLL-free tests always run; the libsm64 tests run when `res\` has the DLL and movie. `test_sm64_layout.cpp` compiles `sm64_layout.inc`, the pinned DLL's field offsets and struct sizes, against the copied headers, so the layout is checked without the game (docs/libsm64.md, "Struct layouts"). |
@@ -83,7 +85,7 @@ its place with numbers, and "it is cleaner" is not a number.
 | `analysis/` | `visualizer.py`, the scattershot viewer (a live plot of a run's CSV, one tab per run; the search launches it, README.md "The viewer") with `requirements.txt`, which it installs into its own `analysis/.venv` on first start; also the pipeline's default output directory (CSVs, their `*.visualizer.json`, `solutions/*.json`, `m64/`), all gitignored. |
 | `res/` | Gitignored runtime inputs: 24 copies of the libsm64 DLL (made by `scripts/unlock_libsm64.py`), other source .m64 files, and thousands of exported solution .m64 files. |
 | `movies/` | The committed source movies: `bitfs-pyramid-jp.m64` (JP, 3,804 frames; the tests, the perf suite, CI and `config.json` use it), `bitfs-osc-final-jp.m64` (JP, 3,726 frames; the oscillations done by hand to frame 3604, once the source of a final-oscillation experiment, unreferenced now), `1keyU.m64` (US, 7,628 frames; a whole 1-key run, the source of the US way into BitFS) and `bitfs-pyramid-us.m64` (US, 3,871 frames; `1keyU.m64` to its BitFS entry, then the JP movie from its own: its frame 3397 is the JP movie's 3330, the libsm64 tests run on it when `res\` has the US DLL). |
-| `scripts/` | `build.ps1` (the supported build entry point on Windows), `test.ps1`, `perf.ps1` and its compare script, `unlock_libsm64.py` (the game from a ROM or the CI key), `perf_scaling_hang.ps1`, `dll_symbols.py`, `dll_layout.py` (the layout table from a DLL's DWARF), `dll_game_bytes.py` (a build's `LibSm64KnownGameBytes` entry from its COFF symbols: where the game's bytes of `.data` and `.bss` end and the C runtime's begin), `decomp_diff.py` with `decomp_pin.json` (the copied decomp files against their pinned upstream revision; docs/decomp.md), `decode_cache_model.py` (a model of a scattershot run's block tree and what a per-thread savestate cache would save of its decoding; ROADMAP 4.3), `fetch_deps.py` (the dependency tarballs into `build/downloads` with retries, from the CMake files' own names, URLs and hashes; CI runs it after restoring that directory from its cache). |
+| `scripts/` | `build.ps1` (the supported build entry point on Windows), `test.ps1`, `perf.ps1` and its compare script, `unlock_libsm64.py` (the game from a ROM or the CI key), `perf_scaling_hang.ps1`, `dll_symbols.py`, `dll_layout.py` (the layout table from a DLL's DWARF), `dll_game_bytes.py` (a build's `LibSm64KnownGameBytes` entry from its COFF symbols: where the game's bytes of `.data` and `.bss` end and the C runtime's begin), `decomp_diff.py` with `decomp_pin.json` (the copied decomp files against their pinned upstream revision; docs/decomp.md), `decode_cache_model.py` (a model of a scattershot run's block tree and what a per-thread savestate cache would save of its decoding; ROADMAP 4.3), `are_cell_model.py` (where Mario must rest on the pyramid for a wanted adjusted remainder error, in the game's float32 arithmetic: the width and spacing of the position bands per axis; ROADMAP 4.8), `fetch_deps.py` (the dependency tarballs into `build/downloads` with retries, from the CMake files' own names, URLs and hashes; CI runs it after restoring that directory from its cache). |
 | `cmake/` | `AddOptimizationFlags` (arch flag, FP determinism, LTO unless `TASFW_LTO=OFF`, OpenMP; applied to every first-party target), `Warnings` (`/W3`, `/W4`, `-Wall -Wextra` on every first-party target, and `TASFW_WARNINGS_AS_ERRORS`) and `SystemIncludes` (fetched dependencies as system headers, so their warnings never count). |
 | `docs/` | Provenance of the DLL (libsm64.md), what was copied from the decomp and at which revision (decomp.md), compiler pitfalls, performance, and how to TAS with the framework (tasing.md). |
 
@@ -256,6 +258,13 @@ its place with numbers, and "it is cleaner" is not a number.
   Both manage savestates and reverts for you.
 - Naming: PascalCase types and methods, `_camelCase` private members, `CustomStatus` for the
   public result object.
+- A script's shape (the maintainer, 2026-09-21): its helpers are private static members of
+  the script class, never namespace-scope functions; a method does one step of the
+  algorithm, split where it reads better, without obsessing; a compare call's lambdas
+  carry their role as an inline comment (`//paramsGenerator`, `//script`, `//comparator`,
+  `//terminator`, as `BitFsScApproach_AttemptDr.cpp` does); and a script's own `Load` or
+  `Rollback` to undo a trial is a code smell, since an ad-hoc body that returns false is
+  reverted to where it began (docs/tasing.md, "Saves and loads are automatic").
 - Compiler workarounds exist (`using` directives in `ScattershotThread`, the named static in
   `Inputs.cpp`). Each is catalogued in docs/compilers.md; add yours there.
 
@@ -373,7 +382,9 @@ Agents without hooks follow the same procedure by hand at the end of every chang
 
 ## Glossary
 
-- **BitFS**: Bowser in the Fire Sea. **DR**: dive recover. **SC**: squish cancel.
+- **BitFS**: Bowser in the Fire Sea. **DR**: dive recover. **SC**: squish cancel. **ABC**:
+  A button challenge, a run that never presses A; the setup is for one, so no A after the
+  level entry.
 - **Pyramid normal / xzSum**: the tilting platform's surface normal; `|nX| + |nZ|` measures tilt.
 - **Crossing / oscillation**: the tilt direction reversing past equilibrium; an oscillation is
   a pair of crossings at least `minOscillationFrames` apart.

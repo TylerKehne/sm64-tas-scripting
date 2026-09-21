@@ -145,3 +145,54 @@ TEST_CASE("ExecuteAdhoc sandboxes; ModifyAdhoc persists")
 			CHECK(s.GetCurrentFrame() == 2);
 		});
 }
+
+// The status-carrying forms hand the body a pointer to the status that comes back flattened
+// into the result, the way the compare family hands its candidates theirs (docs/tasing.md,
+// "Ad-hoc scripts"). Nothing in the tree instantiated them before 2026-09-21, when they
+// turned out to pass the object instead. (TestAdhoc's status form is protected, so a script
+// cannot call it; not exercised here.)
+TEST_CASE("ExecuteAdhoc and ModifyAdhoc carry a status the body fills")
+{
+	struct Seen
+	{
+		int frames = 0;
+	};
+
+	MockResource resource;
+	M64 m64;
+	RunRoot(resource, m64, [&](auto& s)
+		{
+			auto looked = s.template ExecuteAdhoc<Seen>([&](Seen* seen)
+				{
+					s.AdvanceFrameWrite(In(0));
+					s.AdvanceFrameWrite(In(1));
+					seen->frames = 2;
+					return true;
+				});
+			CHECK(looked.executed);
+			CHECK(looked.frames == 2);
+			CHECK(looked.m64Diff.frames.size() == 2);
+			CHECK(s.GetCurrentFrame() == 0);
+
+			auto kept = s.template ModifyAdhoc<Seen>([&](Seen* seen)
+				{
+					s.AdvanceFrameWrite(In(0));
+					seen->frames = 1;
+					return true;
+				});
+			CHECK(kept.executed);
+			CHECK(kept.frames == 1);
+			CHECK(s.GetCurrentFrame() == 1);
+
+			// A body that returns false is reverted and its status still comes back.
+			auto rejected = s.template ModifyAdhoc<Seen>([&](Seen* seen)
+				{
+					s.AdvanceFrameWrite(In(50));
+					seen->frames = 7;
+					return false;
+				});
+			CHECK_FALSE(rejected.executed);
+			CHECK(rejected.frames == 7);
+			CHECK(s.GetCurrentFrame() == 1);
+		});
+}

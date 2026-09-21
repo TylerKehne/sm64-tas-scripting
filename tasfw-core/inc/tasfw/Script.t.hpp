@@ -21,7 +21,7 @@ AdhocScriptStatus<TAdhocCustomScriptStatus> Script<TResource>::ExecuteAdhoc(F ad
 	int64_t initialFrame = GetCurrentFrame();
 
 	TAdhocCustomScriptStatus customStatus = TAdhocCustomScriptStatus();
-	BaseScriptStatus baseStatus = ExecuteAdhocBase([&]() { return adhocScript(customStatus); });
+	BaseScriptStatus baseStatus = ExecuteAdhocBase([&]() { return adhocScript(&customStatus); });
 	Revert(initialFrame, baseStatus.m64Diff, SaveBankIfCreated(*this, _adhocLevel + 1), this);
 
 	return AdhocScriptStatus<TAdhocCustomScriptStatus>(std::move(baseStatus), std::move(customStatus));
@@ -45,7 +45,7 @@ AdhocScriptStatus<TAdhocCustomScriptStatus> Script<TResource>::ModifyAdhoc(F adh
 	int64_t initialFrame = GetCurrentFrame();
 
 	TAdhocCustomScriptStatus customStatus = TAdhocCustomScriptStatus();
-	BaseScriptStatus baseStatus = ExecuteAdhocBase([&]() { return adhocScript(customStatus); });
+	BaseScriptStatus baseStatus = ExecuteAdhocBase([&]() { return adhocScript(&customStatus); });
 	ApplyChildDiff(baseStatus, SaveBankIfCreated(*this, _adhocLevel + 1), initialFrame, this);
 
 	return AdhocScriptStatus<TAdhocCustomScriptStatus>(std::move(baseStatus), std::move(customStatus));

@@ -16,6 +16,7 @@
 #include <sm64/Types.hpp>
 
 #include <BitFSPyramidOscillation.hpp>
+#include <BitFsAreFixer.hpp>
 #include <BitFsScApproach.hpp>
 #include <Scattershot_BitfsDr.hpp>
 #include <Scattershot_BitfsDrApproach.hpp>
@@ -46,6 +47,19 @@ namespace
 		};
 		PutVector(metrics, "error", data.error);
 		PutVector(metrics, "remainderError", data.remainderError);
+		PutVector(metrics, "adjustedRemainderError", data.adjustedRemainderError);
+		PutVector(metrics, "incrementFrames", data.incrementFrames);
+		return metrics;
+	}
+
+	// The same names as a tilt-target solution, so the oscillation stage's "input:" keys read either.
+	std::map<std::string, double> Metrics(const ScriptStatus<BitFsAreFixer>& data)
+	{
+		std::map<std::string, double> metrics {
+			{ "pyraNormX", data.normal[0] }, { "pyraNormY", data.normal[1] }, { "pyraNormZ", data.normal[2] },
+			{ "equilibriumFrame", double(data.equilibriumFrame) }, { "restX", data.restPos[0] }, { "restZ", data.restPos[2] },
+			{ "rounds", double(data.rounds) }
+		};
 		PutVector(metrics, "adjustedRemainderError", data.adjustedRemainderError);
 		PutVector(metrics, "incrementFrames", data.incrementFrames);
 		return metrics;
@@ -448,6 +462,74 @@ namespace
 		return set;
 	}
 
+	// --- are-fixer: BitFsAreFixer, one rest with the wanted ARE, on the first resource ---------
+
+	class AreFixerRoot : public TopLevelScript<LibSm64>
+	{
+	public:
+		class CustomScriptStatus
+		{
+		public:
+			ScriptStatus<BitFsAreFixer> fixer;
+		};
+		CustomScriptStatus CustomStatus = CustomScriptStatus();
+
+		AreFixerRoot(int64_t startFrame, const BitFsAreFixer::Args& args) : _startFrame(startFrame), _args(args) {}
+
+		bool validation() override { return true; }
+		bool execution() override
+		{
+			LongLoad(_startFrame);
+			CustomStatus.fixer = Modify<BitFsAreFixer>(_args);
+			return true;
+		}
+		bool assertion() override { return CustomStatus.fixer.asserted; }
+
+	private:
+		int64_t _startFrame;
+		BitFsAreFixer::Args _args;
+	};
+
+	SolutionSet RunAreFixer(StageContext& context)
+	{
+		const std::string where = ArgsWhere(context);
+		const json& a = context.stage.args;
+		RejectUnknownKeys(a,
+			{ "targetNx", "targetNz", "tolerance", "restX", "restZ", "slideFrames", "fineFrames", "sticksPerFrame", "verifyPerRound", "maxRounds" },
+			where);
+
+		BitFsAreFixer::Args args;
+		args.targetNx = float(ArgNumber(a, "targetNx", context.input, where));
+		args.targetNz = float(ArgNumber(a, "targetNz", context.input, where));
+		args.tolerance = int(ArgNumber(a, "tolerance", context.input, args.tolerance, where));
+		args.restX = float(ArgNumber(a, "restX", context.input, where));
+		args.restZ = float(ArgNumber(a, "restZ", context.input, where));
+		args.slideFrames = int(ArgNumber(a, "slideFrames", context.input, args.slideFrames, where));
+		args.fineFrames = int(ArgNumber(a, "fineFrames", context.input, args.fineFrames, where));
+		args.sticksPerFrame = int(ArgNumber(a, "sticksPerFrame", context.input, args.sticksPerFrame, where));
+		args.verifyPerRound = int(ArgNumber(a, "verifyPerRound", context.input, args.verifyPerRound, where));
+		args.maxRounds = int(ArgNumber(a, "maxRounds", context.input, args.maxRounds, where));
+
+		Configuration config = context.pipeline.ScattershotConfiguration(context.stage);
+		M64 m64 = LoadMovie(config);
+		auto status = TopLevelScriptBuilder<AreFixerRoot>::Build(m64).ImportResource(&context.resources[0]).Run(context.stage.startFrame, args);
+		const ScriptStatus<BitFsAreFixer>& fixer = status.fixer;
+		std::printf("are-fixer: %s in %d rounds; equilibrium frame %lld, rest (%.9g, %.9g), normal (%.9g, %.9g, %.9g), "
+			"ARE (%.0f, %.0f), steps (%d, %d); %llu frame advances, %llu saves, %llu loads\n",
+			fixer.solved ? "solved" : "not solved", fixer.rounds, (long long)fixer.equilibriumFrame, fixer.restPos[0], fixer.restPos[2],
+			fixer.normal[0], fixer.normal[1], fixer.normal[2], fixer.adjustedRemainderError[0], fixer.adjustedRemainderError[2],
+			fixer.incrementFrames[0], fixer.incrementFrames[2],
+			(unsigned long long)fixer.nFrameAdvances, (unsigned long long)fixer.nSaves, (unsigned long long)fixer.nLoads);
+
+		SolutionSet set;
+		set.stage = context.stage.name;
+		set.type = context.stage.type;
+		set.startFrame = context.stage.startFrame;
+		if (status.asserted && !status.m64Diff.frames.empty())
+			set.solutions.push_back(SolutionRecord { status.m64Diff, Metrics(fixer) });
+		return set;
+	}
+
 	// --- export: pass the input through (and let the export flag write it) ---------------------
 
 	SolutionSet RunExport(StageContext& context)
@@ -463,6 +545,7 @@ namespace
 
 	const std::vector<StageType> g_stageTypes {
 		{ "tilt-target", "TiltTargetShot: reach a target pyramid normal (one pass; chain passes through input)", RunTiltTarget },
+		{ "are-fixer", "BitFsAreFixer: from a dive onto the platform, a dive recover whose rollout is steered to rest where the pyramid's normal carries the target's ARE", RunAreFixer },
 		{ "dr-oscillations", "Scattershot_BitfsDr once per target oscillation, filtering between oscillations", RunDrOscillations },
 		{ "osc-final", "BitfsOscFinal: the final oscillation into the target quadrant", RunOscFinal },
 		{ "dr-approach", "Scattershot_BitfsDrApproach: dive from the oscillation (was disabled in main.cpp; unverified)", RunDrApproach },

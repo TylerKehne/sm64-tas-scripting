@@ -921,7 +921,90 @@ goals are (status as stated by the maintainer, 2026-09-08):
       nearest thing and a natural import format.
 - [ ] **4.8 Fine-tuned targeting.** A squish-cancel brute forcer that hits floating-point
       precise target values when given a sufficiently close starting m64 (the ARE machinery
-      in `TiltTargetShot` is the seed of this). Progress exists.
+      in `TiltTargetShot` is the seed of this). Progress exists. Assessed 2026-09-21, the
+      first of the Phase 4 items taken up; the maintainer's verdict on the current fixer:
+      flaky and inefficient after an enormous amount of time. What it searches: `tilt-target`
+      draws random inputs from the start frame, evaluates every script by running the game to
+      the pyramid's equilibrium (95% of the Tier D run's frame advances, 297 per pellet), bins
+      Mario's position at 10 units and scores `-|ARE|`. What it is looking for, by
+      `scripts/are_cell_model.py` (float32, the pyramid's own arithmetic): with Mario at rest
+      the normal snaps to the goal his position defines (`approach_by_increment` within
+      0.01), so the resting normal and with it the ARE are pure functions of the rest
+      position. Along x the ARE moves 16 ULPs per float step of x (0.00012 units), along z 4
+      per float step (0.00006 units); the rest positions inside the ±100 neighborhood on both
+      axes are cells 0.0016 by 0.003 units, one every 5.1 units on each axis, half of them
+      with the step parity the oscillation stage requires; the coupling through the distance
+      moves the other axis's ARE by 0.06 ULP per float step, which is what puts the exact
+      values in between. The stage chain then asks `tilt-z` to hold ARE_x at the integer
+      `tilt-x` found while ARE_z lands within 100: one float position of x per 5 units, or
+      none, on a 16-ULP lattice, which is the luck the million-shot budgets pay for, and
+      nothing downstream asks for it (`dr` and `osc-final` conserve whatever ARE the
+      equilibrium frame has; the box is `tilt-range`'s own). The maintainer's proposal
+      (2026-09-21): dive onto the platform, cut the speed in the air, dive-recover near the
+      center and land at rest, then tune the landing spot until the ARE is right, since air
+      movement targets float-precise positions within a handful of frames. The model backs
+      it: the ARE measured at one rest gives the correction outright (ARE_x/16 float steps
+      of x, ARE_z/4 of z, or one band of 5.1 units on one axis when the parity is wrong), so
+      after a first landing the target cell is known and the loop is a targeted landing (a
+      nested sweep of the last air frames' sticks, the compare family's kind of work) and a
+      re-measure, a few million frame advances per round rather than a stage. Scattershot has
+      no place in that loop: its 10-unit bins are coarser than the cells' 5.1-unit period, so
+      an ARE fitness is noise to it. Open before building: whether two or three air frames of
+      stick input reach a cell in the game (one frame's stick lattice is 0.006 to 0.16 units
+      of position; the prototype measures the landing density), whether ±100 ULPs is the real
+      requirement, and where the rest position may be (the `tilt-range` box or anywhere the
+      oscillations can start). Built the same day on the maintainer's answers (the rest
+      position is free, the tolerance stays, aim well under a few million frame advances, no
+      A press after the level entry since the run is an A-button challenge, and the next item
+      is the first oscillation's flakiness): `BitFsAreFixer` in tasfw-scripts, the
+      `are-fixer` stage type, the `are-fix` stage of config.json, and its test under
+      `bitfs-turn --test` (the executable's own optional tests, `Tests.cpp`, which neither CI
+      nor tasfw-tests runs). The landing that rests is the movie's own dive recover: the
+      movie dives onto the platform shedding speed in the air (frames 3261 to 3268), lands in
+      the dive slide at 3269 and rolls out to a rest at 3285; the stage starts at 3269 and
+      owns the rollout, whose fifteen air frames are steered with B on the first frame and
+      no other button, and Mario rests where it lands (`ACT_FREEFALL_LAND_STOP` is stationary
+      at once). Two earlier landings are gone: a jump steered with A held and a ground pound
+      pressed A, and a walk to the dive's 29 speed from the idle frame cannot reach it, since
+      the platform's tilt follows Mario with a lag, so a straight run is uphill, circling
+      wide stalls under 20 and the direction to the center turns as fast as his face can
+      while he circles; an idle start needs the oscillation stage's way of building speed.
+      One round: Newton on the steered frames' constant stick aims the landing at the wanted
+      spot; the rest is measured; the correction to the nearest cell with the right parity
+      comes from the model's Jacobian; the rest's response to the landing is measured from
+      two probe landings, because the platform tilts from near flat to the resting normal
+      after the landing and carries Mario tens of units with it, so the rest moves more than
+      a landing shift, with cross terms; the last three air frames' sticks are measured one
+      frame at a time (the 500 nearest the needed change per frame, a load and an advance
+      each; the landing frame moves a quarter step or more of its velocity, measured from the
+      current stick), combined with the forward speed each leaves behind, looked up in a
+      grid for the combinations predicted inside the cell, and the nearest prediction is
+      played out; where it rests re-targets the same lattices until one rests inside the
+      tolerance. The script's cursor stays on the rollout's first frame throughout: every
+      trial is an ad-hoc block that reverts, the lattices are one `TestAdhoc` per stick, the
+      candidates are a `CompareAdhoc` whose terminator is the tolerance and whose comparator
+      keeps the nearer rest, and the winner's diff is applied once (the maintainer,
+      2026-09-21: a script's own `Rollback` and `Load` are a code smell; a Modify block
+      returning false reverts, and the compare family fits where it fits). On the pinned
+      movie from frame 3269 with the config's target and ±100 ULPs: solved in two rounds,
+      ARE (-57, 21), steps (13, 49), equilibrium frame 3331 (the frame whose state the frame
+      before already had; the diff ends before it), the rest 170 units from the center with
+      the normal (-0.31, -0.10), for about 6,000 frame advances, 8 saves and 3,055 loads with
+      the cost model on (the automatic saves are timing-dependent, so those vary by a few
+      dozen between runs; 51,090 advances, 3,269 of them the seek to the start frame, 1 save and
+      3,055 loads with it off, identical on both compilers), against the Tier D tilt-target
+      run's 17.8 million frame advances for 52 solutions on one axis. Fixed on the way, in
+      `Script.t.hpp`: the status-carrying `ExecuteAdhoc<T>` and `ModifyAdhoc<T>` handed the
+      body the status object where their concept, the how-to and the compare family's
+      candidates name a pointer, so no conforming lambda had ever compiled against them;
+      `test_script_lifecycle.cpp` pins the pointer (`TestAdhoc<T>` is protected, so it
+      cannot be exercised from a script). Wired in the same day at the maintainer's word:
+      config.json's three tilt stages are gone, `are-fix` is the first stage and `dr`'s
+      input, and every later stage starts at 3269, since the fixer's solutions do (a piped
+      diff is applied from its first frame). A 300-shot smoke run of `dr` from that rest
+      went through the plumbing (39,707 blocks, no base-block validation failure, no
+      solution at that size against the configured 50,000); how the first oscillation
+      behaves from it is the next item.
 - [ ] **4.9 Defects in the stage scripts.** Found 2026-09-15 writing 3.17; docs/tasing.md
       lists them as not to copy. `Scattershot_BitfsDrRecover::IsSolution` reads its
       previous state from the current frame (`prevState`,
@@ -936,7 +1019,11 @@ goals are (status as stated by the maintainer, 2026-09-08):
       changes what a stage searches, so each needs that stage's counts before and after,
       and the dive-recover chain the first two belong to has never run to completion (4.1).
       Tier C is untouched either way: since 2026-09-21 it runs on frozen copies of the
-      scripts (`tasfw-perf/workloads/`).
+      scripts (`tasfw-perf/workloads/`). Found 2026-09-21 building 4.8:
+      `Scattershot_BitfsDr::Pbd` and `BitFsScApproach_AttemptDr` expect `ACT_DIVE_SLIDE` on
+      the frame after the dive's B press, but a dive from a run is airborne for about ten
+      frames first (the game gives it 20 of vertical speed), so neither move ever applies;
+      `Pbd` has weight 0 in every phase anyway.
 - [x] **4.10 The viewer's cost, gated.** Done 2026-09-19. The suite proved the search's side
       of 4.4 costs nothing (its Tier D runs had no viewer), and CI's `--once` that the viewer
       draws; nothing measured the viewer while it tailed a live run, which is the cost the

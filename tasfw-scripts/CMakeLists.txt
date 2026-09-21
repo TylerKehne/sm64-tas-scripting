@@ -28,6 +28,7 @@ add_library(tasfw-scripts-bitfs-sc-setup STATIC
 	"src/bitfs-sc-setup/BitFsScApproach.cpp"
 	"src/bitfs-sc-setup/BitFsScApproach_AttemptDr.cpp"
 	"src/bitfs-sc-setup/BitFsScApproach_AttemptDr_BF.cpp"
+	"src/bitfs-sc-setup/BitFsAreFixer.cpp"
 )
 
 add_library(tasfw-scripts-scattershot-bitfs-dr STATIC

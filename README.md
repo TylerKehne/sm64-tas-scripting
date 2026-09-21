@@ -86,7 +86,10 @@ that target, keeps the copy current too.
 `--list` prints the stage types and the configured stages; `--dry-run` resolves every path,
 checks the files exist, loads one DLL, runs the `VerifyLayout` script to the first stage's
 start frame and prints its report (struct layout, the hardcoded object slots), exiting 1 on
-any `FAIL`; a real run makes the same check before its first stage. Both are safe. A full
+any `FAIL`; a real run makes the same check before its first stage. Both are safe. `--test`
+runs the executable's own optional tests on the config's game (the `are-fix` stage solving
+within its tolerance without an A press) and hands everything after it to doctest; neither
+CI nor the framework's suite runs them. A full
 run is not a smoke test: 16 threads, hours, thousands of exported `.m64` files, and the
 viewer's window with a tab per stage and per `dr` pass ("The viewer").
 
@@ -124,15 +127,16 @@ One JSON file. Relative paths resolve against the file's own directory, unless t
 	"scattershot": { "maxShots": 3000, "maxSolutions": 100, "seed": 6, "deterministic": false, "...": "any Configuration field" },
 	"stages": [
 		{
-			"name": "tilt-x", "type": "tilt-target", "startFrame": 3330,
-			"scattershot": { "maxShots": 30000, "deterministic": true, "seed": 111 },
-			"args": { "targetNx": -0.17944, "targetNz": 0.3936, "targetDimension": "x" }
+			"name": "are-fix", "type": "are-fixer", "startFrame": 3269,
+			"args": { "targetNx": -0.17944, "targetNz": 0.3936, "tolerance": 100, "restX": -2020, "restZ": -740 },
+			"export": true
 		},
 		{
-			"name": "tilt-z", "type": "tilt-target", "startFrame": 3330, "input": "tilt-x",
-			"args": { "targetNx": -0.17944, "targetNz": 0.3936, "targetDimension": "z",
-			          "fixNonTargetDimensionARE": true, "targetARE": "input:adjustedRemainderError0" },
-			"select": { "sortBy": ["adjustedRemainderError0"], "take": 1 },
+			"name": "dr", "type": "dr-oscillations", "startFrame": 3269, "input": "are-fix",
+			"scattershot": { "maxSolutions": 100, "csvSamplePeriod": 10 },
+			"args": { "equilibriumFrame": "input:equilibriumFrame", "quadrant": 4,
+			          "targetNx": -0.17944, "targetNz": 0.3936, "maxOscillations": 5, "normalSpecs": { "...": "see config.json" } },
+			"select": { "sortBy": ["fSpd"], "take": 10 },
 			"visualize": { "filters": [{ "column": "MarioFSpd", "max": 8 }] },
 			"export": true
 		}
@@ -177,10 +181,11 @@ One JSON file. Relative paths resolve against the file's own directory, unless t
   first solution of the input stage (for example the equilibrium frame the tilt search found).
   The argument names of each type are checked in `Stages.cpp`; an unknown one is an error.
 
-The committed config is the pipeline as it was last run: the three tilt stages that fix
-the adjusted remainder errors, the oscillations, the final oscillation, then the
-dive-recover chain, with a CSV and the viewer on every stage (every hundredth novel block
-on the tilt stages, whose novelty is high, every tenth elsewhere).
+The committed config is the pipeline as it stands: the ARE fixer (ROADMAP 4.8), which
+rests the pyramid with the adjusted remainder errors the setup needs in under a second and
+without a search, from the movie's dive onto the platform (frame 3269); then the
+oscillations, the final oscillation and the dive-recover chain, every stage from 3269, with
+a CSV and the viewer on every search stage (every tenth novel block).
 
 # The viewer
 

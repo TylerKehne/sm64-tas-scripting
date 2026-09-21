@@ -320,7 +320,9 @@ so the `-isystem` treatment from `cmake/SystemIncludes.cmake` does not help and 
 fails every test translation unit. Seen with Clang 21.1 on Ubuntu 26.04 (2026-09-08); GCC
 does not take that include path and clang-cl uses the MSVC STL. Workaround:
 `tasfw-tests/CMakeLists.txt` adds `-Wno-#warnings` to the tests target for Clang with the
-GNU front end only. Remove it when doctest drops the include.
+GNU front end only, and `tasfw-bruteforcers/bitfs-turnaround/CMakeLists.txt` the same to
+`bitfs-turn`, whose `Tests.cpp` (its optional `--test` cases) includes doctest too. Remove
+both when doctest drops the include.
 
 ### CMake 3.28: no `$<CXX_COMPILER_FRONTEND_VARIANT>` generator expression
 
