@@ -101,7 +101,10 @@ correctness and in speed.
         `bench_framework.cpp` (`^BM_Framework`): the pyramid oscillation, 1,000 downhill-angle
         calls through `PyramidUpdate`, and a 500-frame `BitfsDrMetrics` sweep, with the
         cost model off so frame advances, saves and loads are exact; replay ratio and
-        overhead % reported, overhead gated at 2 points.
+        overhead % reported, overhead gated at 2 points. Since 2026-09-21 the workloads
+        run on frozen copies of their scripts under `tasfw-perf/workloads/`
+        (docs/performance.md), so the rows measure the framework alone while the live
+        scripts change with the brute forcer (4.6 to 4.9).
       - [x] Tier D scattershot end to end. Done 2026-09-08: `perf.ps1` runs `bitfs-turn` on
         `perf/tierd-deterministic.json` (8 threads, cost model off, exact counts including
         zero validation failures, see 4.5) and `perf/tierd-throughput.json` (16 threads,
@@ -932,6 +935,8 @@ goals are (status as stated by the maintainer, 2026-09-08):
       coarse winner (`midHau2`), which may or may not be intended. None is fixed here: each
       changes what a stage searches, so each needs that stage's counts before and after,
       and the dive-recover chain the first two belong to has never run to completion (4.1).
+      Tier C is untouched either way: since 2026-09-21 it runs on frozen copies of the
+      scripts (`tasfw-perf/workloads/`).
 - [x] **4.10 The viewer's cost, gated.** Done 2026-09-19. The suite proved the search's side
       of 4.4 costs nothing (its Tier D runs had no viewer), and CI's `--once` that the viewer
       draws; nothing measured the viewer while it tailed a live run, which is the cost the

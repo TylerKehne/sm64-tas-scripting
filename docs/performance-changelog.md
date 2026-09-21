@@ -4,6 +4,22 @@ Every hot-path change records its delta table here, newest first; the policy, th
 how to run it are in [performance.md](performance.md). The first measurements (2026-09-07),
 which everything since is compared against, are at the bottom.
 
+## 2026-09-21: Tier C on frozen copies of its scripts
+
+The Tier C workloads run on frozen copies of the scripts under `tasfw-perf/workloads/`
+(`BitFsPyramidOscillation` and its children, `General.hpp`'s three, `ScriptMath.hpp`,
+`BitfsDrMetrics` with `NormalSpecsDto`), verbatim from `tasfw-scripts/` at fa89730, and
+`tasfw-perf` links no script library any more (docs/performance.md, "Tier C"): the live
+scripts are about to change with the brute forcer (ROADMAP 4.6 to 4.9) and the rows
+measure the framework, not them. No hot path changed. The family on both binaries
+against the committed baselines, counts only as CI runs it, one run each: every count
+identical (frame advances 42,923 / 1,000 / 500, loads 1,389 / 1,000 / 1, saves 0,
+solutions 0, output frames 20); allocations 190,692 and 32,006 on the first two rows,
+where master has stood since the access contract below (2026-09-15), the committed
+baseline of that afternoon predating it; wall +4.5%, -5.2% and +7.8% on MSVC and
++5.3%, -13.4% and +2.9% on clang, single runs without the reference binaries, so
+placement and the day's machine, not the change: the code is the same.
+
 ## 2026-09-19: the viewer's cost, gated (ROADMAP 4.10)
 
 Two Tier D rows more, `TierD_DeterministicViewer` and `TierD_ThroughputViewer`: the same

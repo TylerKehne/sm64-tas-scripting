@@ -44,15 +44,27 @@ add_executable(tasfw-perf
 	"src/bench_script.cpp"
 	"src/bench_libsm64.cpp"
 	"src/bench_framework.cpp"
+	# Tier C measures the framework through scripts; these are frozen copies of the ones it
+	# runs (docs/performance.md, "Tier C"), so the family's exact counts stay a function of
+	# the framework while the live scripts in tasfw-scripts change with the brute forcer.
+	"workloads/src/BitFsPyramidOscillation.cpp"
+	"workloads/src/BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle.cpp"
+	"workloads/src/BitFsPyramidOscillation_Iteration.cpp"
+	"workloads/src/BitFsPyramidOscillation_RunDownhill.cpp"
+	"workloads/src/BitFsPyramidOscillation_TurnAroundAndRunDownhill.cpp"
+	"workloads/src/BitFsPyramidOscillation_TurnThenRunDownhill.cpp"
+	"workloads/src/BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle.cpp"
+	"workloads/src/BitfsDrMetrics.cpp"
+	"workloads/src/BrakeToIdle.cpp"
+	"workloads/src/GetMinimumDownhillWalkingAngle.cpp"
+	"workloads/src/TryHackedWalkOutOfBounds.cpp"
 )
-target_include_directories(tasfw-perf PRIVATE src)
+target_include_directories(tasfw-perf PRIVATE src workloads/inc)
 target_link_libraries(tasfw-perf PRIVATE
 	tasfw::core
 	tasfw::resources
 	tasfw::scattershot
 	tasfw::testing
-	tasfw::scripts_bitfs_pyramid_osc
-	tasfw-scripts-scattershot-bitfs-dr
 	benchmark::benchmark
 )
 target_compile_features(tasfw-perf PRIVATE cxx_std_23)

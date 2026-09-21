@@ -255,6 +255,18 @@ Fixed workloads on the source movie:
 - `MetricsSweep`: `BitfsDrMetrics` (the committed dr-oscillations parameters) over 500
   consecutive `AdvanceFrameRead`s, 3 iterations.
 
+The scripts these workloads run are frozen copies under `tasfw-perf/workloads/` (the
+maintainer, 2026-09-21): `BitFsPyramidOscillation` and its child scripts, `General.hpp`'s
+three, `ScriptMath.hpp`, and `BitfsDrMetrics` with `NormalSpecsDto` cut out of
+`Scattershot_BitfsDr.hpp`, verbatim from `tasfw-scripts/` at fa89730 (the one edit is that
+header's include). The rows measure the framework, so their workload stays fixed while the
+live scripts change with the brute forcer: the copies do not follow them and `tasfw-perf`
+links no script library; what runs under them (`tasfw-core`, `tasfw-resources`,
+`tasfw-scattershot`) is live, being what the rows measure. A framework change that alters
+what a script has to write (a rename, a signature) is made to the copies as the same
+mechanical edit, and the gate says whether it changed the work. The live scripts' own
+counts come from the per-stage counts `bitfs-turn` prints (AGENTS.md, hard rule 8).
+
 Metrics per row: wall time (fastest of nine, as in Tier A); `allocs`; the counters
 `frameAdvances`, `saves`, `loads` (per iteration, exact); **replay ratio** = frames advanced
 per frame of output diff (per frame swept for the metric script); **overhead %** = 1 minus

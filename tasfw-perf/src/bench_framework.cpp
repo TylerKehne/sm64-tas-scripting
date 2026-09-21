@@ -2,9 +2,9 @@
 #include "measure.hpp"
 
 #include <BitFSPyramidOscillation.hpp>
+#include <BitfsDrMetrics.hpp>
 #include <LibSm64.hpp>
 #include <PyramidUpdate.hpp>
-#include <Scattershot_BitfsDr.hpp>
 #include <sm64/Camera.hpp>
 #include <sm64/Sm64.hpp>
 #include <sm64/Types.hpp>
@@ -25,6 +25,8 @@
 
 // Tier C: fixed framework workloads on the real game (docs/performance.md). Gated on the
 // same environment as Tier B (TASFW_LIBSM64, TASFW_M64, TASFW_FRAME) and skipped without it.
+// The scripts the workloads run are the frozen copies under tasfw-perf/workloads/, not the
+// live ones in tasfw-scripts: the rows measure the framework, so their workload is fixed.
 //
 // Every workload runs with the resource's cost model off, so no automatic savestate is ever
 // created and the counts reported here (frameAdvances, saves, loads) are exact functions of
