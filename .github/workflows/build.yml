@@ -72,6 +72,21 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # The dependency tarballs, cached between runs and fetched with retries before CMake
+      # asks for them: GitHub's release and archive downloads return 504 now and then, and
+      # FetchContent gives up on the first (scripts/fetch_deps.py).
+      - name: Cache the fetched dependencies
+        uses: actions/cache@v4
+        with:
+          path: build/downloads
+          key: downloads-${{ hashFiles('CMakeLists.txt', 'tasfw-tests/CMakeLists.txt', 'tasfw-perf/CMakeLists.txt') }}
+      - name: Fetch the dependencies with retries
+        shell: bash
+        run: |
+          py=python3
+          if [ "$RUNNER_OS" = "Windows" ]; then py=python; fi
+          $py scripts/fetch_deps.py
+
       # ---------------------------------------------------------------- Linux
       - name: Install Linux toolchain
         if: runner.os == 'Linux'
@@ -264,6 +279,15 @@ jobs:
           DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ninja-build cmake git ca-certificates python3 python3-cryptography ${{ matrix.apt }}
 
       - uses: actions/checkout@v5
+
+      - name: Cache the fetched dependencies
+        uses: actions/cache@v4
+        with:
+          path: build/downloads
+          key: downloads-${{ hashFiles('CMakeLists.txt', 'tasfw-tests/CMakeLists.txt', 'tasfw-perf/CMakeLists.txt') }}
+      - name: Fetch the dependencies with retries
+        shell: bash
+        run: python3 scripts/fetch_deps.py
 
       - name: Configure and build
         shell: bash

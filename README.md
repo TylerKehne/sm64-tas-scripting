@@ -22,6 +22,10 @@ them after every change (see AGENTS.md, "Documentation must match the repository
 CMake 3.22+ and a C++23 compiler with OpenMP (MSVC 2022, GCC 14 or Clang 18 and newer). The dependencies (nlohmann/json; doctest and
 Google Benchmark for the tests and benchmarks) are downloaded by CMake, verified by hash and
 cached in `build\downloads`, so later builds work offline; no vcpkg needed.
+`python scripts\fetch_deps.py` fills that directory with retries, reading the names, URLs
+and hashes from the CMake files; CI restores the directory from its cache and runs it
+before configuring, so a run does not fail on the 504 GitHub's downloads return now and
+then, and it is how to prepare an offline build.
 
 **Windows (supported path)**
 
