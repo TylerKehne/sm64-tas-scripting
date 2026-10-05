@@ -23,6 +23,7 @@ public:
 		int64_t frame = 0;
 		float pos[3] = {};
 		float forwardVel = 0;
+		float pyramidNormal[3] = { 0, 0, 0 }; // the tilting pyramid's (gObjectPool[84]) normal
 		uint32_t action = 0;
 		int16_t faceYaw = 0;
 		int16_t intendedYaw = 0;

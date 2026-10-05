@@ -297,7 +297,8 @@ the vanish cap course and the basement.
 
 `--trace [frames]` prints Mario, the camera and what a movie carries between levels for the
 `frames` (default 30) frames ending at `<frame>` (the `MarioTrace` script): position, speed,
-action, facing and intended yaw; the camera's mode and yaw, `gCameraMovementFlags`, the
+action, facing and intended yaw; the tilting pyramid's normal (`pyramid=`, object slot 84,
+zero when the pool is not exported); the camera's mode and yaw, `gCameraMovementFlags`, the
 R-button camera selection, the 8-directions camera's base yaw and C-button offset; health,
 coins, lives, `MarioState::flags` and `gRandomSeed16`. What a movie is doing around a frame,
 and, when two movies that enter a level alike part inside it, why ("A movie for the US game").

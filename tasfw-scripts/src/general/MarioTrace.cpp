@@ -2,17 +2,18 @@
 
 #include <sm64/Camera.hpp>
 #include <sm64/Types.hpp>
+#include <sm64/ObjectFields.hpp>
 
 #include <cstdio>
 #include <exception>
 
 std::string MarioTrace::Sample::Describe() const
 {
-	char buf[320];
+	char buf[400];
 	std::snprintf(buf, sizeof(buf),
-		"frame %lld pos=(%.9g, %.9g, %.9g) fwd=%.9g action=0x%08X yaw=%d intended=%d camera(mode=%u, yaw=%d, selection=0x%X, movement=0x%X, 8dir=%d%+d)"
+		"frame %lld pos=(%.9g, %.9g, %.9g) fwd=%.9g action=0x%08X yaw=%d intended=%d pyramid=(%.9g, %.9g, %.9g) camera(mode=%u, yaw=%d, selection=0x%X, movement=0x%X, 8dir=%d%+d)"
 		" health=0x%X coins=%d lives=%d flags=0x%08X rng=0x%04X",
-		(long long)frame, pos[0], pos[1], pos[2], forwardVel, unsigned(action), int(faceYaw), int(intendedYaw),
+		(long long)frame, pos[0], pos[1], pos[2], forwardVel, unsigned(action), int(faceYaw), int(intendedYaw), pyramidNormal[0], pyramidNormal[1], pyramidNormal[2],
 		unsigned(cameraMode), int(cameraYaw), unsigned(uint16_t(selectionFlags)), unsigned(uint16_t(movementFlags)), int(dirBaseYaw), int(dirYawOffset),
 		unsigned(uint16_t(health)), int(coins), int(lives), unsigned(flags), unsigned(randomSeed));
 	return buf;
@@ -38,6 +39,7 @@ bool MarioTrace::execution()
 	const int16_t* dirBaseYaw = static_cast<const int16_t*>(optional("s8DirModeBaseYaw"));
 	const int16_t* dirYawOffset = static_cast<const int16_t*>(optional("s8DirModeYawOffset"));
 	const uint16_t* randomSeed = static_cast<const uint16_t*>(optional("gRandomSeed16"));
+	const Object* objectPool = static_cast<const Object*>(optional("gObjectPool"));
 
 	LongLoad(_firstFrame);
 	CustomStatus.samples.reserve(size_t(_lastFrame - _firstFrame + 1));
@@ -57,6 +59,12 @@ bool MarioTrace::execution()
 			s.coins = m->numCoins;
 			s.lives = m->numLives;
 			s.flags = m->flags;
+		}
+		if (objectPool != nullptr)
+		{
+			s.pyramidNormal[0] = objectPool[84].oTiltingPyramidNormalX;
+			s.pyramidNormal[1] = objectPool[84].oTiltingPyramidNormalY;
+			s.pyramidNormal[2] = objectPool[84].oTiltingPyramidNormalZ;
 		}
 		if (const Camera* c = *camera)
 		{
