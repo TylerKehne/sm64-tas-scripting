@@ -35,6 +35,8 @@ json SolutionSet::ToJson() const
 		list.push_back(json { { "frames", std::move(frames) }, { "metrics", std::move(metrics) } });
 	}
 	root["solutions"] = std::move(list);
+	if (!passSolutions.empty())
+		root["passSolutions"] = passSolutions;
 	return root;
 }
 
@@ -75,6 +77,12 @@ SolutionSet SolutionSet::FromJson(const json& root)
 		}
 		set.solutions.push_back(std::move(record));
 	}
+
+	const json passes = root.value("passSolutions", json::array());
+	if (!passes.is_array())
+		throw std::runtime_error("solution set: \"passSolutions\" must be an array");
+	for (const json& count : passes)
+		set.passSolutions.push_back(count.get<int64_t>());
 	return set;
 }
 

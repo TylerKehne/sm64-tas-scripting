@@ -1,100 +1,142 @@
 {
 	"_comment": "The BitFS squish-cancel pipeline as it was last run from main.cpp. Paths are relative to this file; the build writes a copy next to bitfs-turn.exe with baseDirectory pointing here. README.md documents the schema, `bitfs-turn --list` the stage types.",
 	"resources": {
-		"dllDirectory": "../../res",
-		"dllPattern": "sm64_{version}_{}.dll",
-		"threads": 16,
-		"saveMode": "fixed"
+		"dllDirectory": "../../res", // the game's DLL copies, relative to this file
+		"dllPattern": "sm64_{version}_{}.dll", // {version} is jp or us from the movie's header, {} the copy's index (one copy per thread)
+		"threads": 16, // search threads, one DLL copy and one game each
+		"saveMode": "fixed" // what a savestate copies: full, fixed (the tuned slices; fastest here) or dirty (the pages written); costModel (true) and savestateBudgetMB (8192) may be set here too
 	},
-	"m64": "../../movies/bitfs-pyramid-jp.m64",
-	"outputDirectory": "../../analysis",
-	"visualizer": "../../analysis/visualizer.py",
+	"m64": "../../movies/bitfs-pyramid-jp.m64", // the source movie; its header picks the game version
+	"outputDirectory": "../../analysis", // CSVs, solutions/*.json and exported movies go here
+	"visualizer": "../../analysis/visualizer.py", // the viewer script a stage's visualize block launches
 	"visualize": {
-		"_comment": "Defaults for every stage's visualize block: a 900-by-900 window centered on the pyramid (home x -1945, z -715; the plot's x is MarioZ and its y MarioX), never rescaled.",
-		"view": { "x": -715, "y": -1945, "width": 900, "height": 900 }
+		"_comment": "Defaults for every stage's visualize block: a 900-by-900 window centered on the pyramid (home x -1945, z -715; the plot's x is MarioZ and its y MarioX), never rescaled; the viewer's panel filters MarioAction by value (a stage with more categorical columns lists them all, the lists do not merge).",
+		"view": { "x": -715, "y": -1945, "width": 900, "height": 900 },
+		"categorical": ["MarioAction"]
 	},
-	"scattershot": {
-		"pelletMaxScripts": 20,
-		"pelletMaxFrameDistance": 50,
-		"maxBlocks": 1000000,
-		"pelletsPerShot": 200,
-		"shotsPerUpdate": 10,
-		"startFromRootEveryNShots": 100,
-		"maxConsecutiveFailedPellets": 10,
-		"csvSamplePeriod": 0,
-		"fitnessTieGoesToNewBlock": false,
-		"deterministic": false,
-		"seed": 6
+	"scattershot": { // defaults for every stage; a stage's own scattershot block overrides them key by key
+		"pelletMaxScripts": 20, // moves a pellet runs at most before it ends
+		"pelletMaxFrameDistance": 50, // frames a pellet may run past its block
+		"maxBlocks": 1000000, // hard cap on blocks: the run stops at it (the block table is three times this)
+		"pelletsPerShot": 200, // pellets fired from the block a shot picks
+		"shotsPerUpdate": 10, // shots between progress prints and CSV flushes
+		"startFromRootEveryNShots": 100, // every nth shot starts from the root block instead of a drawn one
+		"maxConsecutiveFailedPellets": 10, // a shot ends after this many failed pellets in a row
+		"csvSamplePeriod": 0, // every nth new block per thread goes to the CSV; 0 writes none
+		"fitnessTieGoesToNewBlock": false, // on equal fitness the new block replaces the bin's old one
+		"deterministic": false, // serialise the threads so a seed replays exactly (slower)
+		"seed": 6 // the search's RNG seed; per stage also maxShots (shots a pass fires) and maxSolutions (a pass stops there)
 	},
-	"stages": [
+	"stages": [ // name: unique, --stage <name> runs one; type: bitfs-turn --list; startFrame: the movie frame it starts from (where its input's solutions are); input: the earlier stage it starts from (input:<metric> reads its first solution); select: optional { sortBy, take } on the output; export: one .m64 per solution; visualize: open the viewer on the stage's CSV
 		{
-			"_comment": "The ARE fixer (ROADMAP 4.8), no search: from the movie's dive onto the platform (frame 3269 is its dive slide), a dive recover whose rollout is steered in the air (no A: the run is an A button challenge) to land where the pyramid rests with the target's adjusted remainder error on both axes and the step parity the oscillations need. Every later stage starts at 3269 too, since its solutions do. bitfs-turn --test checks it.",
+			"_comment": "The ARE fixer (ROADMAP 4.8), no search: from the run before the movie's dive onto the platform (frame 3250; the movie presses B at 3258), a dive recover whose rollout is steered in the air (no A: the run is an A button challenge) to land where the pyramid rests with the target's adjusted remainder error on both axes, the step parity the oscillations need, and a normal whose 0.01 steps round back exactly everywhere from farNormal past the origin (or the target, when it lies past the origin) to maxNormal on each axis, the range the oscillations tilt through and the final one's crossing into the adjacent corner, so the error survives them (ROADMAP 4.6: half of the float values do not; past the origin x survives to 0.24 and z to 0.02). The rest is in the corner quadrant names at a tilt of at least minXzSum; the fixer works out the way there itself, the run's length, the dive's yaw and air stick and the slide frames, from where each way's straight rollout rests (the movie's own dive slide at 3269 reaches tilts up to about 0.6 only). Every later stage starts at 3250 too, since its solutions do. bitfs-turn --test checks it.",
 			"name": "are-fix",
 			"type": "are-fixer",
-			"startFrame": 3269,
-			"args": { "targetNx": -0.17944, "targetNz": 0.3936, "tolerance": 100, "restX": -2020, "restZ": -740 },
+			"startFrame": 3250,
+			"args": {
+				"targetNx": -0.17944, "targetNz": 0.3936, // the normal the squish-cancel setup needs; the rest carries its adjusted remainder error
+				"tolerance": 100, // ULPs of the target normal the rest may be off by on each axis
+				"minNormal": 0.13, "maxNormal": 0.61, // range of each axis the rest's normal must step reversibly over (what the oscillations tilt through)
+				"farNormal": 0.02, // how far past the origin into the adjacent corner the final oscillation takes an axis
+				"quadrant": 4, // the corner the rest is in, as the signs of nX, nZ (1 +x+z, 2 +x-z, 3 -x-z, 4 -x+z): the oscillation corner, the target's own when absent
+				"minXzSum": 0.5 // least tilt |nX|+|nZ| of the rest; the fixer aims for the corner's diagonal at that tilt and finds the run, dive and slide that get there itself. Optional: restX, restZ (a rest to aim for instead); fineFrames, sticksPerFrame, verifyPerRound, maxRounds (the landing search's precision and budget: 3, 500, 10, 5)
+			},
 			"export": true
 		},
 		{
-			"_comment": "Build up oscillations one at a time from the equilibrium frame the ARE fixer found.",
+			"_comment": "Build up oscillations one at a time from the equilibrium frame the ARE fixer found, conserving its adjusted remainder error exactly. platform is the pyramid's object slot (84 or 83), quadrant the corner; the initial phase is the swing's first leg from the rest (a scripted run toward the chord's end; from the rest one stick in three keeps the pyramid stepping) until Mario can turn around, the tilt starting at the rest's own and building over the swings up to startXzSum, from which the regime holds (once there, the tilt may not fall below it; minXzSum by default); minXzSum is the tilt the last pass's solutions must have, minAxis how far into the corner's quadrant each axis of the normal must stay (the fixer's minNormal). The first pass solves in a few shots; its cap is there for a rest the leg cannot work from. maxOscillations 5 puts the last pass at the fifth oscillation (the stage adds one when the first crossing went toward the far end, which from the rest it always does), a crossing toward the far end as osc-final needs; the 'gain speed each crossing' rule compares crossings at the same tilt only. startXzSum 0.6 is the highest floor the swings allow from a rest near it (their tilt moves about 0.05 either side of its mean; 0.65 rejects every swing once reached) and it costs the first oscillation, the slow pass, about four times its shots against no floor; a lineup from a low rest (the fixer's minXzSum 0.3, handoverXzSum 0.6, maxSolutions 1000 so that the lineup pass keeps varied roots) holds a 0.67 floor with the last pass at 0.69 on seeds 6 to 8 (ROADMAP 4.6).",
 			"name": "dr",
 			"type": "dr-oscillations",
-			"startFrame": 3269,
+			"startFrame": 3250,
 			"input": "are-fix",
 			"scattershot": { "maxSolutions": 100, "csvSamplePeriod": 10, "fitnessTieGoesToNewBlock": false, "deterministic": false },
 			"args": {
-				"equilibriumFrame": "input:equilibriumFrame",
-				"quadrant": 4, "minOscillationFrames": 15,
-				"targetNx": -0.17944, "targetNz": 0.3936,
-				"maxOscillations": 5, "firstShots": 50000, "shots": 30000, "lastShots": 30000, "lastMaxSolutions": 1000000,
-				"keepTop": 10, "requireIncrementParity": true,
+				"equilibriumFrame": "input:equilibriumFrame", // the fixer's rest frame, read from its solution
+				"quadrant": 4, // the oscillation corner as the signs of nX, nZ: 1 +x+z, 2 +x-z, 3 -x-z, 4 -x+z
+				"platform": 84, // the tilting pyramid's object slot, 84 (the movie's) or 83
+				"minOscillationFrames": 15, // least frames between two crossings for them to count as an oscillation
+				"minFirstCrossingSpeed": 17, // Mario's forward speed at the first crossing at least this (the 'gain speed each crossing' rule ratchets up from it; 0 asks none): under the turnaround's 16 the swing cannot reverse for the next oscillation, and of 58 logged runs every hand-over whose fastest root was under 16.1 died and every one over 17.5 continued (2026-10-03)
+				"targetNx": -0.17944, "targetNz": 0.3936, // the setup's normal: the adjusted remainder error conserved is measured against it
+				"maxOscillations": 5, // the last pass is at this oscillation (+1 when the first crossing went toward the far end)
+				"firstShots": 5000, // shots of the first pass, the leg from the rest
+				"shots": 2000, // shots of each oscillation pass
+				"lastShots": 2000, // shots of the last pass
+				"lastMaxSolutions": 1000000, // solution cap of the last pass (the other passes stop at scattershot maxSolutions)
+				"keepTop": 10, // the fastest solutions carried from one pass into the next
+				"passRetries": 0, // a pass that yields fewer than keepTop solutions (the last pass: none) runs again from the same roots under a seed derived from the run's, up to this many times, its solutions pooled. 0, none: a retry re-rolls the first oscillation's one-in-two rather than removing it (with 3, 16 sequential runs went 13 through against 11, the first oscillation ending none), and the maintainer wants the cause fixed, not masked (2026-10-04); the knob is a diagnostic
+				"requireIncrementParity": true, // the last pass's solutions need x and z step counts of the same parity
 				"normalSpecs": {
-					"onlyMinMajor": true, "minXzSum": 0.69,
-					"minMajor": 0.3, "maxMajor": 0.601, "regionsMajor": 10000,
-					"minMinor": 0.19, "maxMinor": 0.2, "regionsMinor": 10000
+					"onlyMinMajor": true, // true: no window check on the last crossing's axes (minMajor still gates a crossing: one axis at least it)
+					"startXzSum": 0.67, // the regime's tilt floor: once the tilt has been there it may not fall below it (default minXzSum; the tilt may also never fall 0.05 below the rest's own)
+					"minXzSum": 0.69, // the tilt the last pass's solutions must have
+					"legExitSpeed": 17.5, // the forward speed at which the leg from the rest ends and the first swing begins (16, the game's turnaround threshold, by default): the swing crosses only if it reverses within a frame or two of the leg's end, an uphill frame that costs about a unit of speed and then the turnaround, which the game refuses under 16, so a leg handed over at 16 cannot (the census of 2026-10-04, ROADMAP 4.6)
+					"legMinClearance": 0, // the least height of Mario over the lava at the leg's end for the leg to count as a solution (0: none). Measured 2026-10-04 at 60 on deterministic seeds: three of four found no first oscillation at all (seed 8 found it in 50 shots), where without it all four do, so the leg's height is the wrong lever; the knob is a diagnostic
+					"maxXzSum": 2, // the tilt a solution carried into a next pass may not exceed (2: none; the last pass's solutions are the next stage's to judge). Roots at 0.753 gave the next pass nothing, at 0.733 12 to 142, at 0.71 100 to 583, but a ceiling of 0.733 starved the fourth and fifth passes instead (the sum climbs about 0.02 an oscillation): 1 run in 3 through against about 17 in 20 without it (2026-10-03)
+					"minAxis": 0.05, // each axis of the normal stays at least this far into the corner's quadrant
+					// maxRetreat (absent here: no limit): how far the first swing may fall back from the leg's end along the way to its target before the state is refused. Measured 2026-10-04 on 16 sequential runs a setting, it does not move the first oscillation (8 full and 3 thin of 16 without, 8 and 1 at 90; 60 cuts the turnaround's own overshoot, 3 of 16); a table taken while series overlapped on the machine had said 14 of 16 and was wrong
+					"minLavaClearance": 0, // the least height of Mario over the lava a state may have (0: none): lower, on the sinking +z end, the surface is under him before the swing can leave it, the first swing's trap; measured at 20 the first oscillation came 7 runs in 14, no more often than without (2026-10-03), so the rule prunes drowning states but does not steer the search to the lineage that leaves the end
+					"handoverXzSum": 0, // the old lineup: above the rest's tilt, the first pass runs the tilt up to it (random sticks, rare: a few per 10,000 shots) and hands over with speed and leads; 0 asks none, the leg from the rest
+					"minMajor": 0.3, "maxMajor": 0.601, "regionsMajor": 10000, // the block bins of a crossing's steeper axis: range and count
+					"minMinor": 0.19, "maxMinor": 0.2, "regionsMinor": 10000 // the same for its other axis
 				}
 			},
-			"visualize": {},
+			"visualize": { "categorical": ["MarioAction", "Oscillation", "Crossing", "Phase"] }, // the panel's checkboxes; XzSum and the rest are ranges
 			"export": true
 		},
 		{
 			"_comment": "The final oscillation into the target quadrant, from the oscillation solutions.",
 			"name": "osc-final",
 			"type": "osc-final",
-			"startFrame": 3269,
+			"startFrame": 3250,
 			"input": "dr",
 			"scattershot": { "csvSamplePeriod": 10, "maxShots": 50000, "maxSolutions": 1000 },
-			"args": { "initialFrame": "input:equilibriumFrame", "oscQuadrant": 4, "targetQuadrant": 1, "targetNx": -0.17944, "targetNz": 0.3936 },
-			"visualize": { "filters": [{ "column": "NormalDistance", "min": 0, "max": 100 }] },
+			"args": {
+				"initialFrame": "input:equilibriumFrame", // the rest frame, read from the input's solution
+				"oscQuadrant": 4, // the corner the oscillations run in
+				"targetQuadrant": 1, // the adjacent corner the final oscillation crosses into
+				"targetNx": -0.17944, "targetNz": 0.3936 // the normal to reach; NormalDistance in the CSV is the distance from it
+			},
+			"visualize": { "filters": [{ "column": "NormalDistance", "min": 0, "max": 100 }] }, // plot only the rows within 100 of the target normal
 			"export": true
 		},
 		{
 			"_comment": "The dive-recover chain, disabled in the old main.cpp and never run to completion: dive from the oscillation solutions, land it, then the C-up trick.",
 			"name": "dr-approach",
 			"type": "dr-approach",
-			"startFrame": 3269,
+			"startFrame": 3250,
 			"input": "dr",
 			"scattershot": { "csvSamplePeriod": 10, "maxShots": 50000, "maxSolutions": 1000 },
-			"args": { "initialFrame": "input:equilibriumFrame", "oscQuadrant": 4, "targetQuadrant": 1, "minXzSum": 0.69, "targetNx": -0.17944, "targetNz": 0.3936 },
+			"args": {
+				"initialFrame": "input:equilibriumFrame", "oscQuadrant": 4, "targetQuadrant": 1, // as in osc-final
+				"minXzSum": 0.69, // least tilt the dive may leave from
+				"targetNx": -0.17944, "targetNz": 0.3936 // the normal the setup needs
+			},
 			"visualize": {},
 			"export": true
 		},
 		{
+			"_comment": "Land the dive (phase attempt-dr), then the C-up trick from those landings (phase c-up-trick, the dr-nut stage); both dr-recover stages take the same args.",
 			"name": "dr-recover",
 			"type": "dr-recover",
-			"startFrame": 3269,
+			"startFrame": 3250,
 			"input": "dr-approach",
 			"scattershot": { "csvSamplePeriod": 1, "maxShots": 50000, "maxSolutions": 100 },
-			"args": { "oscQuadrant": 4, "targetQuadrant": 1, "minXzSum": 0.69, "phase": "attempt-dr" },
+			"args": {
+				"oscQuadrant": 4, "targetQuadrant": 1, "minXzSum": 0.69, // as in dr-approach
+				"phase": "attempt-dr" // attempt-dr: land the dive; c-up-trick: the C-up trick after the landing
+			},
 			"visualize": {}
 		},
 		{
 			"name": "dr-nut",
 			"type": "dr-recover",
-			"startFrame": 3269,
+			"startFrame": 3250,
 			"input": "dr-recover",
 			"scattershot": { "csvSamplePeriod": 1, "maxShots": 10000, "maxSolutions": 100 },
-			"args": { "oscQuadrant": 4, "targetQuadrant": 1, "minXzSum": 0.69, "phase": "c-up-trick" },
+			"args": {
+				"oscQuadrant": 4, "targetQuadrant": 1, "minXzSum": 0.69, // as in dr-approach
+				"phase": "c-up-trick" // attempt-dr: land the dive; c-up-trick: the C-up trick after the landing
+			},
 			"visualize": {},
 			"export": true
 		}

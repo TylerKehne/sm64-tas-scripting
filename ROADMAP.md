@@ -880,7 +880,17 @@ Goal: finish the thing the framework was built for.
       incrementally, folds rows into a newest-per-bin table (the R script's grouping, once
       per row, raw rows dropped), redraws only the selected tab and only when rows came in,
       at the refresh rate in the window, lowers its own priority, stops polling a finished
-      tab and doubles a tab's bins past a segment cap; `--once` renders a PNG headless,
+      tab and doubles a tab's bins past a segment cap; a tab's filter panel lists every CSV
+      column in the manner of a shop's facets (the maintainer's ask, 2026-10-03: every
+      column a min and max under the range seen, the columns the run names categorical as
+      checkboxes with counts; it starts as the run's `filters`, and a change re-reads the
+      CSV, the raw rows being gone). The categorical columns are declared, never inferred
+      (the maintainer's rule, 2026-10-03): `Visualization::categorical`, a list of column
+      names set in the `visualize` block, the maintainer's choice over a marker in the CSV
+      header or a virtual beside `GetCsvLabels`, because the block is already where columns
+      are named for the viewer (fine for now, the maintainer said, and open to a revisit
+      once the panel has been used); `--once` renders a PNG headless (`--filter` a filter
+      as text),
       which CI does on `tasfw-tests/data/scattershot_sample.csv`. Setup is none: with
       `python` on PATH (the unlock script's and the doc hook's requirement already) the
       viewer creates `analysis/.venv` and installs `requirements.txt` there on first start.
@@ -914,7 +924,897 @@ goals are (status as stated by the maintainer, 2026-09-08):
 
 - [ ] **4.6 Enumerate every corner.** A brute forcer that enumerates the squish-cancel and
       fast-bully-battery possibilities on all 16 pyramid corners, not just the one the
-      current pipeline targets. Progress exists in the current scripts and stages.
+      current pipeline targets. Progress exists in the current scripts and stages. Taken up
+      2026-09-21 on the maintainer's word: the brute forcer is to target either pyramid
+      (slots 84 and 83), any of its four corners and either edge of the corner (an
+      unassisted squish cancel on the x or the z axis, `uscx` and `uscz`: 16 setups), and
+      the first oscillation, flaky and inefficient since the scripts were written, should
+      line up quickly for any of them. The first oscillation is the `dr` stage's first pass,
+      from the fixer's rest to the tilt the oscillation runs at, and its second, the first
+      crossing. Why it never lined up, measured from the fixer's rest with 300 deterministic
+      shots on 16 threads (`--stage dr`): 0 solutions, 39,742 blocks, 246,444 scripts, and 0
+      in the 50,000 shots the config allowed, the same from a rest in the target corner.
+      Three causes, each seen in the game and confirmed in a float32 model. First, the
+      pyramid keeps the adjusted remainder error only through frames whose goal (Mario's
+      direction from the home) is a full 0.01 beyond the normal on both axes, so that
+      `approach_by_increment` steps instead of snapping: from idle a stick sets Mario's
+      speed to 8 at once, which leads both axes on the corner's diagonal only within about
+      200 units of the home, and a random stick keeps the lead about one frame in three, so
+      the initial phase's random inputs left the corridor within a few frames and the
+      pellets died. Second, the tilt grows 0.02 a frame in |nX| + |nZ| and Mario cannot run
+      slower than it (walking accelerates downhill and a released stick brakes only from
+      16 speed) while the platform's low corner sinks into the lava as it tilts: at the 0.69
+      the config called the regime, the equilibrium point is thirty units of height above
+      the lava and every lineup arrived within twelve of it with no frame that keeps the
+      pyramid stepping, since a lead is reversed only by moving the goal across the whole
+      gap in one frame; at 0.6 there is room. Third, the search held the error exactly to
+      the equilibrium frame's, and 0.01f added to the normal and taken away does not always
+      round back: the error drifts by an ULP or two whenever the normal crosses a float
+      binade (0.25, 0.5; from the old rest's -0.309 the x error goes from -57 to -55 at
+      -0.509), so every path past that was rejected whatever the sticks. The check is
+      intentional (the maintainer, 2026-09-21: the ARE is to be preserved throughout the
+      oscillations, and the fixer is to reject the floats that rounding affects), and the
+      model shows it can be met: of the float values a rest's normal can take, exactly half,
+      every other ULP, step reversibly across the whole range the oscillations use on that
+      axis, both binades included, and the fixer had landed on the other half on both
+      axes (its x lattice reversible for 3 steps down, its z for 8). Done the same day:
+      `Scattershot_BitfsDr` has a lineup move for the initial phase, `LEAD_TO_CORNER` (the
+      corner's diagonal with a random deviation of up to 45 degrees, walked back until the
+      game confirms both axes lead, a brake when the goal is two steps ahead, any stepping
+      frame when nothing leads), and every frame any of its moves writes goes through
+      `StepFrame`, the stick asked for or its nearest neighbor (16 HAU at a time to either
+      side, then a brake) that keeps the pyramid stepping, so a pellet never spends frames
+      on a path validation rejects; the fixer accepts a rest only when its normal steps
+      reversibly over `minNormal` to `maxNormal` (0.13 to 0.61 in magnitude) on both axes
+      and past the origin to `farNormal` (0.02) on the far side, or to the target when it
+      lies there, since the final oscillation goes over to the adjacent corner along an
+      edge (the maintainer's diagram, 2026-09-21: `uscz` along a z edge, the normal's x
+      crossing the origin, `uscx` along an x edge, z crossing; the committed setup
+      oscillates in corner 4 and runs toward corner 1 along the +z edge, its target's x
+      still on the oscillation's side) (`BitFsAreFixer::StepsReversibly`, the game's
+      arithmetic walked a step at a time each way with every step undone and the error
+      recomputed, the oscillation's side being the rest's own; `bitfs-turn --test` checks
+      the config's rest): in the model every value reversible on the oscillation's side
+      crosses the origin intact, and the far side's own binades set the limit, +0.24 for x
+      and -0.02 for z with the config's targets, which a setup whose target lies past the
+      origin runs into (its own targets align the lattice differently, and the fixer's
+      check says whether any rest serves); and the search's exact conservation stays as it
+      was; the initial
+      phase's exit and the oscillation's floor are `startXzSum`
+      (0.6) and the last pass's solutions must reach `minXzSum` (0.69); the exit, the
+      search's box and the direction the stage commits to follow the configured
+      `quadrant`, and `platform` names the pyramid's slot, checked against
+      `BitFsObjects.hpp` (the metric script and the search read it; the other stages still
+      read slot 84). The fixer's rest is asked for on the corner's diagonal, (-2045, -615),
+      and lands 117 units from the home in x and 146 in z (tilt 0.49): the rollout reaches
+      about 120 units in -x and all four corners near the home (measured rests at
+      (-112, 152), (-120, -190), (193, 177) and (197, -212)), so the four corners of slot 84
+      are within this movie's reach and slot 83 needs its own way in. Measured from that
+      rest, deterministic, 16 threads: the first pass finds 100 lineups in 16 shots (0.4 s,
+      67,186 frame advances) at 0.69 and in 186 at 0.6; at 0.69 and at 0.65 the second pass
+      finds nothing in 3,000 shots (the lava); at 0.6 it finds 4 first oscillations in
+      3,000 shots, then 100 second ones in 267, 100 third in 880 and 100 fourth in 842, the
+      tilt growing over the swings (0.61 to 0.73 at the second oscillation, median 0.67,
+      the increment parity kept throughout), and the last pass, the fifth oscillation with
+      the regime's tilt required, 12 in 3,000 shots (113,763 blocks), every one at 0.693
+      with 19.5 to 30.9 speed and the parity kept; the stage end to end 345 s, 14.0 million
+      frame advances, 613 thousand saves and 4.65 million loads on 16 threads; those runs
+      held the error to a neighborhood while the drift was still taken for the game's
+      doing. With the exact check on the reversible rest, the same config at 3,000 shots a
+      pass: seed 7 runs end to end, the lineup 100 in 115 shots, the first crossing 6 in
+      3,000, then 100 in 143, 315 and 996 shots and the last pass 5 in 3,000, 335 s; seed
+      6 lines up in 189 shots, crosses 4 times in 3,000, finds 100 second oscillations in
+      240 shots and none of the third in 3,000 (its ten roots had crossed at the x edge's
+      middle rather than the chord's end); seed 8 lines up in 52 shots and finds no first
+      crossing, its hundred lineups all the same seven-frame straight run with no
+      continuation. Every normal in every block of those runs lies on the rest's lattice.
+      Handing over at 0.55 or 0.5 instead is worse (no first crossing from any of the three
+      seeds at 0.55; at 0.5 the lineups themselves are rare). The unchanged search from the
+      same rest at 0.6: 0 in 300 shots. The lineup works from every corner once the rest is
+      within about 190 units of the home (the first frame from idle leads both axes only
+      there; at 196 it does not, and a rest at tilt 0.6 or more leaves the initial phase at
+      once with nothing to lead), and the fixer's rollout from the movie's dive reaches such
+      a rest in each corner with the right request and slide frames (measured 2026-09-21,
+      the target's magnitudes with the corner's signs; rests relative to the home):
+      corner 1 asked at (80, 80) with 4 slide frames rests at (95, 145), the lineup 100 in
+      16 shots and the first crossing 31 in 3,000; corner 2 asked at (90, -90) with 2 rests
+      at (142, -97), the lineup 100 in 16, no first crossing in 3,000; corner 3 asked at
+      (-60, -60) with 4 rests at (-116, -123), the lineup 100 in 16, no first crossing;
+      corner 4 as configured. A request of 30 to 60 units or slide frames the rollout
+      cannot afford leave the fixer unsolved, and corners 1 and 2 need the slide frames,
+      the dive's momentum carrying the rest past 190 otherwise.
+      The fixer from the new rest solves in one round (26,644 frame advances in `--test`
+      then, against 51,090 from the old one; 520,993 with the dive's yaw candidates, each
+      failing candidate costing its rounds; 29,415 now, with the movie's dive and the
+      distance candidates in place), on a reversible normal. `bitfs-turn --test` checks the
+      first pass from the config's rest on one thread. Open: the first crossing is the
+      bottleneck now (3 to 6 in 3,000 shots from two seeds, none from a third: the lineups
+      the first pass hands over are at the same tilt by construction and mostly straight
+      runs facing the corner, while the path that crosses runs on along the chord toward the
+      far target, a 90-degree turn at 11 degrees a frame with the lava a few frames below,
+      so only the bent lineups make it; searching the first oscillation straight from the
+      rest is worse, the shots going to the lineup's early blocks whose pellets die, and so
+      is turning uphill when the lava is near, which shrinks both margins and snaps). What
+      the crossing needs, measured in the game from the config's rest (a straight run of k
+      frames along the corner's diagonal, then the stick held toward the far target or
+      past it): only k = 6 crosses, at margins of 0.036 and 0.042, 17 speed and 59 units
+      above the lava, on the turn's seventh frame; k of 5 or less snaps (the lead too small
+      for the turn's creeping increments) and k of 7 or more ends in the lava; and the turn
+      has to be sharper than the far target's yaw, 22 or 45 degrees past it, the stick at
+      the target itself snapping even at k = 6. The search's run-downhill phase offered only
+      the minimum downhill angle toward the target, the soft turn, and offering the move
+      that turns harder at random there as well only moved the luck between seeds (2, 0 and
+      0 first crossings for seeds 6, 7 and 8 against 4, 6 and 0), and so did a move that
+      looked for the crossing itself, plans of a few frames straight then the stick past
+      the far target played ahead in a reverted sandbox until the metric recorded a
+      crossing (1, 0 and 0 offered in the run-downhill phases; 0, 0 and 0 offered near the
+      handover too, and the lineups slower, 1,565, 171 and 3,000 shots), so that move is
+      gone. What the blocks of a first-crossing pass show instead (seed 6, every block
+      exported): the swing runs its outbound leg turning uphill for ten to twenty frames to
+      the x edge's middle, turns around there (speed 16 to 17, about (-300, -120) from the
+      home) and dies on the return run at the frames the margins reach zero (9,108 of
+      13,522 blocks in the pre-crossing phase, 8,091 of them finishing the turnaround near
+      x -325), because with the tilt about (-0.5, 0.2) there the minimum downhill angle
+      toward the far target is only 19 degrees from +z and the goal's motion on the
+      reversing axis, x, is 0.003 to 0.006 a frame at the speed the return has built (15),
+      short of the 0.01 a full step over the band needs; the eleven blocks that crossed did
+      so at 21 speed with the goal moving 0.010 to 0.011. The crossing toward the other
+      target, from the +x end with the tilt symmetric and the run at the chord's 45
+      degrees, is the easy one (100 in 240 shots), and the same hard crossing recurs in
+      the regime (seed 6's fourth pass, the same shape and 0 in 3,000; seed 7's found 100
+      in 315). So the run-downhill move's deviation from the minimum angle now goes either
+      way, toward the floor's downhill as before or, once the turnaround is done, toward
+      the target and no further than it (the first crossing 30 and 15 in 3,000 shots for seeds
+      6 and 7 against 4 and 6, the return runs living longer: 87 and 112 thousand
+      move-frames in the pre-crossing phase against 58 and 102 thousand; seed 8 still 0,
+      its pellets all dying before any return run). The other half of the loss is
+      the frames right after the handover: from the lineups' handovers (Mario running into
+      the low corner at 18 speed, 47 units above the lava, margins 0.02 to 0.07 the
+      corner's way) every scripted path, replayed frame by frame from six lineups, ends
+      within seven frames, in the lava (the corner sinks about five units a frame from the
+      tilt and eight from Mario's own run into it, so four frames) or on a step short (the
+      axis that has to reverse can reverse only from a margin the walking turn, 11 degrees
+      a frame, cannot reach in time), and the search's survivors are the lucky stick
+      variants (seed 6's first pass: 15 thousand of 24 thousand move-frames in the
+      run-downhill phase died, two thirds on a step short and a third in the lava; seed
+      8's: all of them). A random stick offered in the run-downhill and uphill-turn
+      phases for that variety made it worse (seed 6's first crossing 0, seed 7's 30, seed
+      8's 0: the random sticks are mostly analog-back, and a turnaround in those phases
+      is rejected as untimely, 2,900 such deaths for seed 6), so it is not offered; and
+      the spread between seeds (0 to 31 first crossings in 3,000 shots) makes three seeds
+      too few to trust, so the deviation was measured against the unchanged search on
+      seven more (seeds 1 to 5, 9 and 10): 37, 34, 53, 25, 10, 50 and 57 first crossings
+      in 3,000 shots against 5, 4, 3, 3, 2, 4 and 3, about ten times as many. What the probe says the handover needs, a heading already along an
+      edge (the replayed survivor left the handover at -73 degrees, 17 from the -x edge,
+      with a z margin of 0.034, and reversed z on its third frame), the lineup can only
+      hand over by chance while its deviation from the diagonal is capped at 45 degrees,
+      and widening the cap to 90 degrees is worse (the lineups 100 in 1,736 and 750 shots
+      for seeds 1 and 2 against 189 and 115, and no first crossing from either, 257 and
+      260 blocks: the walk back toward the diagonal settles on the widest heading that
+      still leads, so those lineups hand over with one margin at its minimum), so the cap
+      stays at 45. The probes those measurements used, a swing test case (the scripted
+      paths from a lineup, frame by frame) and pellet-death counters in the search (a
+      table per pass, by phase and cause), were scratch and are gone; the block census is
+      the exported CSV (`csvSamplePeriod` 1) read by hand. More roots are not the lever
+      either: with `maxSolutions` 300 the lineup pass collects 181, 131 and 126 roots in
+      its 3,000 shots for seeds 8, 5 and 4 and the first crossing is 0, 24 and 24 against
+      0, 10 and 25 from 100 roots. Open: the handover itself, the lineups' roots deciding
+      the first crossing by their exact margins (seed 8 none in 3,000 shots with either
+      search; every deterministic path from a handover dies within seven frames). Two
+      designs measured and undone: the lineup ending at the swing's first step (the
+      metric leaving its initial phase at the first reversal) with the uphill turn
+      offered beside the lead (seed 6: 0 lineups in 3,000 shots, 40,808 blocks), and the
+      same with a move that aimed the jump (`Reverse`: the first frame's stick chosen so
+      the reversing axis's lead lands just over 0.01, the second the stick at the chord's
+      far end, both tried through the game; 0 lineups on seeds 6, 7 and 8), because a
+      probe of that move's candidates from the handovers shows the jump is not about the
+      aim: the lead shrinks by at most 0.017 a frame, the jump needs Mario's motion on the
+      axis at 0.0101 in one frame, a heading past the corner's edge at 20 speed, and from
+      the handover's heading (the diagonal, give or take 45 degrees) the walking turn
+      cannot get there before the lava (47, 35, 23, 11 units above it, then off). Only a
+      handover already heading near the edge (the replayed survivor: -73 degrees, 17 from
+      the -x edge) with a lead of about 0.035 on the reversing axis reverses in time. So
+      the lead move now builds both leads to `SwingLead` (0.035) first (its deviation
+      within 45 degrees of the diagonal, where both grow, and no brake) and then lets the
+      deviation reach the edges, the walk back toward the diagonal stopping at the widest
+      heading that keeps both leads at that size. Measured, that is worse too: the lineups
+      slower (69, 71 and 68 in 3,000 shots for seeds 6, 7 and 8 against 100 in 189, 115
+      and 52) and no first crossing from any (234, 249 and 222 blocks); so the handover's
+      requirements are being measured directly instead, a probe trying every stick
+      sequence of up to four frames from each lineup's handover and reporting which roots
+      can reverse an axis at all, with their heading, leads, speed and height: 5 of the
+      100 lineups from the 45-degree walk, 3 of the 69 from the `SwingLead` one, every
+      viable root heading within about 25 degrees of an edge (-67 or -73 degrees for the
+      z reversal, -22 or -28 for the x one), its lead on the reversing axis 0.034 to 0.042,
+      at full speed (18.4; every braked root, 13.7, is dead), the reversal landing 2 to 13
+      units above the lava after four frames of turning at the walking rate (the jump
+      itself a lattice coincidence the probe's 6,561 sequences hit for those roots only).
+      The 45-degree walk without the brake and with half its draws from the outer half of
+      the range is worse still (lineups 71 to 94 in 3,000 shots and no first crossing on
+      any of seven seeds): the viable roots turned toward the edge on their last frame
+      only, and draws biased toward the edges spend the reversing axis's lead before the
+      handover. So the lead move is unchanged from its first form (the brake, uniform
+      draws within 45 degrees), and the first crossing stays a lottery on the roots that
+      the return-run deviation makes ten times more productive. What would change it is
+      out of this search's moves: a handover that is not a run into the sinking corner
+      (the tilt built some other way, or from a rest the fixer places higher on the
+      platform). The maintainer's go (2026-09-21) to adjust the fixer's handover for the
+      oscillation's sake; the candidate being measured: the oscillation starting at the
+      rest's own tilt (0.49) with its first leg run toward the chord's far end from the
+      rest, where both leads are zero and so any stick takes both axes a full step at
+      once, no corner run and no sinking, the tilt built by the swings' ends as the regime
+      already does. Measured so far: the first crossing 109, 75 and 104 in 3,000 shots for seeds 6, 7
+      and 8 (the pass's cap is 100) against 30, 15 and 0 from the corner lineup, but those
+      crossings are not the regime's swing: 60 frames after the rest at (-283, +317) with
+      the tilt at (+0.06, +0.49), the normal having wandered across x = 0 to the +z edge
+      (the flatter platform lets the search roam where the sinking corner used to force
+      the chord swing), and nothing continues from them (the second oscillation 0 in
+      3,000 shots from 11 to 15 blocks). With the initial phase exiting on the first frame,
+      though, the run-downhill phase's turning moves spend the one-step leads within two
+      frames, and a floor on the tilt (each axis 0.13 or more into the corner's quadrant,
+      the fixer's reversibility range) alone leaves nothing (24 blocks). So the design as
+      built: the initial phase is the first leg itself, `FirstLeg_1f` running the chord's
+      direction (the end on the far side of the corner on the tilt's steeper axis, away
+      from the lower edge; a random deviation of up to 45 degrees walked back until both
+      axes step) until Mario can turn around (16 speed, the turnaround moves' threshold),
+      and only then the regime's phases (the maintainer's third point, 2026-09-22, that
+      the handoff should be above 0.6, is met by decoupling the leg's handover from the
+      tilt: the leg hands over on speed alone, and `startXzSum` is the regime's floor
+      only, the tilt from which the oscillation may not fall back, `minXzSum` by default).
+      Measured, a floor of 0.65 or 0.69 kills the regime: the first oscillation 0 to 16 in
+      3,000 shots and the second nothing from 1 to 10 blocks on seeds 6, 7 and 8, since the
+      swings' tilt moves about 0.05 either side of its mean and a floor inside that band
+      rejects every swing once the mean has touched it (the old design's 0.6 sat below its
+      regime's 0.61 to 0.73). At 0.6 the regime runs (seeds 7 and 8 ten oscillations,
+      317 and 25 last-pass solutions in 209 and 411 s) but the first oscillation pays
+      (26 and 36 in 3,000 shots against 140 and 118 with no floor, seed 6 none either
+      way), so 0.6 is the committed floor, the maintainer's wish and the highest the swings
+      allow; at 0.55 all three seeds run ten oscillations (the first 100 in 2,456 and
+      2,401 shots and 95 in 3,000; 539, 882 and 21 last-pass solutions in 398, 157 and
+      107 s), the alternative if the first oscillation's shots matter more than the floor. And `normalSpecs.minAxis` keeps each axis of the normal that far into the
+      quadrant. Measured: the leg hands over 100
+      roots in 16 shots (seven frames, 17 speed, the tilt (-0.30, 0.19)), but with the
+      floor at 0.13 the first oscillation dies at frame 3340 (804 blocks): the leg toward
+      A steps the z normal down from the rest's 0.274, and 0.13 leaves 14 frames, fewer
+      than the swing's outbound leg needs; the fixer's lattice is reversible to 0.02 on
+      the far side, so the floor is 0.05. With it (ten oscillations asked, 3,000 shots a pass):
+      the tilt grows fast, 0.49 at the rest to 0.59 at the first crossing and 0.69 at the
+      second (seed 6), but seed 6 stops at the third oscillation (0 in 3,000 shots, 101,988
+      blocks, Mario turning around at the -x end with the tilt (-0.43, 0.19)), seed 8 at
+      the fifth (135,663 blocks) and seed 7 at the first (5,615 blocks). The later stops
+      sit where a crossing must beat the speed of the crossing two before it
+      (`ValidateCrossingData`): from the rest the first swing is long and fast (the
+      second crossing at 24), so the fourth, the slow return from the -x end (8 speed
+      after the turnaround, a step and a half a frame), cannot; measured with that
+      ratchet off (a scratch switch, gone again): seed 6 runs the whole stage, ten
+      oscillations in 129 s, the first and third (the returns from the -x end) 42 and 20
+      in 3,000 shots and every other pass 100 in 23 to 495, and the last pass 523
+      solutions at the regime's 0.69 in 3,000 shots; seed 7 likewise, 117 s, its first
+      oscillation 4 in 3,000 shots and its third 100 in 1,829, the last pass 327; seed 8
+      likewise, 121 s, its first oscillation 68 in 3,000, the last pass 545. With the rule
+      as it stood the same three seeds stopped at the third, first and fifth oscillation.
+      The maintainer's decision (2026-09-21): keep the rule's downhill half only, the run
+      from a crossing must still beat the peak speed reached from the crossing two before
+      it, the crossings' own speeds no longer compared. Measured, that half alone stops all
+      three seeds at the third oscillation too (0 in 3,000 shots, 104,559, 102,045 and
+      137,362 blocks; the first oscillation 70, 28 and 100 in 3,000 or fewer): the fourth
+      crossing, the slow return from the -x end, cannot beat the peak reached from the
+      second, about 30 from the long first swing. The maintainer's word on it (2026-09-21): the point is to
+      improve every time, and it may be unimprovable past a few oscillations with these
+      parameters. Then his clarification (2026-09-22): the speed gates were meant for
+      crossings at the same normal; while the normal still grows toward the target sum the
+      crossings are not comparable. So the rule is its original form again, both
+      comparisons, applied only when the crossing's tilt is not above the tilt two
+      crossings before. With it seeds 7 and 8 run ten oscillations (701 and 80 last-pass
+      solutions at 3,000 shots a pass; 317 and 25 with the 0.6 floor), so the config asks
+      for five again, the last pass a crossing toward the far end. From the rest the first leg always
+      runs toward the far end, so the first crossing is toward it and the stage adds one
+      oscillation (the direction commitment), the last pass landing on an odd oscillation,
+      a crossing toward the far end as `osc-final` needs; the first such with the regime's
+      tilt is the third (the second's tilt is 0.57 to 0.59), and the third is the slow one
+      (the fourth crossing beating the second's peak): with `maxOscillations` 3 and 3,000
+      shots a pass, the last pass finds 0, 1 and 60 solutions at 0.69 for seeds 6, 7 and
+      8 (the second oscillation 100 in 184 to 265 shots before it). The committed config
+      asks for 3 with its 30,000-shot last pass: on seed 6 the first oscillation 100 in
+      17,736 shots, the second 100 in 331, and the last pass 3,365 solutions at 0.69 by
+      24,000 shots (the run ended there without its summary, at the moment a debug
+      instance of the executable started on the machine; not rerun). The first
+      oscillation is the slow pass now (4 to 100 in 3,000 shots across seeds, 17,736 shots
+      to 100 on seed 6), the return from the -x end with the tilt at (-0.48, 0.11) after
+      the long first leg; the fixer's rest request looked like the lever (a rest with less x tilt and more
+      z leaves the -x end less lopsided) but is not: of four requests only one other
+      solves (rest (-2035, -553), normal (-0.17, 0.30)), and over seven seeds it gives 0,
+      0, 0, 0, 266, 0 and 223 first oscillations in 3,000 shots against the committed
+      rest's 26, 0, 152, 0, 226, 140 and 118; the first oscillation is a lottery over the
+      search's stream, 0 to 226 in 3,000 shots, and the committed request stays. The
+      maintainer's fourth point (2026-09-23): limit the fixer's rests so the oscillation
+      starts near its regime, the same corner and a tilt not much below the target's. So
+      the fixer accepts only a rest whose normal is in the corner it is asked for (`quadrant`,
+      the oscillation's; the target's own when absent, since the maintainer wants the
+      target's error matched from the oscillation's corner whether or not the target lies
+      there, 2026-09-23) and whose tilt is at least its `minXzSum` (0.6 in the config; from idle a stick gives 8 speed and
+      the first frame must step both axes, which holds within about 265 units of the home,
+      a tilt of about 0.63 on the diagonal at most), and the config's request moved out to
+      (-2140, -520) with 3 slide frames, which rests at (-146, 210) from the home, normal
+      (-0.26, 0.37), tilt 0.633 (the requests at (-2122, -538) and (-2100, -560) the fixer
+      cannot solve); From that rest the leg hands over (88 to 100 roots in 735 to 1,000 shots,
+      the first frame's steps marginal at that distance) but no first oscillation comes on
+      seeds 6, 7 and 8 at either floor (2,800 to 3,800 blocks): the rest is z-heavy, and
+      from there the first stick toward the chord's A end moves the z goal only 0.0097
+      (running toward A shortens the distance to the home, which takes from the step), so
+      the leg fell back to the B end and the first crossing, from the +z edge, never came.
+      Six requests near the diagonal with two to four slide frames give ten rests, every
+      one z-heavy (z 205 to 231 from the home against x 146 to 183, the rollout's momentum
+      carrying them that way, tilt 0.63 to 0.69) and every leg from them runs toward B:
+      at tilt 0.6 the rest sits where a first frame from idle can barely step both axes at
+      all (5.6 units each needed, 5.66 available on the diagonal), so the distance term
+      decides the direction. Twelve x-ward requests at a floor of 0.55 give two rests on the diagonal, from
+      (-2140, -570) and (-2150, -560) with two slide frames: (-153, 161) and (-159, 167)
+      from the home, normals (-0.28, 0.29) and (-0.29, 0.30), tilts 0.573 and 0.593, the
+      leg toward A from both (96 and 80 of the handovers), and the first oscillation 616
+      and 519 in 1,500 shots against 0 to 226 in 3,000 from the old rest; every other
+      solved rest is z-heavy again and gives nothing. The config's request is the second
+      (the fixer's floor 0.55). From it, ten oscillations at 3,000 shots a pass: at the
+      0.6 floor seeds 6 and 8 run through (the first oscillation 19 in 3,000 and 100 in
+      937 shots, the last pass 353 and 638 solutions in 105 and 149 s) and seed 7 stops
+      at the second, because its first pass's fastest solutions were wandering paths
+      whose tilt had fallen to 0.35 (the floor engages only once the tilt has exceeded
+      `startXzSum`, and a rest at 0.593 never touched 0.6 on them); at 0.55 seeds 6 and 7
+      run through (523 and 177) and seed 8 finds no first oscillation. So the tilt is
+      held from the first frame at a swing's amplitude (0.05) below the rest's own as
+      well, and with that every run completes: at the 0.6 floor the first oscillation 100
+      in 2,335 shots, 3 in 3,000 and 100 in 2,568 for seeds 6, 7 and 8, every later pass
+      100 in 42 to 1,713, and the last pass 574, 1,017 and 407 solutions at the regime's
+      tilt in 95, 139 and 122 s; at 0.55 the first oscillation 6, 100 and 16 and the last
+      pass 103, 940 and 27. The committed floor is 0.6. The first oscillation is still the
+      slow pass, 3 to 100 in 3,000 shots (the config gives it 30,000). The maintainer's
+      next two points (2026-09-23): the dive itself can be redirected (the fixer takes the
+      movie's dive as given, so the slide and the rollout inherit its line, and every rest
+      it reaches falls along that line: against the requests the rests fell short in x by
+      up to 46 and over in z by 12 to 54, more with more slide frames), and the rest's
+      tilt should be no less than 0.02 below the target normal's own sum. So the fixer
+      can start on the run before the dive (frame 3255, three run frames before the B
+      press at 3258; every later stage starts where it does), steering those frames to a
+      dive yaw, the movie's or up to `diveYawSteps` steps of 1024 to either side, and runs the
+      landing search for each, and `minXzSum` is stated in the config as the target's sum less 0.02
+      (0.553), an explicit parameter of the fixer by the maintainer's word, never derived. The dive's air frames keep the stick straight back as the approach always
+      did: held at the dive's yaw the dive at 46 speed flies some 500 units and lands near
+      (-90, -90) from the home, beyond the rollout's reach of any rest asked for. The redirected dive reaches rests from z-heavy to x-heavy (fifteen requests: (-158,
+      155) to (-205, 124) from the home, tilts 0.55 to 0.71), and one of them is far
+      better than any before: (-163, 138), normal (-0.30, 0.25), tilt 0.553, from the
+      request (-2150, -560) with no slide frames, whose steeper axis is x, so its leg runs
+      toward the B end and its first crossing is the easy one from the +x side: 1,331
+      first oscillations in 1,500 shots on seed 6 (the z-heavy rests 0, the x-heavy ones
+      further out 0 too, their leg's first step short on x the way the z-heavy ones' was
+      on z). The whole stage from it, ten oscillations at 3,000 shots a pass with the 0.6
+      floor: seeds 6 and 7 run through (the first oscillation 100 in 1,335 shots and 37
+      in 3,000, the last pass 241 and 259 solutions in 135 and 114 s), seed 8 stops at
+      the fourth (its third found 2). Against the diagonal rest's 574, 1,017 and 407 on
+      all three seeds, the config kept the diagonal rest and the movie's dive (start
+      frame 3269), the redirected dive an option of the fixer (`runFrames`,
+      `diveYawSteps`) with its rests recorded here. The maintainer's word (2026-09-23):
+      the dive is never a limiter; edit the approach from an earlier start for a better
+      dive. So the fixer also chooses the dive's distance (`diveAirCandidates`: the air
+      stick back, neutral or at the yaw, about 280, 340 and 500 units) and can start
+      further back on the run for more turn. From frame 3250 with six or eight run frames
+      the fixer rests at tilts 0.63 to 0.75 (thirty-six requests, twenty-one solved: 0.653
+      on the diagonal at (-186, 182), 0.673 x-heavy at (-204, 178), (-210, 173) and (-228,
+      156), 0.693 near the diagonal at (-195, 203), z-heavy from 0.693 to 0.753; ten run
+      frames overshoot the ledge), so the dive limits nothing now. Then the maintainer
+      (2026-09-23): the movement is the fixer's to work out, not the config's to spell out.
+      So the knobs are gone (`runFrames`, `diveYawSteps`, `diveAirCandidates`,
+      `slideFrames`; `restX`/`restZ` remain as an override): the fixer asks for the
+      corner's diagonal at the radius whose resting tilt is the floor plus 0.02, plays every
+      way onto the platform once with a straight rollout to its rest (`Ways`: run lengths
+      to 12, the movie's dive yaw and up to four steps of 1024 either side, the three air
+      sticks, 0 to 3 slide frames; from a dive slide the slide frames alone), orders the
+      ways that rest on the platform by that rest's distance to the one asked for, and
+      runs the landing search on each in turn, aiming the landing where the way's own
+      rest-to-landing offset says and then bringing the rest to the one asked for through
+      its measured response to the landing (`Response`, the ARE rounds' own), up to three
+      shifts; the ways whose rest comes within 20 units are taken first and any solving way
+      after that (the maintainer, 2026-09-23: a rest as near the diagonal as the ways
+      allow). The config starts every stage at
+      3250 and asks for `quadrant` 4 at `minXzSum` 0.67 (the maintainer's floor). What limits is the
+      first oscillation, and the numbers say why. The first frame from idle: a stick sets
+      Mario's speed to 8, the walking frame adds 1.1 less speed/43, and the slope adds 1.7
+      times its steepness when he faces within a quarter turn of downhill and takes it
+      away otherwise; the ground step moves floor-normal-y times that, 8.5 units downhill
+      of the boundary and 7.0 uphill of it at tilt 0.69. A full step on both axes along
+      the diagonal's chord needs 0.01 of the distance to the point 500 below the home
+      times root two, 8.1 units at tilt 0.69, so only the downhill side of the boundary
+      steps, and only for a few degrees past it before the axis stepping toward the corner
+      falls short (`scratchpad/first_frame_window.py`, the model the numbers below are
+      from: about seven degrees at 0.59, five at 0.65, three and a half at 0.69, two at
+      0.73). Off the diagonal the chord toward the end that relaxes the steeper axis lies
+      on the uphill side by the tilt's angle from the diagonal, so that end has a first
+      frame only while the angle is inside the window (the committed rest, 1.5 degrees
+      off, does; a z-heavy rest at 0.69 has no first frame toward the -z end and only the
+      +z end, which sinks the +z edge). A stick chosen from that (the downhill boundary
+      on the end's side turned a random one to eight steps of 256 toward the corner and
+      walked back to one, the rule's end first and the other when idle and the rule's has
+      no first frame, the end Mario faces once walking) was tried and is worse: first
+      oscillations per 3,000 shots on seeds 6 to 12, the chord's deviations against it,
+      14/100, 100/0, 2/0, 100/0, 100/0, 100/3 and 100/100 (the leg toward the boundary
+      curves with the tilt into the far end and the roots lose their variety), so the
+      chord's deviations stay, and the model says why they work: 5.6 degrees toward the
+      corner lands inside the window from a rest near the diagonal. From every rest at
+      0.65 or more the first oscillation stays at 0 with either stick: 0 in
+      3,000 shots for eight rests, 0 in 10,000 for the 0.653 diagonal and the 0.693
+      near-diagonal ones, with the rest's tilt floor loosened to 0.15 below the rest as
+      well (the pellets die at the floor, 0.04 below the rest, well above the lava; with
+      the floor loosened they use 0.08 and still find nothing, while the committed rest
+      drops from 100 to 0, so the floor stays). The cause is the lava: a crossing has
+      Mario at the point whose goal is the normal, and the platform there is below the
+      lava once the normal's steepness (the root of the squares) passes about 0.53 (the
+      surface at his feet is 2,880 below the home less the normal's dot with his position
+      over its y, the lava 191 below that; the crossings seen lie at 0.44 to 0.55, most
+      under 0.52). The first leg moves the normal along the chord, whose steepness grows
+      with every frame from the diagonal, so from a rest of sum S on it the first crossing
+      must come within the square root of (0.55 squared less S squared over two) over
+      0.0002 frames: 27 at 0.593, 22 at 0.653, 18 at 0.693 (at 0.52: 23, 17 and 12), and
+      the fastest first oscillation the search finds takes 15 frames from the rest, the
+      usual 20 to 25. A death census (2026-09-24, a scratch build counting every rejection
+      and every move that ends a pellet, from the 0.673 rest and the 0.573 one, floors
+      0.6, 3,000 shots) puts the lava second-hand at most: no pellet dies on the lava
+      check; from 0.673 the deaths are 19,600 turn-uphill moves and 12,400 return-run
+      moves that find no stick keeping both leads (the goal a full step past the normal on
+      both axes), 4,900 at the rest's tilt floor and 750 at the regime's, and they come
+      within 20 frames of the rest; from 0.573 the same moves fail (12,800 and 21,500) but
+      the pellets live to 30 and 99 frames and 6 cross. At the failing frame the x lead is
+      0.1 or more and the z lead under 0.02 in 24,000 of the 0.673 deaths (16,000 of the
+      0.573 ones): the swing runs the lead of the axis it steps inward far ahead while the
+      outward axis's runs out, and the reversal needs both to cross the band in one frame,
+      so the leads at the turnaround, not the tilt itself, are what the higher rest
+      shortens the time to build; the maintainer recalls much older versions oscillating
+      from starts above 0.7, which is consistent if those starts carried leads (the old
+      lineup arrived at speed with 0.03 to 0.04 on both axes) or did not hold the error
+      exactly through the first swing (the maintainer: they were exact). So the leads are the
+      difference, and the geometry says why a rest further out cannot build them: the goal
+      is Mario's position over his distance to the point 500 below the home, so the axis
+      the swing steps outward gains less goal per unit of his motion the further out he is
+      (0.00118 per unit at 324 out against 0.00165 at 189), and at speed 20 along the chord
+      that lead grows 0.004 a frame against 0.01 nearer in, while the inward axis's lead
+      runs away (per-phase medians of the first-oscillation pass: from the 0.573 rest the
+      swing reaches the -x end with leads -0.085 on x and -0.18 on z and crosses coming
+      back; from x-heavy rests at 0.653 and 0.673 it reaches it with -0.018 on x and -0.15
+      to -0.21 on z and dies, and from z-heavy rests at 0.653 and 0.673 the only steppable
+      first frame points at the +z end, the swing runs across to +x and dies with +0.24 on
+      x and +0.02 on z; 0 first oscillations in 3,000 shots for all four). Reweighting the
+      turn-uphill phase (run forward 7 or 10 of 10, or a straight frame) changes none of
+      them (the 0.573 rest: 6, 26, 4 and 1 against 6). The old lineup ran outward from a
+      low rest where the goal answers strongly and arrived with 0.03 to 0.04 on both axes.
+      So the first swing is now steered by the leads (`LeadRun_1f`, the maintainer's go,
+      2026-09-24): in the run-downhill and turn-uphill phases before the first crossing, the
+      frame's stick is the one of a fan around the face yaw (two steps of 2048 either side)
+      that leaves the thinner lead largest among those keeping both axes stepping, the
+      second best one time in three for variety, each candidate played in a block that
+      reverts and the chosen one for keeps; the uphill turn stays as the frame that moves
+      the phase on and the turnaround is the search's draw. From the 0.573 rest the first
+      oscillation goes from 6 to 100 in 1,031 shots on seed 6 (seven seeds in the
+      changelog). At 0.673 it stays at 0 from either side of the diagonal: the outward lead
+      reaches 0.013 at the turnaround because the swing meets the platform's edge some 130
+      units out, seven frames at speed 20, which buy 0.03 of lead that the turnaround eats;
+      a rest that far out has no room to build the lead its return needs, and the old high
+      starts crossed by the single-axis reversal needle catalogued above, not by a swing.
+      The maintainer's next thought (2026-09-25), a swing that reverses by walking at low
+      speed without the turnaround action: the lead run's fan was widened to a quarter turn
+      either side (kept: 100 first oscillations in 677 shots against 1,031 on seed 6 from
+      the 0.573 rest) and the first swing freed of the turn-uphill phase's 16-speed floor
+      (kept), and a return move was tried that walks back toward the other end at any
+      speed, each frame the stick leaving the least outward lead on both axes among those
+      keeping both stepping, the search drawing when to start it once both leads reach
+      0.02, with a crossing starting the next swing in the phase machine. It found nothing
+      from the 0.673 rests and cost the 0.573 rest most of its first oscillations (9 in
+      3,000; the few crossings still came through the turnaround), so it is out again. The
+      reason a walking reversal is hard is the band: an axis whose lead is L must, each
+      frame, either keep stepping out (its goal moving at least 0.02 - L that frame) or
+      jump back past the band (at least L the other way); a walking turn crosses the zone
+      between too slowly unless L is within a frame's motion of 0.01 at that very frame.
+      The lead arithmetic, which is why the 0.57 to 0.6 rests cross and 0.67 does not: a
+      swing's return consumes an axis's lead by its goal motion plus 0.01 a frame, and the
+      axis reverses on the frame its lead sits in [0.01, that motion], so at a return speed
+      whose goal motion is 0.025 the chance per axis is about 0.6 and both axes cross within
+      a few frames when the leads at the turnaround are 0.08 or more (what the 0.573 swing
+      carries, -0.085 on x and -0.18 on z), while the turnaround's standing frames cost
+      0.03 an axis first; from 0.67 the outward lead peaks near 0.03 (seven frames of room
+      at speed 20, or none uphill: at steepness 0.51 the slope takes 0.87 a frame, what the
+      walk adds, so the speed stays at 8 and every frame snaps), which the turnaround
+      spends whole. The uphill-first-step design (the fixer setting the error at the last
+      snap so a swing can run outward on the light axis) falls to the same arithmetic and
+      is closed: the light axis's swing is uphill at that tilt and never reaches the speed
+      that steps, and a swing with a downhill component steepens the heavy axis into its
+      edge. The rest's radius is the lead budget, and 0.6 is about where it suffices, and the
+      rest must sit on the diagonal: asked for at tilt 0.6, a rest 8 units off it, (-166,
+      174), gives 100 first oscillations in 3,000 shots, while (-189, 152) and (-157, 198),
+      20 to either side, give none (from the z-heavy side the swing runs at the +z edge and
+      from the x-heavy side at the -x end without the lead it needs). So the fixer's
+      near-rest tolerance is 8 units (was 20): with it the floors 0.58 and 0.6 rest at
+      (-166, 174) and (-172, 168), 0.613 both, and cross (100 in 3,000 and 100 in 2,613
+      shots), where the 20 let a 0.58 floor rest 17 units z-heavy and cross never. The
+      maintainer's config at the time (dr `startXzSum` 0.67 with a rest at 0.6, forcing the
+      tilt to climb to 0.67 before any dip, and `minFirstCrossingSpeed` 25) found no first
+      oscillation for those two settings besides. The maintainer then held to his memory of
+      oscillations from starts above 0.7, and the pre-fixer config shows how those began:
+      Mario idle at the target normal itself ((-0.18, 0.39), sum 0.573, at (-100, 218) from
+      the home) and the initial phase ending only once the tilt had reached `minXzSum`
+      0.69, the old lineup running it up with random sticks and handing over with speed and
+      leads. That handover is back as a mode (2026-09-25): a `handoverXzSum` above the
+      rest's tilt (the stage passes the rest's tilt in `NormalSpecsDto::restXzSum`; the
+      switch was `startXzSum` itself for a day, which made the working configuration, a
+      0.573 rest under a 0.6 regime floor, run the lineup by mistake) makes the initial
+      phase the lineup, random sticks with the chord leg and a corner-ward lead run
+      (`LeadRun_1f` toward the corner) mixed in, exiting at the tilt asked for, and the old
+      moves take the swing from there. From the diagonal 0.573 rest it hands over at 0.69
+      three times in 10,000 shots (65 to 115 frames after the rest, speed 17, leads 0.046
+      on both axes) and the first oscillation from those three comes 100 times in 926
+      shots: the oscillation at 0.69 is not the hard part, the lineup to it is. From the
+      old-style z-heavy rest at the target normal the lineup never passes 0.593 (0 in
+      10,000 at 0.6 and at 0.69). A corner-ward lead run alone cannot even start the
+      lineup: straight into the corner from these rests the first frame moves the goal
+      0.0095 an axis, under the step, the cross term of the goal's geometry cutting an
+      outward move on both axes where it helps a chord step. `bitfs-turn --test`'s
+      first-pass case sets `startXzSum` to 0 so that it checks the leg from the rest
+      whatever handover the config asks for. The maintainer's direction then (2026-09-26):
+      the start may be low, but every oscillation must build speed and tilt consistently
+      without a huge shot count. A per-pass death census from the 0.573 rest (floor 0.6,
+      3,000 shots a pass, seed 6) found the third oscillation's pass, 25 solutions in
+      3,000, losing 49,000 pellets to moves that find no stick keeping both axes stepping
+      and 18,000 to the regime floor, and the fourth 107,000 and 21,000: the same
+      lead-starving turn the first swing had, in every swing. So the lead run steers every
+      swing now, not only the first: the passes go to 37, 396, 43, 177, 137 shots and the
+      last 124 in 3,000 on seed 6 (from 37, 1,439, 29, 25 in 3,000 and 818), 28, 1,456,
+      25, 79 and 393 on seed 7; the first oscillation is the one pass still over a few
+      hundred shots. Ten oscillations on seeds 6 to 8: the tilt at the crossings climbs
+      two hundredths a swing (0.63 to 0.69 at the first, then 0.69, 0.71, 0.73, 0.75) with
+      passes 2 to 5 at 25 to 182 shots, and every seed stops at the sixth oscillation,
+      where 0.75 on the diagonal is the platform's lava ceiling: the oscillation count has
+      to end before it, which the config's 5 does. The speed at the crossings stays at 13
+      to 21; a lead run that took the fastest stick once both leads were past 0.05 built
+      it (25 at the second crossing) and cost the passes their reliability (the first
+      oscillation 33, 46 and 0 in 3,000 on seeds 6 to 8), so the thinner lead stays the
+      score. A rest off the diagonal with the leg toward the diagonal would have
+      the steepness fall first and give 24 to 28 frames at 0.67, but that leg's first
+      frame is uphill and snaps; the one design that would open it is the fixer setting
+      the error after that first step rather than at the rest (the step's snap is a few
+      thousand ULPs, and the landing search would measure the normal one frame later with
+      a stated stick), a change to the fixer's contract for the maintainer to decide. So
+      the config keeps the rest at 0.593 (the maintainer's 0.67 finds no oscillation from
+      any rest the fixer reaches) and the fixer's start at the movie's dive slide. The
+      first leg toward the other chord end gives no first oscillation on any of the three
+      seeds, so the leg's rule stands. The rule is the maintainer's "gain speed each crossing"; as it stood, from the rest
+      the first swing was long and fast and later crossings could not beat it. The speed it
+      climbs from is the config's to set (the maintainer, 2026-09-23): `minFirstCrossingSpeed`
+      asks a forward speed of Mario at the first crossing, 0 asking none. The handover tilt cannot rise with this search: 0.55, 0.65 and 0.69 each
+      give no first crossing on seeds 6, 7, 9 and 10 (the lineups themselves are quick at
+      0.65 and 0.69, 100 in 16 shots, with no continuation, 112 to 201 blocks), against
+      30 to 57 at 0.6; the maintainer expects it nearer the regime's 0.69, so raising it
+      waits on the handover being solved;
+      `platform` for the other stages; the edge as a knob
+      (the target normal and `osc-final`'s quadrant pair express it today); and one
+      decision for the maintainer, the oscillation starting at 0.6 for a regime of 0.69.
+      The maintainer's own oscillations from years ago, traced (2026-09-26;
+      `movies/bitfs-osc-final-jp.m64`, frames 3315 to 3604, with `dllcheck --trace` now
+      printing the pyramid's normal): exact, every frame from 3365 on a full step on both
+      axes through fifteen axis reversals (3316 to 3364 snap the normal into place by hand,
+      the movie's own fixer). The oscillation is Mario running the chord across the corner,
+      between (-361, -15) and (0, 364) from the home, perpendicular to the diagonal, so the
+      normal trades one axis for the other and the tilt holds (0.693 and 0.713 turn about,
+      the two axes reversing a frame apart at each end); the turnaround is the stick held
+      back, `ACT_TURNING_AROUND` for five frames from 27 speed and the finish from 8 gaining
+      1.7 a frame, downhill because the lagging normal keeps the platform tilted toward the
+      end just left; speed 17 at the first reversal and 28 by the sixth, the leads 0.1 to
+      0.28 mid-swing, a half period of 26 to 31 frames. The search's own five-oscillation
+      solution (seed 6, from the 0.573 rest, the lead run in every swing) is the same
+      motion: the chord from (-315, 70) to (-55, 316), the reversals none to three frames
+      apart, speeds 16 to 25, the tilt 0.593, 0.633, 0.693, 0.693, 0.713, 0.733 at the
+      crossings, two hundredths gained for each frame between the two axes' reversals when
+      the second to reverse is the one stepping outward (the other order loses as much,
+      which is what the regime floor rejects). What differs is the start alone: the movie's
+      oscillation grew out of a nearly flat platform (0.03 at 3372), Mario at 200 to 270
+      from the home with both leads 0.1 to 0.26 and the normal chasing him two hundredths
+      a frame for 23 frames (0.233 at 3419 to 0.693 at 3442), the turnaround at 0.43 to
+      0.51 while the speed was still rising, the normal catching up during the return; the
+      pipeline starts from a rest, where the leads are zero and a swing adds only the
+      frames between its reversals. That start tried in the pipeline (the fixer at
+      `minXzSum` 0.3 rests at (-82, 89), tilt 0.333, 154,757 frame advances; the handover
+      mode from it): to 0.69, 27, 20 and 14 handovers in 10,000 shots on seeds 6 to 8
+      (against 3 and 6 from the 0.573 rest) and a first oscillation 0, 1 and 0 in 3,000
+      under the 0.67 floor, the swings arriving at 0.733 and dying where their axes
+      reverse in the inward order; to 0.5 or 0.6, 100 handovers in 36 and 35 shots, with
+      balanced leads (0.09 and 0.09, 0.16 and 0.07) at 20 to 24 speed, and every
+      continuation dead within five frames: the swing moves run on outward until the
+      thinner lead starves, and the movie's answer, a turnaround at rising speed, the
+      phase rules reject (a turnaround counts only from the uphill-turn phase, which a
+      speed drop opens); without a handover the leg from the 0.333 rest gives 100 in 23
+      shots and no oscillation, the tilt-must-not-fall rule below the regime and
+      `minAxis` leaving a low swing no room (the floor is not the killer: under 0.6 the 0.69
+      handover gives the same 27 and 0, the plain leg 100 and 0). So the movie's start needs the stage's rules
+      to change (a turnaround from a rising run, and the floor and the monotonic climb
+      deferred until the oscillation is established), the maintainer's rules and his
+      decision; the working start remains the diagonal rest at 0.57 to 0.61 under a 0.6
+      floor, whose oscillation is the movie's. The maintainer's direction on that
+      (2026-09-26): the turnaround check generalized to the frame before having run uphill,
+      carried by the metric so that no frame is loaded for it; the climb kept, with one
+      shift outstanding at most; the rest deferred only if that is not enough. Built:
+      `BitfsDrMetrics` records `ranUphill` (Mario's floor angle against his facing, the
+      test `apply_slope_accel` makes) and `maxXzSum`; a turnaround begins only from a frame
+      that ran uphill (before, only from the uphill-turn phase, which a speed drop opened),
+      the run-downhill phase offers the turnaround move when the last frame did, and below
+      the regime the tilt may sit at most 0.02 under its highest yet (before, it had to
+      rise on every frame). Measured at 3,000 shots a pass, five oscillations: from the
+      committed rest (0.613, floor 0.6) seeds 6 to 8 went 24, 2,764, 0; 23, 15, 55, 135,
+      291; 25, 1,251, 66, 91, 87 before and 24, 1,420, 53, 17, 29, 0; 23, 6, 40, 83, 186;
+      25, 12, 54, 77, 158 after (seed 6 further, seeds 7 and 8 fewer first oscillations);
+      from the 0.333 rest under the maintainer's floors (0.67, the last pass 0.69) the
+      handover at 0.6 runs through on seed 6, 44, 90 in 3,000, 48, 77, 57 in 3,000 and 111
+      at the last pass, at 0.5 too (36, 72, 16, 57, 47 and 30), at 0.69 and without a
+      handover still not (27 in 10,000 and 0; 23 and 0); seeds 7 and 8 at 0.6 hand over in
+      31 and 38 shots and die within two frames, their ten kept lineups being the fastest,
+      which run straight into the corner with the z lead at 0.01 to 0.04, where seed 6's
+      ten kept a balanced one, by the sampled CSV. A lineup counting as the first pass's
+      solution only with 0.05 of lead on both axes was tried on that reading and reverted:
+      seeds 6 and 7 then hand over in 45 shots and nothing follows, seed 6's working
+      start included, while seed 8 goes 44, 40 in 3,000, 123, 1,174 and stops at the
+      fourth: the gate reshuffles which seed's roots continue rather than making them
+      continue, so the viable roots are not the balanced-lead lineups the sample
+      suggested. The pool is: with the stage's `maxSolutions` at 1,000 instead of 100
+      (so the lineup pass keeps 700 lineups from 3,000 shots rather than the first 100
+      from 40, and every pass likewise) the same start runs through on all three seeds
+      under the 0.67 floor with the last pass at 0.69: seed 6 721, 218 in 3,000, 795,
+      1,000 in 2,399, 417 and 408 at the last pass; seed 7 746, 1,000 in 1,847, 1,000 in
+      976, 1,000 in 1,999, 471 and 186; seed 8 722, 79 in 3,000, 1,000 in 2,210, 551, 194
+      and 46; 270 to 320 s a stage. That is the maintainer's ask met from a low start
+      (every oscillation building speed and tilt, no pass over 3,000 shots) and the
+      configuration for it is his to set: the fixer's `minXzSum` 0.3, `handoverXzSum`
+      0.6, the dr stage's `maxSolutions` 1,000, `startXzSum` 0.67 and `minXzSum` 0.69.
+      Open: whether `keepTop` (10) or the lineup pass's cap is the better knob, since the
+      roots' variety, not the leads, is what the first oscillation needs. The committed
+      pipeline's inconsistent runs (the maintainer, 2026-10-03: oscillations that progress
+      quickly one run and stall early the next) had a cause of their own, found from four
+      logged runs: the first-oscillation pass found its 100 solutions every time, but the
+      direction commit after it read `solutions[0]`, an arbitrary solution since a run's
+      solutions come back in block order, and when that one was of the minority direction
+      the stage dropped the 97 to 99 others and carried 1 to 3 slow ones at tilt 0.653,
+      from which the next pass made no block in 5,000 shots. The commit now follows the
+      direction most of the `keepTop` fastest solutions took, and the stage logs each
+      pass's hand-over. The runs that still stall after that fix have one mechanism,
+      measured on 28 logged runs of `--stage dr` (2026-10-03, Release, 16 threads, the
+      config's non-deterministic mode; a run takes 18 to 180 s): the leg hands over with
+      the normal's x at about -0.22 and Mario near the pyramid's x centre, from where x
+      decays 0.01 a frame to the `minAxis` floor (0.05) in 17 frames, frame 3340 to 3357,
+      and the first swing has to carry Mario far enough toward -x to turn that decay
+      around in time. The search finds such a chain in about half the passes: the first
+      oscillation yielded 100 solutions in 12 of 28 passes and 0 to 15 in the rest; a slow
+      pass's population never reaches frame 3356, a fast pass's recovering lineage stands
+      200 units toward -x with x at -0.27 at 3357 and crossing 2 counted. It is neither a
+      budget nor a roots problem: the leg kept to 1,000 solutions (first oscillation 364,
+      1, 3, 3, 1, 291), 20,000 shots a pass (7, 100, 1, 6, 2, 100, one full yield at shot
+      11,564) and a root restart every 10 shots (5, 0, 1, 100, 1, 100) left the odds where
+      5,000 shots and 100 roots put them (15, 0, 100, 0, 3, 100); the stage ran through in
+      2, 4, 4 and 3 of 6 runs, a thin pass of 1 to 7 solutions continuing about two times
+      in five now that the hand-over keeps the fastest. A deterministic seed replays
+      exactly (seed 6 twice, identical passes). The remedies are the maintainer's to
+      choose: hand the leg over with x margin (its solutions picked by |x| rather than the
+      first 100 found, or its end asked for earlier); let the pre-regime search see the
+      margin (its fitness is speed and its bin holds no normal, so a recovering lineage
+      competes on speed alone); a lower floor for the first swing (0.05 was chosen over
+      0.13, which left it too few frames); or a retry of a pass that yields fewer than
+      `keepTop` from the same roots under a derived seed, which bounds the stage's failure
+      at the lottery's odds to the power of the retries without touching the search.
+      Measured further the same day: what kills the slow first-oscillation populations is
+      the lava, not the floor (at `minAxis` 0.02 and 0.0 the odds are the same, 0, 0, 100,
+      100, 3, 100 and 100, 2, 0, 9, 0, 100, and the slow populations still end at frame
+      3354, standing on the sinking +z end with a median clearance of 3 units over the lava
+      at -3071, which the end loses at about 4 a frame as the tilt pours into z; the first
+      swing's fitness is speed, speed is downhill, and downhill is the sinking end, so a
+      run succeeds when a lineage happens to run toward -x early instead: every winner is
+      190 to 220 units toward -x with 50 to 70 of clearance at its second crossing). And
+      what carries the chain from one oscillation to the next, from the 58 runs'
+      hand-overs: into the second oscillation, the speed at the first crossing, the
+      turnaround's 16 (every hand-over whose fastest root was under 16.1 died, 10 of 10,
+      whatever its tilt or count; every one over 17.5 continued, 26 of 26), which is what
+      `minFirstCrossingSpeed` asks and the config now sets to 17 (six runs: 100, 0, 0, 100,
+      1, 100 at the first oscillation, the 1 carried at 17.4 and through to 459, no death
+      at the second oscillation); through the later ones, the tilt sum at the crossing,
+      with a ceiling near 0.73 (roots at 0.69 to 0.71 gave the next pass 100 to 583,
+      at 0.733 12 to 142, at 0.753 nothing, 3 of 3; the sum climbs about 0.02 an
+      oscillation, so from a regime entered at 0.67 the ceiling is the fourth or fifth
+      oscillation, the maintainer's own experience of years ago). Both are rules of the
+      script now, configurable in `normalSpecs` (the maintainer's go, 2026-10-03, on his
+      principle that a solution that cannot be continued is not one): `maxXzSum`, the
+      ceiling the tilt of a solution carried into a next pass may not exceed, and
+      `minLavaClearance`, the least height of Mario over the lava a state may have.
+      Measured, neither value helps and the config asks none of either: a ceiling of 0.733
+      starves the fourth and fifth passes, whose crossings mostly sit above it by then (of
+      the runs reaching the fourth oscillation 1 in 3 through, against about 17 in 20
+      without; applied to the last pass too, 0 in 5); a clearance of 20 gave the first
+      oscillation 100 solutions in 5 runs of 6 and then 2 of 8, 7 in 14 pooled, the same
+      one in two as without (10 and 5: 2 and 1 in 6). Two lessons: six runs cannot tell a
+      coin flip from a fix, judge the first oscillation on fifteen or more; and pruning the
+      drowning states does not make the search find the lineage that leaves the end, so
+      the first swing's lottery stands, and what is left for it is steering. The search's
+      base block is drawn uniformly from the table (fitness decides only which block keeps
+      a bin), so a region's share of the shots is its share of the blocks, which is why the
+      sinking end, where the population runs, takes the shots and the lineage that turned
+      starves, and why a breakthrough comes early, while the table is small, or never.
+      The steering rule built on that (the maintainer's go, 2026-10-03): `maxRetreat`,
+      how far the first swing may fall back from the leg's end along the way to its
+      target before the state is refused (90 in the config; the metric keeps the leg's
+      end, `legEndX`/`legEndZ`, and progress is the displacement from it along the rough
+      target angle), so the states that run on to the sinking end never fill the table.
+      Measured 2026-10-04 on 16 sequential runs a setting with nothing else on the
+      machine, the first oscillation (full, thin) and the stage through: none, 8 and 3,
+      11; 90, 8 and 1, 9. The rule does nothing (60 cuts the turnaround's own overshoot of
+      up to 90 units, 3 of 16; a first table taken while series overlapped on the machine,
+      a queued series having started on a stale exit marker, had said 14 of 16 at 90 and
+      was wrong: thread interleaving is what this lottery turns on, so one search at a
+      time). So refusing the wrong-way states does not give the lineage that leaves what
+      it lacks, and the config asks no `maxRetreat`. The first oscillation stands at about
+      one in two full and two in three through with the thin hand-overs the speed floor
+      lets through. A retry exists as a diagnostic, `passRetries` (0 in the config,
+      none): a pass that yields fewer than `keepTop` solutions (the last pass, none) runs
+      again from the same roots under the run's seed plus 7,919 times the attempt, its
+      solutions pooled, each retry logged and given its own viewer tab. With 3, 16
+      sequential runs went 13 through against 11, the first oscillation ending none and
+      the three failures all at the last pass from roots at the tilt ceiling; but the
+      maintainer's rule stands (2026-10-04): retries should not be needed, a retry
+      re-rolls the lottery rather than removing it, so the committed config asks none and
+      the first oscillation's cause is the open item. What is known: the pass either
+      produces a second crossing at turnaround speed within its first hundred shots a
+      thread or produces only slow ones (12 to 16) that cannot continue; roots, shots,
+      restarts, the tilt floor, lava clearance and the retreat limit do not move it. What
+      is not known is what, pellet by pellet, keeps the turning lineage from arising in
+      the slow runs: the next step is a census inside the first-oscillation pass (which
+      rule rejects each pellet, at which frame, after which move; how many reach the
+      turnaround and the second crossing) on a seed that fails deterministically against
+      one that succeeds. Done 2026-10-04 on seeds 6 to 11 (three cross, three never do):
+      the rules are not the killer (5,400 rejections of 200,000 scripts, lava included;
+      55,000 pellets end because no stick keeps both axes stepping; 139,000 states
+      validate, 2,500 of them turning around, 29,000 running after the turn, and in a
+      failing seed none of those ever at the second crossing); the crossing lineages never
+      left the leg's end (the first crossings 120 to 180 units toward -x, 260 to 280 out
+      on +z, at speed 18 to 20, at frames 3349 to 3350, ten frames after the leg ended at
+      about -110 and 240); the population at large runs the other way first (every
+      turnaround the census could place begins 20 to 160 units toward +x, after the lead
+      steering carried Mario out, where no crossing comes before the sinking end is under
+      him). The reversal that can cross must come within a frame or two of the leg's end:
+      an uphill frame, which costs about a unit of speed, then the turnaround, which the
+      game refuses under 16, from a leg that ends at the first frame of 16, drawn as a
+      one-in-eleven move followed by another; three seeds in six never draw it in time.
+      Two changes at that source: `legExitSpeed` in `normalSpecs` (17.5 in the config,
+      16 by default), the speed at which the leg hands over, so the uphill frame and the
+      turnaround fit; and the first swing's move weights, the uphill turn and the
+      turnaround drawn as often as the run while `currentCrossing` is 1, the later
+      swings unchanged. With those two, the six seeds all find the first oscillation
+      (100, 100, 100, 100, 100 and seed 6's 4; five run through, seed 9 dying at its
+      fourth pass at the ceiling), where three found none before. The thin seed is the
+      return's needle: a crossing is the frame the reversing axis's goal jumps a full step
+      past the normal, about six units a frame toward the far end on that axis, and the
+      after-turn moves ran the downhill angle, which from the sinking end points along the
+      slope's axis and leaves the other axis to the deviation's luck (the first crossings
+      came at speed 18 to 20, from the lineages that drew a heading well toward -z). A
+      return that ran straight at the chord's far end (the rough target angle, a
+      deviation of up to 2048 either side, four draws in six beside the two downhill
+      runs) was tried on top and is worse, reverted: five deterministic seeds of six found
+      no first oscillation and 16 runs gave 3 full, 6 thin, 7 none; the downhill run
+      keeps the speed the crossing needs where the straight run loses it uphill. The two
+      changes that stand, measured: deterministic seeds 6 to 11, the first oscillation on
+      all six (five full, seed 6 with 4) against three before, with the weights alone four
+      of six; 16 non-deterministic runs, the first oscillation found in 15 (9 full, 6
+      thin) against 11 before, one run dying there, and the stage through 11 of 16, four
+      of the five failures now at the fourth and fifth passes. The census of the fixed
+      source, seed 6 (4 solutions) against seed 7 (100): both cross at the same place and
+      moment, 140 units toward -x, 285 out on +z, at frames 3351 to 3352, eleven frames
+      after the leg's end, seed 7's lineage with 12 units over the lava, which lived, and
+      seed 6's with 10, which drowned before its next frame; the exit speed bought the
+      turnaround but spent a frame or two of the leg, so the crossing lands at the lava's
+      edge. Two changes tried at that. `legMinClearance` in `normalSpecs`, the least
+      height over the lava at the leg's end for the leg to count as a solution, is wrong:
+      at 60 (the leg's ends run 55 to 65) seeds 6, 7 and 9 found no first oscillation at
+      all and seed 8 found it in 50 shots, where without it all four do, so it stays at 0
+      as a diagnostic; why a higher leg's end crosses worse is not explained. The first
+      swing's weights raised to three times in four against the run: the six deterministic
+      seeds all full, but 16 plain runs found the first oscillation in 12 (7 full) against
+      15 (9 full), so the weights stay as they were. The first crossing's speed floor at
+      none: 15 of 16 found (7 full), 12 through, and one run carried a single root that
+      made no block at all, which the floor is there to refuse; it stays at 17. The census
+      says what the crossing is: Mario crosses in the frame his turnaround finishes
+      (`ACT_FINISH_TURNING_AROUND`, 17.6 speed, facing the target), both axes reversing by
+      a full step in that one frame, 10 to 12 units over the lava, and the lineage that
+      lives is the one the search plays on from (seed 7's 15 crossing states had 119
+      children a frame later, seed 6's 49 none). Two leads open. The deterministic runs
+      find the first oscillation far more often than the plain ones (11 full of 12 seeds
+      against about 8 of 16 runs, the crossing by the twelfth shot a thread against the
+      hundredth or never), with the same per-shot statistics. The threads' race is not it:
+      on one thread (no race) seeds 6 to 11 found the first oscillation full in 4 and not
+      at all in 2, at the plain runs' odds (3 full, 3 thin, 2 none of 8 on sixteen threads
+      the same hour), so what helps the deterministic mode is its lockstep itself, the
+      threads advancing a move at a time in turn, which is not understood yet. A return
+      frame that crosses the moment a stick makes it (a fan of nine sticks around the
+      downhill angle each return frame, the first whose frame reverses both axes toward
+      the target, at the first crossing's speed floor) was tried and is out again: seeds
+      6 and 7 thin (3 solutions each) where the plain return had seed 7 full; the stick is
+      not what the double reversal waits on, the two leads' timing is. Nor do the leg's
+      roots: every leg solution carried (`keepTop` 100) gave 8 full of 16 plain runs, the
+      ten fastest 4 of 8 the same hour. And the deterministic mode's edge was the seeds:
+      sixteen fresh seeds (12 to 27) in that mode found the first oscillation full in 8,
+      thin in 2 and not at all in 6, the plain runs' odds; seeds 6 to 11, reused for every
+      build's trial all day, are a lucky set, and a binary trial on them says little (a
+      lesson, with the earlier one about six runs). So every setting tried leaves the
+      first oscillation at about one pass in two within 5,000 shots: the crossing's rarity
+      is the swing's own, a double full-step reversal at the first crossing's speed in the
+      last frame or two over the lava, and the search's uniform draw finds it at a rate the
+      budget decides, though not alone: at 15,000 shots a pass 12 of 16 came full (one in 11,626
+      shots) and one still found nothing, its table saturated near 3,400 blocks with 10,000
+      shots re-firing the same owners, so the bins decide what is reachable (the pre-regime
+      bin held the cell, four yaw quarters, the action and the phase, nothing of the leads,
+      the speed or the tilt's progress). The richer bin, the first swing's leads in 0.005
+      regions, its speed in 2-unit regions, the z normal and the yaw in 32 regions beside
+      the cell, is the fix on the search's side: the first oscillation's pass keeps about
+      20,000 blocks instead of 3,400, and 16 plain runs of the committed config found the
+      first oscillation in all 16 (13 full, the thin ones 8 to 22) against 15 (9 full); the
+      4 that then failed died at the last pass, the climb. And the one lever
+      that moved everything was the rest's tilt: the fixer asked for 0.55 rests at 0.573
+      (frame 3327, normal (-0.289, 0.284)), and from there 16 of 16 plain runs ran through,
+      the first oscillation found in all (9 full, 7 thin, every thin one carried on) and the
+      last pass 54 to 1,505 solutions at tilt 0.693, against 11 of 16 and 20 to 450 from the
+      0.613 rest, whose runs die at the last pass with roots at 0.753. The lower rest gives
+      the first swing its margin over the lava and the climb its room under the ceiling at
+      once; the maintainer took it the same day: the fixer's floor is 0.55 in the config
+      (the rest at 0.573) and the oscillation passes fire 2,000 shots instead of 5,000. The two together, the richer bin from the 0.573
+      rest: 16 of 16 plain runs through, the first oscillation's pass 46 to 100 solutions
+      in every run (never under 46 where the 0.613 rest's thin passes were 2 to 22) and
+      the last pass 19 to 3,434, runs 38 to 161 s (the richer bin's tables, up to 184,000
+      blocks in a last pass, cost the time). What the later swings have that the first
+      lacks, and an alignment after the fixer must produce (the maintainer's direction,
+      2026-10-04): a Mario already running the chord with the normal lagging him equally
+      on both axes, so the end ahead is uphill, the turnaround legal anywhere near it, and
+      the two leads reach zero in the same frame on the way back. From a standing rest the
+      only such run is the leg itself, and the leg's end decides whether its lead-building
+      run has room: toward A, the +z edge, it is cut off at about 0.03 of lead by the
+      sinking end; toward B, the -x side, the later swings turn with room. The leg points
+      at A on a measurement from the lineup era ("the other end gives 0 on every seed",
+      which no longer holds: B leaves the rest as well);
+      the leg pointed at B (the two signs in `FirstLeg_1f` negated) leaves the rest as
+      easily as toward A (100 legs in 16 shots) and on 16 plain runs of the current config
+      found the first oscillation in all 16, full in 6 (407 to 1,526 shots), 14 through:
+      better than nothing, not the later swings' pace. Its baseline, the leg toward A on
+      the same config, and a census of the B source reading the first swing against the
+      second in one run, are measured. The baseline is the same: 16 found, 6 full, 15 through,
+      so the leg's end is not the lever. The census (seed 6, the B source) names what is:
+      the second oscillation's pass runs 93 percent of its moves as the lead-steered run in
+      the turning-uphill phase, 0.8 percent failing, turnarounds beginning over seventeen
+      frames, 178 drownings in 52,000 states, 100 solutions in 16 shots, because the normal
+      is still on the far side of the center from the crossing it starts at, so the chord
+      ahead is uphill and the turnaround legal anywhere. The first swing's pass runs the
+      downhill run and the return, 7 to 22 percent of its moves failing, because the rest
+      is an equilibrium: the normal starts at Mario and chases him from behind, the chord
+      is level and then downhill, the uphill frame the turnaround rule asks for never comes
+      on it, and the lineages that veer to find one hit a wall (toward A the lava, 4,700
+      drownings; toward B the quadrant floor, 5,574 states refused in the frame the z
+      normal reaches `minAxis`), 48 states crossing in two frames. Being measured: the
+      first swing's turnaround freed of the uphill rule (the move's offer and the
+      validation, `currentCrossing` 1 only), on the B source: 16 plain runs, the first
+      oscillation full in all 16, in 161 to 517 shots (median about 290) where the same
+      config and rule took 737 to 2,000 and came full in 6; 15 through, the one failure a
+      dead root at the fourth pass; runs 21 to 51 s. The rule was written for swings that
+      start at a crossing, where the end ahead is uphill; the first swing starts at an
+      equilibrium, where it is not, and the rule made it veer into the wall. With the leg
+      toward A, the committed end, the same exemption: 16 of 16 full, 163 to 1,757 shots
+      (median about 430), 15 through, the failure at the last pass; so the exemption is
+      the fix and the leg's end a preference (B's first pass is about a third quicker).
+      The exemption stands (the maintainer, 2026-10-04: "definitely keep it"), the first
+      swing's `currentCrossing` 1 freed of the rule in the turnaround's offer and in the
+      validation; the leg stays at A. A regression case guards it in `bitfs-turn --test` (the
+      maintainer's ask): in every corner, the config's target normal mirrored into it, the
+      fixer rests and the first oscillation's pass comes full within 2,000 shots, one
+      thread, deterministic; the stage's per-pass yield (`passSolutions` on the solution
+      set) is what it reads. The probe behind it: the fixer rests in corners 1 to 3 as in 4
+      (frames 3325 to 3329) and their first oscillations came in 155, 214 and 142 shots on
+      16 threads. After it, the climb: the sum rises about 0.02 an oscillation and the
+      fifth pass works at the lava's limit. The fixer is at its limit (rests at 0.65 and
+      above drown the first swing, off the diagonal it has no first frame).
 - [ ] **4.7 A solutions database.** Store the input files (or compressed versions) with
       numerical data about each, queryable and filterable. Nothing exists yet; the per-stage
       solution files from 1.4 (`solutions/<stage>.json`: diffs plus named metrics) are the

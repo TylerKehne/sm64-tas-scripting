@@ -26,10 +26,15 @@ struct SolutionSet
 	std::string type;
 	int64_t startFrame = -1;
 	std::vector<SolutionRecord> solutions;
+	// What each pass of a staged search found, in order (the dr stage: the leg's pass first,
+	// then each oscillation's, the yield before the hand-over trims it); empty for a stage of
+	// one pass. The pipeline's tests read the first oscillation's yield from it.
+	std::vector<int64_t> passSolutions;
 
 	// {"stage", "type", "startFrame", "solutions": [{"frames": [[frame, buttons, x, y], ...],
-	// "metrics": {name: number}}]}. Infinite and NaN metrics are written as null and read back
-	// as +infinity (JSON has no representation for them).
+	// "metrics": {name: number}}], "passSolutions": [n, ...] when there were passes}. Infinite
+	// and NaN metrics are written as null and read back as +infinity (JSON has no
+	// representation for them).
 	nlohmann::json ToJson() const;
 	static SolutionSet FromJson(const nlohmann::json& json);
 	void Save(const std::filesystem::path& file) const;

@@ -343,7 +343,8 @@ Vocabulary:
   `Frame`, `Sampled`, then the search's own columns (`GetCsvLabels`). `CsvRows` is printed
   so plotting can run mid-search.
 - **Viewer**: a `Visualization` (`Visualization.hpp`: the viewer's path and interpreter, the
-  four columns the plot reads, the bin sizes, range filters, an optional fixed view) handed to a builder's
+  four columns the plot reads, the bin sizes, range filters, the categorical columns, an
+  optional fixed view) handed to a builder's
   `Visualize()` makes the run write it with the CSV's path to a JSON file beside the CSV
   when the CSV opens and launch the viewer, detached, with that file; at the end the file
   is rewritten with `finished` and the row count. The search never waits for the viewer or
@@ -372,17 +373,56 @@ boundary as diffs only; the new stage's solution data starts out default.
 Stage types, in the order the committed config uses them:
 
 1. **are-fixer** (`BitFsAreFixer`, ROADMAP 4.8), one stage on the first resource and no
-   search: from the movie's dive onto the platform (frame 3269, its dive slide), a dive
+   search: from the run before the movie's dive onto the platform (frame 3250; from the
+   movie's own dive slide, 3269, the rollout reaches tilts up to about 0.6 only), a dive
    recover whose rollout is steered to land where the resting normal carries the target's
-   ARE on both axes with the step parity the oscillations need; it exports. Every later
-   stage starts at 3269, since its solutions do. It replaced the three `tilt-target` stages
+   ARE on both axes with the step parity the oscillations need, steps reversibly over
+   the tilts they use, so the error survives them, and lies in the oscillation's corner
+   (`quadrant`; the target's own when absent, the error matched being the target's
+   wherever the rest lies) at a tilt near the oscillation's regime (`minXzSum`, stated in
+   the config; ROADMAP 4.6). The way there is its own: it asks for the corner's diagonal
+   at the radius the tilt floor needs, plays every way onto the platform once (the run's
+   length, the dive's yaw and air stick, the slide frames) with a straight rollout to its
+   rest, and runs the landing search on them nearest that rest first, bringing each way's
+   rest to the one asked for through its measured response to the landing (the ways that
+   get within 8 units first, then any, the oscillation wanting the diagonal that closely);
+   it exports. Every
+   later stage starts at 3250, since its solutions do. It replaced the three `tilt-target` stages
    (`TiltTargetShot`: the target normal in X, then in Z with the X ARE fixed to what the
    first found, then a normal box), which remain a stage type for the Tier D workloads
    (`perf/tierd-*.json`, from frame 3330).
 2. **dr-oscillations** (`Scattershot_BitfsDr`) once per target oscillation from the
    equilibrium frame, piping solutions forward, committing to the direction the first
-   oscillation took, keeping the fastest few between oscillations, and requiring
-   increment-frame parity at the end.
+   oscillation took, keeping the fastest few between oscillations, asking a speed of the
+   first crossing when the config names one (`minFirstCrossingSpeed`), and requiring
+   increment-frame parity at the end. Its first pass is the swing's first leg from the rest
+   (ROADMAP 4.6): the pyramid keeps the adjusted remainder error only through frames whose
+   goal is a full 0.01 step from its normal on both axes, and from the rest both leads are
+   zero, so the pass runs a scripted leg toward the chord's end on the far side of the
+   tilt's steeper axis, the chord's direction with a random deviation walked back until
+   the frame steps (`FirstLeg_1f`; `platform` and `quadrant` name the pyramid and the
+   corner) until Mario is fast enough to turn around, then every swing steered by the
+   leads until its turnaround (`LeadRun_1f`: the stick of a fan around the face yaw that
+   leaves the thinner lead largest among those keeping both axes stepping), the tilt kept
+   in the corner's
+   quadrant (`minAxis`), never a swing's amplitude below the rest's own, below the regime's
+   tilt climbing with at most one shift of 0.02 outstanding against its highest yet, and,
+   once it has reached the regime's (`startXzSum`), never below that again; a turnaround
+   begins only from a frame Mario ran uphill, the metric's `ranUphill`, the slope having
+   taken speed, which the chord's ends are for every swing that starts at a crossing; the
+   first swing, from the rest's equilibrium, where the normal has no lag and the chord
+   ahead is downhill, may turn from any frame (a `handoverXzSum` above
+   the rest's tilt makes the first pass the old lineup instead, running the tilt up to it
+   before the oscillation counts), and every frame any of
+   its moves writes goes through `StepFrame`, which tries the stick
+   asked for and then its neighbors until the game confirms the pyramid steps; the
+   run-downhill move deviates from the minimum downhill angle toward the floor's downhill
+   or toward the target (the return run's crossing needs the reversing axis's share of
+   Mario's speed); validation
+   holds the error exactly to the equilibrium frame's, which the full steps do only from a
+   rest whose normal steps reversibly across the tilts the oscillations use (half of the
+   float values do; the fixer accepts only such a rest, `BitFsAreFixer::StepsReversibly`);
+   the last pass's solutions must reach `minXzSum`.
 3. **osc-final** (`BitfsOscFinal`) from the equilibrium frame, piped from the oscillation
    solutions.
 4. **dr-approach** (`Scattershot_BitfsDrApproach`): dive from the oscillation solutions;
@@ -392,6 +432,9 @@ Stage types, in the order the committed config uses them:
 
 `pyramid-osc-approach` is the original single-threaded experiment (`BitFsPyramidOscillation`
 then `BitFsScApproach` from the start frame) as a stage; it is not in the committed config.
+Its run prints one line of what the oscillation script did (asserted or not, oscillations,
+the tilt at the start and at the two chord ends, the top speed toward each, the normal at
+the end), so that it can be compared with the search's swings (ROADMAP 4.6).
 `export` is a stage type that passes its input through, and `"export": true` on any stage
 replays each solution on the first resource (`ExportSolutions`) and writes one movie per
 solution under `<outputDirectory>/m64/<stage>/`, named by index, pyramid normal and Mario's
