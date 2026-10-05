@@ -68,36 +68,216 @@ void BitFsAreFixer::AdjustedRemainderError(float normal, float target, float& er
 	}
 }
 
+bool BitFsAreFixer::StepsReversibly(float normal, float target, float minNormal, float maxNormal, float farNormal)
+{
+	// The rest's own side is the oscillation's; the target may lie past the origin, where the
+	// final oscillation goes over to the adjacent corner.
+	int side = ScriptMath::Sign(normal);
+	float low = side < 0 ? -maxNormal : minNormal;
+	float high = side < 0 ? -minNormal : maxNormal;
+	if (side == 0 || normal < low || normal > high)
+		return false;
+	// The walk goes past the origin as far as the final oscillation does: farNormal, or a
+	// couple of steps beyond the target when the target is over there.
+	float farSide = farNormal; // not `far`: a Windows header defines it away
+	if (ScriptMath::Sign(target) != side)
+		farSide = std::max(farSide, std::fabs(target) + 0.02f);
+	float walkLow = side < 0 ? -maxNormal : -farSide;
+	float walkHigh = side < 0 ? farSide : maxNormal;
+	float error;
+	int steps;
+	AdjustedRemainderError(normal, target, error, steps);
+	if (!std::isfinite(error))
+		return false;
+	for (float direction : { 0.01f, -0.01f })
+	{
+		float value = normal;
+		for (int n = 0; n < 200; n++)
+		{
+			float next = value + direction;
+			if (next < walkLow || next > walkHigh)
+				break;
+			float back = next - direction;
+			float errorNext;
+			int stepsNext;
+			AdjustedRemainderError(next, target, errorNext, stepsNext);
+			if (back != value || errorNext != error)
+				return false;
+			value = next;
+		}
+	}
+	return true;
+}
+
 // --- The lifecycle --------------------------------------------------------------------------
 
 bool BitFsAreFixer::validation()
 {
 	MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
-	const BehaviorScript* pyramidBehavior = (const BehaviorScript*)(ReadState("bhvBitfsTiltingInvertedPyramid"));
-	if ((marioState->action != ACT_DIVE && marioState->action != ACT_DIVE_SLIDE) || marioState->floor == nullptr)
+	_pyramidBehavior = (const BehaviorScript*)(ReadState("bhvBitfsTiltingInvertedPyramid"));
+	if (marioState->floor == nullptr)
 		return false;
-	_pyramid = marioState->floor->object;
-	if (_pyramid == nullptr || _pyramid->behavior != pyramidBehavior)
-		return false;
-	return _args.fineFrames >= 2 && _args.fineFrames <= MaxFineFrames && _args.slideFrames >= 0 && _args.tolerance > 0;
+	if (marioState->action == ACT_WALKING)
+	{
+		// On the run before the dive: the pyramid is the one the dive lands on (Approach).
+		_pyramid = nullptr;
+	}
+	else
+	{
+		if (marioState->action != ACT_DIVE && marioState->action != ACT_DIVE_SLIDE)
+			return false;
+		_pyramid = marioState->floor->object;
+		if (_pyramid == nullptr || _pyramid->behavior != _pyramidBehavior)
+			return false;
+	}
+	return _args.fineFrames >= 2 && _args.fineFrames <= MaxFineFrames && _args.tolerance > 0
+		&& _args.minNormal > 0.0f && _args.maxNormal > _args.minNormal && _args.maxNormal < 1.0f && _args.farNormal >= 0.0f && _args.farNormal < 1.0f
+		&& _args.minXzSum >= 0.0f && _args.minXzSum < 2.0f * _args.maxNormal && _args.quadrant >= 0 && _args.quadrant <= 4;
 }
 
 bool BitFsAreFixer::execution()
 {
 	_mario = *(MarioState**)(ReadState("gMarioState"));
 	_camera = *(Camera**)(ReadState("gCamera"));
-	if (!ModifyAdhoc([&]() { return Approach(); }).executed)
-		return false;
+
+	// Every way onto the platform, the one whose straight rollout rests nearest the rest
+	// asked for first: first the ways whose rest can be brought within NearRest of it, then,
+	// if none solves, any way. Each way's approach and landing search is one block, kept
+	// when it rests inside the tolerance and reverted otherwise.
+	std::vector<Way> ways = Ways();
+	CustomStatus.ways = int(ways.size());
+	for (bool wantNear : { true, false }) // not "near": a Windows macro (docs/compilers.md)
+		for (const Way& way : ways)
+		{
+			if (ModifyAdhoc([&]() { return Approach(way) && SearchLanding(way, wantNear); }).executed)
+			{
+				CustomStatus.runFrames = way.runFrames;
+				CustomStatus.diveYaw = way.diveYaw;
+				CustomStatus.diveAir = way.diveAir;
+				CustomStatus.slideFrames = way.slideFrames;
+				return true;
+			}
+		}
+	return false;
+}
+
+std::vector<BitFsAreFixer::Way> BitFsAreFixer::Ways()
+{
+	// From a dive slide only the slide frames vary. From the run before the dive, its length,
+	// the dive's yaw (the movie's and up to MaxYawSteps steps of 1024 to either side) and its
+	// air stick (straight back lands about 280 units out, neutral 340, at the yaw 500) vary
+	// too, since the rollout can only land along the line the dive and the slide give it.
+	// Each way is played once with a straight rollout to its rest, in a block that reverts,
+	// and the ways that rest on the platform are ordered by that rest's distance to the rest
+	// asked for.
+	const bool running = _mario->action == ACT_WALKING;
+	const int16_t movieYaw = _mario->faceAngle[1];
+	std::vector<Way> ways;
+	for (int run = 0; run <= (running ? MaxRunFrames : 0); run++)
+		for (int k = 0; k <= (running ? MaxYawSteps : 0); k++)
+			for (int side : { 1, -1 })
+			{
+				if (k == 0 && side < 0)
+					continue;
+				for (int air = 0; air < (running ? 3 : 1); air++)
+					for (int slide = 0; slide <= MaxSlideFrames; slide++)
+					{
+						Way way;
+						way.runFrames = run;
+						way.diveYaw = int16_t(movieYaw + side * k * 1024);
+						way.diveAir = air;
+						way.slideFrames = slide;
+						bool rests = ExecuteAdhoc([&]()
+							{
+								if (!Approach(way))
+									return false;
+								_rolloutFrames = 0;
+								_aim = Aim();
+								return Rollout(way.landing, Sticks()) && AdvanceToRest(way.rest);
+							}).executed;
+						if (!rests)
+							continue;
+						float x, z;
+						RestAsked(x, z);
+						way.distance = std::hypot(double(way.rest.pos[0]) - double(x), double(way.rest.pos[2]) - double(z));
+						ways.push_back(way);
+					}
+			}
+	std::stable_sort(ways.begin(), ways.end(), [](const Way& a, const Way& b) { return a.distance < b.distance; });
+	return ways;
+}
+
+void BitFsAreFixer::RestAsked(float& x, float& z) const
+{
+	if (_args.restX != 0.0f || _args.restZ != 0.0f)
+	{
+		x = _args.restX;
+		z = _args.restZ;
+		return;
+	}
+	// The corner's diagonal at the radius whose resting tilt is the floor (or twice minNormal,
+	// which each axis needs anyway) plus 0.02: on the diagonal each axis of the normal is half
+	// the tilt S, r / (sqrt 2 d) with d the distance to the point 500 below the home, so
+	// r = 500 (S / sqrt 2) / sqrt(1 - S^2 / 2).
+	const double s = std::min(double(std::max(_args.minXzSum, 2.0f * _args.minNormal)) + 0.02, 1.2);
+	const double r = 500.0 * (s / std::sqrt(2.0)) / std::sqrt(1.0 - s * s / 2.0);
+	x = float(_pyramid->oPosX + CornerSignX(_args) * r / std::sqrt(2.0));
+	z = float(_pyramid->oPosZ + CornerSignZ(_args) * r / std::sqrt(2.0));
+}
+
+bool BitFsAreFixer::SearchLanding(const Way& way, bool wantNear)
+{
+	CustomStatus.rounds = 0;
 	_rolloutFrames = 0;
 	_aim = Aim();
 	_fine = Sticks();
 
-	// Land near the wanted spot and see what the pyramid rests at.
+	// Land where the rest asked for should follow: the platform tilts after the landing and
+	// carries Mario, by about what the way's own straight rollout showed.
+	float askX, askZ;
+	RestAsked(askX, askZ);
+	float x = askX - (way.rest.pos[0] - way.landing.x);
+	float z = askZ - (way.rest.pos[2] - way.landing.z);
 	Landing landing;
-	if (!AimAt(_args.restX, _args.restZ, landing))
+	if (!AimAt(x, z, landing))
 		return false;
 	AdhocScriptStatus<Play> first = Measure(_fine);
 	if (!first.executed)
+		return false;
+
+	// Bring the rest to the one asked for: the rest's response to the landing, measured from
+	// two sticks near the current one (the platform tilts after the landing and carries
+	// Mario, more the further out he lands), gives the landing shift; up to three times,
+	// while the rest is more than a few units off and each shift brings it nearer, the step
+	// bounded to what a rollout can be steered by.
+	auto miss = [&](const Rest& at) { return std::hypot(double(askX) - at.pos[0], double(askZ) - at.pos[2]); };
+	for (int attempt = 0; attempt < 3 && miss(first.rest) >= 4.0; attempt++)
+	{
+		double response[2][2];
+		if (!Response(landing, first.rest, response) || response[0][0] * response[1][1] - response[0][1] * response[1][0] == 0.0)
+			break;
+		double dx, dz;
+		Solve(response, double(askX) - first.rest.pos[0], double(askZ) - first.rest.pos[2], dx, dz);
+		const double step = std::hypot(dx, dz);
+		if (step > 60.0)
+		{
+			dx *= 60.0 / step;
+			dz *= 60.0 / step;
+		}
+		const float nextX = float(landing.x + dx);
+		const float nextZ = float(landing.z + dz);
+		Landing again;
+		if (!AimAt(nextX, nextZ, again))
+			break;
+		AdhocScriptStatus<Play> next = Measure(_fine);
+		if (!next.executed || miss(next.rest) >= miss(first.rest))
+			break;
+		x = nextX;
+		z = nextZ;
+		landing = again;
+		first = next;
+	}
+	if (wantNear && miss(first.rest) > NearRest)
 		return false;
 	Rest rest = first.rest;
 	if (Solved(rest))
@@ -168,12 +348,41 @@ std::pair<int8_t, int8_t> BitFsAreFixer::Stick(Aim aim) const
 	return Inputs::GetClosestInputByYawExact(int16_t(_mario->faceAngle[1] + dYaw), mag * 32.0f, _camera->yaw);
 }
 
-bool BitFsAreFixer::Approach()
+bool BitFsAreFixer::Approach(const Way& way)
 {
-	// The rest of the dive onto the platform and the slide frames before the rollout, the
-	// stick straight back to shed speed; B stays up so the rollout's press is a press. Ends
-	// on the frame the rollout starts.
+	// From the run: the way's run frames with the stick at the dive's yaw and the B press
+	// with it, then the dive's air frames with its air stick. From a dive: its remaining air
+	// frames with the stick straight back to shed speed. Then the way's slide frames before
+	// the rollout, the stick straight back; B stays up so the rollout's press is a press.
+	// Ends on the frame the rollout starts.
 	auto onPyramid = [&]() { return _mario->floor != nullptr && _mario->floor->object == _pyramid; };
+	if (_mario->action == ACT_WALKING)
+	{
+		auto ahead = Inputs::GetClosestInputByYawHau(way.diveYaw, 32, _camera->yaw);
+		for (int n = 0; n < way.runFrames; n++)
+		{
+			AdvanceFrameWrite(Inputs(0, ahead.first, ahead.second));
+			if (_mario->action != ACT_WALKING)
+				return false;
+		}
+		AdvanceFrameWrite(Inputs(Buttons::B, ahead.first, ahead.second));
+		if (_mario->action != ACT_DIVE)
+			return false;
+		// The dive's air frames: the stick straight back (the shortest dive), neutral, or at the
+		// dive's yaw (the longest, some 500 units), the dive's distance being the fixer's to
+		// choose along with its yaw.
+		for (int n = 0; n < 60 && _mario->action == ACT_DIVE; n++)
+		{
+			std::pair<int8_t, int8_t> stick = way.diveAir == 0 ? Inputs::GetClosestInputByYawHau(int16_t(_mario->faceAngle[1] + 0x8000), 32, _camera->yaw)
+				: way.diveAir == 1 ? std::pair<int8_t, int8_t>(0, 0) : ahead;
+			AdvanceFrameWrite(Inputs(0, stick.first, stick.second));
+		}
+		if (_mario->action != ACT_DIVE_SLIDE || _mario->floor == nullptr)
+			return false;
+		_pyramid = _mario->floor->object;
+		if (_pyramid == nullptr || _pyramid->behavior != _pyramidBehavior)
+			return false;
+	}
 	for (int n = 0; n < 60 && _mario->action == ACT_DIVE; n++)
 	{
 		auto back = Inputs::GetClosestInputByYawHau(int16_t(_mario->faceAngle[1] + 0x8000), 32, _camera->yaw);
@@ -181,7 +390,7 @@ bool BitFsAreFixer::Approach()
 	}
 	if (_mario->action != ACT_DIVE_SLIDE || !onPyramid())
 		return false;
-	for (int n = 0; n < _args.slideFrames; n++)
+	for (int n = 0; n < way.slideFrames; n++)
 	{
 		auto back = Inputs::GetClosestInputByYawHau(int16_t(_mario->faceAngle[1] + 0x8000), 32, _camera->yaw);
 		AdvanceFrameWrite(Inputs(0, back.first, back.second));
@@ -255,7 +464,25 @@ AdhocScriptStatus<BitFsAreFixer::Play> BitFsAreFixer::Measure(const Sticks& fine
 bool BitFsAreFixer::Solved(const Rest& rest) const
 {
 	return rest.reached && std::fabs(rest.error[0]) <= float(_args.tolerance) && std::fabs(rest.error[2]) <= float(_args.tolerance)
-		&& std::abs(rest.steps[0]) % 2 == std::abs(rest.steps[2]) % 2;
+		&& std::abs(rest.steps[0]) % 2 == std::abs(rest.steps[2]) % 2
+		&& rest.normal[0] * float(CornerSignX(_args)) > 0.0f && rest.normal[2] * float(CornerSignZ(_args)) > 0.0f
+		&& std::fabs(rest.normal[0]) + std::fabs(rest.normal[2]) >= _args.minXzSum
+		&& StepsReversibly(rest.normal[0], _args.targetNx, _args.minNormal, _args.maxNormal, _args.farNormal)
+		&& StepsReversibly(rest.normal[2], _args.targetNz, _args.minNormal, _args.maxNormal, _args.farNormal);
+}
+
+int BitFsAreFixer::CornerSignX(const Args& args)
+{
+	if (args.quadrant == 0)
+		return args.targetNx < 0.0f ? -1 : 1;
+	return args.quadrant == 1 || args.quadrant == 2 ? 1 : -1;
+}
+
+int BitFsAreFixer::CornerSignZ(const Args& args)
+{
+	if (args.quadrant == 0)
+		return args.targetNz < 0.0f ? -1 : 1;
+	return args.quadrant == 1 || args.quadrant == 4 ? 1 : -1;
 }
 
 void BitFsAreFixer::Finish(const Rest& rest)

@@ -363,6 +363,13 @@ their optional inputs through one `tasfw::testing::Env`
 `_CRT_SECURE_NO_WARNINGS` for its consumers. Do not fork to `_dupenv_s`, and do not put the
 define in a header: it has to precede the first CRT include of the translation unit.
 
+### Windows headers: `near` and `far` are macros
+
+`<windows.h>` (which `LibSm64.hpp` brings in on Windows) defines `near` and `far` as empty
+macros for 16-bit compatibility, so a variable or parameter of either name is a syntax
+error on MSVC and clang-cl (`for (bool near : ...)` in `BitFsAreFixer::execution` was one),
+while GCC and Clang on Linux accept it. Name such things something else (`wantNear`).
+
 ### CI's newer compilers warn inside dependency headers
 
 The first matrix run with `TASFW_WARNINGS_AS_ERRORS` on (2026-09-08) failed both Windows
