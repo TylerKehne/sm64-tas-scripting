@@ -95,7 +95,9 @@ PipelineConfig PipelineConfig::Load(const fs::path& file)
 	json root;
 	try
 	{
-		stream >> root;
+		// Comments (// and /* */) are allowed and ignored, so the committed config can say
+		// what each parameter controls next to it.
+		root = json::parse(stream, nullptr, true, true);
 	}
 	catch (const json::exception& e)
 	{
