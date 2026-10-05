@@ -17,9 +17,10 @@
 // given these parameters and the CSV's path in a JSON file beside the CSV, and told through the
 // same file when the run ends. The search never waits for it or reads from it; a run without
 // a CSV (CsvSamplePeriod 0) launches nothing. The parameters are what the run knows and the
-// viewer cannot guess: the columns it plots, how it bins them, what it keeps. The viewer's own
-// settings, its refresh rate and its port, are its own. analysis/visualizer.py is the viewer
-// (README.md, "The viewer"); the builders take this through Visualize().
+// viewer cannot guess: the columns it plots, how it bins them, what it keeps, which columns are
+// categorical. The viewer's own settings, its refresh rate and its port, are its own.
+// analysis/visualizer.py is the viewer (README.md, "The viewer"); the builders take this
+// through Visualize().
 class Visualization
 {
 public:
@@ -53,6 +54,7 @@ public:
     double binAngle = 16;
     double binSpeed = 0.1;
     std::vector<Filter> filters;
+    std::vector<std::string> categorical;        // the columns the viewer filters by value (a checkbox each); every other by range
     std::optional<View> view;
     bool sampledOnly = true;                     // rows the sample period chose, not the forced ones
 
@@ -138,6 +140,7 @@ inline void to_json(nlohmann::json& json, const Visualization& visualization)
         { "binAngle", visualization.binAngle },
         { "binSpeed", visualization.binSpeed },
         { "filters", visualization.filters },
+        { "categorical", visualization.categorical },
         { "sampledOnly", visualization.sampledOnly },
     };
     if (visualization.view)
@@ -159,6 +162,7 @@ inline void from_json(const nlohmann::json& json, Visualization& visualization)
     visualization.binAngle = json.value("binAngle", visualization.binAngle);
     visualization.binSpeed = json.value("binSpeed", visualization.binSpeed);
     visualization.filters = json.value("filters", visualization.filters);
+    visualization.categorical = json.value("categorical", visualization.categorical);
     if (json.contains("view"))
         visualization.view = json.at("view").get<Visualization::View>();
     visualization.sampledOnly = json.value("sampledOnly", visualization.sampledOnly);

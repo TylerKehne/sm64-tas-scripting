@@ -1,6 +1,7 @@
 #include "PipelineConfig.hpp"
 #include "StageArgs.hpp"
 
+#include <algorithm>
 #include <fstream>
 #include <set>
 #include <stdexcept>
@@ -121,7 +122,13 @@ PipelineConfig PipelineConfig::Load(const fs::path& file)
 static void CheckVisualizeKeys(const json& block, const std::string& where)
 {
 	RejectUnknownKeys(block,
-		{ "title", "interpreter", "x", "y", "angle", "speed", "binX", "binY", "binAngle", "binSpeed", "filters", "view", "sampledOnly" }, where);
+		{ "title", "interpreter", "x", "y", "angle", "speed", "binX", "binY", "binAngle", "binSpeed", "filters", "categorical", "view", "sampledOnly" }, where);
+	if (block.contains("categorical"))
+	{
+		const json& categorical = block.at("categorical");
+		if (!categorical.is_array() || !std::all_of(categorical.begin(), categorical.end(), [](const json& name) { return name.is_string(); }))
+			ConfigError("\"categorical\" in " + where + " must be an array of column names (the columns the viewer filters by value)");
+	}
 	if (block.contains("filters"))
 	{
 		if (!block.at("filters").is_array())

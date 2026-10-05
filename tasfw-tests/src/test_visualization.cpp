@@ -21,6 +21,7 @@ TEST_CASE("Visualization round-trips through JSON and absent keys keep their def
 	v.binX = 5;
 	v.filters.push_back(Visualization::Filter { "NormalDistance", 0, 100 });
 	v.filters.push_back(Visualization::Filter { "Phase" }); // both bounds open
+	v.categorical = { "MarioAction", "Phase" };
 
 	json j = v;
 	CHECK(j["x"] == "MarioZ");
@@ -28,6 +29,7 @@ TEST_CASE("Visualization round-trips through JSON and absent keys keep their def
 	CHECK(j["binX"] == 5);
 	CHECK(j["binAngle"] == 16);
 	CHECK(j["sampledOnly"] == true);
+	CHECK(j["categorical"] == json::array({ "MarioAction", "Phase" }));
 	CHECK(j["filters"][0]["min"] == 0);
 	CHECK(j["filters"][0]["max"] == 100);
 	CHECK(!j["filters"][1].contains("min")); // JSON has no infinity; an open bound is an absent key
@@ -44,11 +46,13 @@ TEST_CASE("Visualization round-trips through JSON and absent keys keep their def
 	CHECK(back.filters[0].max == 100);
 	CHECK(std::isinf(back.filters[1].min));
 	CHECK(std::isinf(back.filters[1].max));
+	CHECK(back.categorical == std::vector<std::string> { "MarioAction", "Phase" });
 
 	Visualization partial = json::parse(R"({ "y": "MarioY", "filters": [{ "column": "MarioYVel", "max": 0 }] })").get<Visualization>();
 	CHECK(partial.x == "MarioZ");
 	CHECK(partial.y == "MarioY");
 	CHECK(partial.speed == "MarioFSpd");
+	CHECK(partial.categorical.empty()); // every column a range unless named
 	REQUIRE(partial.filters.size() == 1);
 	CHECK(std::isinf(partial.filters[0].min));
 	CHECK(partial.filters[0].max == 0);

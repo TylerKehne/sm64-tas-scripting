@@ -157,8 +157,11 @@ jobs:
           if [ "$RUNNER_OS" = "Windows" ]; then py=python; $py -m pip install --quiet -r analysis/requirements.txt; fi
           $py analysis/visualizer.py --once --csv tasfw-tests/data/scattershot_sample.csv --out viewer.png
           test -s viewer.png
+          # The same under a filter (the panel's grammar as text): 147 of the 600 rows are at speed 10 or more, 146 bins.
+          $py analysis/visualizer.py --once --csv tasfw-tests/data/scattershot_sample.csv --out viewer-filtered.png --filter "MarioFSpd >= 10" | grep -q "146 drawn, 453 filtered"
+          test -s viewer-filtered.png
           # The headless follow mode the perf suite gates (ROADMAP 4.10): a finished run drains on the first tick.
-          $py -c "import json; json.dump({'csv': 'tasfw-tests/data/scattershot_sample.csv', 'title': 'ci', 'finished': True, 'rows': 600}, open('ci.visualizer.json', 'w'))"
+          $py -c "import json; json.dump({'csv': 'tasfw-tests/data/scattershot_sample.csv', 'title': 'ci', 'finished': True, 'rows': 600, 'categorical': ['MarioAction']}, open('ci.visualizer.json', 'w'))"
           TASFW_VISUALIZER_HEADLESS=1 $py analysis/visualizer.py ci.visualizer.json
           test -s ci.visualizer.summary.json && test -s ci.visualizer.png
 
