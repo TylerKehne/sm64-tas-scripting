@@ -65,7 +65,7 @@ public:
 		// rollout.
 		float restX = 0;
 		float restZ = 0;
-		int fineFrames = 3;       // the rollout's last air frames, and the run's last frames before the turn, swept stick by stick (2 or 3)
+		int fineFrames = 3;       // the rollout's last air frames, and the run's last frames before the turn, swept stick by stick (2 or 3; an exact match needs 3: two frames' combinations are too sparse for the landing's cell, measured 2026-10-06)
 		int sticksPerFrame = 500; // sticks measured per fine frame
 		int verifyPerRound = 10;  // predicted landings played out per round, nearest first
 		int maxRounds = 5;
@@ -371,7 +371,7 @@ private:
 	static bool Stepped(float before, float after); // the normal moved by the game's 0.01f step between the two frames, either way
 
 	// The moves.
-	Object* LandingPyramid(); // the pyramid the movie's own dive lands on, from the run: the movie's inputs played to the dive slide in a block that reverts (validation; at frame 3250 Mario stands beside the other pyramid's home, so no rule of nearness or heading tells them apart)
+	Object* LandingPyramid(); // the pyramid the movie's own dive lands on, from the run or the dive: the movie's inputs played to the dive slide in a block that reverts (validation; at frame 3250 Mario stands beside the other pyramid's home, so no rule of nearness or heading tells them apart)
 	static const std::vector<StickEffect>& StickEffects(); // every distinct stick, by its yaw; built once
 	std::pair<int8_t, int8_t> Stick(Aim aim) const;        // the stick whose effect on the air movement is nearest the aim, from the cursor's face and camera yaws
 	std::vector<Way> Ways();                                              // every way onto the platform whose straight rollout rests on it

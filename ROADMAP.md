@@ -2109,6 +2109,30 @@ goals are (status as stated by the maintainer, 2026-09-08):
       carries Mario's height along where the game resets him to the floor each frame; 1.8
       units off), so which positions a landing can reach is not predicted, only found by
       play.
+      The regime, measured 2026-10-06 (the maintainer: "it would be good to lock down what
+      that is") and locked by the regime case of `bitfs-turn --test`, a line per case
+      (README, the are-fixer bullet, states it): every corner at the floor 0.5, exact and
+      within 100; within 100 at 0.4 and 0.6 everywhere, exact there at 0.4 in corners 3 and
+      4 and at 0.6 in corners 1, 3 and 4; from the run every corner, from the dive its own
+      corner, from the slide corner 4; a hand-over named; two fine frames within 100; the
+      former normal at tolerance 1. Found measuring it, and done: from the dive the fixer
+      held the remaining air frames' stick straight back and reached no rest near a corner-4
+      ask (its rests 45 to 190 units off, all in corner 3); it now varies that stick as from
+      the run, 12 ways for 4, and reaches corner 3 exact from 3262 in 183,358 frame advances
+      (corner 4 stays out of the dive's reach: its yaw is the movie's). And a landing round
+      that rested where the round before did replayed itself to the round budget, the
+      nearest prediction for the moved target being the play itself; such a round now ends
+      the way (the config's stage 98,549 to 98,540 advances, docs/performance-changelog.md).
+      Found and left, the boundary: at the far corners' floor ends the ways rest within 1
+      to 4 units of the ask with x errors of 100,000 to 300,000 ULPs and the fine frames'
+      plays jump the rest units for a landing moved a fraction (corner 2 at 0.4 and 0.6
+      finds no rest on the x curve), and corner 1 at 0.4 exact leaves z one ULP off after
+      the five turn rounds, the goal's slope steeper near the home; within 100 ULPs every
+      corner hands over at every floor. Two fine frames find no rest at an exact match: a
+      frame's 500 sticks give 250,000 combinations where three give 125 million, and the
+      landing's cell is the prediction's noise, 0.0005 by 0.0003 units; within 100 they
+      hand over (237,091 advances). A validation refusing two frames at an exact match
+      would be a rule from one measurement; the header's comment says it instead.
 - [ ] **4.9 Defects in the stage scripts.** Found 2026-09-15 writing 3.17; docs/tasing.md
       lists them as not to copy. `Scattershot_BitfsDrRecover::IsSolution` reads its
       previous state from the current frame (`prevState`,

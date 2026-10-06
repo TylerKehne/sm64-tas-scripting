@@ -88,12 +88,14 @@ checks the files exist, loads one DLL, runs the `VerifyLayout` script to the fir
 start frame and prints its report (struct layout, the hardcoded object slots), exiting 1 on
 any `FAIL`; a real run makes the same check before its first stage. Both are safe. `--test`
 runs the executable's own optional tests on the config's game (the `are-fix` stage solving
-within its tolerance without an A press, with the fixer's float model reproducing the game's
-resting normal; the least errors a target admits, no game needed; the `dr` stage's leg
-from its hand-over, and the first
-oscillation coming full from the fixer's hand-over in every corner, the config's target normal
-mirrored into each, one thread, deterministic) and hands everything after it to doctest;
-neither CI nor the framework's suite runs them. A full
+within its tolerance without an A press, twice and the same, with the fixer's float model
+reproducing the game's resting normal; the regime the fixer works in, every corner, the
+tolerances, the tilt floors and the start frames, each case a line of the output, about
+twenty minutes, `-tce="*regime*"` skips it; what the fixer refuses before any frame; the
+least errors a target admits, no game needed; the `dr` stage's leg from its hand-over, and
+the first oscillation coming full from the fixer's hand-over in every corner, the config's
+target normal mirrored into each, one thread, deterministic) and hands everything after it
+to doctest; neither CI nor the framework's suite runs them. A full
 run is not a smoke test: 16 threads, hours, thousands of exported `.m64` files, and the
 viewer's window with a tab per stage and per `dr` pass ("The viewer").
 
@@ -311,25 +313,18 @@ One JSON file. Relative paths resolve against the file's own directory, unless t
   the parities differ. The hand-over, the last frame z snapped on, is where the
   oscillation stage starts (`handoverFrame`), Mario running with both axes stepping in
   the leg's directions (z the steeper axis, so the leg runs x toward the corner and z
-  away): the config's targets hand over at frame 3336 in about 93,000 frame advances and 2
+  away): the config's targets hand over at frame 3337 in about 98,500 frame advances and 2
   s, and of the 24 survivor pairs nearest them 24 hand over (ROADMAP 4.8, which also records what
   was measured and dropped on the way: the lattice of positions a rest had to hit exactly,
   and the dive slide to a stop, chaotic at the float scale). The hand-over is within 20
   units of the rest asked for, the corner's diagonal unless `restX`/`restZ` name a point,
-  since the swings after the first do not
-  cross from further off (measured 2026-10-05: through at its usual rate to about 20
-  units, slipping near 30, mostly failing at 40). The hand-over's normal is in the corner `quadrant` names (the signs of
-  its x and z there, as the oscillation stage counts them; the target's own corner when
-  absent, and the error matched is the target's wherever the hand-over lies), and its tilt
-  cross from a rest further off (measured 2026-10-05: through at its usual rate to about 20
-  units, slipping near 30, mostly failing at 40), and validation refuses when none holds the
-  error there: -0.1792 and 0.393 have one such position, 12.8 units off, which no landing
-  reaches (the run ends unsolved in 5 s), where 0.3929998875 for z, four ULPs off, has one
-  the fixer lands at in about 77,000 frame advances; ±100 takes the first cell. The rest's normal is in the corner `quadrant` names (the signs of
-  its x and z there, as the oscillation stage counts them; the target's own corner when
-  absent, and the error matched is the target's wherever the rest lies), and its tilt
-  at least the fixer's `minXzSum` (stated, never derived: 0.553 in the config, the target
-  normal's own sum less 0.02), so the oscillation starts near its regime; from idle a stick
+  since the swings after the first do not cross from further off (measured 2026-10-05:
+  through at its usual rate to about 20 units, slipping near 30, mostly failing at 40).
+  The hand-over's normal is in the corner `quadrant` names (the signs of its x and z
+  there, as the oscillation stage counts them; the target's own corner when absent, and
+  the error matched is the target's wherever the hand-over lies), and its tilt at least
+  the fixer's `minXzSum` (stated, never derived: 0.5 in the config), so the oscillation
+  starts near its regime; from idle a stick
   gives 8 speed and the first frame must step both axes toward the chord's end, which the
   slope's own push allows only on the downhill side of the chord's perpendicular and for
   a few degrees past it, so a rest off the corner's diagonal has a first frame toward one
@@ -342,14 +337,29 @@ One JSON file. Relative paths resolve against the file's own directory, unless t
   platform once with a straight rollout to its rest (from the run before the movie's dive:
   the run's length, the dive's yaw, the movie's or up to four steps of 1024 to either
   side, and its air stick, back, neutral or at the yaw, about 280, 340 and 500 units of
-  dive; from a dive slide, the slide frames only, 0 to 3), and runs the landing search at
-  each position with the three ways resting nearest it, bringing the rest to the position
-  through the rest's measured response to the landing, keeping the first that solves. The
-  positions nearest the rest asked for come first because that is what the oscillation
-  wants: at tilt 0.6 a rest on the diagonal crosses (100 first oscillations in 3,000 shots)
-  and one 20 units to either side does not (ROADMAP 4.6). From the movie's own dive
-  slide (frame 3269) the rollout reaches tilts up to about 0.6 only; from the run before
-  the dive (3250, the committed start) 0.67 and beyond. The final oscillation runs from the oscillation's corner along an
+  dive; from the dive, its remaining air frames' stick and the slide frames; from a dive
+  slide, the slide frames only, 0 to 3), and runs the landing search and the turn search
+  from the eight ways resting nearest the rest asked for, each with the walks after its
+  landing, keeping the first that hands over. The rest asked for is near the diagonal
+  because that is what the oscillation wants: at tilt 0.6 a rest on the diagonal crosses
+  (100 first oscillations in 3,000 shots) and one 20 units to either side does not
+  (ROADMAP 4.6). From the movie's own dive slide (frame 3269) the rollout reaches tilts up
+  to about 0.6 only; from the run before the dive (3250, the committed start) 0.67 and
+  beyond. The regime the fixer works in, measured 2026-10-06 and locked by `bitfs-turn
+  --test` (one line per case): every corner at the tilt floor 0.5, exact and within 100
+  ULPs; within 100 at the floors 0.4 and 0.6 in every corner, and exact there in the
+  corners the movie's dive flies toward, 0.4 in corners 3 and 4, 0.6 in corners 1, 3 and 4
+  (at the far corners' floor ends the rests the fine frames reach jump units for a landing
+  moved a fraction, so corner 2 finds no rest on the x curve at 0.4 or 0.6, and corner 1
+  at 0.4 leaves z one ULP off after the turn's rounds). The start on the run before the
+  dive reaches every corner, the fixer choosing the dive's yaw; in the dive (3262) the yaw
+  is the movie's and the fixer chooses the remaining air frames' stick, which reaches the
+  dive's own corner, 3, and not 4; on the dive slide (3269) the slide frames alone reach
+  corner 4, where the movie's dive lands. A hand-over named lands within 20 units of it.
+  Three fine frames for an exact match: two frames' combinations (250,000 against three
+  frames' 125 million) are too sparse for the landing's cell, the prediction's noise of
+  0.0005 by 0.0003 units, and find no rest, where within 100 ULPs they hand over. The
+  final oscillation runs from the oscillation's corner along an
   edge to the adjacent corner, where the squish cancel is: `uscz` along a z edge, so the
   normal's x crosses the origin, `uscx` along an x edge, so z does; the committed setup
   oscillates in corner 4 and runs toward corner 1 along the +z edge, its target's x

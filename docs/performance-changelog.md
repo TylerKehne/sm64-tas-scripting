@@ -4,6 +4,74 @@ Every hot-path change records its delta table here, newest first; the policy, th
 how to run it are in [performance.md](performance.md). The first measurements (2026-09-07),
 which everything since is compared against, are at the bottom.
 
+## 2026-10-06: the ARE fixer's regime locked, the dive start's air stick, identical landing rounds end the way (ROADMAP 4.8)
+
+Not a framework change; `BitFsAreFixer` and `bitfs-turn --test`. Measuring the regime for
+the test that locks it found two things to change: from a start in the dive the fixer held
+the remaining air frames' stick straight back, 4 ways, and reached no rest near a corner-4
+ask (every rest 45 to 190 units off, in corner 3); it now varies that stick as from the run
+(back, neutral, at the yaw), 12 ways. And a landing round that rested where the round
+before did replayed itself to the round budget (the nearest prediction for the moved target
+was the play itself); such a round now ends the way. The ways from the run are unchanged
+(133), so the config's stage differs only by the guard. Release, MSVC, the config's targets:
+
+| Run | Result | Frame advances | Saves | Loads |
+|---|---|---|---|---|
+| exact before, stage | hand-over at 3337, ARE (0, 0), 3 landing and 1 turn rounds | 98,549 | 19 | 8,042 |
+| exact after, stage | the same hand-over | 98,540 | 22 | 8,042 |
+| exact before, test | the same hand-over | 433,568 | 1 | 8,042 |
+| exact after, test | the same hand-over | 433,568 | 1 | 8,042 |
+| from the dive (3262), corner 3, exact | hand-over at 3335, ARE (0, 0), 1 landing and 1 turn rounds, 12 ways | 183,358 | 197 | 51,988 |
+| from the dive slide (3269), corner 4, exact | hand-over at 3337, ARE (0, 0), 1 landing and 4 turn rounds | 74,382 | 33 | 14,641 |
+| two fine frames, corner 4, ±100 | hand-over at 3335, ARE (60, -30), 1 landing and 2 turn rounds | 237,091 | 592 | 99,482 |
+
+Two fine frames at an exact match find no rest (a frame's 500 sticks give 250,000
+combinations where three frames give 125 million, and the landing's cell is the
+prediction's noise, 0.0005 by 0.0003 units): 0 played in every widening, the search ends
+in the first round of every way. The regime case of `bitfs-turn --test` (one resource,
+the cost model off, so every load replays from the stage's start) prints a line per case;
+its run is below.
+
+The regime case, Release, MSVC, one resource, the cost model off (every load replays
+from the stage's start, so the advances are the harness's, not the stage's), the machine
+shared with a 16-thread debug run and the clang build's own run of the suite; 26 cases
+in 20 minutes, every one handed over:
+
+| Case | Hand-over | Tilt | ARE | Frame advances | s |
+|---|---|---|---|---|---|
+| corner 1, exact, floor 0.50, from 3250 | 3336 | 0.552 | (0, 0) | 4,642,196 | 81.4 |
+| corner 1, ±100, floor 0.40, from 3250 | 3331 | 0.412 | (20, -66) | 416,827 | 6.9 |
+| corner 1, ±100, floor 0.50, from 3250 | 3335 | 0.552 | (60, -46) | 158,281 | 2.6 |
+| corner 1, ±100, floor 0.60, from 3250 | 3337 | 0.652 | (20, 60) | 2,241,271 | 39.3 |
+| corner 2, exact, floor 0.50, from 3250 | 3336 | 0.552 | (0, 0) | 1,848,224 | 32.2 |
+| corner 2, ±100, floor 0.40, from 3250 | 3331 | 0.412 | (-44, 66) | 4,361,641 | 76.1 |
+| corner 2, ±100, floor 0.50, from 3250 | 3335 | 0.552 | (48, -68) | 1,826,038 | 32.0 |
+| corner 2, ±100, floor 0.60, from 3250 | 3335 | 0.612 | (88, -54) | 1,638,585 | 28.4 |
+| corner 3, exact, floor 0.50, from 3250 | 3336 | 0.532 | (0, 0) | 10,862,721 | 182.8 |
+| corner 3, ±100, floor 0.40, from 3250 | 3330 | 0.432 | (-84, 8) | 267,298 | 4.3 |
+| corner 3, ±100, floor 0.50, from 3250 | 3336 | 0.552 | (-32, -92) | 278,409 | 4.5 |
+| corner 3, ±100, floor 0.60, from 3250 | 3335 | 0.612 | (80, 0) | 2,406,625 | 41.1 |
+| corner 4, exact, floor 0.50, from 3250 | 3337 | 0.532 | (0, 0) | 433,568 | 7.3 |
+| corner 4, ±100, floor 0.40, from 3250 | 3335 | 0.432 | (16, -90) | 2,393,234 | 41.8 |
+| corner 4, ±100, floor 0.50, from 3250 | 3337 | 0.532 | (-48, 42) | 282,651 | 4.6 |
+| corner 4, ±100, floor 0.60, from 3250 | 3337 | 0.612 | (52, 82) | 292,042 | 4.8 |
+| corner 3, exact, floor 0.40, from 3250 | 3333 | 0.432 | (0, 0) | 11,262,042 | 195.1 |
+| corner 4, exact, floor 0.40, from 3250 | 3334 | 0.432 | (0, 0) | 2,996,869 | 52.1 |
+| corner 1, exact, floor 0.60, from 3250 | 3338 | 0.652 | (0, 0) | 2,089,273 | 36.3 |
+| corner 3, exact, floor 0.60, from 3250 | 3339 | 0.652 | (0, 0) | 6,991,348 | 119.8 |
+| corner 4, exact, floor 0.60, from 3250 | 3338 | 0.612 | (0, 0) | 1,058,329 | 17.1 |
+| corner 3, exact, floor 0.50, from 3262, from the dive | 3335 | 0.532 | (0, 0) | 1,983,767 | 33.8 |
+| corner 4, exact, floor 0.50, from 3269, from the dive slide | 3337 | 0.532 | (0, 0) | 701,488 | 11.6 |
+| corner 4, exact, floor 0.50, from 3250, the hand-over named | 3338 | 0.552 | (0, 0) | 3,199,383 | 55.0 |
+| corner 4, ±100, floor 0.50, from 3250, two fine frames | 3335 | 0.532 | (60, -30) | 3,853,174 | 65.5 |
+| corner 4, ±1, floor 0.50, from 3250, the former normal at tolerance 1 | 3336 | 0.573 | (1, 0) | 2,085,564 | 36.3 |
+
+Corner 3 exact is the slow corner (the ways rest further from the x curve there; 183 and
+195 s at the floors 0.5 and 0.4), corner 4 the fast one (7 s at 0.5). The whole of
+`bitfs-turn --test` took 27 minutes under the same load. The clang-cl build's run of the
+suite, alongside: the same 26 hand-overs with the same frame advances on every case, and
+27 minutes as well.
+
 ## 2026-10-05: the ARE fixer sets one axis at a time (ROADMAP 4.8)
 
 Not a framework change; `BitFsAreFixer`, its stage and the config's `dr` input key. The

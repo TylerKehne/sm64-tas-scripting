@@ -201,12 +201,13 @@ bool BitFsAreFixer::validation()
 		CustomStatus.refusal = "Mario has no floor";
 		return false;
 	}
-	if (marioState->action == ACT_WALKING)
+	if (marioState->action == ACT_WALKING || marioState->action == ACT_DIVE)
 	{
-		// On the run before the dive: the pyramid is the one the movie's own dive lands on.
+		// On the run before the dive, or in the dive (over the lava still, or the other
+		// pyramid): the pyramid is the one the movie's own dive lands on.
 		_pyramid = LandingPyramid();
 	}
-	else if (marioState->action == ACT_DIVE || marioState->action == ACT_DIVE_SLIDE)
+	else if (marioState->action == ACT_DIVE_SLIDE)
 	{
 		_pyramid = marioState->floor->object;
 	}
@@ -283,13 +284,15 @@ bool BitFsAreFixer::execution()
 
 std::vector<BitFsAreFixer::Way> BitFsAreFixer::Ways()
 {
-	// From a dive slide only the slide frames vary. From the run before the dive, its length,
-	// the dive's yaw (the movie's and up to MaxYawSteps steps of 1024 to either side) and its
-	// air stick (straight back lands about 280 units out, neutral 340, at the yaw 500) vary
-	// too, since the rollout can only land along the line the dive and the slide give it.
-	// Each way is played once with a straight rollout to its rest, in a block that reverts;
-	// the ways that rest on the platform are kept, with where they rest.
+	// From a dive slide only the slide frames vary. From the dive, its remaining air frames'
+	// stick (straight back lands about 280 units out from the run, neutral 340, at the yaw
+	// 500) varies too. From the run before the dive, its length and the dive's yaw (the
+	// movie's and up to MaxYawSteps steps of 1024 to either side) vary as well, since the
+	// rollout can only land along the line the dive and the slide give it. Each way is
+	// played once with a straight rollout to its rest, in a block that reverts; the ways
+	// that rest on the platform are kept, with where they rest.
 	const bool running = _mario->action == ACT_WALKING;
+	const bool diving = running || _mario->action == ACT_DIVE;
 	const int16_t movieYaw = _mario->faceAngle[1];
 	std::vector<Way> ways;
 	for (int run = 0; run <= (running ? MaxRunFrames : 0); run++)
@@ -298,7 +301,7 @@ std::vector<BitFsAreFixer::Way> BitFsAreFixer::Ways()
 			{
 				if (k == 0 && side < 0)
 					continue;
-				for (int air = 0; air < (running ? 3 : 1); air++)
+				for (int air = 0; air < (diving ? 3 : 1); air++)
 					for (int slide = 0; slide <= MaxSlideFrames; slide++)
 					{
 						Way way;
@@ -454,12 +457,18 @@ bool BitFsAreFixer::SearchLanding(float askX, float askZ)
 		const float x = float(landing.x + dx);
 		const float z = float(landing.z + dz);
 
+		const Rest previous = rest;
 		if (Fine(x, z, response, landing, rest))
 		{
 			RestFound(rest);
 			return true;
 		}
 		if (!rest.reached)
+			return false;
+		// The same rest as the round before: its nearest prediction was this play, and the
+		// rounds after would only replay it (the fine frames cannot move this way's rest onto
+		// the curve: near a steep tilt the rest jumps units for a landing moved a fraction).
+		if (rest.pos[0] == previous.pos[0] && rest.pos[2] == previous.pos[2])
 			return false;
 	}
 	return false;
@@ -567,10 +576,15 @@ bool BitFsAreFixer::Approach(const Way& way)
 {
 	// From the run: the way's run frames with the stick at the dive's yaw and the B press
 	// with it, then the dive's air frames with its air stick. From a dive: its remaining air
-	// frames with the stick straight back to shed speed. Then the way's slide frames before
-	// the rollout, the stick straight back; B stays up so the rollout's press is a press.
-	// Ends on the frame the rollout starts.
+	// frames with the way's air stick (straight back, neutral or at the dive's yaw). Then
+	// the way's slide frames before the rollout, the stick straight back; B stays up so the
+	// rollout's press is a press. Ends on the frame the rollout starts.
 	auto onPyramid = [&]() { return _mario->floor != nullptr && _mario->floor->object == _pyramid; };
+	auto airStick = [&](std::pair<int8_t, int8_t> ahead)
+	{
+		return way.diveAir == 0 ? Inputs::GetClosestInputByYawHau(int16_t(_mario->faceAngle[1] + 0x8000), 32, _camera->yaw)
+			: way.diveAir == 1 ? std::pair<int8_t, int8_t>(0, 0) : ahead;
+	};
 	if (_mario->action == ACT_WALKING)
 	{
 		auto ahead = Inputs::GetClosestInputByYawHau(way.diveYaw, 32, _camera->yaw);
@@ -588,8 +602,7 @@ bool BitFsAreFixer::Approach(const Way& way)
 		// choose along with its yaw.
 		for (int n = 0; n < 60 && _mario->action == ACT_DIVE; n++)
 		{
-			std::pair<int8_t, int8_t> stick = way.diveAir == 0 ? Inputs::GetClosestInputByYawHau(int16_t(_mario->faceAngle[1] + 0x8000), 32, _camera->yaw)
-				: way.diveAir == 1 ? std::pair<int8_t, int8_t>(0, 0) : ahead;
+			std::pair<int8_t, int8_t> stick = airStick(ahead);
 			AdvanceFrameWrite(Inputs(0, stick.first, stick.second));
 		}
 		if (_mario->action != ACT_DIVE_SLIDE || _mario->floor == nullptr)
@@ -600,10 +613,15 @@ bool BitFsAreFixer::Approach(const Way& way)
 		if (landedOn != _pyramid)
 			return false; // not the pyramid the movie's dive lands on, whose home the rest is asked from
 	}
-	for (int n = 0; n < 60 && _mario->action == ACT_DIVE; n++)
+	if (_mario->action == ACT_DIVE)
 	{
-		auto back = Inputs::GetClosestInputByYawHau(int16_t(_mario->faceAngle[1] + 0x8000), 32, _camera->yaw);
-		AdvanceFrameWrite(Inputs(0, back.first, back.second));
+		// At the dive's yaw: the stick Mario's facing names, through the camera.
+		auto ahead = Inputs::GetClosestInputByYawHau(_mario->faceAngle[1], 32, _camera->yaw);
+		for (int n = 0; n < 60 && _mario->action == ACT_DIVE; n++)
+		{
+			std::pair<int8_t, int8_t> stick = airStick(ahead);
+			AdvanceFrameWrite(Inputs(0, stick.first, stick.second));
+		}
 	}
 	if (_mario->action != ACT_DIVE_SLIDE || !onPyramid())
 		return false;
