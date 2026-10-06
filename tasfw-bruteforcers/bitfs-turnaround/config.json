@@ -34,12 +34,12 @@
 			"type": "are-fixer",
 			"startFrame": 3250,
 			"args": {
-				"targetNx": -0.17944, "targetNz": 0.3936, // the normal the squish-cancel setup needs; the rest carries its adjusted remainder error
-				"tolerance": 100, // ULPs of the target normal the rest may be off by on each axis
-				"minNormal": 0.13, "maxNormal": 0.61, // range of each axis the rest's normal must step reversibly over (what the oscillations tilt through)
+				"targetNx": -0.1792, "targetNz": 0.3929998875, // the normal the squish-cancel setup needs; the fixer sets its adjusted remainder error on each axis, x by a rest and z by the turn out of a run from it, and hands Mario over running with both axes stepping
+				"tolerance": 0, // ULPs of the target normal each axis may be off by; 0 asks for the exact floats. The fixer refuses, before any frame, a tolerance the game's arithmetic cannot hold (a target float whose 0.01 steps do not round back across the binades: from -0.17944f, for one, x admits no error under 1) and prints the least error each axis admits; 0.3929998875 is four ULPs under 0.393, which holds 0 as well (README, ROADMAP 4.8)
+				"minNormal": 0.13, "maxNormal": 0.61, // range of each axis the set normal must step reversibly over (what the oscillations tilt through)
 				"farNormal": 0.02, // how far past the origin into the adjacent corner the final oscillation takes an axis
-				"quadrant": 4, // the corner the rest is in, as the signs of nX, nZ (1 +x+z, 2 +x-z, 3 -x-z, 4 -x+z): the oscillation corner, the target's own when absent
-				"minXzSum": 0.5 // least tilt |nX|+|nZ| of the rest; the fixer aims for the corner's diagonal at that tilt and finds the run, dive and slide that get there itself. Optional: restX, restZ (a rest to aim for instead); fineFrames, sticksPerFrame, verifyPerRound, maxRounds (the landing search's precision and budget: 3, 500, 10, 5)
+				"quadrant": 4, // the corner the hand-over is in, as the signs of nX, nZ (1 +x+z, 2 +x-z, 3 -x-z, 4 -x+z): the oscillation corner, the target's own when absent
+				"minXzSum": 0.5 // least tilt |nX|+|nZ| at the hand-over; the fixer asks for the corner's diagonal at that tilt, within 20 units of it (where the oscillations start from: measured through at the usual rate to about 20, mostly failing at 40), and finds the run, dive and slide that get there itself. Optional: restX, restZ (a hand-over to aim for instead); fineFrames, sticksPerFrame, verifyPerRound, maxRounds (the landing and turn searches' precision and budget: 3, 500, 10, 5)
 			},
 			"export": true
 		},
@@ -51,12 +51,12 @@
 			"input": "are-fix",
 			"scattershot": { "maxSolutions": 100, "csvSamplePeriod": 10, "fitnessTieGoesToNewBlock": false, "deterministic": false },
 			"args": {
-				"equilibriumFrame": "input:equilibriumFrame", // the fixer's rest frame, read from its solution
+				"equilibriumFrame": "input:handoverFrame", // the fixer's hand-over frame, read from its solution: Mario running with both axes stepping
 				"quadrant": 4, // the oscillation corner as the signs of nX, nZ: 1 +x+z, 2 +x-z, 3 -x-z, 4 -x+z
 				"platform": 84, // the tilting pyramid's object slot, 84 (the movie's) or 83
 				"minOscillationFrames": 15, // least frames between two crossings for them to count as an oscillation
 				"minFirstCrossingSpeed": 17, // Mario's forward speed at the first crossing at least this (the 'gain speed each crossing' rule ratchets up from it; 0 asks none): under the turnaround's 16 the swing cannot reverse for the next oscillation, and of 58 logged runs every hand-over whose fastest root was under 16.1 died and every one over 17.5 continued (2026-10-03)
-				"targetNx": -0.17944, "targetNz": 0.3936, // the setup's normal: the adjusted remainder error conserved is measured against it
+				"targetNx": -0.1792, "targetNz": 0.3929998875, // the setup's normal, the fixer's targets: the adjusted remainder error conserved is measured against it
 				"maxOscillations": 5, // the last pass is at this oscillation (+1 when the first crossing went toward the far end)
 				"firstShots": 5000, // shots of the first pass, the leg from the rest
 				"shots": 2000, // shots of each oscillation pass
@@ -94,7 +94,7 @@
 				"initialFrame": "input:equilibriumFrame", // the rest frame, read from the input's solution
 				"oscQuadrant": 4, // the corner the oscillations run in
 				"targetQuadrant": 1, // the adjacent corner the final oscillation crosses into
-				"targetNx": -0.17944, "targetNz": 0.3936 // the normal to reach; NormalDistance in the CSV is the distance from it
+				"targetNx": -0.1792, "targetNz": 0.3929998875 // the normal to reach; NormalDistance in the CSV is the distance from it
 			},
 			"visualize": { "filters": [{ "column": "NormalDistance", "min": 0, "max": 100 }] }, // plot only the rows within 100 of the target normal
 			"export": true
@@ -109,7 +109,7 @@
 			"args": {
 				"initialFrame": "input:equilibriumFrame", "oscQuadrant": 4, "targetQuadrant": 1, // as in osc-final
 				"minXzSum": 0.69, // least tilt the dive may leave from
-				"targetNx": -0.17944, "targetNz": 0.3936 // the normal the setup needs
+				"targetNx": -0.1792, "targetNz": 0.3929998875 // the normal the setup needs, the fixer's targets
 			},
 			"visualize": {},
 			"export": true

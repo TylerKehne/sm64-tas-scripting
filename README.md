@@ -88,8 +88,10 @@ checks the files exist, loads one DLL, runs the `VerifyLayout` script to the fir
 start frame and prints its report (struct layout, the hardcoded object slots), exiting 1 on
 any `FAIL`; a real run makes the same check before its first stage. Both are safe. `--test`
 runs the executable's own optional tests on the config's game (the `are-fix` stage solving
-within its tolerance without an A press, the `dr` stage's leg from its rest, and the first
-oscillation coming full from the fixer's rest in every corner, the config's target normal
+within its tolerance without an A press, with the fixer's float model reproducing the game's
+resting normal; the least errors a target admits, no game needed; the `dr` stage's leg
+from its hand-over, and the first
+oscillation coming full from the fixer's hand-over in every corner, the config's target normal
 mirrored into each, one thread, deterministic) and hands everything after it to doctest;
 neither CI nor the framework's suite runs them. A full
 run is not a smoke test: 16 threads, hours, thousands of exported `.m64` files, and the
@@ -130,14 +132,14 @@ One JSON file. Relative paths resolve against the file's own directory, unless t
 	"stages": [
 		{
 			"name": "are-fix", "type": "are-fixer", "startFrame": 3250,
-			"args": { "targetNx": -0.17944, "targetNz": 0.3936, "tolerance": 100, "quadrant": 4, "minXzSum": 0.67 },
+			"args": { "targetNx": -0.1792, "targetNz": 0.3929998875, "tolerance": 0, "quadrant": 4, "minXzSum": 0.5 },
 			"export": true
 		},
 		{
 			"name": "dr", "type": "dr-oscillations", "startFrame": 3250, "input": "are-fix",
 			"scattershot": { "maxSolutions": 100, "csvSamplePeriod": 10 },
-			"args": { "equilibriumFrame": "input:equilibriumFrame", "quadrant": 4, "platform": 84,
-			          "targetNx": -0.17944, "targetNz": 0.3936, "maxOscillations": 5,
+			"args": { "equilibriumFrame": "input:handoverFrame", "quadrant": 4, "platform": 84,
+			          "targetNx": -0.1792, "targetNz": 0.3929998875, "maxOscillations": 5,
 			          "normalSpecs": { "startXzSum": 0.6, "minXzSum": 0.69, "minAxis": 0.05, "...": "see config.json" } },
 			"select": { "sortBy": ["fSpd"], "take": 10 },
 			"visualize": { "filters": [{ "column": "MarioFSpd", "max": 8 }] },
@@ -273,14 +275,57 @@ One JSON file. Relative paths resolve against the file's own directory, unless t
   action's 16), since the downhill-angle moves run the axis a swing steps outward dry and
   the swing dies at its turn, from the rest and in every oscillation after (ROADMAP 4.6).
   The stage conserves the
-  fixer's adjusted remainder error exactly, which needs a rest whose normal's 0.01 steps
-  round back exactly across the tilts the oscillations use: the `are-fixer` stage accepts
-  only such a rest, its `minNormal` and `maxNormal` (0.13 and 0.61) naming that range in
-  magnitude on each axis and `farNormal` (0.02) how far past the origin into the adjacent
-  corner the final oscillation takes an axis; when a target lies past the origin the walk
-  reaches it whatever `farNormal` says (every value that survives the oscillation's side
-  crosses the origin intact; the far side's own binades stop x at 0.24 and z at 0.02 for
-  the config's targets). The rest's normal is in the corner `quadrant` names (the signs of
+  fixer's adjusted remainder error exactly from the hand-over frame on, which needs set
+  values whose 0.01 steps round back exactly across the tilts the oscillations use: the
+  `are-fixer` stage sets only such, its `minNormal` and `maxNormal` (0.13 and 0.61)
+  naming that range in magnitude on each axis and `farNormal` (0.02) how far past the
+  origin into the adjacent corner the final oscillation takes an axis; when a target lies
+  past the origin the walk reaches it whatever `farNormal` says (every value that survives
+  the oscillation's side crosses the origin intact; the far side's own binades stop x at
+  0.24 and z at 0.02 for the config's targets). Not every error survives those crossings,
+  and which do is the target float's own residue: from the setup's former x target, -0.17944f,
+  only the errors 1, -3, 5, ... ULPs step reversibly (every fourth), from its z target the
+  even ones, so `tolerance` 0, an exact match, cannot be held on x there (one ULP more
+  negative it could). The fixer's validation settles this before any frame, in the game's
+  own arithmetic: the least error each axis admits (`LeastError`); none within the
+  tolerance, and the stage prints why with the least errors. The target is never replaced by
+  a neighbouring float that would hold: a target the arithmetic cannot hold, or one the
+  search does not set within the tolerance, is a refusal (the maintainer, 2026-10-06), and
+  the choice of target stays the config's. The fixer then sets the two
+  axes one at a time, since an axis's error is the goal's float on the last frame the
+  pyramid's normal snapped to it and the goal is a function of Mario's position alone: x
+  by a rest, the rollout's landing swept for one whose rest puts the x goal on the right
+  float (a curve of positions near the rest asked for; the settle after a landing rounds
+  rests onto a staircase coarser than the floats and about one rest in five near the curve
+  lies on it, a landing left idle failing being tried again with a walk after it, a frame
+  or two of stick before the settle, `Walks`), the constant stick aimed at the rest asked
+  for by a Newton on the rollout and its settle with the stick whose effect is nearest the
+  aim among the distinct sticks (the yaw lookups return one ray's few magnitudes); then z
+  by the turn out of a short run from that rest along x, x stepping and z snapping until
+  Mario turns toward the chord the oscillation's first leg runs, the frame z last snaps on
+  setting it from his position the frame before, which the run's last frames' sticks
+  place: each stick's effect measured end to end, every combination's error predicted by
+  the goal's slope and computed exactly on the predicted floats, the nearest played and
+  re-ranked by the median offset of the plays' actual errors (the carry's float noise,
+  some hundred ULPs) until one sets z, one more run frame flipping x's step parity when
+  the parities differ. The hand-over, the last frame z snapped on, is where the
+  oscillation stage starts (`handoverFrame`), Mario running with both axes stepping in
+  the leg's directions (z the steeper axis, so the leg runs x toward the corner and z
+  away): the config's targets hand over at frame 3336 in about 93,000 frame advances and 2
+  s, and of the 24 survivor pairs nearest them 24 hand over (ROADMAP 4.8, which also records what
+  was measured and dropped on the way: the lattice of positions a rest had to hit exactly,
+  and the dive slide to a stop, chaotic at the float scale). The hand-over is within 20
+  units of the rest asked for, the corner's diagonal unless `restX`/`restZ` name a point,
+  since the swings after the first do not
+  cross from further off (measured 2026-10-05: through at its usual rate to about 20
+  units, slipping near 30, mostly failing at 40). The hand-over's normal is in the corner `quadrant` names (the signs of
+  its x and z there, as the oscillation stage counts them; the target's own corner when
+  absent, and the error matched is the target's wherever the hand-over lies), and its tilt
+  cross from a rest further off (measured 2026-10-05: through at its usual rate to about 20
+  units, slipping near 30, mostly failing at 40), and validation refuses when none holds the
+  error there: -0.1792 and 0.393 have one such position, 12.8 units off, which no landing
+  reaches (the run ends unsolved in 5 s), where 0.3929998875 for z, four ULPs off, has one
+  the fixer lands at in about 77,000 frame advances; ±100 takes the first cell. The rest's normal is in the corner `quadrant` names (the signs of
   its x and z there, as the oscillation stage counts them; the target's own corner when
   absent, and the error matched is the target's wherever the rest lies), and its tilt
   at least the fixer's `minXzSum` (stated, never derived: 0.553 in the config, the target
@@ -297,12 +342,12 @@ One JSON file. Relative paths resolve against the file's own directory, unless t
   platform once with a straight rollout to its rest (from the run before the movie's dive:
   the run's length, the dive's yaw, the movie's or up to four steps of 1024 to either
   side, and its air stick, back, neutral or at the yaw, about 280, 340 and 500 units of
-  dive; from a dive slide, the slide frames only, 0 to 3), and runs the landing search on
-  them nearest that rest first, each time bringing the rest to the one asked for through
-  the rest's measured response to the landing (the ways that get within 8 units of it
-  first, then any), keeping the first that solves. The 8 is what the oscillation wants: at
-  tilt 0.6 a rest on the diagonal crosses (100 first oscillations in 3,000 shots) and one
-  20 units to either side does not (ROADMAP 4.6). From the movie's own dive
+  dive; from a dive slide, the slide frames only, 0 to 3), and runs the landing search at
+  each position with the three ways resting nearest it, bringing the rest to the position
+  through the rest's measured response to the landing, keeping the first that solves. The
+  positions nearest the rest asked for come first because that is what the oscillation
+  wants: at tilt 0.6 a rest on the diagonal crosses (100 first oscillations in 3,000 shots)
+  and one 20 units to either side does not (ROADMAP 4.6). From the movie's own dive
   slide (frame 3269) the rollout reaches tilts up to about 0.6 only; from the run before
   the dive (3250, the committed start) 0.67 and beyond. The final oscillation runs from the oscillation's corner along an
   edge to the adjacent corner, where the squish cancel is: `uscz` along a z edge, so the
@@ -325,8 +370,9 @@ One JSON file. Relative paths resolve against the file's own directory, unless t
   read when a run stalls.
 
 The committed config is the pipeline as it stands: the ARE fixer (ROADMAP 4.8), which
-rests the pyramid with the adjusted remainder errors the setup needs in under a second and
-without a search, from the run before the movie's dive onto the platform (frame 3250); then
+sets the adjusted remainder errors the setup needs on the pyramid's normal, one axis at a
+time, in two seconds and without a search, from the run before the movie's dive onto the
+platform (frame 3250), and hands Mario over running; then
 the oscillations, the final oscillation and the dive-recover chain, every stage from 3250, with
 a CSV and the viewer on every search stage (every tenth novel block).
 

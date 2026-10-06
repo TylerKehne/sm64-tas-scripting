@@ -1312,9 +1312,10 @@ goals are (status as stated by the maintainer, 2026-09-08):
       runs the landing search on each in turn, aiming the landing where the way's own
       rest-to-landing offset says and then bringing the rest to the one asked for through
       its measured response to the landing (`Response`, the ARE rounds' own), up to three
-      shifts; the ways whose rest comes within 20 units are taken first and any solving way
+      shifts; the ways whose rest came within 20 units were taken first and any solving way
       after that (the maintainer, 2026-09-23: a rest as near the diagonal as the ways
-      allow). The config starts every stage at
+      allow; since 2026-10-05 the positions that hold the error are tried nearest the rest
+      asked for, each with the three ways resting nearest it, 4.8). The config starts every stage at
       3250 and asks for `quadrant` 4 at `minXzSum` 0.67 (the maintainer's floor). What limits is the
       first oscillation, and the numbers say why. The first frame from idle: a stick sets
       Mario's speed to 8, the walking frame adds 1.1 less speed/43, and the slope adds 1.7
@@ -1429,7 +1430,8 @@ goals are (status as stated by the maintainer, 2026-09-08):
       174), gives 100 first oscillations in 3,000 shots, while (-189, 152) and (-157, 198),
       20 to either side, give none (from the z-heavy side the swing runs at the +z edge and
       from the x-heavy side at the -x end without the lead it needs). So the fixer's
-      near-rest tolerance is 8 units (was 20): with it the floors 0.58 and 0.6 rest at
+      near-rest tolerance was 8 units (was 20; since 2026-10-05 a bound of 20 on the positions
+      the fixer tries, measured on the stage, 4.8): with it the floors 0.58 and 0.6 rest at
       (-166, 174) and (-172, 168), 0.613 both, and cross (100 in 3,000 and 100 in 2,613
       shots), where the 20 let a 0.58 floor rest 17 units z-heavy and cross never. The
       maintainer's config at the time (dr `startXzSum` 0.67 with a rest at 0.6, forcing the
@@ -1904,7 +1906,209 @@ goals are (status as stated by the maintainer, 2026-09-08):
       diff is applied from its first frame). A 300-shot smoke run of `dr` from that rest
       went through the plumbing (39,707 blocks, no base-block validation failure, no
       solution at that size against the configured 50,000); how the first oscillation
-      behaves from it is the next item.
+      behaves from it is the next item. 2026-10-04: the maintainer asked for an exact match
+      (`tolerance` 0) and never got one. Assessed in the game's float32 arithmetic, in a
+      two-dimensional extension of `scripts/are_cell_model.py` cross-checked against a
+      compiled copy of `StepsReversibly` row for row: along x every float whose error to
+      -0.17944f is 0 fails the reversibility walk at the 0.25 edge (-0.24944 + 0.01 - 0.01
+      lands on another float), and within ±100 only the errors 1 mod 4 survive on x (1, -3,
+      5, ...) and the even ones on z; one ULP more negative, -0.17944002f, 0 survives on x.
+      Over the 770 cells of the admissible region (quadrant 4, tilt at least 0.5, within 330
+      units of the home), 382 hold positions the fixer accepts at ±100 (about 106 float
+      positions each), 12 hold one position each at ±1 (all (1, 0), at 253 to 328 units from
+      the home, tilts 0.59 to 0.77), none at 0. So exactness is a property of the target
+      float's residue class, not of search effort: a target taken from a state the game
+      reached through the same tilts is a survivor by construction, a decimal need not be.
+      Built the same day and the next at the maintainer's word: `tolerance` 0 is an exact
+      match (the play's distance is in ULPs, which it only ever compares), and validation
+      refuses what cannot be held before any frame: `LeastError` per axis (the 0.01 bands of
+      the corner, the floats around each band's value, the least error that steps
+      reversibly; milliseconds), then `Rests`, every lattice cell's box of float32 positions
+      through `RestingNormal`, the game's goal arithmetic, kept where one passes every rule
+      `Solved` applies (`Holds`), the cells bounded by the tilt Mario can idle on
+      (`mario_floor_is_slippery`'s 0.7880108 on a default floor; without it the far cells,
+      where z's floats are finer, held six times as many positions as the platform does);
+      the pyramid for the home is the one the movie's own dive lands on, the movie's
+      inputs played to the dive slide in a block that reverts, 19 frames (at frame 3250
+      Mario stands 64 units from the other pyramid's home, running toward this one 922
+      units away, so neither nearness nor heading tells them apart: the nearest once sent
+      every landing a thousand units off, and the nearest ahead picked the one under his
+      feet, which `Approach` silently corrected while validation's refusals and the
+      near-rest filter were computed on the wrong pyramid). The
+      status carries the least errors and the refusal, which the stage prints, and
+      `bitfs-turn --test` pins the numbers (25 positions at ±1, 133,572 at ±100, 25 exact
+      for the x target shifted one ULP; `RestingNormal` reproduces the game's resting
+      normal from the solved rest). With a survivor target (-0.1792, 0.393, 21 exact
+      positions) the search still failed, and the trace said why: the settle after a
+      landing, some forty frames of the pyramid tilting to its rest and carrying Mario by a
+      rounded amount each, maps landings onto a staircase of rests about seven times
+      coarser than the floats (165 landings in one neighbourhood, 23 distinct rests; z
+      offsets near the exact position -13, -8, -3, +1, +5, +9, never 0), so a given exact
+      position is reached by about one landing attempt in ten, and the search had only ever
+      aimed at the one nearest the asked rest, replaying it (9,521 plays, 157 distinct
+      landings). The search is now position-driven: the positions that hold the error, the
+      cells nearest the rest asked for first and a cell's most central position first, each
+      tried with the three ways resting nearest it (`Correction`, the continuous zero of
+      the error and its ±1 bands, is gone); candidates are played once per predicted
+      landing; the prediction window is never finer than the prediction's own resolution
+      (`NoiseX`, `NoiseZ`, the retarget thresholds of before, named); and a failed run
+      reports the nearest rest it saw. The first exact match, at the third position, was
+      89 units off the corner's diagonal (normal (-0.409, 0.183)), and the `dr` stage's
+      first oscillation came but nothing after it, as 4.6 predicts for a rest off the
+      diagonal; of the 26 exact positions of -0.1792 and 0.393 one lies within 10 units of
+      it, the unreachable one. So the near-rest tolerance is back as a bound (`NearRest`, 20
+      units, to the diagonal unless `restX`/`restZ` name a point; 8 at first, then measured
+      at the maintainer's question whether 4.6's changes still need it that tight: from rests
+      at tilt 0.57 at ±100, three `dr` runs each, the stage went through 4 of 4 on the
+      diagonal, 6 of 6 at 10 to 13 units off, 7 of 8 at 18 to 21, 5 of 6 at 29 to 33 and
+      slower, 2 of 8 at 37 to 41, 0 of 6 at 60 to 65): only such positions are
+      tried or accepted (`Solved`), and validation refuses when none holds the error there.
+      A survey of the survivor target pairs within 40 ULPs of those found 643 of 861 with an
+      exact position within 10 units of the diagonal; over the whole region (x in 0.13 to
+      0.25, z in 0.25 to 0.5), 13% of float pairs are survivors, of which 68% have an exact
+      position within 20 units of the diagonal at a tilt of 0.50 to 0.70 (1.7 positions each
+      on average; 99% with any tilt Mario can idle at; within 8 units it was 38% and 78%), and of the 24 such pairs nearest the
+      targets the fixer reached the position for one. The fixer, run over the pairs nearest
+      the targets, solved the second: -0.1792 with z four ULPs lower, 0.3929998875,
+      rests exactly at (-2091.21, -561.29), normal (-0.2692, 0.2830), tilt 0.552, 5.3 units
+      off the diagonal, in 76,837 frame advances with the cost model on, 2 s, identical on
+      both compilers; ±100 takes 130,900, down from 198,046 (docs/performance-changelog.md).
+      From that rest the `dr` stage goes through at the first try: the leg in 17 shots,
+      oscillations 1 to 3 in 77, 37 and 448, and 236 solutions at oscillation 4 in 2,000,
+      20 s in all, the error still exactly 0 on both axes at every solution's normal. Tried
+      the same day, at the maintainer's wish for every survivor pair to yield a usable exact
+      rest, and out again: measuring the error after the oscillations' own walk over the
+      range, so that a rest off the surviving chains, which merges into one at its first
+      binade crossing, counts on that chain's error (4.4 times the positions at ±100, 5
+      near-diagonal candidates a pair instead of 1.2, 7 of the 24 pairs nearest the targets
+      solving instead of 1, and the `dr` stage going through from such a rest with the
+      walked error conserved). But the solutions' normals read (0, 1) by the plain measure:
+      the axes peak at 0.49 to 0.54 in these runs, the chord's ends, so whether an axis
+      crosses 0.5 at all is the run's, z had not, and the setup would have got one ULP. A
+      merge is safe only at an edge the oscillation is sure to cross, and above a
+      near-diagonal rest's own tilt there is none, so the measure stays the reversible one
+      and the candidate count what it is. What remains toward every pair: a rest the
+      oscillations can start from at higher tilts (unmeasured) and a second way to rest, the
+      dive slide decelerating to a stop, whose settle samples another staircase. Built next
+      at the maintainer's word (the second way, and "the min walk after landing and
+      entering idle"), 2026-10-05: the walk after the landing, `Walks`, a stick held from
+      the land at one of four yaws from Mario's facing for one or two frames, seven variants
+      tried per way after the landing left idle, the landing still placed to the float by
+      the fine frames and the settle starting from another state: 4 of the 24 pairs nearest
+      the targets instead of 1, two of them by a walk. A walk from the rest itself (a probe:
+      every one- and two-frame stick from the config's exact rest, 23,352 walks) moves
+      Mario 0.37 units at the least on its first frame and comes to 14,289 distinct rests,
+      none an exact position within 6 units: a re-roll of the staircase, not a nudge. The
+      second way, the dive slide decelerating to a stop (a probe: every stick on the dive's
+      last air frame lands in the slide, 89% come to idle on the pyramid in 50 to 55
+      frames, and no two landings rest the same), was built as a mode of the search, the
+      landing's velocity folded into an effective landing through the measured
+      d(rest)/d(velocity) of 5 to 7 units per unit of speed, and taken out the same day on
+      three measurements: the slide stops only under about 18 speed before the platform
+      tilts past 15 degrees (`mario_floor_is_slope`), and the dive lands at 21 from the run,
+      so the aim reaches a few units and of nine slide searches one came within a unit, the
+      rest ending 7 to 59 units off or with a slide that did not stop; the velocity's share
+      spreads the stick combinations some twenty times thinner over the effective landing,
+      so a window that holds three candidates for a rollout held none for the slide even at
+      2,000 sticks a frame; and where it had converged, plays whose effective landings
+      differ by under 0.001 units rested 0.03 apart, hundreds to thousands of ULPs, the
+      slide being chaotic at the float scale (the scan with it: 8 of 24, every one by a
+      rollout). What the attempt left behind is the rollout's: the aim's stick was never
+      what was asked, since `GetClosestInputByYawExact` and `...Hau` settle on one ray of
+      raw sticks and its few magnitudes (straight back, the full stick whatever the
+      magnitude, so the Newton's forward probe did nothing; docs/tasing.md), and `Stick`
+      now picks the stick whose effect on the air movement is nearest the aim from a
+      yaw-sorted table of the distinct sticks (`StickEffects`); the constant stick is aimed
+      at the rest itself, a Newton with halved steps on the rollout and its settle, in place
+      of the landing Newton and the response-driven attempts after it; and a way whose aim
+      ends more than `NearAim` (4 units) off is given up before the fine frames. With these
+      10 of the 24 pairs solve (851 s in all), the exact config's cost is
+      unchanged at 77,000 frame advances and ±100's falls from 130,900 to 76,600
+      (docs/performance-changelog.md).
+      The maintainer notes (2026-10-05) that the oscillations need not start from a rest.
+      What a rest does for the error is the pyramid's snap: `approach_by_increment` sets an
+      axis's normal to the goal exactly whenever the goal is within 0.01 of it, and the error
+      on that axis is the goal's float on the last such frame; from there the chain steps
+      while the goal outruns the normal (the dr stage's conservation rule). A rest is the
+      case where both axes snap at one position, and that position is the settle's, passive
+      and rounded onto the staircase. A run sets them one axis at a time at positions of
+      Mario's own: along z near the config's rest the x goal moves 0.0011 a frame at 8 speed,
+      so the x normal tracks it, snapping every frame, while the z goal moves 0.0137 and z
+      steps; the x error is then the goal's float on the last frame before the turn toward
+      x, and the z error the same on the last frame of the run along x. The condition on
+      each axis is one float curve of positions (every x float has a z float or two on it)
+      in place of the lattice's one or two points per pair within the band, and no settle
+      lies between the stick and the position. The arithmetic filter (13%) stays; the
+      geometry and the staircase go. Not designed: the fine-frame search on ground movement
+      (the walking speed, the slope, the carry), the frames at which each axis's tracking
+      ends, the parity and the tilt at the hand-over, and the dr stage's start from a running
+      state in place of its leg from idle.
+      Measured the same day (a probe from the config's rest, a run of fourteen frames along
+      one axis then the other, not committed): the tracking axis snaps every frame to the
+      goal of Mario's position on the frame before (the pyramid reads his object's position,
+      a frame behind his state), the other steps by exactly 0.01; along z from the rest at 8
+      to 12 speed the x goal moves 0.001 to 0.003 a frame and the z goal 0.018 to 0.026;
+      turning to x, the x normal still snaps for the first three frames while the speed
+      along x builds and steps from the fourth, so the x error is the goal's float from the
+      position at the end of the turn's second frame; along x first it is z that tracks, at
+      0.001 to 0.005 a frame, and the run leaves the platform at 350 units from the home on
+      the twelfth frame, the speed having built from 8 to 25, so the setting runs are short
+      or slow. Built the same day, at the maintainer's word ("the old fixer fixed one axis
+      at a time. Probably the way to go"; the old tilt-target chain did, but through an
+      equilibrium each): the rest sets x alone (`SolvedRest`: the error within the
+      tolerance, reversible, in the corner, near the rest asked for; the landing search
+      aims each play's rest at the x curve's point nearest it, `CurvePoint`, the rest's x
+      with its z moved by the error over the goal's slope in z), so the lattice of
+      positions, `Rests`, its near-rest filter and the walk variants' reason go, and the
+      walks stay as another staircase per way; then the turn sets z (`SearchTurn`): from
+      the rest a run of two or three fine frames along x in the leg's direction (one more
+      when x's step parity at the turn needs flipping), then the full stick at the chord's
+      yaw until z has stepped twice after its last snap; the fine frames' sticks are those
+      within the one-frame turn limit of the facing and at a magnitude above the speed, so
+      every combination shares one speed and each stick turns Mario to its own yaw, and
+      their effects on the position that sets z are measured end to end through the turn
+      (`TurnLattice`, 240 to 340 distinct a frame), the combinations' errors predicted by
+      the goal's slope (the error is the target less the value, so a movement that raises
+      the goal lowers it), those within 64 ULPs of slack computed exactly on the predicted
+      floats, which carries the goal's curvature (hundreds of ULPs over a movement of a few
+      units, so the exact error is the rank and not a cut), and the nearest played
+      (`MaxTurnPlays` 500, a play eight frames or so), re-ranked every twenty plays by the
+      median of the plays' offsets from their predictions, since the actual errors scatter
+      some hundred ULPs about a bias (the platform's carry, in the game's float matrices),
+      the rounds closing in from the nearest played; any play that sets z, a lattice's as
+      well as a candidate's, is kept (`_solvedTurn`), and a round whose nearest play set z
+      without being accepted ends the search, the tilt, the corner or the band being the
+      reason. The hand-over (`handoverFrame`, the dr stage's `equilibriumFrame` by its
+      `input:handoverFrame`) is the last frame z snapped on, two frames of the chord
+      verified stepping after it; `SolvedTurn` requires both errors, reversible, the
+      parities equal, the corner, z the steeper axis (so the leg the dr stage runs from the
+      hand-over, x toward the corner and z away, is the run's and the turn's own
+      directions), the tilt floor and the diagonal band. The ask places the hand-over on
+      the diagonal at the tilt floor plus 0.06 and 20 units toward z (`ZMargin`), since the
+      run's drift takes 0.02 (z tracks a goal that shrinks as Mario runs out) and z must
+      stay the steeper axis, and the rest 50 units inward along x (`RunShift`, the run's
+      length); the step parities at the turn are reckoned from the ask's goals (x's flips
+      once a frame to the turn) and, when they would differ, the rest is asked one x band
+      toward the home (`ParityAsked`), the one extra run frame covering a turn a frame off
+      the reckoning: extra frames alone ran the hand-over out of the band, and the drift and
+      the band ate a 0.04 margin. The dr stage needed no change: it accepts a walking start,
+      reads its rest's normal from the frame it is given, and conserves the error from that
+      frame plus one. Measured on the config's targets: the rest at frame 3332, x exact, the
+      hand-over at 3337, both exact, 98,549 frame advances with the cost model on and 2 s
+      (433,568 through the test harness, which replays every load from the stage's start:
+      the turn search's plays are short and many); the dr stage from it went through at the
+      first try, the leg in 30 shots, oscillations 1 to 4 in 73, 17, 85 and 49, and 394
+      solutions at oscillation 5 in 2,000, 31 s; ±100 79,282 advances. Of the 24 survivor
+      pairs nearest the targets, 24 hand over (10 by the rest alone, before this), in
+      117 s. The plays' bias was found by the traces: predicted exact, they landed 100 to
+      300 ULPs under, fourteen of fifteen on one side, which is what the re-ranking by the
+      median corrects. The config's other stages (dr, tilt-target, osc-final) now carry the
+      fixer's targets too, the setup's normal being one value, which the every-corner test
+      mirrors from the fixer's stage.
+      The decomp's `bhv_tilting_inverted_pyramid_loop` does not reproduce the settle (it
+      carries Mario's height along where the game resets him to the floor each frame; 1.8
+      units off), so which positions a landing can reach is not predicted, only found by
+      play.
 - [ ] **4.9 Defects in the stage scripts.** Found 2026-09-15 writing 3.17; docs/tasing.md
       lists them as not to copy. `Scattershot_BitfsDrRecover::IsSolution` reads its
       previous state from the current frame (`prevState`,

@@ -4,6 +4,7 @@
 
 #include "Tests.hpp"
 
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -21,6 +22,7 @@
 #include "Stages.hpp"
 
 #include <BitFsAreFixer.hpp>
+#include <BitFsObjects.hpp>
 #include <Scattershot_BitfsDr.hpp>
 
 namespace fs = std::filesystem;
@@ -114,8 +116,18 @@ TEST_CASE("are-fixer: the config's stage solves within its tolerance without an 
 	CHECK(Metric(solution, "pyraNormX") * BitFsAreFixer::CornerSignX(corner) > 0);
 	CHECK(Metric(solution, "pyraNormZ") * BitFsAreFixer::CornerSignZ(corner) > 0);
 	CHECK(std::fabs(Metric(solution, "pyraNormX")) + std::fabs(Metric(solution, "pyraNormZ")) >= minXzSum);
-	CHECK(Metric(solution, "equilibriumFrame") > double(stage.startFrame));
+	CHECK(Metric(solution, "restFrame") > double(stage.startFrame));
+	CHECK(Metric(solution, "handoverFrame") > Metric(solution, "restFrame"));
 	CHECK(!solution.m64Diff.frames.empty());
+	// The rest's normal is what the fixer's model computes from the rest position: its
+	// arithmetic is the game's, which LeastError and the turn's prediction rest on; and the
+	// rest set x, the hand-over's x error being the rest's.
+	const ExpectedObject& pyramid = BitFsExpectedObjects.front(); // slot 84, the setup's pyramid
+	float modelNx, modelNz;
+	BitFsAreFixer::RestingNormal(float(Metric(solution, "restX")) - pyramid.homeX, float(Metric(solution, "restZ")) - pyramid.homeZ, modelNx, modelNz);
+	CHECK(modelNx == float(Metric(solution, "restNormX")));
+	CHECK(modelNz == float(Metric(solution, "restNormZ")));
+	CHECK(Metric(solution, "restErrorX") == Metric(solution, "adjustedRemainderError0"));
 	// The pair is named, not destructured: the message's lambda cannot capture a structured
 	// binding under Clang 18 with OpenMP (docs/compilers.md).
 	for (const auto& entry : solution.m64Diff.frames)
@@ -124,13 +136,38 @@ TEST_CASE("are-fixer: the config's stage solves within its tolerance without an 
 	}
 }
 
+// The target's floats decide what the fixer can hold (2026-10-04): a normal's 0.01 steps round
+// back across the 0.25 and 0.5 binades for a quarter of the floats of x's range from the
+// setup's target and half of z's, so from -0.17944f no x error under 1 ULP steps reversibly
+// and an exact match is impossible, where z holds 0. Validation refuses what cannot be held
+// before any frame, in the game's own arithmetic, quickly; the stage reports the least errors.
+TEST_CASE("are-fixer: the least error the target admits")
+{
+	BitFsAreFixer::Args args;
+	args.targetNx = -0.17944f;
+	args.targetNz = 0.3936f;
+	args.quadrant = 4;
+	args.minXzSum = 0.5f;
+	const auto started = std::chrono::steady_clock::now();
+	CHECK(BitFsAreFixer::LeastError(args.targetNx, BitFsAreFixer::CornerSignX(args), args.minNormal, args.maxNormal, args.farNormal) == 1);
+	CHECK(BitFsAreFixer::LeastError(args.targetNz, BitFsAreFixer::CornerSignZ(args), args.minNormal, args.maxNormal, args.farNormal) == 0);
+	// One ULP more negative, the x target's own chain survives the crossings and 0 is held.
+	args.targetNx = std::nextafter(-0.17944f, -1.0f);
+	CHECK(BitFsAreFixer::LeastError(args.targetNx, BitFsAreFixer::CornerSignX(args), args.minNormal, args.maxNormal, args.farNormal) == 0);
+	const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
+	char line[200];
+	std::snprintf(line, sizeof(line), "the three checks took %.0f ms", ms);
+	MESSAGE(line);
+}
+
 // ROADMAP 4.6: the dr-oscillations stage's first pass runs the swing's first leg from the
-// fixer's rest within a few shots. From a rest the pyramid conserves the adjusted remainder
+// fixer's hand-over within a few shots (a run with both axes stepping, 4.8; it was a rest).
+// The pyramid conserves the adjusted remainder
 // error only through frames whose goal leads its normal by a full step on both axes, which a
 // random stick does about one frame in three, so the pass is a scripted run toward the
 // chord's end (Scattershot_BitfsDr::FirstLeg_1f) until Mario can turn around; before it,
 // 50,000 shots found nothing. One thread, deterministic, cost model off, so the counts are exact.
-TEST_CASE("dr-oscillations: the first pass runs the swing's first leg from the config's rest")
+TEST_CASE("dr-oscillations: the first pass runs the swing's first leg from the config's hand-over")
 {
 	PipelineConfig pipeline = PipelineConfig::Load(g_config);
 	pipeline.threads = 1;
@@ -177,21 +214,22 @@ TEST_CASE("dr-oscillations: the first pass runs the swing's first leg from the c
 	}
 }
 
-// ROADMAP 4.6: the first oscillation comes from the fixer's rest in every corner, full within
-// the pass's budget. The swing's first leg hands over from an equilibrium, where the normal
-// has no lag and the chord ahead is downhill, so the first swing may begin its turnaround
+// ROADMAP 4.6: the first oscillation comes from the fixer's hand-over in every corner, full
+// within the pass's budget (the hand-over is a run with both axes stepping, 4.8; from a rest
+// the leg handed over from an equilibrium, where the normal had no lag and the chord ahead
+// was downhill), so the first swing may begin its turnaround
 // from any frame where the later swings turn only from one the slope took speed on; with
 // that it crosses like them (2026-10-04: 16 plain runs of 16 full against 6 before). Each
 // corner's setup is the config's target normal mirrored into it. One thread, deterministic,
 // so a failure replays.
-TEST_CASE("dr-oscillations: the first oscillation comes from the fixer's rest in every corner")
+TEST_CASE("dr-oscillations: the first oscillation comes from the fixer's hand-over in every corner")
 {
 	PipelineConfig pipeline = PipelineConfig::Load(g_config);
 	pipeline.threads = 1;
 	const StageConfig& fixerTemplate = StageOfType(pipeline, "are-fixer");
 	const StageConfig& drTemplate = StageOfType(pipeline, "dr-oscillations");
-	const float targetNx = std::fabs(drTemplate.args["targetNx"].get<float>());
-	const float targetNz = std::fabs(drTemplate.args["targetNz"].get<float>());
+	const float targetNx = std::fabs(fixerTemplate.args["targetNx"].get<float>()); // the setup's normal, which every stage of the config carries
+	const float targetNz = std::fabs(fixerTemplate.args["targetNz"].get<float>());
 	const int budget = 2000; // shots of the first oscillation's pass; its full yield is the scattershot's maxSolutions
 	const int full = drTemplate.scattershot.contains("maxSolutions") ? drTemplate.scattershot["maxSolutions"].get<int>()
 		: pipeline.scattershotDefaults.value("maxSolutions", 100);
@@ -210,7 +248,7 @@ TEST_CASE("dr-oscillations: the first oscillation comes from the fixer's rest in
 		fixerStage.args["targetNz"] = nz;
 		StageContext fixerContext { pipeline, fixerStage, resources, nullptr };
 		SolutionSet rest = RunStage(fixerContext);
-		REQUIRE_MESSAGE(rest.solutions.size() == 1, "the fixer rests in corner ", quadrant);
+		REQUIRE_MESSAGE(rest.solutions.size() == 1, "the fixer hands over in corner ", quadrant);
 		CHECK(Metric(rest.solutions[0], "pyraNormX") * BitfsDrMetrics::CornerSignX(quadrant) > 0);
 		CHECK(Metric(rest.solutions[0], "pyraNormZ") * BitfsDrMetrics::CornerSignZ(quadrant) > 0);
 

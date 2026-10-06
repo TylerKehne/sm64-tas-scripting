@@ -57,13 +57,16 @@ namespace
 		return metrics;
 	}
 
-	// The same names as a tilt-target solution, so the oscillation stage's "input:" keys read either.
+	// The normal's names as a tilt-target solution's, so the oscillation stage reads either; the
+	// frame it starts from is the fixer's hand-over ("input:handoverFrame").
 	std::map<std::string, double> Metrics(const ScriptStatus<BitFsAreFixer>& data)
 	{
 		std::map<std::string, double> metrics {
 			{ "pyraNormX", data.normal[0] }, { "pyraNormY", data.normal[1] }, { "pyraNormZ", data.normal[2] },
-			{ "equilibriumFrame", double(data.equilibriumFrame) }, { "restX", data.restPos[0] }, { "restZ", data.restPos[2] },
-			{ "rounds", double(data.rounds) }
+			{ "handoverFrame", double(data.handoverFrame) }, { "handoverX", data.handoverPos[0] }, { "handoverZ", data.handoverPos[2] },
+			{ "restFrame", double(data.restFrame) }, { "restX", data.restPos[0] }, { "restZ", data.restPos[2] },
+			{ "restNormX", data.restNormal[0] }, { "restNormZ", data.restNormal[2] }, { "restErrorX", double(data.restErrorX) },
+			{ "rounds", double(data.rounds) }, { "turnRounds", double(data.turnRounds) }, { "framesAfterRest", double(data.framesAfterRest) }
 		};
 		PutVector(metrics, "adjustedRemainderError", data.adjustedRemainderError);
 		PutVector(metrics, "incrementFrames", data.incrementFrames);
@@ -654,14 +657,19 @@ namespace
 		M64 m64 = LoadMovie(config);
 		auto status = TopLevelScriptBuilder<AreFixerRoot>::Build(m64).ImportResource(&context.resources[0]).Run(context.stage.startFrame, args);
 		const ScriptStatus<BitFsAreFixer>& fixer = status.fixer;
-		std::printf("are-fixer: %s in %d rounds; equilibrium frame %lld, rest (%.9g, %.9g), normal (%.9g, %.9g, %.9g), "
-			"ARE (%.0f, %.0f), steps (%d, %d); way: %d run frames, dive yaw %d, air %s, %d slide frames, of %d ways; "
+		std::printf("are-fixer: %s in %d landing and %d turn rounds; hand-over frame %lld at (%.9g, %.9g), normal (%.9g, %.9g, %.9g), "
+			"ARE (%.0f, %.0f), steps (%d, %d), %d frames after the rest at frame %lld, (%.9g, %.9g), normal (%.9g, %.9g), x error %.0f; "
+			"way: %d run frames, dive yaw %d, air %s, %d slide frames, of %d ways, walk %d frame(s) at %d; "
 			"%llu frame advances, %llu saves, %llu loads\n",
-			fixer.solved ? "solved" : "not solved", fixer.rounds, (long long)fixer.equilibriumFrame, fixer.restPos[0], fixer.restPos[2],
+			fixer.solved ? "solved" : "not solved", fixer.rounds, fixer.turnRounds, (long long)fixer.handoverFrame, fixer.handoverPos[0], fixer.handoverPos[2],
 			fixer.normal[0], fixer.normal[1], fixer.normal[2], fixer.adjustedRemainderError[0], fixer.adjustedRemainderError[2],
-			fixer.incrementFrames[0], fixer.incrementFrames[2], fixer.runFrames, int(fixer.diveYaw),
-			fixer.diveAir == 0 ? "back" : fixer.diveAir == 1 ? "neutral" : "at the yaw", fixer.slideFrames, fixer.ways,
+			fixer.incrementFrames[0], fixer.incrementFrames[2], fixer.framesAfterRest, (long long)fixer.restFrame, fixer.restPos[0], fixer.restPos[2],
+			fixer.restNormal[0], fixer.restNormal[2], fixer.restErrorX, fixer.runFrames, int(fixer.diveYaw),
+			fixer.diveAir == 0 ? "back" : fixer.diveAir == 1 ? "neutral" : "at the yaw", fixer.slideFrames, fixer.ways, fixer.walkFrames, int(fixer.walkYaw),
 			(unsigned long long)fixer.nFrameAdvances, (unsigned long long)fixer.nSaves, (unsigned long long)fixer.nLoads);
+		if (!fixer.validated)
+			std::printf("are-fixer: not run: %s; the least errors the target admits that step reversibly over the range: %d on x, %d on z (-1: none within %d ULPs)\n",
+				fixer.refusal != nullptr ? fixer.refusal : "validation refused", fixer.leastError[0], fixer.leastError[2], BitFsAreFixer::MaxLeastError);
 
 		SolutionSet set;
 		set.stage = context.stage.name;
@@ -687,7 +695,7 @@ namespace
 
 	const std::vector<StageType> g_stageTypes {
 		{ "tilt-target", "TiltTargetShot: reach a target pyramid normal (one pass; chain passes through input)", RunTiltTarget },
-		{ "are-fixer", "BitFsAreFixer: from a dive onto the platform, a dive recover whose rollout is steered to rest where the pyramid's normal carries the target's ARE", RunAreFixer },
+		{ "are-fixer", "BitFsAreFixer: from a dive onto the platform, a dive recover whose rest sets the x axis of the pyramid's normal to the target's ARE, then a run and turn that set z, handing Mario over running", RunAreFixer },
 		{ "dr-oscillations", "Scattershot_BitfsDr once per target oscillation, filtering between oscillations", RunDrOscillations },
 		{ "osc-final", "BitfsOscFinal: the final oscillation into the target quadrant", RunOscFinal },
 		{ "dr-approach", "Scattershot_BitfsDrApproach: dive from the oscillation (was disabled in main.cpp; unverified)", RunDrApproach },

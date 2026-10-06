@@ -367,8 +367,9 @@ define in a header: it has to precede the first CRT include of the translation u
 
 `<windows.h>` (which `LibSm64.hpp` brings in on Windows) defines `near` and `far` as empty
 macros for 16-bit compatibility, so a variable or parameter of either name is a syntax
-error on MSVC and clang-cl (`for (bool near : ...)` in `BitFsAreFixer::execution` was one),
-while GCC and Clang on Linux accept it. Name such things something else (`wantNear`).
+error on MSVC and clang-cl (`BitFsAreFixer::execution` once had a `for (bool near : ...)`),
+while GCC and Clang on Linux accept it. Name such things something else (`farSide` in
+`BitFsAreFixer::StepsReversibly`).
 
 ### CI's newer compilers warn inside dependency headers
 

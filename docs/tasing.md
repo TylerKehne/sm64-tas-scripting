@@ -62,7 +62,7 @@ The maintainer's rules for TASing with the framework (2026-09-15):
 | State about the game at another frame: a raw variable in the past without a rewind, or a derived quantity (phase, oscillation count, distance to a target) | A metric script, read with `GetMetrics(frame)` |
 | What the game would compute, without playing it | A resource that simulates the part of the game that matters (`PyramidUpdate`), reached through `ExportSave<PyramidUpdateMem>(pyramid)` into a `TopLevelScript<PyramidUpdate>`; or `simulate_platform_tilt` from `tasfw-core/src/decomp` (see "Simulating the part of the game that matters") |
 | Explore a large input space, or find a near-optimal route | A scattershot search, a proven route finder for SM64 in general: a metric script, a `ScattershotThread` subclass and a solution type, run as a stage of `bitfs-turn` |
-| Put Mario at rest at a float-precise position | `BitFsAreFixer`'s way (ROADMAP 4.8): a dive recover, the rollout's air frames steered and resting where it lands; the last air frames' sticks measured one frame at a time from the game, combined with the forward speed each leaves behind and the fraction of the landing frame's velocity that reaches the floor, and the combination predicted nearest the target played out; a rest is accepted only when its normal's steps round back exactly over the range the oscillations tilt through (`StepsReversibly`) |
+| Put Mario at rest at a float-precise position | `BitFsAreFixer`'s way (ROADMAP 4.8): a dive recover, the rollout's air frames steered and resting where it lands; the last air frames' sticks measured one frame at a time from the game, combined with the forward speed each leaves behind and the fraction of the landing frame's velocity that reaches the floor, and the combination predicted nearest the target played out; a set value is accepted only when its steps round back exactly over the range the oscillations tilt through (`StepsReversibly`), and a target the arithmetic cannot hold is refused by validation before any frame (`LeastError`); the rest sets one axis, and the turn out of a run from it the other, at in turn, since the settle reaches only about one float position in ten |
 | Run a script on the game | A stage type in `Stages.cpp` (run by `bitfs-turn --stage`), a doctest case under `libsm64:`, a tool, or a new folder with its own `main.cpp` (see "Running a script") |
 | Look at the game rather than play it | `VerifyLayout`, `LevelTransitions`, `MarioTrace` through `dllcheck`; `--objects`, `--trace`, `--levels` (docs/libsm64.md) |
 
@@ -167,6 +167,13 @@ camera-relative, so aim it through the helpers: `Inputs::GetClosestInputByYawHau
 cameraYaw[, bias])` for the nearest input whose intended yaw matches to the HAU (an angle
 unit of 16), `GetClosestInputByYawExact` for an exact yaw, and
 `GetIntendedYawMagFromInput(stickX, stickY, cameraYaw)` to read back what the game will see.
+Both lookups settle on one ray of raw sticks (the first yaw, or the first HAU, with any
+stick: a HAU is 0.09 degrees and holds one ray at most) and take the nearest magnitude on
+that ray, which may be its only one, so a magnitude asked for is not a magnitude got:
+straight back from the ARE fixer's dive, every magnitude gave the full stick. A script
+that steers by a stick's effect (forward and sideways shares of the air movement) picks
+the stick whose effect is nearest among all distinct sticks, as `BitFsAreFixer::Stick`
+does from a yaw-sorted table of them (2026-10-05).
 When an input must satisfy a constraint on what the game reads, round-trip it: draw, convert
 to a stick, convert back, and keep only if the read-back value satisfies the constraint
 (`Scattershot_BitfsDrRecover::CUpTrick`). `nextafter(0.0f, 1.0f)` is the smallest non-zero
@@ -195,7 +202,8 @@ A script that reaches for `Load` or `Rollback` to undo its own trial is reaching
 wrong thing (the maintainer, 2026-09-21): an ad-hoc body that returns false is reverted to
 where it began, so a search keeps its cursor where the plan starts, tries each variant in
 an `ExecuteAdhoc`, `TestAdhoc` or compare call, and applies the one to keep once
-(`BitFsAreFixer` is the model: its cursor never moves during the search).
+(`BitFsAreFixer` is the model: its cursor moves only by the plays it keeps, the landing's
+and the turn's).
 
 **Child scripts.** `Modify<X>(args...)` runs `X` and keeps its diff if it asserted, and the
 cursor ends after the diff's last frame (by design: the common case is to keep going;
@@ -593,7 +601,7 @@ The full list is in AGENTS.md; these are the ones a script author meets.
 - The tilt moves a full 0.01 a frame on an axis only while the goal is at least that far
   from the normal on it; nearer, the normal snaps to the goal, which throws the adjusted
   remainder error out by thousands of ULPs. So a script that has to keep the error (the
-  oscillation stage, from the fixer's rest) must keep Mario's goal a full step from the
+  oscillation stage, from the fixer's hand-over) must keep Mario's goal a full step from the
   normal on both axes every frame: five to seven units of position near the home, more
   further out, in either direction. From idle a stick gives him 8 speed at once, enough on
   a diagonal within about 200 units of the home; a released stick brakes only from 16
@@ -610,7 +618,22 @@ The full list is in AGENTS.md; these are the ones a script author meets.
   whose lattice steps reversibly over the whole range they tilt through, on both axes,
   the final oscillation's crossing of the origin into the adjacent corner included;
   `BitFsAreFixer::StepsReversibly` is that test in the game's arithmetic, and the fixer
-  accepts no other rest (`minNormal`, `maxNormal`, `farNormal`).
+  accepts no other rest (`minNormal`, `maxNormal`, `farNormal`). Which errors survive is
+  the target float's residue, not a matter of search: from the former x target -0.17944f every fourth
+  (1, -3, 5, ...), on z every other (the even ones), so an exact match of that x float is
+  impossible and `BitFsAreFixer::LeastError` says so; the fixer's validation refuses a
+  tolerance the arithmetic cannot hold before any frame, and the stage prints the reason
+  with the least error each axis admits. It never takes a neighbouring float instead: not
+  within the tolerance is a refusal, and the target stays the config's (the maintainer,
+  2026-10-06). A target the game itself reached through the same
+  tilts is a survivor by construction; a decimal is not necessarily one. The error on an
+  axis is set wherever the normal last snapped to the goal, so the oscillations need not
+  start from a rest: the fixer sets x by a rest (the settle after a landing carries Mario by
+  rounded amounts onto a staircase of rests about seven times coarser than the floats, and
+  with only x to set about one rest in five near the x curve lies on it) and z by the turn
+  out of a run from that rest, where Mario's own position sets it, and hands over within 20
+  units of the diagonal, since the swings after the first cross at their usual rate from
+  there and mostly not from 40.
 - A `GetMetrics` reference dies at the next write at or before its frame; copy it.
 - `ModifyAdhoc` reverts when the lambda returns false, and reports `executed == false`.
 - Check `asserted`, not `executed`; a metric script that did not assert stores a default

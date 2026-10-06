@@ -4,6 +4,103 @@ Every hot-path change records its delta table here, newest first; the policy, th
 how to run it are in [performance.md](performance.md). The first measurements (2026-09-07),
 which everything since is compared against, are at the bottom.
 
+## 2026-10-05: the ARE fixer sets one axis at a time (ROADMAP 4.8)
+
+Not a framework change; `BitFsAreFixer`, its stage and the config's `dr` input key. The
+rest sets x alone (a curve of positions, no lattice) and the turn out of a run from the
+rest sets z, Mario handed over running with both axes stepping (`handoverFrame`, which
+the `dr` stage starts from unchanged). The turn search plays the run and turn, eight
+frames or so, up to 500 times a round from the rest, so the stage's loads rise and the
+test harness, which replays every load from the stage's start, counts far more frame
+advances than the stage with the cost model on. Measured on the config's targets, Release,
+MSVC:
+
+| Run | Result | Frame advances | Saves | Loads |
+|---|---|---|---|---|
+| exact before, stage | rest (-2091.21436, -561.290283), ARE (0, 0), 1 round | 77,000 | 6 | 2,924 |
+| exact after, stage | hand-over at 3337, ARE (0, 0), 3 landing and 1 turn rounds | 98,549 | 19 | 8,042 |
+| exact before, test | the same rest | 133,013 | 1 | 2,924 |
+| exact after, test | the same hand-over | 433,568 | 1 | 8,042 |
+| ±100 before, stage | rest, ARE (9, 24) | 76,600 | 8 | 2,917 |
+| ±100 after, stage | hand-over at 3336, ARE (-71, -68) | 79,282 | 12 | 3,194 |
+
+The `dr` stage from the hand-over: the leg in 30 shots, oscillations 1 to 4 in 73, 17, 85
+and 49 shots, 394 solutions at oscillation 5 in 2,000, 31 s. Of the 24 survivor pairs nearest
+the targets, 24 hand over, in 117 s for the 24 (10 by the rest alone, in 851 s).
+
+## 2026-10-05: the ARE fixer's aim (ROADMAP 4.8)
+
+Not a framework change; `BitFsAreFixer`. The aim's stick is chosen by its effect on the air
+movement from a table of the distinct sticks (`StickEffects`, `Stick`), where the yaw
+lookups returned one ray's few magnitudes (straight back, the full stick for any
+magnitude, so the Newton's forward probe did nothing); the constant stick is aimed at the
+rest, a Newton on the rollout and its settle with halved steps (`AimAt`), in place of the
+landing Newton and the response-driven attempts after it; a way whose aim ends more than 4
+units off (`NearAim`) is given up before the fine frames; and after a landing left idle
+fails, the way is tried with a walk after the landing (`Walks`). The dive slide
+decelerating to a stop was built as a second way to rest and taken out the same day
+(ROADMAP 4.8: the slide is chaotic at the float scale). Measured on the config's targets
+through `bitfs-turn --test` (cost model off) and `--stage are-fix` (cost model on),
+Release, MSVC:
+
+| Stage | Rest | Frame advances | Saves | Loads |
+|---|---|---|---|---|
+| ±100 before, test | (-2084.20483, -578.929077), ARE (61, -2), 1 round | 134,150 | 1 | 2,948 |
+| ±100 after, test | (-2084.20435, -578.929565), ARE (9, 24), 1 round | 132,444 | 1 | 2,917 |
+| ±100 before, stage | the same | 130,900 | 0 | 2,948 |
+| ±100 after, stage | the same | 76,600 | 8 | 2,917 |
+| exact before, test | (-2091.21436, -561.290283), ARE (0, 0), 1 round | 132,930 | 1 | 2,929 |
+| exact after, test | the same | 133,013 | 1 | 2,924 |
+| exact before, stage | the same | 76,837 | | |
+| exact after, stage | the same | 77,000 | 6 | 2,924 |
+
+The test harness replays every load from the stage's start, the stage from a save near the
+cursor, which is the gap between the two ±100 rows: the loads are the same. Of the 24
+survivor pairs nearest the targets, 10 come to an exact rest (1 before the walks, 4
+with them, 8 with the slide's ways in the catalogue, every one by a rollout), in 851 s
+for the 24 (the scratch `scan_targets.py`).
+
+## 2026-10-05: the ARE fixer's exact match (ROADMAP 4.8)
+
+Not a framework change; `BitFsAreFixer` and its stage. `tolerance` 0 is an exact match.
+Validation refuses, before any frame, a target the game's arithmetic cannot hold: the least
+error each axis admits under the reversibility rule (`LeastError`, milliseconds), then every
+float32 rest position that holds both errors within the tolerance (`Rests`: each lattice
+cell's box of positions through the game's goal arithmetic, bounded by the tilt Mario can
+idle on; 0.6 s at ±100 for 133,572 positions, 21 at the config's exact match). The search
+then lands at those positions in turn, the cells nearest the rest asked for first and a
+cell's most central position first, each with the three ways resting nearest it, in place
+of the continuous zero of the error and its ±1 bands: the settle after a landing rounds
+Mario onto a staircase of rests about seven times coarser than the floats (165 landings in
+one neighbourhood gave 23 distinct rests), so a given exact position is reached by about one
+landing attempt in ten and the next must be tried. Candidates are played once per predicted
+landing (9,521 plays had been 157 distinct landings), the prediction window is never finer
+than the prediction's resolution, and the pyramid is the one the movie's own dive lands on,
+the movie played to the dive slide in validation (19 frame advances and a load; at 3250
+Mario stands beside the other pyramid's home). Measured through `bitfs-turn --test`, Release, cost
+model off, MSVC and clang-cl identical:
+
+| Stage | Rest | Frame advances | Saves | Loads |
+|---|---|---|---|---|
+| ±100 before (targets -0.17944, 0.3936) | (-2078.84448, -573.557068), ARE (-75, 12), 2 rounds | 201,296 | 1 | 4,651 |
+| ±100 after | (-2084.20483, -578.929077), ARE (61, -2), 1 round | 134,150 | 1 | 2,948 |
+| exact, targets -0.1792, 0.3929998875 | (-2091.21436, -561.290283), ARE (0, 0), first position, 1 round | 132,930 | 1 | 2,929 |
+
+With the cost model on (`bitfs-turn --stage are-fix`): ±100 130,900 advances, 0 saves,
+2,948 loads (was 198,046, 0, 4,651; 19 of the advances and one load are validation playing
+the movie's dive to find the pyramid); the exact match 76,837 advances, 2 s of wall time
+including the DLL load and layout check. Only positions within 20 units of the rest asked
+for are tried (the old near-rest tolerance of 8, now a bound on positions, moved to 20 on a
+measurement: three `dr` runs each from rests at tilt 0.57, through 4 of 4 on the diagonal, 6
+of 6 at 10 to 13 units off, 7 of 8 at 18 to 21, 5 of 6 at 29 to 33, 2 of 8 at 37 to 41, 0 of 6
+at 60 to 65): targets -0.1792 and
+0.393 have one such exact position, 12.8 units off, which no landing reaches, so the run ends
+unsolved after 111,882 advances, 5 s (within 8 units they were refused outright, as a target
+no rest can hold at all still is, with the 19 frame advances of the pyramid check in 0.2 s);
+before the bound the same
+targets found an exact rest 89 units off the diagonal in 124,303 advances (178 saves,
+35,907 loads), which the oscillations could not start from.
+
 ## 2026-10-04: the leg's exit speed and the first swing's weights (ROADMAP 4.6)
 
 Not a framework change; the `dr` script and its config. A census inside the script (a

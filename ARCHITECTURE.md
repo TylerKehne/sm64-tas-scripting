@@ -373,20 +373,47 @@ boundary as diffs only; the new stage's solution data starts out default.
 Stage types, in the order the committed config uses them:
 
 1. **are-fixer** (`BitFsAreFixer`, ROADMAP 4.8), one stage on the first resource and no
-   search: from the run before the movie's dive onto the platform (frame 3250; from the
-   movie's own dive slide, 3269, the rollout reaches tilts up to about 0.6 only), a dive
-   recover whose rollout is steered to land where the resting normal carries the target's
-   ARE on both axes with the step parity the oscillations need, steps reversibly over
-   the tilts they use, so the error survives them, and lies in the oscillation's corner
-   (`quadrant`; the target's own when absent, the error matched being the target's
-   wherever the rest lies) at a tilt near the oscillation's regime (`minXzSum`, stated in
-   the config; ROADMAP 4.6). The way there is its own: it asks for the corner's diagonal
-   at the radius the tilt floor needs, plays every way onto the platform once (the run's
-   length, the dive's yaw and air stick, the slide frames) with a straight rollout to its
-   rest, and runs the landing search on them nearest that rest first, bringing each way's
-   rest to the one asked for through its measured response to the landing (the ways that
-   get within 8 units first, then any, the oscillation wanting the diagonal that closely);
+   search: from the run before the movie's dive onto the platform (frame 3250), the
+   target's ARE set on each axis of the pyramid's normal, one at a time, and Mario handed
+   over running with both axes stepping, the hand-over frame the oscillation stage starts
+   from (`handoverFrame`). An axis's error is the goal's float on the last frame the normal
+   snapped to it (`approach_by_increment` sets the normal to the goal exactly whenever the
+   goal is within 0.01 of it), and the goal is a function of Mario's position alone, so each
+   axis is set by where Mario is on one frame. The x axis is set by a rest, a dive recover
+   whose rollout is steered to land where its rest puts the x goal on the right float, a
+   curve of positions near the rest asked for rather than a point; the z axis by the turn
+   out of a short run from that rest along x, during which x steps and z keeps snapping,
+   toward the chord the oscillation's first leg runs, the frame z last snaps on setting it
+   from Mario's position the frame before, which the run's last frames' sticks place. Both
+   errors must step reversibly over the tilts the oscillations use, so they survive them,
+   with the step parity the final oscillation needs (one more run frame flips x's), in the
+   oscillation's corner (`quadrant`; the target's own when absent, the error matched being
+   the target's wherever the hand-over lies), z the steeper axis (the leg from such a
+   hand-over runs x toward the corner and z away, the run's and the turn's own directions),
+   at a tilt near the oscillation's regime (`minXzSum`, stated in the config; ROADMAP 4.6)
+   and within 20 units of the corner's diagonal (the swings after the first do not cross
+   from further off). `tolerance` is in ULPs of the target, 0 an exact match, and which
+   errors a normal can hold is the target float's own residue (from the former x target -0.17944f only 1,
+   -3, 5, ...; on z the even ones), so validation refuses a target the arithmetic cannot
+   hold before any frame, the least error each axis admits (`LeastError`), and the stage
+   prints the reason; the pyramid is the one the movie's own dive lands on, found by
+   playing the movie's inputs to the dive slide in a block that reverts. The landing
+   search aims the rollout's constant stick at the rest asked for by a Newton on the
+   rollout and its settle, its stick the one whose effect is nearest the aim among the
+   distinct sticks (`StickEffects`), gives a way up whose aim ends over 4 units off, and
+   then sweeps the last air frames' sticks for a landing whose rest lies on the x curve
+   (the settle rounds rests onto a staircase coarser than the floats, and about one rest
+   in five near the curve lies on it); a way whose landing left idle fails is tried again
+   with a walk after the landing, a frame or two of stick before the settle, which rounds
+   onto another staircase (`Walks`). The turn search measures each run stick's effect on
+   the position that sets z end to end, through the turn, predicts every combination's z
+   error by the goal's slope, computes it exactly on the predicted floats for the
+   combinations within the slack, and plays the nearest, re-ranked by the median offset
+   of the plays' actual errors, until one sets z. The way onto the platform is its own: it
+   plays every way (the run's length, the dive's yaw and air stick, the slide frames) with
+   a straight rollout to its rest, nearest the rest asked for first;
    it exports. Every
+   later stage starts at 3250, since its solutions do.   it exports. Every
    later stage starts at 3250, since its solutions do. It replaced the three `tilt-target` stages
    (`TiltTargetShot`: the target normal in X, then in Z with the X ARE fixed to what the
    first found, then a normal box), which remain a stage type for the Tier D workloads
