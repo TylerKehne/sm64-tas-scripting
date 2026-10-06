@@ -8,7 +8,12 @@ bool BitfsDrMetrics::ValidateCrossingData(const BitfsDrMetrics::CustomScriptStat
     {
         auto lastCrossing0 = state.crossingData.rbegin();
         auto lastCrossing2 = ++(++state.crossingData.rbegin());
-        if (lastCrossing0->speed <= lastCrossing2->speed || lastCrossing0->maxDownhillSpeed <= lastCrossing2->maxSpeed)
+        // Gain speed each crossing (the maintainer's rule): this crossing faster than the one
+        // two before it, and its downhill run faster than that one's peak; compared only at
+        // the same tilt, since while the normal is still growing toward the target sum the
+        // crossings are not comparable (the maintainer, 2026-09-22).
+        if (lastCrossing0->xzSum <= lastCrossing2->xzSum + 0.005f
+            && (lastCrossing0->speed <= lastCrossing2->speed || lastCrossing0->maxDownhillSpeed <= lastCrossing2->maxSpeed))
             return false;
 
         if (std::fabs(lastCrossing0->nX) < componentThreshold && std::fabs(lastCrossing0->nZ) < componentThreshold)
@@ -24,7 +29,7 @@ bool BitfsDrMetrics::execution()
 {
     MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
     Object* objectPool = (Object*)(ReadState("gObjectPool"));
-    Object* pyramid = &objectPool[84];
+    Object* pyramid = &objectPool[platform];
 
     CustomStatus.initialFrame = initialFrame;
     SetStateVariables(marioState, pyramid);
@@ -41,14 +46,18 @@ bool BitfsDrMetrics::execution()
         return true;
 
     CustomStatus.reachedNormRegime = lastFrameState.reachedNormRegime;
-    if (CustomStatus.xzSum > normalSpecsDto.minXzSum)
+    if (CustomStatus.xzSum > normalSpecsDto.startXzSum)
         CustomStatus.reachedNormRegime |= true;
 
     CustomStatus.xzSumStartedIncreasing = lastFrameState.xzSumStartedIncreasing;
     if (CustomStatus.xzSum > lastFrameState.xzSum + 0.001f)
         CustomStatus.xzSumStartedIncreasing |= true;
+    CustomStatus.maxXzSum = CustomStatus.xzSum > lastFrameState.maxXzSum ? CustomStatus.xzSum : lastFrameState.maxXzSum;
 
     CustomStatus.roughTargetAngle = lastFrameState.roughTargetAngle;
+    CustomStatus.legEndX = lastFrameState.legEndX;
+    CustomStatus.legEndZ = lastFrameState.legEndZ;
+    CustomStatus.legEndY = lastFrameState.legEndY;
     CustomStatus.phase = lastFrameState.phase;
     CalculateOscillations(lastFrameState, marioState, pyramid);
 
@@ -70,6 +79,8 @@ void BitfsDrMetrics::SetStateVariables(MarioState* marioState, Object* pyramid)
     CustomStatus.pyraNormZ = pyramid->oTiltingPyramidNormalZ;
     CustomStatus.xzSum = fabs(pyramid->oTiltingPyramidNormalX) + fabs(pyramid->oTiltingPyramidNormalZ);
     CustomStatus.marioAction = marioState->action;
+    int16_t floorDYaw = int16_t(marioState->floorAngle - marioState->faceAngle[1]);
+    CustomStatus.ranUphill = marioState->marioObj->platform == pyramid && !(floorDYaw > -0x4000 && floorDYaw < 0x4000);
     CustomStatus.initialized = true;
     CustomStatus.frame = GetCurrentFrame();
 }
@@ -166,13 +177,16 @@ void BitfsDrMetrics::CalculatePhase(CustomScriptStatus lastFrameState, MarioStat
     switch (lastFrameState.phase)
     {
     case Phase::INITIAL:
-        if (lastFrameState.initialized && CustomStatus.xzSum >= normalSpecsDto.minXzSum//CustomStatus.reachedNormRegime
-            && CustomStatus.pyraNormX < 0 && CustomStatus.pyraNormZ > 0
-            && std::abs(CustomStatus.incrementFrames[0]) % 2 == std::abs(CustomStatus.incrementFrames[2]) % 2
-            //&& std::abs(lastFrameState.incrementFrames[0] - lastFrameState.incrementFrames[2]) == 0
-            //&& CustomStatus.incrementFrames[0] >= 0
-            //&& std::abs(CustomStatus.incrementFrames[0] - CustomStatus.incrementFrames[2]) == 0
-            )
+        // The first leg from the rest ends when Mario is fast enough to turn around (the
+        // turnaround moves' 16), the tilt in the corner's quadrant. With a handover asked
+        // (handoverXzSum above the rest's tilt) the initial phase is the old lineup instead:
+        // it runs the tilt up to it first and hands over there, with speed and leads
+        // (the maintainer, 2026-09-25); otherwise the leg keeps the rest's tilt and the
+        // swings' ends build it (ROADMAP 4.6).
+        if (lastFrameState.initialized && marioState->forwardVel >= normalSpecsDto.legExitSpeed
+            && (!Handover() || CustomStatus.xzSum >= normalSpecsDto.handoverXzSum)
+            && CustomStatus.pyraNormX * float(cornerSignX) > 0 && CustomStatus.pyraNormZ * float(cornerSignZ) > 0
+            && std::abs(CustomStatus.incrementFrames[0]) % 2 == std::abs(CustomStatus.incrementFrames[2]) % 2)
         {
             CustomStatus.crossingData.emplace_back(
                 GetCurrentFrame(), 0.f, CustomStatus.xzSum, CustomStatus.pyraNormX, CustomStatus.pyraNormZ, marioState->forwardVel, 0.f);
@@ -181,6 +195,9 @@ void BitfsDrMetrics::CalculatePhase(CustomScriptStatus lastFrameState, MarioStat
             // choose further target angle
             CustomStatus.roughTargetAngle =
                 targetAngleDiffA <= targetAngleDiffB ? roughTargetAngleB : roughTargetAngleA;
+            CustomStatus.legEndX = marioState->pos[0];
+            CustomStatus.legEndZ = marioState->pos[2];
+            CustomStatus.legEndY = marioState->pos[1];
             CustomStatus.phase = Phase::RUN_DOWNHILL;
         }
         break;

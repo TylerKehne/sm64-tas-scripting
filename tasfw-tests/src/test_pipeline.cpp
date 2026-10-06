@@ -216,7 +216,7 @@ TEST_CASE("A stage's visualize block is a Visualization with the pipeline's view
 {
 	json config = BaseConfig();
 	config["visualizer"] = "../analysis/visualizer.py";
-	config["stages"][1]["visualize"] = json::parse(R"({ "binX": 5, "filters": [{ "column": "NormalDistance", "min": 0, "max": 100 }] })");
+	config["stages"][1]["visualize"] = json::parse(R"({ "binX": 5, "filters": [{ "column": "NormalDistance", "min": 0, "max": 100 }], "categorical": ["MarioAction"] })");
 	PipelineConfig p = PipelineConfig::Parse(config, fs::path("base/cfg"));
 	REQUIRE(p.visualizer.has_value());
 	CHECK(p.visualizer->generic_string() == "base/analysis/visualizer.py");
@@ -232,6 +232,7 @@ TEST_CASE("A stage's visualize block is a Visualization with the pipeline's view
 	CHECK(v.filters[0].column == "NormalDistance");
 	CHECK(v.filters[0].min == 0);
 	CHECK(v.filters[0].max == 100);
+	CHECK(v.categorical == std::vector<std::string> { "MarioAction" });
 
 	config["stages"][1]["visualize"]["title"] = "the final oscillation";
 	CHECK(PipelineConfig::Parse(config, fs::path("base/cfg")).stages[1].visualize->title == "the final oscillation");
@@ -249,6 +250,11 @@ TEST_CASE("A stage's visualize block is a Visualization with the pipeline's view
 	json badFilterKey = config;
 	badFilterKey["stages"][1]["visualize"]["filters"][0]["colum"] = "Phase";
 	CHECK_THROWS_WITH_AS(parse(badFilterKey), doctest::Contains("colum"), std::runtime_error);
+	json badCategorical = config;
+	badCategorical["stages"][1]["visualize"]["categorical"] = "Phase"; // a list of names, not one
+	CHECK_THROWS_WITH_AS(parse(badCategorical), doctest::Contains("categorical"), std::runtime_error);
+	badCategorical["stages"][1]["visualize"]["categorical"] = json::array({ "Phase", 5 });
+	CHECK_THROWS_WITH_AS(parse(badCategorical), doctest::Contains("categorical"), std::runtime_error);
 }
 
 TEST_CASE("The top level's visualize block is the default a stage's own block overrides key by key")

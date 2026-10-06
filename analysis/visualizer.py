@@ -13,10 +13,14 @@ folds rows into a newest-per-bin table as they arrive (the R script's grouping, 
 row; the raw rows are dropped, so memory is bounded by the bins) and redraws the selected
 tab when rows came in, at the refresh rate set in the window. It lowers its own priority so
 the brute forcer's threads win any contested core; a tab whose run finished stops polling;
-a tab past the segment cap doubles its bins.
+a tab past the segment cap doubles its bins. A tab's filter panel lists every CSV column (one
+the run names categorical as checkboxes with counts, any other as a min and a max box under
+the range seen; it starts as the run's own `filters`) and keeps a row that fails the
+filter out of the table; since the raw rows are gone, a changed filter re-reads the CSV from
+its start, as an opening tab does.
 
     python analysis/visualizer.py <params.json>                                  # what the search runs
-    python analysis/visualizer.py --once --csv <file> [--out <png>] [--rows N]   # headless, one PNG
+    python analysis/visualizer.py --once --csv <file> [--out <png>] [--rows N] [--filter TERMS]   # headless, one PNG
     TASFW_VISUALIZER_HEADLESS=1 python analysis/visualizer.py <params.json>      # tail the run with no window
 
 Headless following (ROADMAP 4.10) is the window's polling, binning and redraw schedule on the
@@ -38,6 +42,7 @@ import logging
 import math
 import os
 import queue
+import re
 import socket
 import subprocess
 import sys
@@ -50,11 +55,14 @@ VENV = HERE / ".venv"
 REQUIREMENTS = HERE / "requirements.txt"
 SETTINGS_FILE = HERE / "visualizer_settings.json"
 LOG_FILE = HERE / "visualizer.log"
-DEFAULT_SETTINGS = {"refreshSeconds": 5.0, "port": 47323, "maxSegments": 200000}
+DEFAULT_SETTINGS = {"refreshSeconds": 5.0, "port": 47323, "maxSegments": 200000, "showFilters": True}
 ANGLE_TO_RADIANS = math.pi / 32768  # an SM64 angle unit
 IDLE_LIMIT_SECONDS = 600  # headless: give up on a run that stopped growing without its finished flag
 REDRAW_SHARE = 0.05  # a redraw may take this share of the interval before it: the interval stretches to keep it
 COST_WINDOW_SECONDS = 30  # the window's CPU readout averages over this long
+FACET_VALUES_CAP = 256  # a categorical column with more distinct values than this becomes a range (its counts would grow without bound)
+FILTER_GRAMMAR = ("a term is 'column >= low', 'column <= high', 'low <= column <= high', 'column == value' or "
+                  "'column in value value ...' (ranges are inclusive), commas or 'and' between terms")
 
 
 def next_interval(refresh, redraw_seconds):
@@ -181,7 +189,14 @@ def lower_priority():
 # ------------------------------------------------------------------------- a run's data
 
 class RunData:
-    """One run's CSV, read incrementally into a newest-per-bin table of (shot, frame, x, y, angle, speed)."""
+    """One run's CSV, read incrementally into a newest-per-bin table of (shot, frame, x, y, angle, speed).
+
+    The filter is a dict, column -> {"min", "max", "values"} with the keys in force: a row is
+    binned when every filtered column of it lies in the range and, with "values", is one of
+    them. The parameters file's `filters` ({column, min, max}) start it; the tab's panel sets
+    it, and --filter from text, "MarioFSpd <= 8, Phase in 1 5" (FILTER_GRAMMAR). Beside the
+    table the facets: per column, the least and greatest value seen and, for a column the
+    parameters file's `categorical` names, how many sampled rows hold each value."""
 
     def __init__(self, params_path=None, params=None):
         self.params_path = Path(params_path).resolve() if params_path else None
@@ -190,26 +205,127 @@ class RunData:
         self.csv_path = Path(self.params["csv"])
         self.title = self.params.get("title") or self.csv_path.name
         self.columns = [self.params.get(k, d) for k, d in (("x", "MarioZ"), ("y", "MarioX"), ("angle", "MarioFYaw"), ("speed", "MarioFSpd"))]
-        self.bins = [float(self.params.get(k, d)) for k, d in (("binX", 0.1), ("binY", 0.1), ("binAngle", 16), ("binSpeed", 0.1))]
-        self.filters = [(f["column"], float(f.get("min", "-inf")), float(f.get("max", "inf"))) for f in self.params.get("filters", [])]
+        self.base_bins = [float(self.params.get(k, d)) for k, d in (("binX", 0.1), ("binY", 0.1), ("binAngle", 16), ("binSpeed", 0.1))]
+        self.filter = {}
+        for f in self.params.get("filters", []):  # an open bound is an absent key
+            part = {k: float(f[k]) for k in ("min", "max") if k in f}
+            if part:
+                self.filter.setdefault(f["column"], {}).update(part)
+        self.categorical = [str(c) for c in self.params.get("categorical", [])]  # filtered by value; every other column by range
         view = self.params.get("view")  # a fixed window centered on (x, y), square to its units
         self.view = {k: float(view[k]) for k in ("x", "y", "width", "height")} if view else None
         self.sampled_only = bool(self.params.get("sampledOnly", True))
         self.finished = bool(self.params.get("finished", False))
         self.reported_rows = int(self.params.get("rows", 0))
+        self.dirty = False
+        self.table = {}
+        self.reset()
 
+    def reset(self):
+        """Forget what was read: the next poll reads the CSV from its start (the filter changed,
+        or the file was rewritten). What was drawn is stale until the table refills."""
+        self.dirty |= bool(self.table)
+        self.table = {}
         self.offset = 0
         self.partial = b""
         self.header = None
         self.indices = None
-        self.table = {}
         self.rows = 0
         self.skipped = 0
         self.bad = 0
         self.coarsened = 0
-        self.dirty = False
+        self.bins = list(self.base_bins)
         self.error = None
         self.drained = False  # finished and nothing left to read
+        self.lo = self.hi = None  # per column, the least and greatest value seen
+        self.counts = None  # per column, value -> sampled rows holding it for a categorical column, else None
+        self.counting = []  # the (index, counts) still counted
+        self.overflowed = set()  # categorical columns past FACET_VALUES_CAP distinct values, ranges from then on
+        self.stats_changed = True  # the facets differ from what the panel shows
+
+    @staticmethod
+    def _number(token):
+        """The token as a float, hex included, or None when it is not a number."""
+        try:
+            return float(int(token, 16)) if re.fullmatch(r"[-+]?0[xX][0-9a-fA-F]+", token) else float(token)
+        except ValueError:
+            return None
+
+    @staticmethod
+    def _format_number(value):
+        return str(int(value)) if value == int(value) and abs(value) < 2 ** 53 else repr(value)
+
+    @staticmethod
+    def parse_filter(text):
+        """A filter from its text (FILTER_GRAMMAR); ValueError names the term it cannot read."""
+        spec = {}
+        for term in re.split(r",|\band\b", text or ""):
+            if not term.strip():
+                continue
+            tokens = re.findall(r"<=|>=|==|!=|<|>|[^\s<>=!,]+", term)
+            number = [RunData._number(t) for t in tokens]
+            column = part = None
+            if len(tokens) == 3 and tokens[1] in ("<=", ">=", "==") and number[0] is None and number[2] is not None:
+                column, part = tokens[0], {{"<=": "max", ">=": "min", "==": "values"}[tokens[1]]: number[2]}
+            elif len(tokens) == 3 and tokens[1] in ("<=", ">=", "==") and number[0] is not None and number[2] is None:
+                column, part = tokens[2], {{"<=": "min", ">=": "max", "==": "values"}[tokens[1]]: number[0]}
+            elif (len(tokens) == 5 and tokens[1] == "<=" and tokens[3] == "<="
+                  and number[0] is not None and number[2] is None and number[4] is not None):
+                column, part = tokens[2], {"min": number[0], "max": number[4]}
+            elif len(tokens) >= 3 and tokens[1] == "in" and number[0] is None and all(n is not None for n in number[2:]):
+                column, part = tokens[0], {"values": set(number[2:])}
+            if column is None:
+                raise ValueError(f"cannot read the filter term '{term.strip()}': {FILTER_GRAMMAR}")
+            if "values" in part and not isinstance(part["values"], set):
+                part["values"] = {part["values"]}
+            spec.setdefault(column, {}).update(part)
+        return spec
+
+    @staticmethod
+    def format_filter(spec):
+        """The filter as text the grammar reads back."""
+        n = RunData._format_number
+        parts = []
+        for column, part in spec.items():
+            if "min" in part and "max" in part:
+                parts.append(f"{n(part['min'])} <= {column} <= {n(part['max'])}")
+            elif "min" in part:
+                parts.append(f"{column} >= {n(part['min'])}")
+            elif "max" in part:
+                parts.append(f"{column} <= {n(part['max'])}")
+            values = sorted(part.get("values", ()))
+            if len(values) == 1:
+                parts.append(f"{column} == {n(values[0])}")
+            elif values:
+                parts.append(f"{column} in {' '.join(n(v) for v in values)}")
+        return ", ".join(parts)
+
+    def set_filter_text(self, text):
+        """set_filter from text; the message when the text does not parse."""
+        try:
+            spec = self.parse_filter(text)
+        except ValueError as e:
+            return str(e)
+        return self.set_filter(spec)
+
+    def set_filter(self, spec):
+        """Replace the filter and re-read the CSV from its start. The message when it names a
+        column the CSV lacks or puts a min above its max, else None (nothing happens when the
+        filter is the one in force)."""
+        spec = {column: {k: v for k, v in part.items() if v is not None and v != set()} for column, part in spec.items()}
+        spec = {column: part for column, part in spec.items() if part}
+        if self.header is not None:
+            missing = [c for c in spec if c not in self.header]
+            if missing:
+                return f"columns not in the CSV: {', '.join(missing)} (it has {', '.join(self.header)})"
+        for column, part in spec.items():
+            if "min" in part and "max" in part and part["min"] > part["max"]:
+                return f"{column}: the min is above the max"
+        if spec == self.filter:
+            return None
+        self.filter = spec
+        self.reset()
+        return None
 
     def _read_params(self):
         with open(self.params_path, encoding="utf-8") as f:
@@ -243,8 +359,7 @@ class RunData:
         except OSError:
             return False
         if size < self.offset:  # rewritten from the start
-            self.offset, self.partial, self.header, self.rows = 0, b"", None, 0
-            self.table.clear()
+            self.reset()
         if size == self.offset:
             self.drained = self.finished
             return False
@@ -265,15 +380,19 @@ class RunData:
     def _index(self):
         names = [self.header.index(c) if c in self.header else None for c in self.columns]
         missing = [c for c, i in zip(self.columns, names) if i is None]
-        filters = []
-        for column, low, high in self.filters:
+        filters = []  # (column index, least, greatest, the values allowed or None)
+        for column, part in self.filter.items():
             if column in self.header:
-                filters.append((self.header.index(column), low, high))
+                filters.append((self.header.index(column), part.get("min", -math.inf), part.get("max", math.inf),
+                                frozenset(part["values"]) if part.get("values") else None))
             else:
                 missing.append(column)
         for fixed in ("Shot", "Frame", "Sampled"):
             if fixed not in self.header:
                 missing.append(fixed)
+        for column in self.categorical:
+            if column not in self.header and column not in missing:
+                missing.append(column)
         if missing:
             self.error = f"columns not in the CSV: {', '.join(missing)} (it has {', '.join(self.header)})"
             log.error("%s: %s", self.title, self.error)
@@ -282,6 +401,8 @@ class RunData:
             "shot": self.header.index("Shot"), "frame": self.header.index("Frame"), "sampled": self.header.index("Sampled"),
             "x": names[0], "y": names[1], "angle": names[2], "speed": names[3], "filters": filters,
         }
+        self.counts = [{} if name in self.categorical else None for name in self.header]
+        self.counting = [(j, counts) for j, counts in enumerate(self.counts) if counts is not None]
 
     def _key(self, x, y, angle, speed):
         b = self.bins
@@ -305,16 +426,42 @@ class RunData:
                 if self.sampled_only and row[i["sampled"]] != "1":
                     self.skipped += 1
                     continue
-                if any(not (low <= float(row[j]) <= high) for j, low, high in i["filters"]):
-                    self.skipped += 1
-                    continue
-                shot = int(row[i["shot"]])
-                frame = int(row[i["frame"]])
-                x, y = float(row[i["x"]]), float(row[i["y"]])
-                angle, speed = float(row[i["angle"]]), float(row[i["speed"]])
-            except (ValueError, IndexError):
+                values = [float(v) for v in row]  # every cell is a number
+                shot, frame = int(values[i["shot"]]), int(values[i["frame"]])
+            except (ValueError, IndexError, OverflowError):
                 self.bad += 1
                 continue
+            if len(values) != len(self.header):
+                self.bad += 1
+                continue
+            # The facets take every sampled row, filtered or not: each column's range and, for
+            # a categorical column, how many rows hold each value.
+            lo, hi = self.lo, self.hi
+            if lo is None:
+                self.lo, self.hi = list(values), list(values)
+            else:
+                for j, v in enumerate(values):
+                    if v < lo[j]:
+                        lo[j] = v
+                    elif v > hi[j]:
+                        hi[j] = v
+            for j, counts in self.counting:
+                text = row[j]
+                n = counts.get(text)
+                if n is not None:
+                    counts[text] = n + 1
+                elif len(counts) < FACET_VALUES_CAP:
+                    counts[text] = 1
+                else:  # too many to list: a range from here on (the loop runs on over the old list)
+                    self.counts[j] = None
+                    self.overflowed.add(self.header[j])
+                    self.counting = [c for c in self.counting if c[0] != j]
+            self.stats_changed = True
+            if i["filters"] and any(not (low <= values[j] <= high) or (chosen is not None and values[j] not in chosen)
+                                    for j, low, high, chosen in i["filters"]):
+                self.skipped += 1
+                continue
+            x, y, angle, speed = values[i["x"]], values[i["y"]], values[i["angle"]], values[i["speed"]]
             key = self._key(x, y, angle, speed)
             old = self.table.get(key)
             if old is None or shot >= old[0]:  # the newest shot keeps the bin, the later row within it
@@ -337,6 +484,15 @@ class RunData:
             self.dirty = True
             log.info("%s: %d bins over the cap of %d, bins doubled to %s", self.title, len(merged), max_segments, self.bins)
 
+    def facets(self):
+        """Per CSV column, in the CSV's order: (name, value -> sampled rows holding it or None
+        past FACET_VALUES_CAP distinct values, the least seen, the greatest seen)."""
+        if self.header is None or self.counts is None:
+            return []
+        lo = self.lo or [None] * len(self.header)
+        hi = self.hi or [None] * len(self.header)
+        return [(name, self.counts[j], lo[j], hi[j]) for j, name in enumerate(self.header)]
+
     def arrays(self):
         import numpy as np
         if not self.table:
@@ -352,6 +508,8 @@ class RunData:
             parts.append(f"{self.bad} unreadable")
         if self.coarsened:
             parts.append(f"bins x{2 ** self.coarsened}")
+        if self.filter:
+            parts.append(f"filter {self.format_filter(self.filter)}")
         parts.append("finished" if self.finished else "running")
         if self.error:
             parts.append(self.error)
@@ -387,6 +545,9 @@ class Plot:
             self.axes.set_aspect("equal", adjustable="box")
             autoscale = False
         if arrays is None:
+            if self.lines is not None:  # the table emptied (a filter, a rewritten CSV): clear what was drawn
+                self.lines.set_segments([])
+                self.tips.set_offsets(np.empty((0, 2)))
             return
         shot, frame, x, y, angle, speed = arrays
         radians = angle * ANGLE_TO_RADIANS
@@ -417,7 +578,7 @@ class Plot:
             self.axes.set_ylim(ys.min() - pad_y, ys.max() + pad_y)
 
 
-def render_once(params_path, csv_path, out, rows, settings):
+def render_once(params_path, csv_path, out, rows, filter_text, settings):
     import matplotlib
     matplotlib.use("Agg")
     from matplotlib.figure import Figure
@@ -425,6 +586,10 @@ def render_once(params_path, csv_path, out, rows, settings):
         data = RunData(params_path)
     else:
         data = RunData(params={"csv": csv_path, "title": Path(csv_path).name, "finished": True})
+    if filter_text is not None:
+        error = data.set_filter_text(filter_text)
+        if error:
+            raise SystemExit(error)
     data.poll(max_rows=rows)
     if data.error:
         raise SystemExit(data.error)
@@ -528,16 +693,207 @@ def forward(port, params_path):
         return False
 
 
-class RunTab:
-    def __init__(self, notebook, data):
+class FilterPanel:
+    """A tab's filters beside its plot, in the manner of a shop's facets: a section per CSV
+    column in the CSV's order. A column the run names categorical has a checkbox per value
+    with the number of sampled rows holding it (checked values pass; none checked passes
+    every row); every other has a min and a max box, applied with Enter, under the least and
+    greatest value seen. The filters in force are listed at the top, each
+    with a button that drops it. Every change hands the whole filter to on_change, which
+    returns the message when it is refused; the panel shows that and bad entries itself."""
+
+    WIDTH = 300
+
+    def __init__(self, parent, data, on_change):
         import tkinter as tk
+        from tkinter import ttk
+        self.tk = tk
+        self.data = data
+        self.on_change = on_change
+        self.frame = tk.Frame(parent, width=self.WIDTH)
+        self.head = tk.Frame(self.frame)
+        self.head.pack(fill=tk.X, padx=6, pady=(6, 0))
+        tk.Label(self.head, text="Filters", font=("TkDefaultFont", 10, "bold")).pack(side=tk.LEFT)
+        self.clear_all = tk.Button(self.head, text="Clear all", state=tk.DISABLED, command=lambda: self.change({}))
+        self.clear_all.pack(side=tk.RIGHT)
+        self.active = tk.Frame(self.frame)  # the filters in force, a line each; packed under the head only while there are any
+        self.message = tk.Label(self.frame, text="", fg="firebrick", anchor="w", justify=tk.LEFT, wraplength=self.WIDTH - 12)
+        self.separator = ttk.Separator(self.frame, orient=tk.HORIZONTAL)  # the message, when there is one, packs above this
+        self.separator.pack(fill=tk.X, padx=6, pady=(4, 0))
+        body = tk.Frame(self.frame)  # the sections scroll
+        body.pack(fill=tk.BOTH, expand=True)
+        self.canvas = tk.Canvas(body, highlightthickness=0, width=self.WIDTH)
+        scrollbar = ttk.Scrollbar(body, orient=tk.VERTICAL, command=self.canvas.yview)
+        self.canvas.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.inner = tk.Frame(self.canvas)
+        self.window = self.canvas.create_window((0, 0), window=self.inner, anchor="nw")
+        self.inner.bind("<Configure>", lambda event: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
+        self.canvas.bind("<Configure>", lambda event: self.canvas.itemconfigure(self.window, width=event.width))
+        self.placeholder = tk.Label(self.inner, text="the columns appear with the first rows", fg="gray")
+        self.placeholder.pack(anchor="w", padx=6, pady=6)
+        self.sections = {}  # column -> its widgets and what they show
+        self.shown_filter = None  # the filter the list at the top shows
+
+    def contains(self, x_root, y_root):
+        """Whether the screen point is over the panel (the wheel scrolls it then)."""
+        widget = self.frame.winfo_containing(x_root, y_root)
+        while widget is not None:
+            if widget is self.frame:
+                return True
+            widget = widget.master
+        return False
+
+    def scroll(self, event):
+        self.canvas.yview_scroll(-1 if event.num == 4 or event.delta > 0 else 1, "units")
+
+    def say(self, text):
+        """The message under the filters in force, taking space only while there is one."""
+        self.message.config(text=text)
+        if text:
+            self.message.pack(fill=self.tk.X, padx=6, before=self.separator)
+        else:
+            self.message.pack_forget()
+
+    def refresh(self):
+        """Match the panel to the data: the columns, their values and counts, the ranges seen,
+        and the controls to the filter in force (a box being typed in is left alone)."""
+        data = self.data
+        facets = data.facets()
+        if not facets:
+            return
+        if self.placeholder is not None:
+            self.placeholder.destroy()
+            self.placeholder = None
+        for name, counts, lo, hi in facets:
+            kind = "values" if counts is not None else "range"
+            section = self.sections.get(name)
+            if section is None:
+                section = self.sections[name] = self._section(name)
+            if section["kind"] != kind or (kind == "values" and section["rows"].keys() != counts.keys()):
+                self._build(section, name, kind, counts)
+            part = data.filter.get(name, {})
+            if kind == "values":
+                chosen = part.get("values") or ()
+                for text, (var, check) in section["rows"].items():
+                    var.set(float(text) in chosen)
+                    check.config(text=f"{RunData._format_number(float(text))}   {counts[text]:,}")
+            else:
+                hint = f"seen {RunData._format_number(lo)} to {RunData._format_number(hi)}" if lo is not None else ""
+                if name in data.overflowed:
+                    hint = f"over {FACET_VALUES_CAP} distinct values, so a range; {hint}"
+                section["hint"].config(text=hint)
+                bounds = (part.get("min"), part.get("max"))
+                if bounds != section["shown"]:
+                    for key, bound in zip(("min", "max"), bounds):
+                        section[key].set("" if bound is None else RunData._format_number(bound))
+                    section["shown"] = bounds
+        if data.filter != self.shown_filter:
+            self._list_active()
+
+    def _section(self, name):
+        tk = self.tk
+        frame = tk.Frame(self.inner)
+        frame.pack(fill=tk.X, padx=6, pady=(6, 0))
+        tk.Label(frame, text=name, font=("TkDefaultFont", 9, "bold"), anchor="w").pack(fill=tk.X)
+        body = tk.Frame(frame)
+        body.pack(fill=tk.X)
+        return {"kind": None, "body": body, "rows": {}, "min": None, "max": None, "shown": None, "hint": None}
+
+    def _build(self, section, name, kind, counts):
+        """The section's controls for its kind: a checkbox per value, or the min and max boxes."""
+        tk = self.tk
+        for child in section["body"].winfo_children():
+            child.destroy()
+        section.update(kind=kind, rows={}, min=None, max=None, shown=None, hint=None)
+        if kind == "values":
+            for text in sorted(counts, key=float):
+                var = tk.BooleanVar(value=False)
+                check = tk.Checkbutton(section["body"], variable=var, anchor="w", command=lambda n=name: self._values_changed(n))
+                check.pack(fill=tk.X)
+                section["rows"][text] = (var, check)
+            return
+        row = tk.Frame(section["body"])
+        row.pack(fill=tk.X)
+        for key in ("min", "max"):
+            section[key] = tk.StringVar()
+            tk.Label(row, text=key).pack(side=tk.LEFT, padx=(0, 2))
+            entry = tk.Entry(row, textvariable=section[key], width=11)
+            entry.pack(side=tk.LEFT, padx=(0, 8))
+            entry.bind("<Return>", lambda event, n=name: self._range_changed(n))
+        section["hint"] = tk.Label(section["body"], text="", fg="gray", anchor="w")
+        section["hint"].pack(fill=tk.X)
+
+    def _values_changed(self, name):
+        chosen = {float(text) for text, (var, _) in self.sections[name]["rows"].items() if var.get()}
+        self._update(name, values=chosen or None)
+
+    def _range_changed(self, name):
+        bounds = {"min": None, "max": None}
+        for key in bounds:
+            text = self.sections[name][key].get().strip()
+            if text:
+                bounds[key] = RunData._number(text)
+                if bounds[key] is None:
+                    self.say(f"{name}: '{text}' is not a number")
+                    return
+        self._update(name, **bounds)
+
+    def _update(self, name, **changes):
+        """The column's part of the filter with these keys set (None drops one), applied."""
+        part = dict(self.data.filter.get(name, {}))
+        for key, value in changes.items():
+            if value is None:
+                part.pop(key, None)
+            else:
+                part[key] = value
+        spec = dict(self.data.filter)
+        if part:
+            spec[name] = part
+        else:
+            spec.pop(name, None)
+        self.change(spec)
+
+    def change(self, spec):
+        self.say(self.on_change(spec) or "")
+        self.refresh()  # a refused change puts the controls back
+
+    def _list_active(self):
+        tk = self.tk
+        for child in self.active.winfo_children():
+            child.destroy()
+        spec = self.data.filter
+        for name, part in spec.items():
+            row = tk.Frame(self.active)
+            row.pack(fill=tk.X, pady=1)
+            tk.Button(row, text="✕", padx=4, pady=0, command=lambda n=name: self._update(n, min=None, max=None, values=None)).pack(side=tk.LEFT)
+            tk.Label(row, text=RunData.format_filter({name: part}), anchor="w").pack(side=tk.LEFT, padx=(4, 0))
+        if spec:
+            self.active.pack(fill=tk.X, padx=6, after=self.head)
+        else:
+            self.active.pack_forget()  # an emptied frame would keep its last height
+        self.clear_all.config(state=tk.NORMAL if spec else tk.DISABLED)
+        self.shown_filter = {name: dict(part) for name, part in spec.items()}
+
+
+class RunTab:
+    def __init__(self, notebook, data, on_filter, show_filters):
+        import tkinter as tk
+        from tkinter import ttk
         from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
         from matplotlib.figure import Figure
         self.data = data
         self.frame = tk.Frame(notebook)
+        self.paned = ttk.PanedWindow(self.frame, orient=tk.HORIZONTAL)  # the panel beside the plot, a sash between
+        self.paned.pack(fill=tk.BOTH, expand=True)
+        self.panel = FilterPanel(self.paned, data, lambda spec: on_filter(self, spec))
+        plot = tk.Frame(self.paned)
+        self.paned.add(plot, weight=1)
+        self.show_filters(show_filters)
         figure = Figure(figsize=(9, 7), dpi=100)
-        self.canvas = FigureCanvasTkAgg(figure, master=self.frame)
-        NavigationToolbar2Tk(self.canvas, self.frame)
+        self.canvas = FigureCanvasTkAgg(figure, master=plot)
+        NavigationToolbar2Tk(self.canvas, plot)
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
         self.plot = Plot(figure)
         self.drawn = False
@@ -550,6 +906,13 @@ class RunTab:
         self.last_redraw = time.perf_counter() - began
         self.data.dirty = False
         self.drawn = True
+
+    def show_filters(self, show):
+        panes = self.paned.panes()
+        if show and str(self.panel.frame) not in panes:
+            self.paned.insert(0, self.panel.frame, weight=0)
+        elif not show and str(self.panel.frame) in panes:
+            self.paned.forget(self.panel.frame)
 
 
 class Viewer:
@@ -572,11 +935,15 @@ class Viewer:
         self.cost.pack(side=tk.LEFT, padx=(6, 8))
         self.autoscale = tk.BooleanVar(value=True)
         tk.Checkbutton(bar, text="Autoscale", variable=self.autoscale).pack(side=tk.LEFT, padx=8)
+        self.show_filters = tk.BooleanVar(value=bool(settings["showFilters"]))
+        tk.Checkbutton(bar, text="Filters", variable=self.show_filters, command=self.toggle_filters).pack(side=tk.LEFT, padx=(0, 8))
         tk.Button(bar, text="Close tab", command=self.close_tab).pack(side=tk.LEFT, padx=(0, 8))
         self.status = tk.Label(bar, text="", anchor="w")
         self.status.pack(side=tk.LEFT, fill=tk.X, expand=True)
         self.root.bind("<Control-w>", lambda event: self.close_tab())
         self.notebook.bind("<Button-2>", self.close_tab_under_pointer)  # the middle button on a tab's header
+        for wheel in ("<MouseWheel>", "<Button-4>", "<Button-5>"):  # Windows and macOS, then X11
+            self.root.bind_all(wheel, self.wheel)
         self.tabs = []
         self.cpu_samples = collections.deque()  # (wall, process CPU) per tick: the measured share over the last COST_WINDOW_SECONDS
         self.incoming = queue.Queue()
@@ -598,7 +965,7 @@ class Viewer:
             log.error("cannot open %s: %s", params_path, e)
             self.status.config(text=f"cannot open {params_path}: {e}")
             return
-        tab = RunTab(self.notebook, data)
+        tab = RunTab(self.notebook, data, self.apply_filter, self.show_filters.get())
         self.tabs.append(tab)
         self.notebook.add(tab.frame, text=data.title)
         self.notebook.select(tab.frame)
@@ -642,6 +1009,34 @@ class Viewer:
             tab.draw(self.autoscale.get())
         if tab:
             self.status.config(text=tab.data.status())
+            if tab.data.stats_changed:
+                tab.data.stats_changed = False
+                tab.panel.refresh()
+
+    def apply_filter(self, tab, spec):
+        """A tab's panel changed its filter: re-read the CSV under it now. The message when the
+        filter is refused, else None."""
+        error = tab.data.set_filter(spec)
+        if error:
+            log.warning("%s: %s", tab.data.title, error)
+            return error
+        self.status.config(text=f"reading {tab.data.csv_path.name} from its start under the filter")
+        self.root.update_idletasks()
+        if tab.data.poll():
+            tab.data.coarsen(int(self.settings["maxSegments"]))
+        self.redraw_current()
+        log.info("%s: filter '%s'", tab.data.title, RunData.format_filter(tab.data.filter))
+        return None
+
+    def toggle_filters(self):
+        for tab in self.tabs:
+            tab.show_filters(self.show_filters.get())
+        self.save()
+
+    def wheel(self, event):
+        tab = self.current()
+        if tab and tab.panel.contains(event.x_root, event.y_root):
+            tab.panel.scroll(event)
 
     def tick(self):
         cap = int(self.settings["maxSegments"])
@@ -713,6 +1108,7 @@ class Viewer:
             self.settings["refreshSeconds"] = float(self.refresh.get())
         except (ValueError, TypeError):
             return
+        self.settings["showFilters"] = bool(self.show_filters.get())
         save_settings(self.settings)
 
     def quit(self):
@@ -734,6 +1130,9 @@ def main():
     parser.add_argument("--csv", help="with --once: the CSV to render when there is no parameters file")
     parser.add_argument("--out", help="with --once: the PNG to write (default: the CSV's name with .png)")
     parser.add_argument("--rows", type=int, help="with --once: read at most this many rows")
+    parser.add_argument("--filter", metavar="TERMS",
+                        help="with --once: the filter box's text in place of the parameters file's filters, "
+                             "such as 'MarioFSpd <= 8, Phase == 5'; " + FILTER_GRAMMAR)
     args = parser.parse_args()
 
     logging.basicConfig(filename=str(LOG_FILE), level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -742,7 +1141,7 @@ def main():
         if not args.params and not args.csv:
             parser.error("--once needs a parameters file or --csv")
         bootstrap(windowed=False)
-        render_once(args.params, args.csv, args.out, args.rows, settings)
+        render_once(args.params, args.csv, args.out, args.rows, args.filter, settings)
         return
     if not args.params:
         parser.error("a parameters file is needed (or --once --csv <file>)")

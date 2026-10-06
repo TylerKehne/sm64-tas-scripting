@@ -75,7 +75,7 @@ its place with numbers, and "it is cleaner" is not a number.
 | `tasfw-core/inc/sm64/` | Hand-copied decomp structs, enums and trig tables. Must match the DLL's x64 layout. |
 | `tasfw-resources/` | `LibSm64` (drives the game DLL) and `PyramidUpdate` (standalone reimplementation of pyramid tilt physics used as a fast stand-in). |
 | `tasfw-scattershot/` | Header-only OpenMP brute-force search (blocks, segments, solutions, CSV export, and the launch of the CSV's viewer: `Visualization.hpp`). One header per concept under `inc/`; `<Scattershot.hpp>` is the one include, it pulls in the thread and the builders at its bottom. |
-| `tasfw-scripts/` | Reusable BitFS scripts (pyramid oscillation, downhill angle search, dive-recover attempts, the ARE fixer of ROADMAP 4.8: `BitFsAreFixer`, a rest with the target's adjusted remainder error from the movie's dive onto the platform, its rollout steered), scattershot stages, and the scripts that look at the game rather than play it (`VerifyLayout`, `LevelTransitions`, `MarioTrace`, `SpliceMovie`), which the tools and tests run. |
+| `tasfw-scripts/` | Reusable BitFS scripts (pyramid oscillation, downhill angle search, dive-recover attempts, the ARE fixer of ROADMAP 4.8: `BitFsAreFixer`, the target's adjusted remainder error set on each axis of the pyramid's normal, x by a rest and z by the turn out of a run from it, from the run before the movie's dive onto the platform, handing Mario over running in the corner asked for), scattershot stages, and the scripts that look at the game rather than play it (`VerifyLayout`, `LevelTransitions`, `MarioTrace`, `SpliceMovie`), which the tools and tests run. |
 | `tasfw-bruteforcers/bitfs-turnaround/` | The only executable (`bitfs-turn.exe`): the BitFS pipeline as config-selected stages (`config.json`, `Stages.cpp`, `PipelineConfig`). `--list`, `--dry-run`, `--stage`, and `--test`, its own optional doctest cases on the config's game (`Tests.cpp`), which neither CI nor `tasfw-tests` runs. |
 | `tasfw-perf/` | Performance suite: Tier A microbenchmarks on an in-memory mock resource, Tier B on the game DLL, Tier C framework workloads through the frozen script copies under `workloads/` (docs/performance.md, "Tier C"; they do not follow `tasfw-scripts/`). Release only. |
 | `tasfw-tools/` | `dllcheck`: runs the `VerifyLayout` script against a DLL, reports fixed-slice coverage and what a savestate holds of the sections (`bytes:`, docs/libsm64.md "The game's bytes"), measures frame-advance and savestate cost, and lists a movie's level transitions (`--levels`) or Mario and the camera around a frame (`--trace`). `m64splice`: a movie for one game version out of two, the first up to the frame it enters a level, the second from its own, played and checked frame by frame (docs/libsm64.md, "A movie for the US game"). |
@@ -357,6 +357,9 @@ Agents without hooks follow the same procedure by hand at the end of every chang
   the game on the copied structs so the downhill-angle scripts can predict the floor angle
   after the pyramid tilts without advancing a frame. It duplicates physics that
   `PyramidUpdate` also has on its own surface type, and it is not covered by the drift test.
+  Its pyramid loop is not a model of Mario's rest after a landing either: it carries his
+  height along where the game resets it to the floor each frame, and the rest it computes
+  is about two units off the game's (ROADMAP 4.8).
   `scripts/decomp_pin.json` cites the upstream functions each file came from (docs/decomp.md).
 - Warning C4715 in the `TurnAround` lambda of `Scattershot_BitfsDr.cpp` is a real bug (not
   all paths return a value).

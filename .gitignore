@@ -50,6 +50,7 @@ res/
 analysis/*.csv
 analysis/*.png
 analysis/*.visualizer.json
+analysis/*.visualizer.summary.json
 analysis/.venv/
 analysis/visualizer_settings.json
 analysis/visualizer.log
