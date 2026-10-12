@@ -23,7 +23,7 @@ struct MockState
 	void dispose() { disposed++; }
 
 	// What a script exports (Script::ExportSave) for a run on another MockResource: the
-	// state as the resource stands, the way PyramidUpdateMem converts from a LibSm64.
+	// state as the resource stands, the way the corner's state converts from the game.
 	MockState() = default;
 	explicit MockState(const Resource<MockState>& resource) { resource.save(*this); }
 };

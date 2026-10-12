@@ -281,7 +281,7 @@ size_t LibSm64DirtyPages::WrittenCount() const
 	return count;
 }
 
-LibSm64::LibSm64(const LibSm64Config& config) : Resource(config.savestateBudgetBytes), dll(config.dllPath), config(config)
+LibSm64::LibSm64(const LibSm64Config& config) : Sm64Resource(config.savestateBudgetBytes), dll(config.dllPath), config(config)
 {
 	// constructor of SharedLib will throw if it can't load
 	void* processID = dll.get("sm64_init");
@@ -452,7 +452,17 @@ void LibSm64::TakeBaseline() const
 	d.ProtectAll();
 }
 
-void LibSm64::save(LibSm64Mem& state) const
+void LibSm64::save(Sm64Mem& state) const
+{
+	SaveGame(state.Game(), IsStartSave(state));
+}
+
+void LibSm64::load(const Sm64Mem& state)
+{
+	LoadGame(state.Game());
+}
+
+void LibSm64::SaveGame(LibSm64Mem& state, bool startSave) const
 {
 	switch (config.saveMode)
 	{
@@ -466,7 +476,7 @@ void LibSm64::save(LibSm64Mem& state) const
 		// The first slot of a run takes a baseline: no slot is live (the start save is not one).
 		if (d.liveSlots == 0)
 			TakeBaseline();
-		if (!IsStartSave(state))
+		if (!startSave)
 			d.liveSlots++;
 		const std::vector<uint64_t>& written = d.Written();
 		state.baseline = d.baseline;
@@ -512,7 +522,7 @@ void LibSm64::save(LibSm64Mem& state) const
 	}
 }
 
-void LibSm64::load(const LibSm64Mem& state)
+void LibSm64::LoadGame(const LibSm64Mem& state)
 {
 	switch (config.saveMode)
 	{
@@ -616,9 +626,12 @@ void* LibSm64::resolve(const char* symbol) const
 	return dll.get(symbol); // throws with the loader's message
 }
 
-std::size_t LibSm64::getStateSize(const LibSm64Mem& state) const
+std::size_t LibSm64::getStateSize(const Sm64Mem& state) const
 {
-	return state.buf1.capacity() + state.buf2.capacity() + state.pages.capacity() + state.written.capacity() * sizeof(uint64_t);
+	if (!state.IsGame())
+		return 0; // not written yet
+	const LibSm64Mem& game = state.Game();
+	return game.buf1.capacity() + game.buf2.capacity() + game.pages.capacity() + game.written.capacity() * sizeof(uint64_t);
 }
 
 uint32_t LibSm64::getCurrentFrame() const

@@ -9,7 +9,10 @@
     and the committed movies\bitfs-pyramid-jp.m64. When -Dll and -M64 are unset and
     res\sm64_us_0.dll exists (unlock_libsm64.py --version us), the libsm64 test group runs a
     second time on it with movies\bitfs-pyramid-us.m64 at frame 3397, the frame of the JP
-    movie's 3330 there (docs/libsm64.md). Exit code is non-zero if either run fails.
+    movie's 3330 there (docs/libsm64.md). With the DLL, the parity harness also plays the
+    pipeline's exported solution movies under analysis\m64 when that directory exists (or
+    the one TASFW_PARITY_MOVIES names), 40 of them unless TASFW_PARITY_MOVIE_LIMIT says
+    otherwise (0 for all). Exit code is non-zero if either run fails.
 
 .PARAMETER Config
     Debug (default), Release or RelWithDebInfo.
@@ -80,6 +83,12 @@ if ($Dll -and $M64) {
     $env:TASFW_M64 = $M64
     $env:TASFW_FRAME = "$Frame"
     Write-Host "libsm64 smoke test enabled: $Dll, $M64, frame $Frame"
+    # The pipeline's exported solution movies, the parity harness's second input set
+    # (test_libsm64_parity.cpp): the default run plays 40 of them, TASFW_PARITY_MOVIE_LIMIT
+    # says how many (0 for all).
+    $movies = Join-Path $root 'analysis\m64'
+    if ((Test-Path $movies) -and -not $env:TASFW_PARITY_MOVIES) { $env:TASFW_PARITY_MOVIES = $movies }
+    if ($env:TASFW_PARITY_MOVIES) { Write-Host "parity movies: $env:TASFW_PARITY_MOVIES" }
 } else {
     Remove-Item Env:TASFW_LIBSM64 -ErrorAction SilentlyContinue
     Remove-Item Env:TASFW_M64 -ErrorAction SilentlyContinue
