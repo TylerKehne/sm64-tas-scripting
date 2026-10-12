@@ -27,7 +27,7 @@ namespace
 			"stages": [
 				{ "name": "first", "type": "tilt-target", "startFrame": 3330,
 				  "scattershot": { "seed": 111, "maxSolutions": 1 }, "args": { "targetNx": -0.1 } },
-				{ "name": "second", "type": "osc-final", "startFrame": 3400, "input": "first", "m64": "other.m64",
+				{ "name": "second", "type": "sc-ending", "startFrame": 3400, "input": "first", "m64": "other.m64",
 				  "select": { "sortBy": ["-fSpd"], "take": 2 }, "export": true }
 			]
 		})");
@@ -310,4 +310,85 @@ TEST_CASE("Stage arguments come from the JSON or from the input's first solution
 	CHECK(ArgString(args, "name", "x", "t") == "z");
 	CHECK(ArgString(args, "other", "x", "t") == "x");
 	CHECK_THROWS_WITH_AS(RejectUnknownKeys(args, { "a", "b", "c", "d", "flag" }, "t"), doctest::Contains("name"), std::runtime_error);
+}
+
+// "start" (ROADMAP 4.2): a full run begins at the stage named, or at an oscillation pass of a
+// dr-oscillations stage from the roots its passes write (PassFile); anything else is refused
+// at the config.
+TEST_CASE("start names the stage a run begins at, or an oscillation pass of the dr stage")
+{
+	auto parse = [](json j) { return PipelineConfig::Parse(j, fs::path("base/cfg")); };
+
+	json j = BaseConfig();
+	PipelineConfig p = parse(j);
+	CHECK_FALSE(p.startStage.has_value());
+	CHECK(p.startPass == 0);
+	CHECK(p.PassFile("second", 3).generic_string() == "base/analysis/solutions/second.oscillation3.json");
+
+	j["start"] = "second";
+	p = parse(j);
+	CHECK(p.startStage == std::string("second"));
+	CHECK(p.startPass == 0);
+
+	j["start"] = "third";
+	CHECK_THROWS_WITH_AS(parse(j), doctest::Contains("start"), std::runtime_error);
+	j["start"] = "second:2"; // the second stage is not a dr-oscillations stage
+	CHECK_THROWS_WITH_AS(parse(j), doctest::Contains("oscillation"), std::runtime_error);
+	j["start"] = "second:x";
+	CHECK_THROWS_WITH_AS(parse(j), doctest::Contains("whole number"), std::runtime_error);
+
+	j["stages"][1]["type"] = "dr-oscillations";
+	j["start"] = "second:2";
+	p = parse(j);
+	CHECK(p.startStage == std::string("second"));
+	CHECK(p.startPass == 2);
+
+	// The command line's --start goes through the same check.
+	p = parse(BaseConfig());
+	p.SetStart("first");
+	CHECK(p.startStage == std::string("first"));
+	CHECK_THROWS_WITH_AS(p.SetStart("first:1"), doctest::Contains("oscillation"), std::runtime_error);
+}
+
+TEST_CASE("A stage names the resource it runs on: the game by default, or the corner with its objects")
+{
+	auto parse = [](json j) { return PipelineConfig::Parse(j, fs::path("base/cfg")); };
+	json config = BaseConfig();
+	PipelineConfig p = parse(config);
+	CHECK(p.stages[0].resource == "game");
+	CHECK_FALSE(p.stages[0].OnCorner());
+
+	config["stages"][1]["resource"] = "corner";
+	config["stages"][1]["objects"] = json::parse(R"(["pyramid", "bully"])");
+	p = parse(config);
+	CHECK(p.stages[1].OnCorner());
+	CHECK(p.stages[1].objects.pyramid);
+	CHECK(p.stages[1].objects.bully);
+	CHECK_FALSE(p.stages[1].objects.otherPyramid);
+	CHECK_FALSE(p.stages[1].objects.trackPlatform);
+	CHECK(p.stages[1].lead == 16); // the corner is imported this many frames before the start frame
+	CHECK(p.stages[1].ImportFrame() == 3400 - 16);
+	config["stages"][1]["lead"] = 40;
+	CHECK(parse(config).stages[1].ImportFrame() == 3360);
+	config["stages"][1]["lead"] = -1;
+	CHECK_THROWS_WITH_AS(parse(config), doctest::Contains("lead"), std::runtime_error);
+	config["stages"][1].erase("lead");
+
+	// Mario alone is an empty list, said explicitly; a corner stage without the list is an error.
+	config["stages"][1]["objects"] = json::array();
+	CHECK_FALSE(parse(config).stages[1].objects.pyramid);
+	config["stages"][1].erase("objects");
+	CHECK_THROWS_WITH_AS(parse(config), doctest::Contains("objects"), std::runtime_error);
+
+	config["stages"][1]["objects"] = json::parse(R"(["pyramid", "lava"])");
+	CHECK_THROWS_WITH_AS(parse(config), doctest::Contains("lava"), std::runtime_error);
+
+	config["stages"][1]["resource"] = "emulator";
+	config["stages"][1]["objects"] = json::parse(R"(["pyramid"])");
+	CHECK_THROWS_WITH_AS(parse(config), doctest::Contains("resource"), std::runtime_error);
+
+	// The objects belong to a corner stage only.
+	config = BaseConfig();
+	config["stages"][0]["objects"] = json::parse(R"(["pyramid"])");
+	CHECK_THROWS_WITH_AS(parse(config), doctest::Contains("corner"), std::runtime_error);
 }

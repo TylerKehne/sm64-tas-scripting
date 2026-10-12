@@ -80,13 +80,13 @@ TEST_CASE("The parameters file carries the CSV's path and, at the end, the run's
 
 	Visualization v;
 	v.script = "analysis/visualizer.py";
-	v.title = "osc-final";
+	v.title = "ending";
 	v.Write(file, "out/csv_1.csv", false, 0);
 	json started = json::parse(std::ifstream(file));
 	CHECK(started["csv"] == "out/csv_1.csv");
 	CHECK(started["finished"] == false);
 	CHECK(started["rows"] == 0);
-	CHECK(started["title"] == "osc-final");
+	CHECK(started["title"] == "ending");
 	CHECK(started["angle"] == "MarioFYaw");
 
 	v.Write(file, "out/csv_1.csv", true, 42);

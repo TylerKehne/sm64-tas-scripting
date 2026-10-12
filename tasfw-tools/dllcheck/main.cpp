@@ -1,6 +1,6 @@
 // dllcheck: is this libsm64 DLL the one our headers describe, and what does a frame cost?
 //
-//   dllcheck <libsm64.dll> <movie.m64> <frame> [--version jp|us] [--save-mode full|fixed|dirty] [--leak-scan [frames]] [--levels]
+//   dllcheck <libsm64.dll> <movie.m64> <frame> [--version jp|us] [--save-mode full|fixed|dirty] [--leak-scan [frames]] [--levels] [--keep-objects <i,j,...>]
 //
 // Loads the DLL, declared to be the game --version says or its file name does (sm64_jp,
 // sm64_us; JP when neither), checks that the movie's header names the same game (a movie
@@ -28,6 +28,12 @@
 // --trace [frames]: print Mario, the camera and the carried-over state for the `frames`
 // (default 30) frames ending at <frame> (the MarioTrace script): what a movie is doing
 // around a frame, and what it carries into a level.
+//
+// --keep-objects <i,j,...>: at <frame>, time a neutral-input frame and count the pages it
+// writes; then deactivate every active object but these gObjectPool indices and Mario,
+// advance one frame so the game unloads them, and measure the same again. The share of a
+// frame that is the rest of the level: what a resource that runs only those objects has to
+// beat, and what the DLL path would gain from the same cut (ROADMAP 4.13).
 
 #include <algorithm>
 #include <cctype>
@@ -95,6 +101,19 @@ namespace
 		int dirtyBaseline = 0;
 		uint64_t dirtyFaults = 0;
 		int warmupFrames = 60;
+		// --keep-objects: the neutral frame's cost and written pages at <frame>, then with
+		// every object but these and Mario deactivated (ROADMAP 4.13).
+		std::vector<int> keepObjects;
+		bool keepObjectsSet = false;
+		int keepTimedFrames = 2000;
+		int keepScanFrames = 30;
+		size_t keepActiveBefore = 0;
+		size_t keepDeactivated = 0;
+		size_t keepActiveAfter = 0;
+		double keepNeutralMicrosBefore = 0;
+		double keepNeutralMicrosAfter = 0;
+		size_t keepPagesBefore = 0;
+		size_t keepPagesAfter = 0;
 	};
 
 	// Which 4 KB pages of .data/.bss changed between two snapshots, and how many bytes in them.
@@ -354,6 +373,8 @@ namespace
 				LeakScan();
 			if (_results.dirtyScanFrames > 0)
 				DirtyScan();
+			if (_results.keepObjectsSet)
+				KeepObjects();
 		}
 
 		// Fixed mode only saves fixed slices of .data/.bss. Every piece of state the search
@@ -585,6 +606,86 @@ namespace
 
 			resource->DisposeState(slot);
 		}
+
+		// The share of a frame that is the rest of the level (ROADMAP 4.13, its first
+		// measurement): the neutral-input frame timed and its written pages counted at <frame>,
+		// then every active object but the kept ones and Mario deactivated the way
+		// obj_mark_for_deletion does it (activeFlags = 0; unload_deactivated_objects unloads
+		// them at the end of the next update), one frame advanced, and both measured again.
+		// Outside any script like the rest of this class (hard rule 9); nothing is played on
+		// the state it leaves, which the load at the end puts back anyway.
+		void KeepObjects()
+		{
+			int64_t slot = resource->SaveState();
+			_results.keepNeutralMicrosBefore = TimeNeutralFrames(slot, _results.keepTimedFrames);
+			_results.keepPagesBefore = NeutralPagesMedian(slot, _results.keepScanFrames);
+
+			constexpr int poolCapacity = LibSm64ObjectPoolCapacity;
+			Object* pool = (Object*)(resource->addr("gObjectPool"));
+			const Object* mario = *(Object**)(resource->addr("gMarioObject"));
+			auto activeCount = [&]() -> size_t
+			{
+				size_t n = 0;
+				for (int i = 0; i < poolCapacity; i++)
+					n += pool[i].activeFlags != 0;
+				return n;
+			};
+			_results.keepActiveBefore = activeCount();
+			for (int i = 0; i < poolCapacity; i++)
+			{
+				Object& o = pool[i];
+				bool keep = &o == mario
+					|| std::find(_results.keepObjects.begin(), _results.keepObjects.end(), i) != _results.keepObjects.end();
+				if (o.activeFlags == 0 || keep)
+					continue;
+				o.activeFlags = 0; // ACTIVE_FLAG_DEACTIVATED
+				_results.keepDeactivated++;
+			}
+			resource->setInputs(Inputs());
+			resource->FrameAdvance();
+			_results.keepActiveAfter = activeCount();
+
+			int64_t cut = resource->SaveState();
+			_results.keepNeutralMicrosAfter = TimeNeutralFrames(cut, _results.keepTimedFrames);
+			_results.keepPagesAfter = NeutralPagesMedian(cut, _results.keepScanFrames);
+			resource->DisposeState(cut);
+			resource->LoadState(slot);
+			resource->DisposeState(slot);
+		}
+
+		// Microseconds per frame over `frames` neutral-input frames from the state in `slot`,
+		// which is loaded back after.
+		double TimeNeutralFrames(int64_t slot, int frames)
+		{
+			auto start = std::chrono::steady_clock::now();
+			for (int i = 0; i < frames; i++)
+			{
+				resource->setInputs(Inputs());
+				resource->FrameAdvance();
+			}
+			double micros = MicrosecondsSince(start) / frames;
+			resource->LoadState(slot);
+			return micros;
+		}
+
+		// Median of the pages of .data/.bss written per frame over `frames` neutral-input
+		// frames from the state in `slot`, which is loaded back after.
+		size_t NeutralPagesMedian(int64_t slot, int frames)
+		{
+			DirtyStats stats;
+			std::vector<uint8_t> ever[2];
+			std::vector<uint8_t> prev[2] = { Snapshot(*resource, 0), Snapshot(*resource, 1) };
+			for (int i = 0; i < frames; i++)
+			{
+				resource->setInputs(Inputs());
+				resource->FrameAdvance();
+				Step(stats, ever, prev, i + 1, frames);
+			}
+			resource->LoadState(slot);
+			std::vector<size_t> pages = stats.pagesPerFrame;
+			std::sort(pages.begin(), pages.end());
+			return pages.empty() ? 0 : pages[pages.size() / 2];
+		}
 	private:
 		LibSm64* resource;
 		const M64* _m64;
@@ -597,7 +698,7 @@ int main(int argc, char** argv)
 {
 	if (argc < 4)
 	{
-		std::fprintf(stderr, "usage: dllcheck <libsm64.dll> <movie.m64> <frame> [--version jp|us] [--save-mode full|fixed|dirty] [--leak-scan [frames]] [--objects] [--dirty-scan [frames]] [--dirty-replay] [--levels] [--trace [frames]]\n");
+		std::fprintf(stderr, "usage: dllcheck <libsm64.dll> <movie.m64> <frame> [--version jp|us] [--save-mode full|fixed|dirty] [--leak-scan [frames]] [--objects] [--dirty-scan [frames]] [--dirty-replay] [--levels] [--trace [frames]] [--keep-objects <i,j,...>]\n");
 		return 2;
 	}
 
@@ -613,6 +714,8 @@ int main(int argc, char** argv)
 	bool dirtyReplay = false;
 	bool listLevels = false;
 	int traceFrames = 0;
+	std::vector<int> keepObjects;
+	bool keepObjectsSet = false;
 	for (int i = 4; i < argc; i++)
 	{
 		std::string arg = argv[i];
@@ -666,6 +769,25 @@ int main(int argc, char** argv)
 			traceFrames = 30;
 			if (i + 1 < argc && std::isdigit((unsigned char)argv[i + 1][0]))
 				traceFrames = std::atoi(argv[++i]);
+		}
+		else if (arg == "--keep-objects")
+		{
+			if (i + 1 >= argc)
+			{
+				std::fprintf(stderr, "--keep-objects needs a comma-separated list of gObjectPool indices\n");
+				return 2;
+			}
+			std::string list = argv[++i];
+			for (size_t pos = 0; pos <= list.size();)
+			{
+				size_t comma = list.find(',', pos);
+				if (comma == std::string::npos)
+					comma = list.size();
+				if (comma > pos)
+					keepObjects.push_back(std::atoi(list.substr(pos, comma - pos).c_str()));
+				pos = comma + 1;
+			}
+			keepObjectsSet = true;
 		}
 		else
 		{
@@ -743,6 +865,8 @@ int main(int argc, char** argv)
 		results.listObjects = listObjects;
 		results.dirtyScanFrames = dirtyScanFrames;
 		results.dirtyReplay = dirtyReplay;
+		results.keepObjects = keepObjects;
+		results.keepObjectsSet = keepObjectsSet;
 		PlayToFrame(resource, m64, frame, results).Run();
 
 		if (!results.coverage.empty())
@@ -776,6 +900,19 @@ int main(int argc, char** argv)
 				results.dirtyPagesWritten, results.dirtyPageCount, results.dirtyBaseline, results.dirtyPagesWritten * pagesize / 1024,
 				(unsigned long long)results.dirtyFaults);
 		std::printf("  addr() lookup: %.0f ns (GetProcAddress; never call per frame)\n", results.addrNanos);
+
+		if (keepObjectsSet)
+		{
+			std::cout << "\nKept objects";
+			for (int index : keepObjects)
+				std::cout << " " << index;
+			std::printf(" and Mario at frame %lld (%zu active; %zu deactivated, %zu active after the unload frame):\n",
+				(long long)results.frameReached, results.keepActiveBefore, results.keepDeactivated, results.keepActiveAfter);
+			std::printf("  neutral frame: %.1f us before, %.1f us after (%d frames each)\n",
+				results.keepNeutralMicrosBefore, results.keepNeutralMicrosAfter, results.keepTimedFrames);
+			std::printf("  pages written per neutral frame: %zu before, %zu after (median of %d)\n",
+				results.keepPagesBefore, results.keepPagesAfter, results.keepScanFrames);
+		}
 
 		if (leakScanFrames > 0)
 		{

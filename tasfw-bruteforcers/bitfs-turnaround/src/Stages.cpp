@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <iterator>
+#include <memory>
 #include <optional>
 #include <cstdio>
 #include <map>
@@ -24,9 +25,7 @@
 #include <BitFsObjects.hpp>
 #include <BitFsScApproach.hpp>
 #include <Scattershot_BitfsDr.hpp>
-#include <Scattershot_BitfsDrApproach.hpp>
-#include <Scattershot_BitfsDrRecover.hpp>
-#include "BitfsOscFinal.hpp"
+#include <Scattershot_BitfsScEnding.hpp>
 #include "TiltTargetShot.hpp"
 
 using nlohmann::json;
@@ -84,27 +83,20 @@ namespace
 		return metrics;
 	}
 
-	std::map<std::string, double> Metrics(const BitfsOscSolution& data)
+	// The ending's solution: what the leave and the squish probe were, so the set of ways
+	// through can be read from the solutions file (README.md, "The stages").
+	std::map<std::string, double> Metrics(const BitfsScEndingSolution& data)
 	{
 		return {
 			{ "fSpd", data.fSpd }, { "pyraNormX", data.pyraNormX }, { "pyraNormY", data.pyraNormY }, { "pyraNormZ", data.pyraNormZ },
-			{ "xzSum", data.xzSum }
-		};
-	}
-
-	std::map<std::string, double> Metrics(const Scattershot_BitfsDrApproach_Solution& data)
-	{
-		return {
-			{ "fSpd", data.fSpd }, { "pyraNormX", data.pyraNormX }, { "pyraNormY", data.pyraNormY }, { "pyraNormZ", data.pyraNormZ },
-			{ "xzSum", data.xzSum }
-		};
-	}
-
-	std::map<std::string, double> Metrics(const Scattershot_BitfsDrRecover_Solution& data)
-	{
-		return {
-			{ "fSpd", data.fSpd }, { "pyraNormX", data.pyraNormX }, { "pyraNormY", data.pyraNormY }, { "pyraNormZ", data.pyraNormZ },
-			{ "xzSum", data.xzSum }
+			{ "xzSum", data.xzSum },
+			{ "approach", double(data.approach) }, { "leaveAction", double(data.leaveAction) }, { "leaveSpeed", data.leaveSpeed },
+			{ "leaveYaw", double(data.leaveYaw) }, { "leaveCUp", double(data.leaveCUp) }, { "quickturn", double(data.quickturn) },
+			{ "leaveEdgeDistance", data.leaveEdgeDistance }, { "strainBackFrames", double(data.strainBackFrames) },
+			{ "nutLandings", double(data.nutLandings) }, { "departureFrame", double(data.departureFrame) },
+			{ "squishFrame", double(data.squishFrame) }, { "probeIndex", double(data.probeIndex) },
+			{ "probeDx", data.probeDx }, { "probeDz", data.probeDz }, { "probeSpeed", data.probeSpeed }, { "probeHeight", data.probeHeight },
+			{ "probeNormX", data.probeNormalX }, { "probeNormZ", data.probeNormalZ }
 		};
 	}
 
@@ -155,6 +147,22 @@ namespace
 		ConfigError("\"platform\" in " + where + " must be the slot of a tilting pyramid (BitFsObjects.hpp: 84 or 83), not " + std::to_string(platform));
 	}
 
+	// The "bully" argument: the gObjectPool slot of the bully the ending's squish probe moves,
+	// one the layout check verifies (BitFsObjects.hpp: 27, the lowest of the level's four, the
+	// maintainer's choice); -1 asks for no probe, so no solution is ever found.
+	int BullySlot(const json& a, const StageContext& context, const std::string& where)
+	{
+		int bully = int(ArgNumber(a, "bully", context.input, 27, where));
+		if (bully < 0)
+			return -1;
+		for (const ExpectedObject& object : BitFsExpectedObjects)
+		{
+			if (object.slot == bully && std::string_view(object.behavior) == "bhvSmallBully")
+				return bully;
+		}
+		ConfigError("\"bully\" in " + where + " must be the slot of a bully the layout check verifies (BitFsObjects.hpp: 27), not " + std::to_string(bully));
+	}
+
 	M64 LoadMovie(const Configuration& config)
 	{
 		M64 m64(config.M64Path);
@@ -162,6 +170,104 @@ namespace
 			throw std::runtime_error("cannot load movie " + config.M64Path.string());
 		return m64;
 	}
+
+	// --- the corner: its import from the game, and the replay check of its solutions ----------
+
+	// Plays the game to the frame and exports the corner's level (once; the pointer passed
+	// in is reused) and a state for it with the objects named: the one way a script hands
+	// out what it reads (ExportSave).
+	class CornerImport : public TopLevelScript<Sm64Resource>
+	{
+	public:
+		class CustomScriptStatus
+		{
+		public:
+			std::shared_ptr<const BitfsCornerLevel> level;
+			std::optional<ImportedSave<Sm64Mem>> state;
+		};
+		CustomScriptStatus CustomStatus = CustomScriptStatus();
+
+		CornerImport(int64_t frame, BitfsCornerObjects objects, std::shared_ptr<const BitfsCornerLevel> level)
+			: _frame(frame), _objects(objects), _level(std::move(level)) { }
+		bool validation() override { return true; }
+		bool execution() override
+		{
+			LongLoad(_frame);
+			if (!_level)
+				_level = std::make_shared<const BitfsCornerLevel>(ExportSave<BitfsCornerLevel>().state);
+			CustomStatus.level = _level;
+			CustomStatus.state = ExportSave<Sm64Mem>(*_level, _objects);
+			return true;
+		}
+		bool assertion() override { return CustomStatus.state.has_value(); }
+
+	private:
+		int64_t _frame;
+		BitfsCornerObjects _objects;
+		std::shared_ptr<const BitfsCornerLevel> _level;
+	};
+
+	// Replays each solution from the start frame in a sandbox and reads, at its end, what the
+	// stages read: the same on either resource, so the two readings can be compared.
+	class ReplayProbe : public TopLevelScript<Sm64Resource>
+	{
+	public:
+		struct Probe
+		{
+			int64_t frame = 0;
+			float pos[3] = {};
+			float vel[3] = {};
+			float forwardVel = 0;
+			uint32_t action = 0;
+			int16_t faceYaw = 0;
+			float floorHeight = 0;
+			float normal[3] = {};
+			bool operator==(const Probe&) const = default;
+		};
+		class CustomScriptStatus
+		{
+		public:
+			std::vector<Probe> probes;
+		};
+		CustomScriptStatus CustomStatus = CustomScriptStatus();
+
+		ReplayProbe(int64_t startFrame, const std::vector<M64Diff>& diffs) : _startFrame(startFrame), _diffs(diffs) { }
+		bool validation() override { return true; }
+		bool execution() override
+		{
+			MarioState* marioState = (MarioState*)(ReadState("gMarioStates"));
+			Object* objectPool = (Object*)(ReadState("gObjectPool"));
+			Object* pyramid = &objectPool[84]; // level-specific index; AGENTS.md, known problems
+			LongLoad(_startFrame);
+			Save(); // every replay below returns here by a load, not by playing the movie again
+			for (const M64Diff& diff : _diffs)
+			{
+				ExecuteAdhoc([&]()
+					{
+						Apply(diff);
+						Probe probe;
+						probe.frame = GetCurrentFrame();
+						std::copy(marioState->pos, marioState->pos + 3, probe.pos);
+						std::copy(marioState->vel, marioState->vel + 3, probe.vel);
+						probe.forwardVel = marioState->forwardVel;
+						probe.action = marioState->action;
+						probe.faceYaw = marioState->faceAngle[1];
+						probe.floorHeight = marioState->floorHeight;
+						probe.normal[0] = pyramid->oTiltingPyramidNormalX;
+						probe.normal[1] = pyramid->oTiltingPyramidNormalY;
+						probe.normal[2] = pyramid->oTiltingPyramidNormalZ;
+						CustomStatus.probes.push_back(probe);
+						return true;
+					});
+			}
+			return true;
+		}
+		bool assertion() override { return CustomStatus.probes.size() == _diffs.size(); }
+
+	private:
+		int64_t _startFrame;
+		const std::vector<M64Diff>& _diffs;
+	};
 
 	// --- tilt-target: TiltTargetShot, one pass ----------------------------------------------
 
@@ -204,7 +310,7 @@ namespace
 		Configuration config = context.pipeline.ScattershotConfiguration(context.stage);
 		auto input = PipeIn<TiltTargetShotSolution>(context.input);
 		auto solutions = TiltTargetShot::ConfigureScattershot(config)
-			.ImportResourcePerThread([&](auto threadId) { return &context.resources[threadId]; })
+			.ImportResourcePerThread([&](auto threadId) { return context.resources[threadId]; })
 			.PipeFrom(input)
 			.ConfigureMetricScript(args)
 			.Visualize(context.stage.visualize)
@@ -220,7 +326,7 @@ namespace
 		const json& a = context.stage.args;
 		RejectUnknownKeys(a,
 			{ "equilibriumFrame", "quadrant", "platform", "minOscillationFrames", "targetNx", "targetNz", "maxOscillations",
-				"firstShots", "shots", "lastShots", "lastMaxSolutions", "keepTop", "passRetries", "requireIncrementParity", "minFirstCrossingSpeed", "normalSpecs" },
+				"firstShots", "shots", "lastShots", "lastMaxSolutions", "keepTop", "passRetries", "handOverFallback", "requireIncrementParity", "minFirstCrossingSpeed", "normalSpecs" },
 			where);
 
 		int64_t equilibriumFrame = int64_t(ArgNumber(a, "equilibriumFrame", context.input, where));
@@ -239,12 +345,13 @@ namespace
 		size_t keepTop = size_t(ArgNumber(a, "keepTop", context.input, 10, where));
 		int passRetries = int(ArgNumber(a, "passRetries", context.input, 0, where));
 		bool requireIncrementParity = ArgBool(a, "requireIncrementParity", true, where);
+		bool handOverFallback = ArgBool(a, "handOverFallback", true, where);
 		float minFirstCrossingSpeed = float(ArgNumber(a, "minFirstCrossingSpeed", context.input, 0.0, where)); // 0: no floor
 
 		const json& specsJson = RequireObject(a, "normalSpecs", where);
 		const std::string specsWhere = where + ".normalSpecs";
 		RejectUnknownKeys(specsJson,
-			{ "onlyMinMajor", "startXzSum", "minXzSum", "legExitSpeed", "legMinClearance", "maxXzSum", "minAxis", "minLavaClearance", "maxRetreat", "handoverXzSum", "minMajor", "maxMajor", "regionsMajor", "minMinor", "maxMinor", "regionsMinor" }, specsWhere);
+			{ "onlyMinMajor", "startXzSum", "minXzSum", "legExitSpeed", "legMinClearance", "maxXzSum", "minEndClearance", "minCrossingAxisDiff", "minAxis", "minLavaClearance", "maxRetreat", "handoverXzSum", "minMajor", "maxMajor", "regionsMajor", "minMinor", "maxMinor", "regionsMinor" }, specsWhere);
 		NormalSpecsDto specs;
 		specs.onlyMinMajor = ArgBool(specsJson, "onlyMinMajor", true, specsWhere);
 		specs.minXzSum = float(ArgNumber(specsJson, "minXzSum", context.input, specsWhere));
@@ -262,6 +369,8 @@ namespace
 		specs.maxXzSum = float(ArgNumber(specsJson, "maxXzSum", context.input, 2.0, specsWhere));
 		if (specs.maxXzSum < specs.minXzSum)
 			ConfigError("\"maxXzSum\" in " + specsWhere + " must not be below \"minXzSum\"");
+		specs.minEndClearance = float(ArgNumber(specsJson, "minEndClearance", context.input, 0.0, specsWhere));
+		specs.minCrossingAxisDiff = float(ArgNumber(specsJson, "minCrossingAxisDiff", context.input, 0.0, specsWhere));
 		specs.minAxis = float(ArgNumber(specsJson, "minAxis", context.input, 0.0, specsWhere));
 		specs.minLavaClearance = float(ArgNumber(specsJson, "minLavaClearance", context.input, 0.0, specsWhere));
 		specs.maxRetreat = float(ArgNumber(specsJson, "maxRetreat", context.input, double(INFINITY), specsWhere));
@@ -281,7 +390,7 @@ namespace
 			if (visualize)
 				visualize->title += " (oscillation " + std::to_string(targetOscillation) + (attempt > 0 ? ", retry " + std::to_string(attempt) : "") + ")";
 			return Scattershot_BitfsDr::ConfigureScattershot(config)
-				.ImportResourcePerThread([&](auto threadId) { return &context.resources[threadId]; })
+				.ImportResourcePerThread([&](auto threadId) { return context.resources[threadId]; })
 				.PipeFrom(input)
 				.ConfigureMetricScript(equilibriumFrame, quadrant, specs, minOscillationFrames, targetNx, targetNz, platform)
 				.Visualize(visualize)
@@ -319,22 +428,88 @@ namespace
 			return pooled;
 		};
 
-		config.MaxShots = firstShots;
-		auto initial = PipeIn<Scattershot_BitfsDr_Solution>(context.input);
-		std::vector<Solution> solutions = runWithRetries(0, initial, maxOscillations <= 1);
-		std::vector<int64_t> passSolutions { int64_t(solutions.size()) }; // each pass's yield, for the set
+		// Each pass's carried roots go to a file beside the stage's solutions (PassFile), so a
+		// run can start at any oscillation from them ("start": "<stage>:<n>"; ROADMAP 4.2).
+		std::vector<int64_t> passSolutions; // each pass's yield, for the set
+		std::map<int, SolutionSet> carriedSets; // what each pass carried, by pass, as written: for the rewind below
+		auto cachePass = [&](int targetOscillation, const std::vector<Solution>& carried)
 		{
-			// The leg's hand-over, for the run's log: how many roots the first oscillation starts from and their spread.
-			auto speeds = solutions | std::views::transform([](const Solution& s) { return s.data.fSpd; });
-			auto tilts = solutions | std::views::transform([](const Solution& s) { return s.data.xzSum; });
-			std::printf("dr-oscillations: the leg found %llu solution(s)", (unsigned long long)solutions.size());
-			if (!solutions.empty())
-				std::printf(", speed %.2f to %.2f, tilt %.3f to %.3f", std::ranges::min(speeds), std::ranges::max(speeds), std::ranges::min(tilts), std::ranges::max(tilts));
+			SolutionSet set = ToSet(context, carried);
+			set.passSolutions = passSolutions;
+			for (SolutionRecord& record : set.solutions)
+				record.metrics["equilibriumFrame"] = double(equilibriumFrame);
+			fs::path file = context.pipeline.PassFile(context.stage.name, targetOscillation);
+			fs::create_directories(file.parent_path());
+			set.Save(file);
+			carriedSets[targetOscillation] = std::move(set);
+		};
+		// The hand-over, for the run's log: what a pass found and what the next one starts from,
+		// by 0.01 by 0.01 cell of the pyramid's normal (one lattice point, the normal stepping
+		// 0.01 an axis): how many, their fastest and slowest.
+		auto cell = [](const Solution& s) { return std::pair<int, int>(int(std::lround(s.data.pyraNormX * 100.0f)), int(std::lround(s.data.pyraNormZ * 100.0f))); };
+		auto logHandOver = [&](int targetOscillation, std::size_t found, const std::vector<Solution>& carried)
+		{
+			std::map<std::pair<int, int>, std::vector<float>> cells;
+			for (const Solution& s : carried)
+				cells[cell(s)].push_back(s.data.fSpd);
+			std::printf("dr-oscillations: oscillation %d found %llu solution(s), carrying %llu in %llu cell(s) of the normal (direction %d):",
+				targetOscillation, (unsigned long long)found, (unsigned long long)carried.size(), (unsigned long long)cells.size(),
+				carried.empty() ? 0 : int(carried[0].data.roughTargetAngle));
+			for (const auto& [key, speeds] : cells)
+				std::printf(" [n (%.2f, %.2f) x%llu spd %.2f..%.2f]", key.first / 100.0, key.second / 100.0, (unsigned long long)speeds.size(),
+					*std::max_element(speeds.begin(), speeds.end()), *std::min_element(speeds.begin(), speeds.end()));
 			std::printf("\n");
+		};
+
+		const int startOscillation = context.pipeline.startStage == context.stage.name ? context.pipeline.startPass : 0;
+		std::vector<Solution> solutions;
+		if (startOscillation == 0)
+		{
+			config.MaxShots = firstShots;
+			auto initial = PipeIn<Scattershot_BitfsDr_Solution>(context.input);
+			solutions = runWithRetries(0, initial, maxOscillations <= 1);
+			passSolutions.push_back(int64_t(solutions.size()));
+			{
+				// The leg's hand-over, for the run's log: how many roots the first oscillation starts from and their spread.
+				auto speeds = solutions | std::views::transform([](const Solution& s) { return s.data.fSpd; });
+				auto tilts = solutions | std::views::transform([](const Solution& s) { return s.data.xzSum; });
+				std::printf("dr-oscillations: the leg found %llu solution(s)", (unsigned long long)solutions.size());
+				if (!solutions.empty())
+					std::printf(", speed %.2f to %.2f, tilt %.3f to %.3f", std::ranges::min(speeds), std::ranges::max(speeds), std::ranges::min(tilts), std::ranges::max(tilts));
+				std::printf("\n");
+			}
+			cachePass(0, solutions);
+		}
+		else
+		{
+			// From the cache: the roots the pass before carried and the yields so far. The
+			// direction the first oscillation committed to is on every root it carried, and when
+			// it was the first direction it added an oscillation (the commitment below).
+			fs::path file = context.pipeline.PassFile(context.stage.name, startOscillation - 1);
+			if (!fs::exists(file))
+				ConfigError("\"start\" asks stage \"" + context.stage.name + "\" to begin at oscillation " + std::to_string(startOscillation)
+					+ " but " + file.string() + " does not exist; run the stage from an earlier oscillation first");
+			SolutionSet cached = SolutionSet::Load(file);
+			if (cached.solutions.empty())
+				ConfigError(file.string() + " holds no roots to start from");
+			solutions = PipeIn<Scattershot_BitfsDr_Solution>(&cached);
+			carriedSets[startOscillation - 1] = cached;
+			passSolutions = cached.passSolutions;
+			if (startOscillation >= 2)
+			{
+				std::optional<double> direction = cached.Metric("roughTargetAngle");
+				if (direction && int16_t(*direction) == BitfsDrMetrics::RoughTargetAngleA(quadrant))
+					maxOscillations++;
+			}
+			if (startOscillation >= maxOscillations)
+				ConfigError("\"start\" asks stage \"" + context.stage.name + "\" to begin at oscillation " + std::to_string(startOscillation)
+					+ ", past its last pass (maxOscillations " + std::to_string(maxOscillations) + ", the first oscillation's direction counted)");
+			std::printf("dr-oscillations: starting at oscillation %d from the %llu root(s) in %s\n",
+				startOscillation, (unsigned long long)solutions.size(), file.string().c_str());
 		}
 
 		config.MaxShots = shots;
-		for (int targetOscillation = 1; targetOscillation < maxOscillations; targetOscillation++)
+		for (int targetOscillation = std::max(1, startOscillation); targetOscillation < maxOscillations; targetOscillation++)
 		{
 			bool finalPass = targetOscillation == maxOscillations - 1;
 			if (finalPass)
@@ -347,10 +522,54 @@ namespace
 			passSolutions.push_back(int64_t(solutions.size()));
 			if (solutions.empty())
 			{
-				std::printf("dr-oscillations: no solutions at target oscillation %d\n", targetOscillation);
-				SolutionSet none = ToSet(context, solutions);
-				none.passSolutions = passSolutions;
-				return none;
+				// The rewind (the maintainer, 2026-10-06, kept on 2026-10-10 over the free oscillations
+				// tried between; ROADMAP 4.12): a pass that yields nothing hands on the roots carried
+				// from the last earlier pass whose crossing heads toward the squish-cancel quadrant
+				// (the final pass's parity, the passes alternating), the nearest of them with roots
+				// that meet the last pass's rules, the regime's tilt and the step parity. A failing
+				// middle pass thus ends the stage early instead of ending the run; none at all is the
+				// failure it was. The roots are handed on as the pass wrote them, records with their
+				// metrics (a pipe-in keeps only the inputs, and the next stage reads the metrics: the
+				// direction, the hand-over frame), from this run or from the pass files of the run a
+				// start at a later oscillation resumed.
+				auto metric = [](const SolutionRecord& record, const char* name)
+				{
+					auto found = record.metrics.find(name);
+					return found == record.metrics.end() ? 0.0 : found->second;
+				};
+				SolutionSet fallback;
+				int fallbackPass = -1;
+				for (int pass = targetOscillation - 1; handOverFallback && pass >= 0 && fallback.solutions.empty(); pass--)
+				{
+					if ((maxOscillations - 1 - pass) % 2 != 0)
+						continue;
+					SolutionSet candidate;
+					if (auto carried = carriedSets.find(pass); carried != carriedSets.end())
+						candidate = carried->second;
+					else if (fs::path file = context.pipeline.PassFile(context.stage.name, pass); fs::exists(file))
+						candidate = SolutionSet::Load(file);
+					std::erase_if(candidate.solutions, [&](const SolutionRecord& record)
+						{
+							return metric(record, "xzSum") < double(specs.minXzSum)
+								|| (requireIncrementParity && std::fmod(std::fabs(metric(record, "incrementFrames0")), 2.0) != std::fmod(std::fabs(metric(record, "incrementFrames2")), 2.0));
+						});
+					if (!candidate.solutions.empty())
+					{
+						fallback = std::move(candidate);
+						fallbackPass = pass;
+					}
+				}
+				if (fallback.solutions.empty())
+				{
+					std::printf("dr-oscillations: no solutions at target oscillation %d\n", targetOscillation);
+					SolutionSet none = ToSet(context, solutions);
+					none.passSolutions = passSolutions;
+					return none;
+				}
+				std::printf("dr-oscillations: no solutions at target oscillation %d; handing on the %llu root(s) carried from oscillation %d, the last pass whose crossing heads toward the squish-cancel quadrant, that meet the last pass's rules\n",
+					targetOscillation, (unsigned long long)fallback.solutions.size(), fallbackPass);
+				fallback.passSolutions = passSolutions;
+				return fallback;
 			}
 			std::size_t found = solutions.size();
 
@@ -376,18 +595,17 @@ namespace
 
 			if (targetOscillation < maxOscillations - 1)
 			{
+				// The roots the next pass starts from: the keepTop fastest (the maintainer, 2026-10-07;
+				// the fastest of each 0.01 cell of the normal was tried on 2026-10-06 and carried the
+				// pass's every tilt without a faster crossing, ROADMAP 4.6). The last pass hands on
+				// all of its solutions.
 				std::stable_sort(solutions.begin(), solutions.end(), [](const Solution& x, const Solution& y) { return x.data.fSpd > y.data.fSpd; });
 				if (solutions.size() > keepTop)
 					solutions.resize(keepTop);
 			}
 
-			// The hand-over, for the run's log: what the pass found and what the next one starts from.
-			std::printf("dr-oscillations: oscillation %d found %llu solution(s), carrying %llu (direction %d):",
-				targetOscillation, (unsigned long long)found, (unsigned long long)solutions.size(),
-				solutions.empty() ? 0 : int(solutions[0].data.roughTargetAngle));
-			for (const Solution& s : solutions)
-				std::printf(" [spd %.2f tilt %.3f osc %d]", s.data.fSpd, s.data.xzSum, s.data.currentOscillation);
-			std::printf("\n");
+			logHandOver(targetOscillation, found, solutions);
+			cachePass(targetOscillation, solutions);
 		}
 
 		if (requireIncrementParity)
@@ -403,94 +621,112 @@ namespace
 		return set;
 	}
 
-	// --- osc-final: BitfsOscFinal -------------------------------------------------------------
+	// --- sc-ending: Scattershot_BitfsScEnding (the final run, the approach, the leave, the squish test) ---
 
-	SolutionSet RunOscFinal(StageContext& context)
+	SolutionSet RunScEnding(StageContext& context)
 	{
 		const std::string where = ArgsWhere(context);
 		const json& a = context.stage.args;
-		RejectUnknownKeys(a, { "initialFrame", "oscQuadrant", "targetQuadrant", "targetNx", "targetNz" }, where);
+		RejectUnknownKeys(a, { "initialFrame", "targetQuadrant", "targetEdge", "platform", "targetNx", "targetNz", "edgeSide", "maxLeaveSpeed",
+			"bully", "bullySpeed", "probeFrames", "probeWindow", "squishMinSpeed", "squishMinClearance", "pauseBuffer", "moves" }, where);
 
-		BitfsOscFinalArgs args;
-		args.InitialFrame = int64_t(ArgNumber(a, "initialFrame", context.input, double(context.stage.startFrame), where));
-		args.OscQuadrant = int(ArgNumber(a, "oscQuadrant", context.input, 4, where));
-		args.TargetQuadrant = int(ArgNumber(a, "targetQuadrant", context.input, 1, where));
-		args.TargetNx = float(ArgNumber(a, "targetNx", context.input, where));
-		args.TargetNz = float(ArgNumber(a, "targetNz", context.input, where));
+		BitfsScEndingArgs args;
+		args.initialFrame = int64_t(ArgNumber(a, "initialFrame", context.input, double(context.stage.startFrame), where));
+		args.targetQuadrant = int(ArgNumber(a, "targetQuadrant", context.input, args.targetQuadrant, where));
+		args.platform = PyramidSlot(a, context, where);
+		// The target normal, or none (the maintainer, 2026-10-06): without targetNx and targetNz
+		// the ending conserves the hand-over's own lattice and a squish cancel at any normal on
+		// it counts, the solution recording which (probeNormX, probeNormZ).
+		args.targetGiven = a.contains("targetNx") || a.contains("targetNz");
+		if (args.targetGiven)
+		{
+			args.targetNx = float(ArgNumber(a, "targetNx", context.input, where));
+			args.targetNz = float(ArgNumber(a, "targetNz", context.input, where));
+		}
+		args.edgeSide = float(ArgNumber(a, "edgeSide", context.input, args.edgeSide, where));
+		args.maxLeaveSpeed = float(ArgNumber(a, "maxLeaveSpeed", context.input, args.maxLeaveSpeed, where));
+
+		// The target edge (the maintainer, 2026-10-06): the axis the squish ledge runs along, "x"
+		// or "z" (uscx, uscz; AGENTS.md's glossary), of the target corner's two edges. The squish
+		// edge's outward side is then the corner's sign on the other axis, and the oscillation
+		// corner is the one across the corner's other edge, the run's; the piped-in solutions must
+		// be oriented toward the squish edge, their last crossing's run heading at it.
+		{
+			const int target = args.targetQuadrant;
+			if (target < 1 || target > 4)
+				ConfigError("\"targetQuadrant\" in " + where + " must be 1 to 4 (the corner: 1 is +x +z, 2 is +x -z, 3 is -x -z, 4 is -x +z)");
+			const int signX = BitfsScEndingMetrics::CornerSignX(target);
+			const int signZ = BitfsScEndingMetrics::CornerSignZ(target);
+			std::string edge = ArgString(a, "targetEdge", "z", where);
+			int oscSignX = signX;
+			int oscSignZ = signZ;
+			if (edge == "z") { args.squishEdgeX = signX; args.squishEdgeZ = 0; oscSignX = -signX; } // the z-aligned edge faces along x
+			else if (edge == "x") { args.squishEdgeX = 0; args.squishEdgeZ = signZ; oscSignZ = -signZ; }
+			else
+				ConfigError("\"targetEdge\" in " + where + " must be \"x\" or \"z\", the axis the squish ledge runs along (uscx, uscz), not \"" + edge + "\"");
+			args.oscQuadrant = oscSignX > 0 ? (oscSignZ > 0 ? 1 : 2) : (oscSignZ > 0 ? 4 : 3);
+			edge = std::string(args.squishEdgeX + args.squishEdgeZ > 0 ? "+" : "-") + (args.squishEdgeX != 0 ? "x" : "z") + " (the " + edge + "-aligned edge)";
+			// The oscillation solutions end at a crossing, Mario running toward one chord end while
+			// the normal, caught up, steps toward the other: their roughTargetAngle is that other end,
+			// so his heading is its opposite (the ends differ by a half turn). Measured on the
+			// committed run's hand-off: roughTargetAngle -24576, Mario at yaw 6699 toward +x and +z.
+			std::optional<double> direction = context.input ? context.input->Metric("roughTargetAngle") : std::nullopt;
+			if (direction)
+			{
+				const int16_t heading = int16_t(int16_t(*direction) + 0x8000);
+				const float runX = gSineTable[uint16_t(heading) >> 4];
+				const float runZ = gCosineTable[uint16_t(heading) >> 4];
+				if (runX * float(args.squishEdgeX) + runZ * float(args.squishEdgeZ) < 0.5f)
+					ConfigError("stage \"" + context.stage.name + "\": the input's solutions leave their last crossing heading toward yaw " + std::to_string(int(heading))
+						+ ", away from the squish edge " + edge + "; the oscillation stage's last pass must cross with Mario running toward that edge's corner");
+			}
+		}
+		args.bully = BullySlot(a, context, where);
+		args.bullySpeed = float(ArgNumber(a, "bullySpeed", context.input, args.bullySpeed, where));
+		args.probeFrames = int(ArgNumber(a, "probeFrames", context.input, args.probeFrames, where));
+		args.probeWindow = int(ArgNumber(a, "probeWindow", context.input, args.probeWindow, where));
+		args.squishMinSpeed = float(ArgNumber(a, "squishMinSpeed", context.input, args.squishMinSpeed, where));
+		args.squishMinClearance = float(ArgNumber(a, "squishMinClearance", context.input, args.squishMinClearance, where));
+		args.pauseBuffer = ArgBool(a, "pauseBuffer", args.pauseBuffer, where);
+		if (a.contains("moves"))
+		{
+			const json& moves = RequireObject(a, "moves", where);
+			const std::string movesWhere = where + ".moves";
+			RejectUnknownKeys(moves, { "dive", "brake", "walkOff", "parallel", "quickturn", "cUp", "wait", "strainBack" }, movesWhere);
+			args.weightDive = ArgNumber(moves, "dive", context.input, args.weightDive, movesWhere);
+			args.weightBrake = ArgNumber(moves, "brake", context.input, args.weightBrake, movesWhere);
+			args.weightWalkOff = ArgNumber(moves, "walkOff", context.input, args.weightWalkOff, movesWhere);
+			args.weightParallel = ArgNumber(moves, "parallel", context.input, args.weightParallel, movesWhere);
+			args.weightQuickturn = ArgNumber(moves, "quickturn", context.input, args.weightQuickturn, movesWhere);
+			args.weightCUp = ArgNumber(moves, "cUp", context.input, args.weightCUp, movesWhere);
+			args.weightWait = ArgNumber(moves, "wait", context.input, args.weightWait, movesWhere);
+			args.weightStrainBack = ArgNumber(moves, "strainBack", context.input, args.weightStrainBack, movesWhere);
+		}
+		if (args.probeFrames < 1 || args.probeWindow < 0)
+			ConfigError("\"probeFrames\" in " + where + " must be at least 1 and \"probeWindow\" at least 0");
+		try
+		{
+			BitfsScEndingMetrics::RoughTargetAngle(args.oscQuadrant, args.targetQuadrant);
+		}
+		catch (const std::runtime_error&)
+		{
+			ConfigError("\"targetQuadrant\" in " + where + " must name a corner adjacent to \"oscQuadrant\"");
+		}
 
 		Configuration config = context.pipeline.ScattershotConfiguration(context.stage);
-		auto input = PipeIn<BitfsOscSolution>(context.input);
-		auto solutions = BitfsOscFinal::ConfigureScattershot(config)
-			.ImportResourcePerThread([&](auto threadId) { return &context.resources[threadId]; })
+		auto input = PipeIn<BitfsScEndingSolution>(context.input);
+		auto solutions = Scattershot_BitfsScEnding::ConfigureScattershot(config)
+			.ImportResourcePerThread([&](auto threadId) { return context.resources[threadId]; })
 			.PipeFrom(input)
 			.ConfigureMetricScript(args)
 			.Visualize(context.stage.visualize)
-			.Run<BitfsOscFinal>(args);
-		return ToSet(context, solutions);
-	}
-
-	// --- dr-approach: Scattershot_BitfsDrApproach (dive from the oscillation) --------------------
-
-	SolutionSet RunDrApproach(StageContext& context)
-	{
-		const std::string where = ArgsWhere(context);
-		const json& a = context.stage.args;
-		RejectUnknownKeys(a, { "initialFrame", "oscQuadrant", "targetQuadrant", "minXzSum", "targetNx", "targetNz" }, where);
-
-		int64_t initialFrame = int64_t(ArgNumber(a, "initialFrame", context.input, double(context.stage.startFrame), where));
-		int oscQuadrant = int(ArgNumber(a, "oscQuadrant", context.input, 4, where));
-		int targetQuadrant = int(ArgNumber(a, "targetQuadrant", context.input, 1, where));
-		float minXzSum = float(ArgNumber(a, "minXzSum", context.input, where));
-		float targetNx = float(ArgNumber(a, "targetNx", context.input, where));
-		float targetNz = float(ArgNumber(a, "targetNz", context.input, where));
-
-		Configuration config = context.pipeline.ScattershotConfiguration(context.stage);
-		auto input = PipeIn<Scattershot_BitfsDrApproach_Solution>(context.input);
-		auto solutions = Scattershot_BitfsDrApproach::ConfigureScattershot(config)
-			.ImportResourcePerThread([&](auto threadId) { return &context.resources[threadId]; })
-			.PipeFrom(input)
-			.ConfigureMetricScript(initialFrame, oscQuadrant, targetQuadrant, minXzSum, targetNx, targetNz)
-			.Visualize(context.stage.visualize)
-			.Run<Scattershot_BitfsDrApproach>();
-		return ToSet(context, solutions);
-	}
-
-	// --- dr-recover: Scattershot_BitfsDrRecover (land the dive, then the C-up trick) -----------
-
-	SolutionSet RunDrRecover(StageContext& context)
-	{
-		const std::string where = ArgsWhere(context);
-		const json& a = context.stage.args;
-		RejectUnknownKeys(a, { "initialFrame", "oscQuadrant", "targetQuadrant", "minXzSum", "phase" }, where);
-
-		int64_t initialFrame = int64_t(ArgNumber(a, "initialFrame", context.input, double(context.stage.startFrame), where));
-		int oscQuadrant = int(ArgNumber(a, "oscQuadrant", context.input, 4, where));
-		int targetQuadrant = int(ArgNumber(a, "targetQuadrant", context.input, 1, where));
-		float minXzSum = float(ArgNumber(a, "minXzSum", context.input, where));
-
-		std::string phaseName = ArgString(a, "phase", "attempt-dr", where);
-		BitfsDrRecoverMetrics::Phase phase;
-		if (phaseName == "attempt-dr")
-			phase = BitfsDrRecoverMetrics::Phase::ATTEMPT_DR;
-		else if (phaseName == "c-up-trick")
-			phase = BitfsDrRecoverMetrics::Phase::C_UP_TRICK;
-		else
-			ConfigError("\"phase\" in " + where + " must be \"attempt-dr\" or \"c-up-trick\"");
-
-		Configuration config = context.pipeline.ScattershotConfiguration(context.stage);
-		auto input = PipeIn<Scattershot_BitfsDrRecover_Solution>(context.input);
-		auto solutions = Scattershot_BitfsDrRecover::ConfigureScattershot(config)
-			.ImportResourcePerThread([&](auto threadId) { return &context.resources[threadId]; })
-			.PipeFrom(input)
-			.ConfigureMetricScript(initialFrame, oscQuadrant, targetQuadrant, minXzSum)
-			.Visualize(context.stage.visualize)
-			.Run<Scattershot_BitfsDrRecover>(phase);
+			.Run<Scattershot_BitfsScEnding>(args);
 		return ToSet(context, solutions);
 	}
 
 	// --- pyramid-osc-approach: the original single-threaded experiment ---------------------------
 
-	class PyramidOscApproach : public TopLevelScript<LibSm64>
+	class PyramidOscApproach : public TopLevelScript<Sm64Resource>
 	{
 	public:
 		struct Args
@@ -583,7 +819,7 @@ namespace
 
 		Configuration config = context.pipeline.ScattershotConfiguration(context.stage);
 		M64 m64 = LoadMovie(config);
-		auto status = TopLevelScriptBuilder<PyramidOscApproach>::Build(m64).ImportResource(&context.resources[0]).Run(args);
+		auto status = TopLevelScriptBuilder<PyramidOscApproach>::Build(m64).ImportResource(context.resources[0]).Run(args);
 		std::printf("pyramid-osc-approach: oscillation %s, %d oscillations, xz sum %.3f at the start, %.3f and %.3f at the two ends, "
 			"max speed %.1f and %.1f, normal at the end (%.9g, %.9g, %.9g); %llu frame advances\n",
 			status.oscillated ? "asserted" : "not asserted", status.oscillations, status.initialXzSum, status.finalXzSum[0], status.finalXzSum[1],
@@ -600,7 +836,7 @@ namespace
 
 	// --- are-fixer: BitFsAreFixer, one rest with the wanted ARE, on the first resource ---------
 
-	class AreFixerRoot : public TopLevelScript<LibSm64>
+	class AreFixerRoot : public TopLevelScript<Sm64Resource>
 	{
 	public:
 		class CustomScriptStatus
@@ -655,7 +891,7 @@ namespace
 
 		Configuration config = context.pipeline.ScattershotConfiguration(context.stage);
 		M64 m64 = LoadMovie(config);
-		auto status = TopLevelScriptBuilder<AreFixerRoot>::Build(m64).ImportResource(&context.resources[0]).Run(context.stage.startFrame, args);
+		auto status = TopLevelScriptBuilder<AreFixerRoot>::Build(m64).ImportResource(context.resources[0]).Run(context.stage.startFrame, args);
 		const ScriptStatus<BitFsAreFixer>& fixer = status.fixer;
 		std::printf("are-fixer: %s in %d landing and %d turn rounds; hand-over frame %lld at (%.9g, %.9g), normal (%.9g, %.9g, %.9g), "
 			"ARE (%.0f, %.0f), steps (%d, %d), %d frames after the rest at frame %lld, (%.9g, %.9g), normal (%.9g, %.9g), x error %.0f; "
@@ -697,9 +933,7 @@ namespace
 		{ "tilt-target", "TiltTargetShot: reach a target pyramid normal (one pass; chain passes through input)", RunTiltTarget },
 		{ "are-fixer", "BitFsAreFixer: from a dive onto the platform, a dive recover whose rest sets the x axis of the pyramid's normal to the target's ARE, then a run and turn that set z, handing Mario over running", RunAreFixer },
 		{ "dr-oscillations", "Scattershot_BitfsDr once per target oscillation, filtering between oscillations", RunDrOscillations },
-		{ "osc-final", "BitfsOscFinal: the final oscillation into the target quadrant", RunOscFinal },
-		{ "dr-approach", "Scattershot_BitfsDrApproach: dive from the oscillation (was disabled in main.cpp; unverified)", RunDrApproach },
-		{ "dr-recover", "Scattershot_BitfsDrRecover: land the dive (\"attempt-dr\") or the C-up trick (\"c-up-trick\"); unverified", RunDrRecover },
+		{ "sc-ending", "Scattershot_BitfsScEnding: the ending from the oscillations' last crossing: the final run, the approach (dive recover or brake), the leave (walk off, parallel, quickturn, C-up, wait) and the squish test", RunScEnding },
 		{ "pyramid-osc-approach", "single-threaded BitFsPyramidOscillation + BitFsScApproach from the start frame", RunPyramidOscApproach },
 		{ "export", "no search; passes its input through (use with \"export\": true)", RunExport },
 	};
@@ -743,6 +977,55 @@ void ExportSolutionSet(const StageContext& context, const SolutionSet& set)
 
 	Configuration config = context.pipeline.ScattershotConfiguration(context.stage);
 	M64 m64 = LoadMovie(config);
-	TopLevelScriptBuilder<ExportSolutions>::Build(m64).ImportResource(&context.resources[0]).Run(set.startFrame, diffs, directory);
+	TopLevelScriptBuilder<ExportSolutions>::Build(m64).ImportResource(&context.game).Run(set.startFrame, diffs, directory);
 	std::printf("exported %llu movie(s) to %s\n", (unsigned long long)diffs.size(), directory.string().c_str());
+}
+
+ImportedCorner ImportCorner(LibSm64& game, const PipelineConfig& pipeline, const StageConfig& stage, std::shared_ptr<const BitfsCornerLevel> level)
+{
+	Configuration config = pipeline.ScattershotConfiguration(stage);
+	M64 m64 = LoadMovie(config);
+	auto status = TopLevelScriptBuilder<CornerImport>::Build(m64).ImportResource(&game).Run(stage.ImportFrame(), stage.objects, std::move(level));
+	if (!status.asserted)
+		throw std::runtime_error("stage \"" + stage.name + "\": the corner could not be imported from the game at frame " + std::to_string(stage.ImportFrame()));
+	return ImportedCorner { status.level, *status.state };
+}
+
+size_t VerifyOnGame(const StageContext& context, SolutionSet& set)
+{
+	if (set.solutions.empty())
+		return 0;
+	std::vector<M64Diff> diffs;
+	diffs.reserve(set.solutions.size());
+	for (const SolutionRecord& record : set.solutions)
+		diffs.push_back(record.m64Diff);
+
+	Configuration config = context.pipeline.ScattershotConfiguration(context.stage);
+	M64 m64 = LoadMovie(config);
+	auto onGame = TopLevelScriptBuilder<ReplayProbe>::Build(m64).ImportResource(&context.game).Run(set.startFrame, diffs);
+	auto onCorner = TopLevelScriptBuilder<ReplayProbe>::Build(m64).ImportResource(context.resources[0]).Run(set.startFrame, diffs);
+	if (!onGame.asserted || !onCorner.asserted)
+		throw std::runtime_error("stage \"" + context.stage.name + "\": the replay check read " + std::to_string(onGame.probes.size()) + " solution(s) on the game and "
+			+ std::to_string(onCorner.probes.size()) + " on the corner, of " + std::to_string(diffs.size()));
+
+	size_t dropped = 0;
+	std::vector<SolutionRecord> kept;
+	kept.reserve(set.solutions.size());
+	for (size_t i = 0; i < diffs.size(); i++)
+	{
+		const ReplayProbe::Probe& g = onGame.probes[i];
+		const ReplayProbe::Probe& c = onCorner.probes[i];
+		if (g == c)
+		{
+			kept.push_back(std::move(set.solutions[i]));
+			continue;
+		}
+		dropped++;
+		std::printf("    solution %zu differs on the game at frame %lld: the corner has Mario at (%g, %g, %g), speed %g, action 0x%X, facing %d, the normal (%g, %g, %g); "
+					"the game has (%g, %g, %g), speed %g, action 0x%X, facing %d, (%g, %g, %g)\n",
+			i, (long long)g.frame, c.pos[0], c.pos[1], c.pos[2], c.forwardVel, c.action, c.faceYaw, c.normal[0], c.normal[1], c.normal[2],
+			g.pos[0], g.pos[1], g.pos[2], g.forwardVel, g.action, g.faceYaw, g.normal[0], g.normal[1], g.normal[2]);
+	}
+	set.solutions = std::move(kept);
+	return dropped;
 }

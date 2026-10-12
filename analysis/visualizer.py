@@ -62,7 +62,8 @@ REDRAW_SHARE = 0.05  # a redraw may take this share of the interval before it: t
 COST_WINDOW_SECONDS = 30  # the window's CPU readout averages over this long
 FACET_VALUES_CAP = 256  # a categorical column with more distinct values than this becomes a range (its counts would grow without bound)
 FILTER_GRAMMAR = ("a term is 'column >= low', 'column <= high', 'low <= column <= high', 'column == value' or "
-                  "'column in value value ...' (ranges are inclusive), commas or 'and' between terms")
+                  "'column in value value ...' (ranges are inclusive; a value is a number, hex included, or a "
+                  "text a categorical column holds, after the column), commas or 'and' between terms")
 
 
 def next_interval(refresh, redraw_seconds):
@@ -194,9 +195,14 @@ class RunData:
     The filter is a dict, column -> {"min", "max", "values"} with the keys in force: a row is
     binned when every filtered column of it lies in the range and, with "values", is one of
     them. The parameters file's `filters` ({column, min, max}) start it; the tab's panel sets
-    it, and --filter from text, "MarioFSpd <= 8, Phase in 1 5" (FILTER_GRAMMAR). Beside the
-    table the facets: per column, the least and greatest value seen and, for a column the
-    parameters file's `categorical` names, how many sampled rows hold each value."""
+    it, and --filter from text, "MarioFSpd <= 8, Phase in SWING AIR" (FILTER_GRAMMAR). Beside
+    the table the facets: per column, the least and greatest value seen and, for a column the
+    parameters file's `categorical` names, how many sampled rows hold each value. A cell is a
+    number, decimal or hex (shown in hex then; a name after the hex in parentheses, as the
+    stages write Mario's action, is shown and not compared), or, in a categorical column, a
+    text, which is coded in order of first appearance and shown as written; "values" of the
+    filter are numbers, compared with the cell's value, or texts, compared with the cell as
+    written."""
 
     def __init__(self, params_path=None, params=None):
         self.params_path = Path(params_path).resolve() if params_path else None
@@ -241,7 +247,21 @@ class RunData:
         self.counts = None  # per column, value -> sampled rows holding it for a categorical column, else None
         self.counting = []  # the (index, counts) still counted
         self.overflowed = set()  # categorical columns past FACET_VALUES_CAP distinct values, ranges from then on
+        self.parsers = None  # per column, how a cell becomes a value (_parsers), from the first data row
+        self.codes = None  # per column, text -> code for a categorical column, else None
+        self.hex = set()  # the columns written in hex, shown in hex
         self.stats_changed = True  # the facets differ from what the panel shows
+
+    HEX_CELL = re.compile(r"([-+]?0[xX][0-9a-fA-F]+)(?:\s*\([^()]*\))?")  # a hex cell, a name after it allowed: 0x04000440 (ACT_WALKING)
+
+    @staticmethod
+    def _hex(cell):
+        """A cell written in hex as a float, the name a stage may write after it in parentheses
+        (Mario's action, `0x04000440 (ACT_WALKING)`) left out; ValueError otherwise."""
+        match = RunData.HEX_CELL.fullmatch(cell)
+        if match is None:
+            raise ValueError(cell)
+        return float(int(match.group(1), 16))
 
     @staticmethod
     def _number(token):
@@ -255,6 +275,21 @@ class RunData:
     def _format_number(value):
         return str(int(value)) if value == int(value) and abs(value) < 2 ** 53 else repr(value)
 
+    def format(self, column, value):
+        """A number of the column as the CSV writes it: hex for a hex column."""
+        if self.header is not None and column in self.header and self.header.index(column) in self.hex and value == int(value):
+            return f"0x{int(value):08X}"
+        return self._format_number(value)
+
+    def facet_order(self, column):
+        """The order a categorical column's values are listed in: numbers by value, then
+        texts in order of first appearance (an enum's, as the search writes them)."""
+        codes = self.codes[self.header.index(column)] if self.header is not None and column in self.header and self.codes else None
+        def key(text):
+            number = self._number(text)
+            return (0, number, "") if number is not None else (1, (codes or {}).get(text, 0), text)
+        return key
+
     @staticmethod
     def parse_filter(text):
         """A filter from its text (FILTER_GRAMMAR); ValueError names the term it cannot read."""
@@ -265,15 +300,19 @@ class RunData:
             tokens = re.findall(r"<=|>=|==|!=|<|>|[^\s<>=!,]+", term)
             number = [RunData._number(t) for t in tokens]
             column = part = None
-            if len(tokens) == 3 and tokens[1] in ("<=", ">=", "==") and number[0] is None and number[2] is not None:
-                column, part = tokens[0], {{"<=": "max", ">=": "min", "==": "values"}[tokens[1]]: number[2]}
-            elif len(tokens) == 3 and tokens[1] in ("<=", ">=", "==") and number[0] is not None and number[2] is None:
-                column, part = tokens[2], {{"<=": "min", ">=": "max", "==": "values"}[tokens[1]]: number[0]}
+            if len(tokens) == 3 and tokens[1] in ("<=", ">=") and number[0] is None and number[2] is not None:
+                column, part = tokens[0], {{"<=": "max", ">=": "min"}[tokens[1]]: number[2]}
+            elif len(tokens) == 3 and tokens[1] in ("<=", ">=") and number[0] is not None and number[2] is None:
+                column, part = tokens[2], {{"<=": "min", ">=": "max"}[tokens[1]]: number[0]}
+            elif len(tokens) == 3 and tokens[1] == "==" and number[0] is None:
+                column, part = tokens[0], {"values": {number[2] if number[2] is not None else tokens[2]}}  # a text value comes after the column
+            elif len(tokens) == 3 and tokens[1] == "==" and number[0] is not None and number[2] is None:
+                column, part = tokens[2], {"values": {number[0]}}
             elif (len(tokens) == 5 and tokens[1] == "<=" and tokens[3] == "<="
                   and number[0] is not None and number[2] is None and number[4] is not None):
                 column, part = tokens[2], {"min": number[0], "max": number[4]}
-            elif len(tokens) >= 3 and tokens[1] == "in" and number[0] is None and all(n is not None for n in number[2:]):
-                column, part = tokens[0], {"values": set(number[2:])}
+            elif len(tokens) >= 3 and tokens[1] == "in" and number[0] is None:
+                column, part = tokens[0], {"values": {n if n is not None else t for n, t in zip(number[2:], tokens[2:])}}
             if column is None:
                 raise ValueError(f"cannot read the filter term '{term.strip()}': {FILTER_GRAMMAR}")
             if "values" in part and not isinstance(part["values"], set):
@@ -282,22 +321,24 @@ class RunData:
         return spec
 
     @staticmethod
-    def format_filter(spec):
-        """The filter as text the grammar reads back."""
-        n = RunData._format_number
+    def format_filter(spec, fmt=None):
+        """The filter as text the grammar reads back; fmt(column, number) writes a number the
+        column's way (RunData.format: hex in a hex column), a text goes as written."""
+        def n(column, value):
+            return value if isinstance(value, str) else fmt(column, value) if fmt else RunData._format_number(value)
         parts = []
         for column, part in spec.items():
             if "min" in part and "max" in part:
-                parts.append(f"{n(part['min'])} <= {column} <= {n(part['max'])}")
+                parts.append(f"{n(column, part['min'])} <= {column} <= {n(column, part['max'])}")
             elif "min" in part:
-                parts.append(f"{column} >= {n(part['min'])}")
+                parts.append(f"{column} >= {n(column, part['min'])}")
             elif "max" in part:
-                parts.append(f"{column} <= {n(part['max'])}")
-            values = sorted(part.get("values", ()))
+                parts.append(f"{column} <= {n(column, part['max'])}")
+            values = sorted(part.get("values", ()), key=lambda v: (isinstance(v, str), v if isinstance(v, str) else float(v)))
             if len(values) == 1:
-                parts.append(f"{column} == {n(values[0])}")
+                parts.append(f"{column} == {n(column, values[0])}")
             elif values:
-                parts.append(f"{column} in {' '.join(n(v) for v in values)}")
+                parts.append(f"{column} in {' '.join(n(column, v) for v in values)}")
         return ", ".join(parts)
 
     def set_filter_text(self, text):
@@ -380,11 +421,12 @@ class RunData:
     def _index(self):
         names = [self.header.index(c) if c in self.header else None for c in self.columns]
         missing = [c for c, i in zip(self.columns, names) if i is None]
-        filters = []  # (column index, least, greatest, the values allowed or None)
+        filters = []  # (column index, least, greatest, the numbers allowed, the texts allowed; both empty: any)
         for column, part in self.filter.items():
             if column in self.header:
+                values = part.get("values") or ()
                 filters.append((self.header.index(column), part.get("min", -math.inf), part.get("max", math.inf),
-                                frozenset(part["values"]) if part.get("values") else None))
+                                frozenset(v for v in values if not isinstance(v, str)), frozenset(v for v in values if isinstance(v, str))))
             else:
                 missing.append(column)
         for fixed in ("Shot", "Frame", "Sampled"):
@@ -403,6 +445,27 @@ class RunData:
         }
         self.counts = [{} if name in self.categorical else None for name in self.header]
         self.counting = [(j, counts) for j, counts in enumerate(self.counts) if counts is not None]
+        self.codes = [{} if name in self.categorical else None for name in self.header]
+        self.parsers = None
+        self.hex = set()
+
+    def _parsers(self, row):
+        """How each column's cells become values, decided on the first data row: a number as
+        it is; a hex number, a name after it in parentheses allowed and shown but not compared,
+        the column shown in hex from then on; or, in a column named categorical, a text, which
+        gets a code in order of first appearance and is shown as written. A text anywhere else makes its rows bad, as before: categorical columns
+        are declared, never inferred (ROADMAP 4.4)."""
+        parsers = []
+        for j, cell in enumerate(row):
+            codes = self.codes[j] if j < len(self.codes) else None
+            if self.HEX_CELL.fullmatch(cell):
+                self.hex.add(j)
+                parsers.append(self._hex)
+            elif codes is None or self._number(cell) is not None:
+                parsers.append(float)
+            else:
+                parsers.append(lambda v, codes=codes: codes.setdefault(v, float(len(codes))))
+        return parsers
 
     def _key(self, x, y, angle, speed):
         b = self.bins
@@ -426,12 +489,13 @@ class RunData:
                 if self.sampled_only and row[i["sampled"]] != "1":
                     self.skipped += 1
                     continue
-                values = [float(v) for v in row]  # every cell is a number
+                if len(row) != len(self.header):
+                    raise ValueError("row length")
+                if self.parsers is None:
+                    self.parsers = self._parsers(row)
+                values = [parse(v) for parse, v in zip(self.parsers, row)]  # every cell a number, or a categorical text's code
                 shot, frame = int(values[i["shot"]]), int(values[i["frame"]])
             except (ValueError, IndexError, OverflowError):
-                self.bad += 1
-                continue
-            if len(values) != len(self.header):
                 self.bad += 1
                 continue
             # The facets take every sampled row, filtered or not: each column's range and, for
@@ -457,8 +521,8 @@ class RunData:
                     self.overflowed.add(self.header[j])
                     self.counting = [c for c in self.counting if c[0] != j]
             self.stats_changed = True
-            if i["filters"] and any(not (low <= values[j] <= high) or (chosen is not None and values[j] not in chosen)
-                                    for j, low, high, chosen in i["filters"]):
+            if i["filters"] and any(not (low <= values[j] <= high) or ((numbers or texts) and values[j] not in numbers and row[j] not in texts)
+                                    for j, low, high, numbers, texts in i["filters"]):
                 self.skipped += 1
                 continue
             x, y, angle, speed = values[i["x"]], values[i["y"]], values[i["angle"]], values[i["speed"]]
@@ -509,7 +573,7 @@ class RunData:
         if self.coarsened:
             parts.append(f"bins x{2 ** self.coarsened}")
         if self.filter:
-            parts.append(f"filter {self.format_filter(self.filter)}")
+            parts.append(f"filter {self.format_filter(self.filter, self.format)}")
         parts.append("finished" if self.finished else "running")
         if self.error:
             parts.append(self.error)
@@ -578,14 +642,14 @@ class Plot:
             self.axes.set_ylim(ys.min() - pad_y, ys.max() + pad_y)
 
 
-def render_once(params_path, csv_path, out, rows, filter_text, settings):
+def render_once(params_path, csv_path, out, rows, filter_text, settings, categorical=None):
     import matplotlib
     matplotlib.use("Agg")
     from matplotlib.figure import Figure
     if params_path:
         data = RunData(params_path)
     else:
-        data = RunData(params={"csv": csv_path, "title": Path(csv_path).name, "finished": True})
+        data = RunData(params={"csv": csv_path, "title": Path(csv_path).name, "finished": True, "categorical": categorical or []})
     if filter_text is not None:
         error = data.set_filter_text(filter_text)
         if error:
@@ -772,15 +836,20 @@ class FilterPanel:
             if section is None:
                 section = self.sections[name] = self._section(name)
             if section["kind"] != kind or (kind == "values" and section["rows"].keys() != counts.keys()):
-                self._build(section, name, kind, counts)
+                self._build(section, name, kind, counts, data.facet_order(name))
             part = data.filter.get(name, {})
             if kind == "values":
                 chosen = part.get("values") or ()
+                numbers = {v for v in chosen if not isinstance(v, str)}
+                texts = {v for v in chosen if isinstance(v, str)}
                 for text, (var, check) in section["rows"].items():
-                    var.set(float(text) in chosen)
-                    check.config(text=f"{RunData._format_number(float(text))}   {counts[text]:,}")
+                    number = RunData._number(text)
+                    if number is None and RunData.HEX_CELL.fullmatch(text):
+                        number = RunData._hex(text)  # a hex cell with a name: ticked by a filter on its value too
+                    var.set(text in texts or (number is not None and number in numbers))
+                    check.config(text=f"{text}   {counts[text]:,}")  # as the CSV writes it: a text, hex, a number
             else:
-                hint = f"seen {RunData._format_number(lo)} to {RunData._format_number(hi)}" if lo is not None else ""
+                hint = f"seen {data.format(name, lo)} to {data.format(name, hi)}" if lo is not None else ""
                 if name in data.overflowed:
                     hint = f"over {FACET_VALUES_CAP} distinct values, so a range; {hint}"
                 section["hint"].config(text=hint)
@@ -801,14 +870,14 @@ class FilterPanel:
         body.pack(fill=tk.X)
         return {"kind": None, "body": body, "rows": {}, "min": None, "max": None, "shown": None, "hint": None}
 
-    def _build(self, section, name, kind, counts):
+    def _build(self, section, name, kind, counts, order=None):
         """The section's controls for its kind: a checkbox per value, or the min and max boxes."""
         tk = self.tk
         for child in section["body"].winfo_children():
             child.destroy()
         section.update(kind=kind, rows={}, min=None, max=None, shown=None, hint=None)
         if kind == "values":
-            for text in sorted(counts, key=float):
+            for text in sorted(counts, key=order):
                 var = tk.BooleanVar(value=False)
                 check = tk.Checkbutton(section["body"], variable=var, anchor="w", command=lambda n=name: self._values_changed(n))
                 check.pack(fill=tk.X)
@@ -826,7 +895,7 @@ class FilterPanel:
         section["hint"].pack(fill=tk.X)
 
     def _values_changed(self, name):
-        chosen = {float(text) for text, (var, _) in self.sections[name]["rows"].items() if var.get()}
+        chosen = {text for text, (var, _) in self.sections[name]["rows"].items() if var.get()}  # the cells as written
         self._update(name, values=chosen or None)
 
     def _range_changed(self, name):
@@ -868,7 +937,7 @@ class FilterPanel:
             row = tk.Frame(self.active)
             row.pack(fill=tk.X, pady=1)
             tk.Button(row, text="✕", padx=4, pady=0, command=lambda n=name: self._update(n, min=None, max=None, values=None)).pack(side=tk.LEFT)
-            tk.Label(row, text=RunData.format_filter({name: part}), anchor="w").pack(side=tk.LEFT, padx=(4, 0))
+            tk.Label(row, text=RunData.format_filter({name: part}, self.data.format), anchor="w").pack(side=tk.LEFT, padx=(4, 0))
         if spec:
             self.active.pack(fill=tk.X, padx=6, after=self.head)
         else:
@@ -1025,7 +1094,7 @@ class Viewer:
         if tab.data.poll():
             tab.data.coarsen(int(self.settings["maxSegments"]))
         self.redraw_current()
-        log.info("%s: filter '%s'", tab.data.title, RunData.format_filter(tab.data.filter))
+        log.info("%s: filter '%s'", tab.data.title, RunData.format_filter(tab.data.filter, tab.data.format))
         return None
 
     def toggle_filters(self):
@@ -1132,7 +1201,10 @@ def main():
     parser.add_argument("--rows", type=int, help="with --once: read at most this many rows")
     parser.add_argument("--filter", metavar="TERMS",
                         help="with --once: the filter box's text in place of the parameters file's filters, "
-                             "such as 'MarioFSpd <= 8, Phase == 5'; " + FILTER_GRAMMAR)
+                             "such as 'MarioFSpd <= 8, Phase == SWING'; " + FILTER_GRAMMAR)
+    parser.add_argument("--categorical", metavar="COLUMNS",
+                        help="with --once --csv: the columns filtered by value, comma-separated, as a parameters "
+                             "file's categorical list; a column holding text must be one of them")
     args = parser.parse_args()
 
     logging.basicConfig(filename=str(LOG_FILE), level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -1141,7 +1213,8 @@ def main():
         if not args.params and not args.csv:
             parser.error("--once needs a parameters file or --csv")
         bootstrap(windowed=False)
-        render_once(args.params, args.csv, args.out, args.rows, args.filter, settings)
+        render_once(args.params, args.csv, args.out, args.rows, args.filter, settings,
+                    [c.strip() for c in args.categorical.split(",") if c.strip()] if args.categorical else None)
         return
     if not args.params:
         parser.error("a parameters file is needed (or --once --csv <file>)")

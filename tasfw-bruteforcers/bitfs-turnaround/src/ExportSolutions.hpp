@@ -4,7 +4,7 @@
 #include <filesystem>
 #include <vector>
 
-#include <LibSm64.hpp>
+#include <Sm64Resource.hpp>
 #include <tasfw/Inputs.hpp>
 #include <tasfw/Script.hpp>
 #include <sm64/ObjectFields.hpp>
@@ -12,7 +12,7 @@
 
 // Replays each diff from `startFrame` in a sandbox and writes the resulting movie, named by
 // index, the pyramid normal and Mario's speed at the end of the diff.
-class ExportSolutions : public TopLevelScript<LibSm64>
+class ExportSolutions : public TopLevelScript<Sm64Resource>
 {
 public:
 	ExportSolutions(int64_t startFrame, const std::vector<M64Diff>& diffs, std::filesystem::path directory)

@@ -156,7 +156,7 @@ static void CheckVisualizeKeys(const json& block, const std::string& where)
 
 PipelineConfig PipelineConfig::Parse(const json& root, const fs::path& configDirectory)
 {
-	RejectUnknownKeys(root, { "baseDirectory", "resources", "m64", "outputDirectory", "visualizer", "visualize", "scattershot", "stages" }, "the top level");
+	RejectUnknownKeys(root, { "baseDirectory", "resources", "m64", "outputDirectory", "visualizer", "visualize", "scattershot", "stages", "start" }, "the top level");
 
 	PipelineConfig pipeline;
 	pipeline.baseDirectory = root.contains("baseDirectory")
@@ -201,7 +201,7 @@ PipelineConfig PipelineConfig::Parse(const json& root, const fs::path& configDir
 	for (const json& item : root.at("stages"))
 	{
 		std::string where = "stages[" + std::to_string(pipeline.stages.size()) + "]";
-		RejectUnknownKeys(item, { "name", "type", "startFrame", "m64", "input", "scattershot", "args", "select", "export", "visualize" }, where);
+		RejectUnknownKeys(item, { "name", "type", "startFrame", "m64", "input", "scattershot", "args", "select", "export", "visualize", "resource", "objects", "lead" }, where);
 
 		StageConfig stage;
 		stage.name = Require<std::string>(item, "name", where);
@@ -231,6 +231,35 @@ PipelineConfig PipelineConfig::Parse(const json& root, const fs::path& configDir
 			ConfigError("\"args\" in " + where + " must be an object");
 		stage.select = item.value("select", json());
 		stage.exportM64 = Optional<bool>(item, "export", false, where);
+
+		// The resource the stage runs on, and for the corner the objects it has.
+		stage.resource = Optional<std::string>(item, "resource", "game", where);
+		if (stage.resource != "game" && stage.resource != "corner")
+			ConfigError("\"resource\" in " + where + " must be \"game\" or \"corner\"");
+		if (stage.resource == "corner")
+		{
+			if (!item.contains("objects") || !item.at("objects").is_array())
+				ConfigError("stage \"" + stage.name + "\" runs on the corner and must list its \"objects\": an array of \"pyramid\", \"otherPyramid\", \"trackPlatform\" and \"bully\" ([] for Mario alone)");
+			for (const json& object : item.at("objects"))
+			{
+				std::string name = object.is_string() ? object.get<std::string>() : "";
+				if (name == "pyramid")
+					stage.objects.pyramid = true;
+				else if (name == "otherPyramid")
+					stage.objects.otherPyramid = true;
+				else if (name == "trackPlatform")
+					stage.objects.trackPlatform = true;
+				else if (name == "bully")
+					stage.objects.bully = true;
+				else
+					ConfigError("\"objects\" in " + where + ": \"" + name + "\" is not one of \"pyramid\", \"otherPyramid\", \"trackPlatform\", \"bully\"");
+			}
+			stage.lead = Optional<int>(item, "lead", 16, where);
+			if (stage.lead < 0 || stage.lead > stage.startFrame)
+				ConfigError("\"lead\" in " + where + " must be between 0 and the stage's startFrame");
+		}
+		else if (item.contains("objects") || item.contains("lead"))
+			ConfigError("\"objects\" and \"lead\" in " + where + " apply to a stage with \"resource\": \"corner\"");
 
 		// The run's viewer (ROADMAP 4.4): the plot's columns, bins, filters and view; the top
 		// level's "visualize" supplies defaults the stage's block overrides key by key, the script
@@ -263,6 +292,9 @@ PipelineConfig PipelineConfig::Parse(const json& root, const fs::path& configDir
 
 		pipeline.stages.push_back(std::move(stage));
 	}
+
+	if (root.contains("start"))
+		pipeline.SetStart(Require<std::string>(root, "start", "the top level"));
 	return pipeline;
 }
 
@@ -309,6 +341,33 @@ const StageConfig* PipelineConfig::FindStage(const std::string& name) const
 fs::path PipelineConfig::SolutionsFile(const std::string& stageName) const
 {
 	return outputDirectory / "solutions" / (stageName + ".json");
+}
+
+fs::path PipelineConfig::PassFile(const std::string& stageName, int pass) const
+{
+	return outputDirectory / "solutions" / (stageName + ".oscillation" + std::to_string(pass) + ".json");
+}
+
+void PipelineConfig::SetStart(const std::string& spec)
+{
+	std::string name = spec;
+	int pass = 0;
+	size_t colon = spec.find(':');
+	if (colon != std::string::npos)
+	{
+		name = spec.substr(0, colon);
+		std::string digits = spec.substr(colon + 1);
+		if (digits.empty() || digits.size() > 6 || digits.find_first_not_of("0123456789") != std::string::npos)
+			ConfigError("\"start\" \"" + spec + "\" must be a stage name, or <stage>:<oscillation> with a whole number");
+		pass = std::stoi(digits);
+	}
+	const StageConfig* stage = FindStage(name);
+	if (!stage)
+		ConfigError("\"start\" names no configured stage: \"" + name + "\" (see --list)");
+	if (pass > 0 && stage->type != "dr-oscillations")
+		ConfigError("\"start\" \"" + spec + "\": only a dr-oscillations stage has oscillation passes to start at");
+	startStage = name;
+	startPass = pass;
 }
 
 Configuration PipelineConfig::ScattershotConfiguration(const StageConfig& stage) const
