@@ -18,7 +18,7 @@ tasfw-scattershot (header-only)  Scattershot, ScattershotThread, builders
         |
 tasfw-core                       Script / TopLevelScript / Resource / SlotManager / Inputs / M64
         |
-tasfw-resources                  LibSm64 (game DLL)   PyramidUpdate (pure C++ stand-in)
+tasfw-resources                  LibSm64 (game DLL)   BitfsCorner (the pyramid corner, the decomp's own text)
         |
 res/sm64_jp_N.dll                wafel libsm64: SM64 decomp compiled as a native x64 DLL
 ```
@@ -36,8 +36,19 @@ so `getCurrentFrame` survives a change of game; only how a resource counts is it
 need not be the game. With the full
 game, rewinding (a load) is slow compared with advancing, and that ratio dictates which
 TASing algorithms are viable; a custom state machine that simulates only the part of the
-game a search cares about (`PyramidUpdate`) makes both advancing and rewinding much faster
-and so changes what is affordable. The savestate policy (`shouldSave`/`shouldLoad`, the slot
+game a search cares about (`BitfsCorner`, the BitFS resource of ROADMAP 4.13, on the
+decomp's own structs and serving `LibSm64`'s symbols)
+makes both advancing and rewinding much faster
+and so changes what is affordable. The game's DLL and the corner are two kinds of one
+resource, `Sm64Resource` (`tasfw-resources/inc/Sm64Resource.hpp`): an abstract class over
+`Resource<Sm64Mem>` that adds nothing, and `Sm64Mem`, the one state type they share, which
+holds either resource's savestate (`LibSm64Mem` or `BitfsCornerMem`) or nothing until a
+save fills it, and refuses to hand one resource the other's. A script is written once, as
+`Script<Sm64Resource>`, and runs on whichever resource it is given; since `advance`, `save`,
+`load`, `addr` and `setInputs` are `Resource`'s virtuals, the script pays nothing for not
+knowing which (the maintainer's design, 2026-10-12, over templating every script on the
+resource). A script on the game hands a run on the corner its state with
+`ExportSave<Sm64Mem>(level, objects)`. The savestate policy (`shouldSave`/`shouldLoad`, the slot
 manager) is one policy for every scenario, the agnostic cost model below. A policy chosen
 per run at the top-level script is designed and tabled (ROADMAP Phase 5, "A savestate
 policy the run chooses"); the maintainer's framing is that the policy belongs to the
@@ -65,12 +76,15 @@ and the slot manager's high-water marks, pool reuses and evictions; docs/perform
   the resource's limit would be exceeded, and throws if a single save cannot fit. The limit
   is the one argument of `Resource`'s constructor, so a derived resource passes its number
   and never touches the slot manager (`LibSm64Config::savestateBudgetBytes`, 8 GB by
-  default; 16 MB for `PyramidUpdate`; 64 MB for the mock). `SlotBudget` is the
+  default; `BitfsCorner::SavestateBudgetBytes` for a corner; 64 MB for the mock). `SlotBudget` is the
   process-wide budget and its balance: a resource subtracts its limit from the balance when
-  it is created, or throws if the balance is too low, and adds it back when it dies. The
+  it is created, or throws if the balance is too low, and adds it back when it dies; a
+  resource that is moved takes its slot manager and its limit with it, and the one it was
+  moved from gives nothing back. The
   application sets the budget once, the pipeline from `resources.savestateBudgetMB`; no
-  budget is the default (ROADMAP 3.5). Erased and evicted states go to a bounded pool (32) that the next
-  save reuses, so a save into a recycled state is one copy; pooled memory counts toward the
+  budget is the default (ROADMAP 3.5). Erased and evicted states go to a bounded pool (32) as the map's own
+  nodes, which the next save links back in, so the slot manager never copies or moves a
+  state and a save into a recycled state is the save's one copy; pooled memory counts toward the
   limit.
 - `shouldSave(n)` / `shouldLoad(n)` compare the measured average cost of a save or load
   (rdtsc cycles, from `work`) against `n` frame advances: whether a replayed stretch has
@@ -98,20 +112,20 @@ build, verified at construction (docs/libsm64.md, "The game's bytes"; ROADMAP 3.
 - `advance` calls `sm64_update`. Inputs are written straight into `gControllerPads` by
   `Script::SetInputs` before each advance.
 
-`PyramidUpdate` is a second `Resource` whose state is a small C++ struct: the pyramid
-object, Mario's position, static lava floors, and the pyramid's collision triangles pulled
-out of the DLL. `advance` re-implements `bhv_tilting_inverted_pyramid_loop` and floor
-finding. It exists so `BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle` can probe
-dozens of candidate angles per frame without paying for a full game frame. It is a copy of
-decomp logic; the drift test in `tasfw-tests` (`libsm64: PyramidUpdate reproduces ...`)
-verifies it matches the DLL's normal bit-for-bit over 240 frames.
+`BitfsCorner` is the second `Resource` (docs/libsm64.md; ROADMAP 4.13): the pyramid corner
+of BitFS from the decomp's own text, on the same structs and symbols as the game, so every
+script runs on either, a frame costing about a tenth of the game's and a save or a load a
+sixtieth. The stand-in it replaced, `PyramidUpdate`, a small C++ struct with its own tilt
+loop and floor finding that the oscillation scripts probed for the downhill angle, is gone
+(2026-10-12): what it answered is now one frame of a child script on the resource the
+script runs on (`GetMinimumDownhillWalkingAngle`), reverted with it.
 
-Frame ordering that the port depends on: within a game frame the terrain objects (the
+Frame ordering that answer depends on: within a game frame the terrain objects (the
 pyramid) update **before** the player object, so the pyramid loop reads Mario's object
 position and platform pointer as his previous update left them, steps the normal 0.01
-toward its goal, and displaces `gMarioState->pos` before Mario's own update runs. Importing
-`PyramidUpdateMem` from the DLL at the current frame and advancing it therefore predicts
-the next frame's normal exactly; feeding it Mario's post-frame position does not.
+toward its goal, and displaces `gMarioState->pos` before Mario's own update runs. One frame
+on, whatever that frame's inputs, the pyramid's surface Mario stood on carries the normal
+his next step walks on, which is what the child script reads.
 
 ## Scripts
 
@@ -225,7 +239,11 @@ Other cursor operations: `Load(f)`, `LongLoad(f)` (no caching, always saves at t
 
 **Invariant:** every reachable game state must equal "load the start save, then apply the
 resolved inputs frame by frame." Anything that writes DLL memory directly breaks replay and
-therefore breaks savestate reuse and scattershot decoding.
+therefore breaks savestate reuse and scattershot decoding. The metric script's probe is the
+one exception (AGENTS.md, hard rule 1): its writes live inside a sandbox that, after them,
+advances with written inputs and reads only, so no savestate is taken after them (a plain
+advance takes none; a replaying load or an explicit save would) and the revert loads a
+clean one made before.
 
 ## Top-level scripts, builders and metric scripts
 
@@ -238,8 +256,8 @@ one of:
 - `.ImportResource(&res).Run(...)` (resource shared across runs; start save reset on entry),
 - `.ImportSave<TState>(frame, stateArgs...).Run(...)`, or from inside a script
   `.ImportSave(ExportSave<TState>(args...)).Run(...)` (resource initialised from a state
-  object; how `PyramidUpdate` is seeded from `LibSm64`, `PyramidUpdateMem` converting from
-  the base resource it is exported from).
+  object; how a corner is seeded from the game, `Sm64Mem`'s corner state converting from
+  the resource it is exported from).
 
 A script may depend on the game's state in the past or the future of its cursor, not only
 the present. The **metric script** exists to make that state available automatically and
@@ -365,7 +383,9 @@ them. A stage is a
 named instance of a stage type from `Stages.cpp`, with its own scattershot overrides and
 typed arguments; its result is a `SolutionSet` (input diffs plus named metrics per
 solution) that is written to `<outputDirectory>/solutions/<stage>.json`, handed to the next
-stage in memory, or read back from that file when a stage runs alone. An argument written as
+stage in memory, or read back from that file when a stage runs alone or a run starts at a
+later stage (`start`); the oscillation stage also writes each pass's carried roots to
+`<stage>.oscillation<n>.json`, which a run starting at a pass reads. An argument written as
 `"input:<metric>"` takes the value from the first input solution, which is how the equilibrium
 frame found by the tilt search reaches the oscillation stages. Solutions cross a stage
 boundary as diffs only; the new stage's solution data starts out default.
@@ -450,12 +470,21 @@ Stage types, in the order the committed config uses them:
    rest whose normal steps reversibly across the tilts the oscillations use (half of the
    float values do; the fixer accepts only such a rest, `BitFsAreFixer::StepsReversibly`);
    the last pass's solutions must reach `minXzSum`.
-3. **osc-final** (`BitfsOscFinal`) from the equilibrium frame, piped from the oscillation
-   solutions.
-4. **dr-approach** (`Scattershot_BitfsDrApproach`): dive from the oscillation solutions;
-   then **dr-recover** (`Scattershot_BitfsDrRecover`) twice, phase `attempt-dr` to land the
-   dive and phase `c-up-trick` after it. This chain was disabled in the old `main.cpp` and
-   has never run to completion; it links and runs, nothing more is known.
+3. **sc-ending** (`Scattershot_BitfsScEnding`), piped from the oscillation solutions, its
+   metrics from the fixer's hand-over frame: the final run along the edge into the target
+   corner, the approach (a dive recover kept inside the band where the pyramid is still
+   Mario's platform, or a brake to a stop), the leave over the squish edge, the far edge
+   of that corner (`targetEdge`; a slow walk off, a run off parallel to the edge, a
+   quickturn to idle, a C-up deceleration onto a NUT spot, a wait for the displacement)
+   and the air after it. Every option is a weighted move and a solution
+   records which it took. The error is conserved exactly throughout, through the
+   departure, the first frame at whose end the pyramid is not Mario's platform; the
+   solution is a frame within the window after it from which the metric script's squish
+   probe (a bully hacked next to Mario in its knockback action, one frame played, in a
+   sandbox that is reverted: the one write hard rule 1 allows) leaves Mario idle, fast and
+   above the lava, with the pyramid's normal the target's two floats on that frame; or,
+   with no target in the config, at any normal on the hand-over's own lattice, which
+   the error is then conserved against, the solution recording the normal (ROADMAP 4.11).
 
 `pyramid-osc-approach` is the original single-threaded experiment (`BitFsPyramidOscillation`
 then `BitFsScApproach` from the start frame) as a stage; it is not in the committed config.
@@ -472,9 +501,10 @@ speed.
 Everything below assumes the pinned DLL in `res/` (see `docs/libsm64.md`):
 
 - Struct layouts in `tasfw-core/inc/sm64/Types.hpp`, `ObjectFields.hpp`, `Camera.hpp`,
-  `Surface.hpp`; constants in `Sm64.hpp`, `SurfaceTerrains.hpp`; trig tables in `Trig.hpp`.
+  `Surface.hpp`, and the corner's `SurfaceLoad.hpp`, `Controller.hpp` and `Area.hpp`;
+  constants in `Sm64.hpp`, `SurfaceTerrains.hpp`; trig tables in `Trig.hpp`.
   Each is a copy of an n64decomp/sm64 file at a pinned commit (docs/decomp.md), and the
-  seven structs the code reads through are checked against the pinned DLL's DWARF by
+  thirteen structs the code reads through are checked against the pinned DLL's DWARF by
   `test_sm64_layout.cpp` on every run of the tests (docs/libsm64.md, "Struct layouts").
 - Symbols resolved by name through `GetProcAddress` (`dlsym` on Linux), once per name and
   resource, `LibSm64::addr` answering from its own table after: `gMarioState`,
@@ -488,11 +518,6 @@ Everything below assumes the pinned DLL in `res/` (see `docs/libsm64.md`):
   slot 83, the track platform slot 85). The slots are the identifier by decision (ROADMAP
   2.4); `BitFsObjects.hpp` declares what each must hold and the `VerifyLayout` script
   verifies it before the pipeline's first stage.
-- `tasfw-core/src/decomp/` reimplements `mtxf_align_terrain_normal`, object surface loading,
-  `find_floor`, `floor_is_slope` and `simulate_platform_tilt` on the copied structs.
-  `GetMinimumDownhillWalkingAngle` uses them to predict Mario's floor angle after the next
-  tilt without advancing a frame. The DLL stays the reference; this code is the same physics
-  `PyramidUpdate` implements on its own surface type, and only `PyramidUpdate` is drift-tested.
 - The `fixed` save mode's slices (`LibSm64FixedSlices` in `LibSm64.hpp`); `dirty` and
   `full` depend on nothing in the build.
 - The `VerifyLayout` script (`tasfw-scripts/inc/VerifyLayout.hpp`) verifies all of the above
@@ -500,7 +525,6 @@ Everything below assumes the pinned DLL in `res/` (see `docs/libsm64.md`):
   once on one resource before its first stage, `--dry-run` and `dllcheck` print its report,
   and `dllcheck --save-mode fixed` adds the slice coverage (docs/libsm64.md). The framework
   itself has no layout concept.
-- `PyramidUpdate` re-implements physics from the decomp.
 - `M64` reads the game a movie is for from its header (the ROM CRC and country code, `Rom`
   and `CountryCode` in `M64.hpp`) and writes it back; `ExportM64` marks an export with
   its source movie's. Whether a movie and a DLL are the same game is libsm64's question, not
@@ -524,13 +548,14 @@ bound now that slot buffers are recycled),
 block decoding (replay from the root every shot), metric scripts (run at every frame advance
 and load, and may advance frames themselves), `Script` bookkeeping (map operations per frame
 per hierarchy level), synchronization (named critical sections, barriers in deterministic
-mode), and `PyramidUpdate` construction (surface copy and transform per `ImportSave`).
+mode), and the downhill look-ahead's child frame and revert per call.
 
 The framework's job is to minimize **frames advanced per frame of useful output**. Every
 mechanism above exists for that: savestates avoid replays, the cost model in
 `Resource::shouldSave` / `shouldLoad` decides when a save is cheaper than replaying, caches
-short-circuit ancestor lookups, and `PyramidUpdate` replaces full game frames with a few
-hundred floating-point operations where only the platform matters.
+short-circuit ancestor lookups, and the corner resource replaces the game's frame with one
+that runs only the pyramid corner, about a tenth of the cost, where that is all a search
+needs.
 
 Design intent is zero-cost abstraction with the complexity kept inside the framework: the
 script author, a person or agent comfortable with coding but not necessarily with C++,
@@ -559,8 +584,8 @@ Counts are the metrics to trust; they are deterministic and machine-independent.
   frame (`AdvanceFrameWrite`, `Apply`, `Rollback`) invalidates it; copy the state
   (`auto state = ...`) when it has to survive one.
 - `SlotManager` limits are per resource; `SlotBudget` bounds their sum, so a resource created
-  when the balance is too low throws, a `PyramidUpdate` built inside a script included, which
-  is why the pipeline leaves room for one per thread.
+  when the balance is too low throws, which is why the pipeline reserves the corners' share
+  before it divides the rest among the threads.
 - `BinaryStateBin` throws on out-of-range values; a state bin that can throw will abort a
   pellet inside an `ExecuteAdhoc`, which is treated as "invalid state", not as a crash.
 - `Configuration::MaxBlocks` is a hard cap; hitting it throws "Block cap reached".

@@ -1,9 +1,9 @@
 # Roadmap
 
-Status as of 2026-09-15: Phases 1 and 2 are done; Phase 3 is done but for 3.21, a latent
-defect in the bare scattershot builder found while writing 3.17 (the guidelines for TASing
-with the framework, docs/tasing.md, the phase's last item; the rest landed in #94, #95, #97
-and #98 and 3.2's access contract last); Phase 4 has 4.1 and 4.5
+Status as of 2026-09-15: Phases 1 to 3 are done (Phase 3's last item was 3.17, the
+guidelines for TASing with the framework, docs/tasing.md; the rest landed in #94, #95, #97
+and #98 and 3.2's access contract last; the latent defect in the bare scattershot builder
+found while writing 3.17 is 4.15); Phase 4 has 4.1 and 4.5
 done; Phase 5 has its first item, per-scenario movement options, done. Items are ordered; each phase makes the next one safe to do with an AI
 agent. Check boxes as work lands and keep "Done when" honest.
 
@@ -345,7 +345,7 @@ Goal: the DLL becomes a reproducible, swappable artifact instead of a mystery bi
 ## Phase 3: framework hardening
 
 Goal: the core's implicit invariants become explicit and enforced. Status 2026-09-15: every
-item is done except 3.21, a defect found while writing 3.17; then Phase 4.
+item is done; then Phase 4.
 
 - [x] **3.1 Frame cursor semantics.** Decided by the maintainer 2026-09-08: `Modify` leaves the
       cursor at the end of the child's diff on purpose, because the common case is to keep
@@ -377,7 +377,7 @@ item is done except 3.21, a defect found while writing 3.17; then Phase 4.
       memory, and the 203 reads in 33 files that went through `resource->addr()`,
       `ScattershotThread`'s six included, go through it; `ExportSave<UState>(params...)`
       hands the script's state to a run on another resource through `Resource::State`, which
-      `PyramidUpdateMem` now converts from (`const Resource<LibSm64Mem>&`), so the 23 sites
+      `PyramidUpdateMem` now converts from (`const Resource<Sm64Mem>&`), so the 23 sites
       that passed `*resource` read `ImportSave(ExportSave<PyramidUpdateMem>(pyramid))` and
       the drift test exports the same way; its second form takes a frame, loaded through the
       script's own loads and returned from after, and both carry `Resource::State`'s
@@ -706,7 +706,7 @@ item is done except 3.21, a defect found while writing 3.17; then Phase 4.
       performance for the squish-cancel brute forcer), metrics also serve raw variables in
       the past and looks ahead, scattershot is a route finder in general, simulating the
       relevant subset of the game as a resource is often worth it, a rewind generally costs
-      more than a frame advance. Writing it found 3.21 and 4.9. Added
+      more than a frame advance. Writing it found 4.15 and 4.9. Added
       2026-09-14 (the maintainer): guidelines, for an agent or a person, on how to TAS
       with the framework
       once the pieces above are settled, so that Phase 4 starts from an agreed way of
@@ -781,18 +781,6 @@ item is done except 3.21, a defect found while writing 3.17; then Phase 4.
       pulls in the thread and the builders at its bottom; `Scattershot` and `ScattershotThread`
       declare in the convention's order and their `.t.hpp` files follow; two commented-out
       blocks and two redundant forward declarations went.
-- [ ] **3.21 The bare scattershot builder does not compile when used.** Found 2026-09-15
-      writing 3.17. `ScattershotBuilder::ConfigureMetricScript` (ScattershotBuilder.hpp)
-      calls `std::make_shared` without its template argument, and the same class's
-      `PipeFrom` names a return type without the metric-script parameters it constructs
-      with. Both are members of a class template no caller instantiates: every committed
-      stage calls `ImportResourcePerThread` first, and the import and config builders
-      override both members correctly, so the bare order has never been compiled and a
-      stage written in the other order fails to build with an error deep in the header.
-      Fix: the two forms the derived builders use, and a case in `test_scattershot_mock.cpp`
-      that builds a search in the bare order. A bug fix behind an unchanged interface
-      (hard rule 10 does not apply); the suite's delta table is still owed (rule 8), and
-      docs/tasing.md drops its note on the order once it holds.
 
 ## Phase 4: the squish-cancel brute forcer
 
@@ -812,7 +800,11 @@ Goal: finish the thing the framework was built for.
       become the next stage's root blocks, `--stage` reruns one stage from its input's file
       and `input` may name any earlier stage, so a search continues as a new stage entry of
       the same type with `input` set to the stopped one, and work is broken up judiciously
-      with configurations (the maintainer, 2026-09-19). What that loses is the non-solution
+      with configurations (the maintainer, 2026-09-19). For the ending's debugging loop
+      (2026-10-06) the mechanism gained `start`, a top-level config option and `--start`:
+      a full run begins at the stage named, from the files, or at an oscillation pass of
+      the `dr` stage, from the roots each pass now writes to
+      `<stage>.oscillation<n>.json` as it ends, and fails when the file it needs is missing. What that loses is the non-solution
       blocks. A checkpoint of the table would be small to write (a bin, a fitness and a
       segment per block, a seed and a script count per segment; the index rehashes) but
       tied to one binary and one stage entry, since a segment's seed decodes only by
@@ -896,6 +888,15 @@ Goal: finish the thing the framework was built for.
       viewer creates `analysis/.venv` and installs `requirements.txt` there on first start.
       The columns each stage emits are in README.md ("The viewer"). `test_visualization.cpp`
       pins the parameters file and the launch command, `test_pipeline.cpp` the config block.
+      Since 2026-10-06 (the maintainer's ask, for the ending's debugging) a categorical
+      column is text where text makes sense: the stages write Mario's action in hex with
+      its decomp name in parentheses (`Sm64ActionNames.hpp`, generated from the copied
+      `Sm64.hpp` by `scripts/action_names.py`; CI's `--check` keeps it current), their
+      phases and approaches by name and the ending's flags as true or false, and the viewer
+      reads a hex cell as a number shown as written, the name left out of the comparison,
+      and, in a categorical column only, a text as a value shown and filtered as written
+      (`Phase in SWING AIR`); CI pins it on a second sample (`scattershot_text_sample.csv`),
+      and `--once --csv` takes `--categorical`.
 
 - [x] **4.5 Base-block validation failures.** Done 2026-09-08. `ValidateBaseBlock` found
       state-bin mismatches on about 2% of shots (5 to 9 per 400-shot deterministic
@@ -1205,7 +1206,128 @@ goals are (status as stated by the maintainer, 2026-09-08):
       crossings at the same normal; while the normal still grows toward the target sum the
       crossings are not comparable. So the rule is its original form again, both
       comparisons, applied only when the crossing's tilt is not above the tilt two
-      crossings before. With it seeds 7 and 8 run ten oscillations (701 and 80 last-pass
+      crossings before. The maintainer's intent (2026-10-06) is that the swings in the
+      regime build speed, not tilt; the sum had still grown 0.02 an oscillation there, so
+      the rule had never applied in the regime (seven swings handed over at 16 to 21 where
+      three had at 23 to 24). Applying it there whatever the sum did, to every crossing once
+      the regime was reached, was built and measured the same day, from the same pass-1
+      roots:
+      no lineage above 0.652, the last 0.02 step under the regime floor, survived the
+      third, fourth or fifth pass (none among their sampled blocks), the carried roots sat
+      at 0.652 from the third pass on, and the fifth pass found nothing in 2,000 shots
+      where the third, in the same direction at the same tilt, had found its hundred in
+      32 (and nothing again from the same roots with the end-clearance rule off): there the
+      crossing met the one two before it at the same tilt, the rule's original case, and the
+      speed rule is the one rule that differs between the two passes. A second run on the
+      knob died at its sixth pass, its hand-over speeds falling 25.8, 23.5, 20.7, 19.2 at
+      0.652, since what survives the comparison is the lineage whose earlier crossing was
+      slow enough to beat. The crossing speed is the swing's own, from a turnaround to a
+      stop down the chord: 24 to 26 at the second pass, 22 to 24 at the third, 16 to 21 at
+      the seventh as the tilt grows and the far end sinks, whatever came before; so a
+      crossing does not beat the one two before it, and the stage has only ever survived
+      the rule by growing the tilt every oscillation, which exempted every crossing. The
+      run before the change went through all seven passes, the tilt 0.672 to 0.732. The
+      maintainer's form (the same day): the rule compares two crossings in the regime
+      whatever the tilt did (`regimeSpeedRatchet`, true in the config), two below it at the
+      same tilt as before, and never a crossing in the regime with one before it; each
+      crossing records whether the regime had been reached (`CrossingDto::inRegime`), and
+      `test_bitfs_dr_rules.cpp` pins the cases. Since 2026-10-10 the rule applies below the
+      regime and in it alike, whatever the tilt did, never across the regime's edge, and the
+      knob is gone (4.12). Measured twice from the same pass-1
+      roots, 2,000 shots a pass: passes 2 and 3 full (hand-overs 24.6 to 26.5 at 0.652 to
+      0.672, then 23 to 24.5 at 0.692), the fourth 3 and 100 (25.3 to 25.7 at 0.732; 23.2 to
+      23.9 at 0.672 to 0.712), the fifth nothing both times, so the fall-back handed the
+      third pass's roots to the ending, which found nothing in 50,000 shots. The crossings
+      the regime form compares are the ones the chord bounds, so it starves where it
+      applies, as the first form did; the rule's own shape is the open question. The fifth
+      pass of the second run, instrumented: 6,010 fifth-crossing states in 2,000 shots,
+      every one compared (both crossings in the regime), none faster than the third
+      crossing's 24.15 (the fastest 24.09, the median 19.5; the downhill-peak condition was
+      met by 1,015 of the 1,225 states it was computed for, so the speed condition alone
+      refused them all). The ten roots all descended from one third-crossing ancestor
+      (keepTop keeps the ten fastest, which were its subtree), so the bar was one number.
+      The speed was the same at every tilt (medians 19.2 to 19.6 from 0.672 to 0.732), so
+      the tilt's growth is not what slowed the crossing; the crossing speeds fall along a
+      lineage (24.6, 24.2, 20.8 to 23.9, then a median of 19.5), the cause unmeasured. Found
+      on the way and fixed (the maintainer's go, 2026-10-06): the downhill-peak prediction's
+      early-out compared the crossing with the one before it where the rule compares with the
+      one two before, so a crossing slower than the opposite direction's last had no peak and,
+      when the rule applied, failed its second condition for that alone; it now skips the
+      prediction only when the speed condition itself fails. The example movies' oscillation,
+      measured the same day against ours (the ctypes driver, outside the framework; all eight
+      pyramid movies share one oscillation, mirrored): the same chord, across the low corner
+      between its two edges, the same turn (three frames of turning around down to 2 to 4) and
+      the same gain after it (2.0 to 2.2 a frame in both), but the example keeps its tilt sum
+      at 0.705 to 0.727 through all eight swings, the two components stepping opposite ways on
+      every frame (the normal rotates between (0.47, 0.26) and (0.20, 0.51)), so its swings
+      stay 30 to 32 frames and its turn points 50 to 127 above the lava, and the crossing
+      speed climbs 18, 24.5, 26.6, 29.7, 30.9, 31.0 and holds near 30 into the final run;
+      ours grows the sum 0.61 to 0.75 over as many swings, on the seven frames where both
+      components step outward together, so the swings shorten 27 to 19 frames, the -x end
+      sinks from 38 to 24 above the lava and the crossing speed falls 26 to 23. The speed the
+      ending needs is the example's constant-tilt oscillation at the regime's sum, not more
+      tilt. Why the example is faster at the same tilt (measured the same day): the crossing
+      comes when Mario's target normal, normalize(dx, 500, dz), meets the lagging normal, and
+      the speed at it is the turn's 2 to 4 plus about 2 a frame since the turn. The example's
+      normal rides 0.19 to 0.31 of sum above the targets its turn points ask for (turns at
+      280 and 296 from the home, inside the edges, where the target sum is 0.40 to 0.52, the
+      normal at 0.71), so at every turn the normal is 0.27 to 0.41 behind on the axis of the
+      next run, the crossing comes 13 to 16 frames after the turn, and the sum never moves,
+      the targets being inside the normal on one axis and outside on the other on every
+      frame. Ours turns 30 to 50 units farther out, at 319 to 344, past the edges on the
+      side faces, where the target sum is 0.57 to 0.70 against a normal at 0.63 to 0.73: a
+      margin of 0.02 to 0.09, the normal all but caught up at every turn, the crossing 8 to
+      12 frames after it, 6 to 8 of speed short of the example, and the chord's middle pulls
+      both components outward on the frames that grow the sum. Measured against the low
+      corner's diagonal: the two chords are equally wide across it (about 220 to 240 either
+      side), but the example's turn points lie 123 to 216 from the center along it and move
+      inward swing by swing, ours 217 to 291 and moving outward; its crossings come 67 to 106
+      off the diagonal, ours 25 to 78. The example begins each turnaround while the slope
+      under Mario is still steeply uphill (0.3 to 0.47 of the unit normal along his motion),
+      at 23 to 28 with the floor still rising under him; ours begins it when that slope has
+      flattened to 0.0 to 0.1, the crest, which is the moment the normal has caught up with
+      him on the run's axis and the lag is spent. Moving farther out buys tilt (the sum grows
+      only on frames where Mario is outside the normal on both axes) and spends lag; the
+      example separates the two in time, the rest setting the tilt and the swings turning
+      inside, where the stage mixes them: its swings must carry the sum from the fixer's
+      0.55 to the regime, and a pass keeps the fastest crossing of one oscillation, where
+      turning inside pays only two oscillations later. Within the regime alone (the
+      maintainer's question; our swings from the first turn at 0.672, six pass-7 lineages,
+      all one ancestor's): the turns are alike in speed (22 to 27), length (4 to 6 frames)
+      and drift (23 to 51), and differ only in where they happen: the example's begin on a
+      slope of 0.28 to 0.47 uphill and end 84 to 127 above the lava where the position asks
+      for a sum of 0.40 to 0.52 against a normal at 0.71; ours begin at 0.01 to 0.22, the
+      crest, and end 18 to 54 above the lava where the position asks for 0.60 to 0.71
+      against a normal at 0.67 to 0.73, which is also why our sum keeps growing 0.02 a swing
+      in the regime. The speed is in the lag, and the lag
+      is in turning inside the edges with the sum already at the regime's. The maintainer's
+      first answer (2026-10-06): a pass keeps its `keepTop` fastest per 0.01 by 0.01 cell of
+      the normal instead of per pass, so every tilt a pass reached is carried and the lineages
+      whose tilt went another way get their later swings; built the same day, the hand-over
+      line printing the cells (the line stays; the keep went back to the pass's fastest on
+      2026-10-07 with 4.12's design). Measured from the same pass-1 roots at 1,000 solutions a pass,
+      with the regime speed rule on and off: the hand-over carries 380 to 540 roots in 53 to
+      92 cells, the stage goes through all seven passes either way (the regime rule no
+      longer starves it, enough lineages beating their earlier crossing), in 170 to 190
+      seconds where ten roots took 25 to 45 (the ending's result in these scratch runs is
+      void: their configs carried `targetEdge` x, under which the edge-side rule refused
+      every hand-over state at its first frame, found 2026-10-08). But the
+      speed does not climb: the fastest root falls 29.7 and 30.0 at the second pass, 27 to
+      28 at the third, 26 to 27, 25.7, 25.8, then 24.3 at the seventh, and the cells with a
+      root at 25 or more go 43 to 52, then 0 by the seventh. Balanced cells, (-0.35, 0.34),
+      are carried at every pass and are no faster. The fastest and the most balanced
+      seventh-pass lineages replayed: margin 0.02 to 0.07 at every regime turn, the turn
+      ending 20 to 50 above the lava, the crossing 8 to 11 frames after it, 20 to 25.7. So
+      the cells keep the tilts the search reaches, and none of them is a lineage that turns
+      with the normal behind: the search does not produce one, and the lever is on the
+      move side, the turnaround taken up the slope as the example takes it, 6 to 8 frames
+      into a climb of 0.3 to 0.47, where ours comes at the crest; the dilemma is 4.12's.
+      The first-oscillation test under the working copy's cap of 1,000 (the committed
+      config's is 100) finds 913 in corner 4 within its 2,000 shots, the same 913 with the
+      per-pass keep and with the per-cell one (the leg hands the same roots over either
+      way), so the shortfall is the cap's, not the selection's; the other corners fill
+      1,000. With
+      the rule's original form seeds 7 and 8 run ten oscillations (701 and 80 last-pass
       solutions at 3,000 shots a pass; 317 and 25 with the 0.6 floor), so the config asks
       for five again, the last pass a crossing toward the far end. From the rest the first leg always
       runs toward the far end, so the first crossing is toward it and the stage adds one
@@ -1662,7 +1784,43 @@ goals are (status as stated by the maintainer, 2026-09-08):
       the three failures all at the last pass from roots at the tilt ceiling; but the
       maintainer's rule stands (2026-10-04): retries should not be needed, a retry
       re-rolls the lottery rather than removing it, so the committed config asks none and
-      the first oscillation's cause is the open item. What is known: the pass either
+      the first oscillation's cause is the open item. The other failure, a pass with
+      no solutions in the middle of the stage (oscillation 3 of a run of 2026-10-06, and
+      oscillation 7 of the run before it with `maxOscillations` 7), has its mechanism
+      measured: the roots hand over just past the crossing heading for the -x end at 23
+      to 26 speed, 10 to 22 units above the lava, with the x tilt already the larger
+      component (0.37 to 0.43 against a z of 0.27 to 0.32) and growing as the normal
+      follows Mario; the -x end of the chord is then 0 to 3 units above the lava when he
+      arrives and sinks about 3.6 a frame, so the three frames of a turnaround put him on
+      the lava (the pass's CSV has every lineage's last frames at 0 to 10 above the lava
+      at the end, and three roots replayed by hand lava-boost on the turnaround), while a
+      run toward that end is downhill, so the turnaround rule has no uphill frame to begin
+      from either. The pass that succeeded turned there 23 to 75 above the lava with an x
+      tilt of 0.31 to 0.34. The selection brings it on: `keepTop` keeps the fastest at the
+      crossing, and speed there correlates with the x tilt (0.53 over the 16 hand-over
+      candidates of the run's second pass, the fastest at 0.40 to 0.43 and 11 to 22
+      above the lava, the slowest at 0.29 to 0.34 and 40 to 63 above), so the ten carried
+      are the ten most likely to drown at the next end, and the pass dies when all ten
+      are. Done the same day as a root rule, `minEndClearance` (20 in the committed config):
+      a solution of a pass with a pass after it counts only if a turnaround begun from its
+      frame would end that high above the lava, Mario running on to a stop at the game's
+      4.8 a frame, the normal stepping toward him meanwhile and the face's height read
+      from the collision data under the unit normal (`BitfsDrMetrics::TurnaroundClearance`,
+      game-free; `test_bitfs_dr_rules.cpp` holds it to the recorded hand-overs: the three
+      roots replayed at -20 to +3, the slower candidates at 33 to 59). It is the precise
+      form of the `maxXzSum` ceiling the config turned off: the sum was the wrong proxy
+      and starved later passes, where the floor under the turnaround is what fails, and
+      the ranking among the roots that pass stays speed. A chord-end form was tried first
+      and dropped: the fast roots ran 30 to 50 units past the measured end, so a fixed
+      end put the dead roots at 15 to 21. Under the rule the same run, restarted at its
+      second pass from the same roots, went through: 100 solutions at every pass to the
+      sixth and 40 at the seventh, the carried roots at 0.672 of tilt where the dead
+      ones had been at 0.692 to 0.712, in 42 seconds. And a pass under the speed rule that
+      yields nothing no longer ends the run: the stage hands on the roots carried from the
+      last earlier pass whose crossing heads toward the squish-cancel quadrant, held to the
+      last pass's rules (`handOverFallback`, the maintainer's design of 2026-10-06, kept on
+      2026-10-10 over two forms tried between, 4.12; the leg test's third part pins it with
+      a pass made to refuse everything). What is known: the pass either
       produces a second crossing at turnaround speed within its first hundred shots a
       thread or produces only slow ones (12 to 16) that cannot continue; roots, shots,
       restarts, the tilt floor, lava clearance and the retreat limit do not move it. What
@@ -2134,18 +2292,17 @@ goals are (status as stated by the maintainer, 2026-09-08):
       hand over (237,091 advances). A validation refusing two frames at an exact match
       would be a rule from one measurement; the header's comment says it instead.
 - [ ] **4.9 Defects in the stage scripts.** Found 2026-09-15 writing 3.17; docs/tasing.md
-      lists them as not to copy. `Scattershot_BitfsDrRecover::IsSolution` reads its
-      previous state from the current frame (`prevState`,
-      Scattershot_BitfsDrRecover.hpp:657), so the `c-up-trick` phase's `ACT_DECELERATING`
-      check compares a frame with itself. `Scattershot_BitfsDrApproach` offers
-      `CustomMoves::C_UP_TRICK` in its C-up phase and `ApplyMovement` never dispatches it,
-      so `CUpTrick()` there is dead and the phase runs on random inputs. `CustomMoves::REWIND`
-      is checked by all three searches' `ApplyMovement` and offered by none of their
-      `SelectMovementOptions`. `BitFsPyramidOscillation_TurnThenRunDownhill.cpp:150` reseeds
+      lists them as not to copy. Two left with their scripts on 2026-10-05, when the ending
+      stage (4.11) replaced `osc-final`, `dr-approach` and `dr-recover`:
+      `Scattershot_BitfsDrRecover::IsSolution` read its previous state from the current
+      frame, so its C-up phase's `ACT_DECELERATING` check compared a frame with itself, and
+      `Scattershot_BitfsDrApproach` offered a C-up move its `ApplyMovement` never
+      dispatched (that header's C-up trick also drew its yaw without adding the range's
+      lower bound). `CustomMoves::REWIND` is checked by `Scattershot_BitfsDr::ApplyMovement`
+      and offered by no `SelectMovementOptions`. `BitFsPyramidOscillation_TurnThenRunDownhill.cpp:150` reseeds
       the fine sweep's uphill half from the coarse midpoint (`midHau`) rather than the
-      coarse winner (`midHau2`), which may or may not be intended. None is fixed here: each
-      changes what a stage searches, so each needs that stage's counts before and after,
-      and the dive-recover chain the first two belong to has never run to completion (4.1).
+      coarse winner (`midHau2`), which may or may not be intended. Neither is fixed here:
+      each changes what a stage searches, so each needs that stage's counts before and after.
       Tier C is untouched either way: since 2026-09-21 it runs on frozen copies of the
       scripts (`tasfw-perf/workloads/`). Found 2026-09-21 building 4.8:
       `Scattershot_BitfsDr::Pbd` and `BitFsScApproach_AttemptDr` expect `ACT_DIVE_SLIDE` on
@@ -2179,6 +2336,1077 @@ goals are (status as stated by the maintainer, 2026-09-08):
       its longest redraw at one second, the run's wall against the plain run under the
       existing 10% gate, and, on the deterministic workload with the viewer attached, every
       count identical. docs/performance.md gets the row and the gates.
+- [ ] **4.11 The ending.** Taken up 2026-10-05 on the maintainer's word: the earlier stages
+      target an ARE and build the oscillations reliably, and the ending is to explore the
+      full space of valid squish-cancel scenarios rather than optimize one. The scenarios,
+      as described: with enough speed a pause-buffered dive recover that stays within 4
+      units of the platform, so the pyramid keeps tilting through the air, landing at the
+      edge with the speed killed at once; or a run to the edge braked by holding back,
+      valid, with less tilt. At the edge: a slow run off with air strain into the squish
+      spot; a turn of about 90 degrees to fall off parallel, which allows more speed; a
+      quickturn (a minimum-magnitude walk for one frame at zero speed, into idle at once)
+      and a fall at any angle; a C-up deceleration under one unit of speed onto a NUT spot,
+      displaced into freefall without a step (running past one does nothing: a NUT spot
+      needs an action that cancels to freefall); a frame or two of straining back over the
+      platform after the slide-off for more tilt; landings on NUT spots along the edge
+      after it, for the same. Built the same day as one stage, `sc-ending`
+      (`Scattershot_BitfsScEnding` and `BitfsScEndingMetrics`, tasfw-scripts), replacing
+      `osc-final`, `dr-approach`, `dr-recover` and `dr-nut`, which never ran to completion
+      (4.1) and carried the defects of 4.9; `DetectEdge` moved to its own header. Every
+      option is a weighted move (`moves` in the config, 0 leaving one out), the phases are
+      the run, the dive, the brake, the edge and the air, and a solution records the
+      approach, Mario's action, speed, yaw and C-up at the leave, the quickturn, the
+      strain-back frames, the NUT landings and the probe's placement, so the solutions file
+      says which ways through exist. The rules (the maintainer, 2026-10-05): the departure
+      is the first frame at whose end the pyramid is not Mario's platform (every later
+      frame has a lower tilt unless he lands back on it); and the solution is a frame within
+      `probeWindow` of it from which the squish probe succeeds: the lowest of the level's
+      four bullies (slot 27, verified by the layout check) hacked next to Mario in its
+      knockback action, at `bullySpeed` along the push, the game played `probeFrames`,
+      leaves Mario idle with at least `squishMinSpeed` and `squishMinClearance` above the
+      lava, which is how a successful squish cancel ends (idle with the knockback's speed),
+      with the pyramid's normal the target's two floats exactly on that frame (the
+      maintainer's correction of 2026-10-06: the day before, the rule was the frame before
+      the departure, which left the strain-back's and the NUT landings' tilt uncounted). The
+      error is conserved exactly on every frame, through the departure, so the target stays
+      on the lattice, and the probe runs only where it is within `probeFrames` steps on
+      both axes, which off the platform means both counts equal and falling one a frame. Only the bully's position matters, for the
+      displacement: roughly parallel to the ledge, downhill, so that Mario ends up inside it
+      and can snap up and slide off on the squish's push. The probe tries nine placements
+      (along the edge toward its lower end and 5 and 10 degrees in over the platform, each at
+      0.3, 0.4 and 0.5 of the push distance `interact_bully` sets, the bully moving along the
+      push; the set the example movies settled, below) and records the one that succeeded,
+      else the one whose knockback took (the game sets Mario's invincibility timer with it; a
+      knockback's speed is capped at 16, under a run's, so the fastest placement hid it for a
+      while). The hacked bully needs its
+      position, action, speed and yaw, a zero interaction status and intangible timer, and
+      nothing else: the far-away flag an object beyond its drawing distance carries does not
+      stop the collision pass (tried and dropped). The probe writes game memory inside the metric
+      script's sandbox, the one write hard rule 1 now allows (its wording amended with the
+      maintainer's approval the same day): a save of the frame first, then only written
+      frame advances and reads until the sandbox ends, since a plain advance takes no
+      savestate and the revert loads the clean save, and the fixed slices cover the object
+      pool, so the bully comes back with it. `bitfs-turn --test` pins it: a walk off the
+      platform from frame 3330 toward -z, probed on the frames whose normal is within a step
+      of the target (the normal a frame after the departure), is byte for byte the plain
+      replay, advanced to and loaded back to, two runs read the same from the probe, and
+      the first probe's knockback takes (Mario in the air knockback at 16, the
+      invincibility timer set); a walk toward +z instead steps onto the lava, and its probed
+      frame is a lava boost, invulnerable, which is one thing the search's lineages will meet. What the departure rule makes of a dive from a run: its 20 of vertical speed
+      takes Mario over 4 units unless the slope rises under him, so only a dive steep enough
+      uphill keeps the pyramid his platform, the rollout's 30 the same, and the pause buffer
+      (`pauseBuffer`, on by default) is what lets a dive that lands on its own frame roll out
+      on the slide's first frame, B released during the pause: a TAS needs the pause for
+      exactly that case. The maintainer's first run (2026-10-06, the build before the
+      target's frame was corrected, so only a departure whose previous frame already had
+      the exact target was probed): 1,730 shots, 416,000 blocks, no solution, with lineages
+      that had run across the platform to its far side, where no squish cancel is. Two
+      changes from it: `edgeSide` refuses a state on the far side of the pyramid's home
+      from the edge the run follows (0, the edge's half, by default), and speed left the
+      state bin for the fitness alone, since the bins were a block apart in speed and the
+      run would have hit the block cap before the leave was explored. The maintainer's
+      second run, under the corrected rule, read from its CSV at 66,013 rows: 43,784 were
+      departed, their median height the lava's and their actions walking, turning around,
+      decelerating and braking, so Mario walking off the dipped edge onto the lava floor
+      and lava-boosting a frame later, one-frame dead ends the validation let through and
+      the forced CSV rows drew; 2,689 were dives leaving the band on their first frame,
+      recorded as no approach because the departure was handled before the approach; 41
+      had equal step counts, which an off-platform leave needs since both fall one a frame;
+      and 27 were within a step of the target, among them the target itself exactly, so the
+      lattice does pass through it. Three changes from that: a ground action on the lava
+      is refused unless the probe judged the frame (below), the approach is named on a
+      departing frame too, and the fitness after the run counts the difference of the two
+      step counts twice on top of their sum. The third run's rows then showed no freefall at
+      all (the maintainer, 2026-10-06), and the rows say why: along the +z edge Mario's
+      height on the platform is 4 to 30 units above the lava at the ending's tilts, under
+      the 100 the game needs to leave the ground, so a step past that edge is never a fall
+      but a step onto the lava floor, still walking, with the lava boost a frame later;
+      every one of that run's 3,723 departed rows was a dive, a dive slide or a rollout,
+      the dive's 20 of vertical speed against a slope of about 0.2 along the edge taking it
+      out of the band at once. So the leaves described as falls are, from this edge, steps
+      onto the lava, and the lava rule now keeps exactly the lava-floor frames the probe
+      judged (the normal within its frames of the target) and drops the rest. The
+      maintainer then placed the squish spot (2026-10-06): past the far edge of the target
+      corner, the +x edge here, the high side at the target's tilt (90 to 250 units above
+      the lava, by the same arithmetic), so the leave is a real fall after all. The stage
+      takes it as `targetEdge`, `x` or `z`, the axis the squish ledge runs along (the
+      maintainer's uscx and uscz; the committed +x edge is z-aligned, so `z`), its outward
+      side from the corner's sign on the other axis, and derives the oscillation corner across
+      the run's edge; it refuses a departure over any other edge (the nearest outer edge of the top,
+      from `DetectEdge`, and Mario past its line), points the walk-off, the parallel run,
+      the strain-back and the probe's placements at that edge, and checks at the config
+      that the input's last crossing has Mario running toward it, since the orientation is
+      otherwise easy to get wrong. What that heading is took a trace to settle: the dr
+      solutions' `roughTargetAngle` is the chord end the normal steps toward after the
+      reversal, and Mario runs toward the other, so the check takes its opposite (the
+      committed hand-off, traced from an exported solution: `roughTargetAngle` -24576,
+      Mario at (-235, +209) from the home at yaw 6699, toward +x and +z, the +z edge's
+      middle, then along it to corner 1). With that the stage ran its first shots from the
+      saved dr solutions (2 shots, 362 blocks, no refusal). The maintainer's fourth run
+      (2026-10-06) showed no freefall either, and his example movies settled what the search
+      was missing (`movies/pyramid_*.m64`, eight hand-made setups played to the squish spot
+      with the bully left out, one per pyramid and corner; `movies/uscx_5.m64`, a brake
+      approach that needs Mario placed before frame 3020 at x -2180, z -745, yaw 30008; all
+      replayed through the DLL with a ctypes driver outside the framework, since the tools
+      refuse to poke the game). What a squish cancel is in the game: the leave is over the
+      high edge of the small-tilt axis, next to the low corner, where the drop to the lava is
+      over 100 (a step or a landing stop leaves the ground) and the face's underside is under
+      160 above the lava at the landing spot; Mario falls 7 to 8 frames onto the lava, the
+      untilting face sweeps over him, and he is squished with the ceiling 135 to 142 above
+      the lava. Both axes step toward flat on every fall frame, so the squish normal is the
+      leave normal less 0.07 to 0.08 on both, and the lattice pins the leave: on the platform
+      the run takes the squish axis a step toward flat a frame and the run's axis a step away
+      from it, so the leave must come where the two counts meet, with the fall's length left
+      on both. Two approaches seen: a run around the low corner along the low edge (4 to 13
+      units above the lava) and a dive uphill toward the high edge (the dive lands on its own
+      frame, the pause freezes three frames, B on the fourth gives the rollout, and the
+      pyramid stays Mario's platform through both), a landing stop at the edge, a slow walk
+      off, air strain; or a run along the low edge, the stick held back to about 7 speed, a
+      step off, two frames of straining back (the pyramid Mario's platform again mid-air, the
+      lagging axis stepping the other way those frames, a two-step correction each), the
+      fall, the squish. The maintainer's bully hack reproduced (a bully launched 49 frames
+      earlier arriving as Mario lands: idle at 206 speed, 114 above the lava), and the probe's
+      own recipe with it: the bully 0.4 of the push-out distance behind Mario, the push along
+      the ledge downhill turned about 5 degrees in, the bully moving along the push at 100,
+      leaves Mario idle at 413 speed (negative in one example, so the speed is read either
+      way) 110 to 114 above the lava; exactly along the ledge he lands on the lava and stays
+      squished, 20 degrees in he is squished on the face with no speed, along Mario's facing
+      nothing transfers, and at 0.6 of the distance and over the bully never touches him. The
+      DLL's collision data gives the top face: a square of half-width 307 whose center the
+      tilt carries 307 units along the normal's horizontal part toward the low side, so the
+      far edge stands about 230 out at the ending's tilts and the +z side dips under the
+      lava in the low corner (the lava-floor rows were Mario walking into that, not off an
+      edge). Changes from all this (the maintainer's go, 2026-10-06): the dive's pause buffer
+      is four frames (the rollout's press came a frame early and was lost, so no run had ever
+      rolled out); the squish action passes the validation (the squish frame itself was
+      refused, so no solution could have been recorded); the probe's bully moves along the
+      push, the placements are the nine above, and the speed test is absolute; the lattice
+      prunes a state whose squish axis is nearer flat than the run's axis or than the target,
+      or has fewer than seven steps left before a leave (the shortest fall), which were two
+      thirds of the table; the dive is offered only where the floor rises under it 16 or more
+      a frame (uphill, toward the high side), the stick held back and the brake only within
+      160 of the squish edge (the random held-back stick had made half the rows turnarounds
+      and stops mid-platform), and a run toward the squish edge veering up to 40 degrees to
+      the high side, held one to six frames, is a move of its own, offered from 27 speed.
+      Four runs of 50,000 shots on the saved dr solutions then found no departure at all,
+      and a census of the 107 hand-offs says why: every one is in the submerged low corner,
+      218 to 278 units short of center in x and 0 to 32 above the lava, at 13 to 20 speed,
+      with 15 to 22 frames to its lattice deadline, so the far edge needs 23 to 31 units of x
+      a frame on average, where the run straight at it is uphill at a dead 13.7, cannot pass
+      about 27 along the lava line (the diagonal that keeps him out of the lava), and never
+      reaches the dive's 29 facing the edge; the northeast example at the same lattice point
+      (18 frames left) was at the same spot at 33.9 speed, out of a 17-frame downhill run
+      from a turnaround near the center. The ending is therefore not reachable from the dr
+      stage's hand-over, and the fix is upstream, the maintainer's call: a hand-over with the
+      downhill run still ahead (the last turnaround), or a lattice with more frames left at
+      it. The driver and the census scripts stayed in the session's scratchpad; a replay with
+      hacks for hand-made movies is a tool to add if the examples keep being read
+      (`dllcheck`, or a script). The target normal is optional since the same day (the
+      maintainer's ask): without `targetNx` and `targetNz` the stage conserves the
+      hand-over's own lattice, measuring the error against the normal of the frame after
+      `initialFrame` and carrying that reference, accepts a squish cancel at any normal on
+      it (the solution records it), probes every frame of the window, and leaves the
+      lattice's frame pins and the step-count fitness aside, speed standing in; a
+      `bitfs-turn --test` case pins the reference and the window. Its first run on the
+      saved hand-offs (50,000 shots) went where the pins had not let the targeted runs go:
+      396,000 departed rows, falls from up to 192 above the lava over the +x edge, 1,658
+      frames with Mario squished, no cancel. The CSV now carries what the probe made of a
+      probed frame (`ProbeAction`, `ProbeSpeed`, `ProbeHeight`), and those said why: the
+      leaves were run-offs at 25 to 30, landing 100 to 250 units outside the face, where the
+      bully can only knock Mario about in the air; the squishes were at frames 3477 and
+      later, the x tilt flattened to 0.01 to 0.1 and the face's edge 78 above the lava, so
+      the probe's few idles had no speed and stood under the 100 the cancel needs (the
+      examples squish under an edge 135 to 142 above the lava, with 0.2 of tilt left on
+      the small axis). A cap on a departed state's outward speed, `maxLeaveSpeed` (12 in
+      the config; the examples leave at 6.5 and 7.2, and the edge recedes about 3 a frame
+      while widening as the tilt flattens, so a faster leave cannot land under it), brought
+      the leaves to 2.5 to 10, and the landings still fell 60 to 190 units outside, from
+      edges 150 to 190 high reached too late: the same hand-off finding, from the far side.
+      One
+      asymmetry to expect there (the maintainer, 2026-10-06): `uscz`, along a z edge with the
+      normal's x crossing the origin, is much more lenient, where `uscx`, along an x edge,
+      generally needs the movement to the squish spot optimized, Mario having to reach it
+      before the normal's y gets too low; the committed setup is `uscz`, so the stage's moves
+      are only really judged on an `uscx` corner, and the fitness, speed on the run and the
+      frame after it since 2026-10-10, is where that would show first. Left for
+      later: the step helpers (`PyramidGoal`, `Steps`, `StepFrame`, the one-frame downhill
+      and uphill moves) are copies of `Scattershot_BitfsDr`'s, the third and fourth copies
+      having gone with the removed searches; a shared home for them is a tasfw-scripts
+      design question. Found building the test: `TopLevelScriptBuilder::ConfigureMetricScript`
+      on an unconfigured builder declares the unconfigured builder as its return type and
+      cannot be instantiated, so a metric script is configured after `ImportResource` (the
+      imported builder's is right); a one-line fix in tasfw-core with its mock-resource
+      test, for its own turn. Found 2026-10-08, running the stage apart from the pipeline:
+      (a) from the northeast example movie's own last crossing (frame 4418 of
+      `pyramid_-1945_northeast.m64`, the example's geometry: `targetQuadrant` 2,
+      `targetEdge` x, the x-aligned -z edge, no target normal; a one-record input set with
+      the direction and `equilibriumFrame` as metrics), 50,000 shots: 975,000 blocks,
+      365,000 sampled rows, 259,000 of them departed, Mario squished in 8,900 at the
+      example's own spot (300 to 350 from the home along x, -250 along z), and no squish
+      cancel: on a squished Mario the probe's bully leaves him squished (7,540 rows) or idle
+      at speed 0 on the lava (1,382), where the maintainer's hack gave idle at 413 and 110
+      above the lava; probed in the air he is knocked back (air knockback, 150,000 rows); so
+      the probe's placement or its frame does not reproduce the hack, and that is the
+      ending's binding piece before any hand-over question. (b) From the oscillation stage's
+      hand-over (the 712 roots of 4.12's run) under the committed config, 50,000 shots: the
+      search runs (13 percent futility, 33 discovery), 129,000 departed rows sampled, Mario
+      squished in 1,080, no squish cancel, the leaves at 0 to 12 off the edge landing 275 to
+      425 from the home along x against a face edge at 252 to 381 at those tilts; the run
+      then dies at the block cap (4.14) before writing anything. (c) Every ending run of the
+      scratch configs of 2026-10-06 to 08 was dead on arrival: those configs carried
+      `targetEdge` x from before the semantics were settled, under which the edge-side
+      rule (`edgeSide`, the run's edge from the oscillation and target corners) refused
+      every hand-over state at its first frame, 100 percent futility and as many blocks as
+      roots, with no word from the stage; the stage should refuse to start when the
+      hand-over itself fails its rules, naming the rule. (d) `VerifyLayout`'s home check on
+      slot 85, the track platform, fails for a start frame after the platform has moved,
+      since its home follows it (seen at frame 4418 of the example movie: home (-3684,
+      -3131, 0) against the spawn's (-5744, -3072, 0)); a stage starting late in a movie
+      needs that slot's `checkHome` off or the check to compare the spawn position (2.4).
+      Narrowed 2026-10-10: the probe is right. Run by the metric script itself over the
+      example's own landing (a scratch test case driving `BitfsScEndingMetrics` with the
+      movie's inputs from frame 4440), on the frame before the squish, Mario in free fall
+      62.5 above the lava at (244, -234) at 7.9, it records its placement 3 (5 degrees in,
+      0.3 of the distance) as idle at 413 and 110 above the lava: a squish cancel by the
+      stage's own test. The push must go downhill along the edge (+x there): the other
+      way, at 0.3 or 0.4, Mario is squished on the lava and boosted. What the search lacks
+      is that frame: its nearest states from the example's crossing (288 free-fall rows
+      within 50 of the spot and 45 to 80 above the lava) sit at 261 to 275 along x and -251
+      to -253 along z, 15 to 20 past the face's -z edge, at 4 to 6.5 with the normal at
+      (0.42, 0.19) against the example's (0.37, 0.22), five frames of steps later, and every
+      probe on them is an air knockback: pushed +x from there Mario is not under the face.
+      Target mode does not reach it either: from the dr hand-over under the committed
+      targets 265,000 departed rows, 34,500 of them at the target normal, none squished;
+      from the example's crossing with its own squish-frame normal as the target 7,720
+      departed rows, none squished. So the ending's search leaves a few frames late and a
+      few units far for the push to land Mario on the face, and nothing in its rules or
+      fitness aims at the spot, whose tolerance the example puts at about 15 units and 0.03
+      of normal; a rule or fitness on the pre-squish geometry (where the push lands him
+      against the face's sweeping edge, from the normal's lattice) is the next piece. The
+      maintainer's direction (2026-10-10): once anything decelerates, speed is no fitness;
+      time instead, and validation rules to prune. Built the same day: the fitness after the
+      run (the dive, the brake, the edge, the air) is the frame, the earlier the better, in
+      place of speed and of target mode's step term; and a departed state must stay on the
+      platform's side of the squish edge's line until the squish, the line 307 from the home
+      along the edge's outward direction less 307 times the normal's component that way,
+      which the untilting face sweeps outward 3 a frame (the example leaves 17 inside it and
+      meets it on the squish's frame; the search's nearest states were 2 to 4 outside it).
+      Under that rule alone the example run's squishes sat on the line but 300 to 350 along
+      the edge, where the probe's push, about 70 along it, carries Mario off the face's far
+      edge at 420 into a knockback on the lava (the example's 244 lands at 311), and only
+      two of 52,892 departed rows were a fall from the face's top; so a departed Mario must
+      also have `PushReach` (90) of face ahead of him in the push's direction. Measured with
+      both rules: from the example's crossing 43,502 departed rows, 7,607 squished, still at
+      300 to 325 along the edge (the face's far edge there is at 417 to 436, so the reach
+      admits them), four of them a fall from the top, and no cancel; from the dr hand-over
+      under the line rule alone 47,122 departed rows and under both 69,499, no squish at all
+      either way, the departures
+      15 to 45 frames after the hand-over with the normal's x already flattened from -0.45
+      to -0.2 and 0, where the example leaves 24 frames after its crossing with its normal
+      still deep in its corner, (0.43, 0.28). That is the geometry, not the rules: the
+      committed setup is `uscz`, the squish over the +x edge, the high edge of the large
+      axis, reached by a run across the tilt that flattens it on the way, and every example
+      movie is `uscx`, the squish over the high edge of the small axis next to the low
+      corner, reached by a run deeper into the low side that keeps the tilt. The rules and
+      the probe here were calibrated on the `uscx` examples; no `uscz` movie exists to
+      calibrate against, and the maintainer's own word is that `uscz` differs (the lenient
+      kind, the normal's x crossing the origin). The one setup the ending has reproduced a
+      cancel for by its own probe is the example's; the pipeline's own corner in that
+      geometry is `targetQuadrant` 3 with `targetEdge` x, the -z edge next to the low corner
+      (-x, +z), with the hand-over heading there, which the ending's direction check names.
+      The `uscz` movie (the maintainer, 2026-10-10:
+      `movies/uscz_pyramid_-1945_southeast_-p15259_p82917_p41379.m64.m64`, the normal at its
+      squish in the name) replayed through the game outside the framework (the scratchpad's
+      `dll_play.py`, `edge_probe.py` and `point_probe.py`, the last two calling the DLL's own
+      `find_floor` and `find_ceil`): crossings at 3336, 3365, 3397, 3422 and 3452 (11.6,
+      24.1, 28.8, 27.2 and 29.0; the hand-over's normal (-0.42, 0.26), sum 0.68, Mario
+      heading +x and +z, like the dr stage's own hand-overs at 26 to 28), a 12-frame run to
+      (51, 389), a dive and rollout to a landing stop at (234, 307) on the +x edge, a walk
+      off at 5 (frame 3474, 106 above the lava, the normal (-0.23, 0.45)), eight frames of
+      fall beside the edge, the squish at 3482 at (273, 288) with the normal (-0.153,
+      0.414), and no bully in the movie. What the game's own geometry says against the
+      rules of the morning: the face's edge is not where the line rule put it. The face is
+      the square (+-307, 307, +-307) of the object's frame, placed by
+      `mtxf_align_terrain_normal` from the normalized normal (the game normalizes all three
+      stored components, y included, so nX and nZ alone are not the tilt): its x-aligned
+      edges lie at z = +-307 s + 307 uz with s the length of (ux, uy), its z-aligned edges
+      are skewed, x = +-307 uy / s + 307 ux - Z ux uz / s along the edge's own Z. That
+      matches `find_floor` within a unit on every frame of both movies, where the line rule
+      (307 + 307 n.out from the raw components) sits 6 to 9 inside the real +x edge on the
+      `uscz` movie and 7 to 11 outside the real -z edge on the `uscx` one. And both movies
+      fall outside the edge, not inside it: `uscz` 0 to 3.6 out (two frames 0.4 in, where
+      the face is his floor again), `uscx` 4.5 to 6.5 out, each riding beside the edge as
+      the untilting face sweeps out 3 to 4 a frame; the squish comes on the frame whose new
+      edge first covers Mario's position at the frame's start (the flag is set from that
+      position against the frame's transform, before his step). So the line rule refused
+      every frame of the `uscz` fall and passed the `uscx` one only by its own error. The
+      cancel, read in the decompilation (`act_squished`, `interact_bully`,
+      `perform_ground_quarter_step`) and confirmed by the numbers: at the frame's start
+      Mario's x, z are under the side face with the top more than 78 above him, so his floor
+      is the lava and the side face a ceiling 150 or less above it (`INPUT_SQUISHED`); the
+      bully's `push_mario_out_of_object` sets him 115 from the bully along their line and
+      `bully_knock_back_mario` hands him the bully's speed times 4.13 (413 at 100); the
+      airborne action cancels to `ACT_SQUISHED` before any knockback step, and
+      `act_squished`, with the frame's stale 150 of space, pancakes him and then, the
+      ceiling's normal y being above -0.5 ("steep"), walks him 10 along the ceiling's
+      horizontal normal in four ground quarter steps: a step whose floor is the top face
+      within 78 above him snaps him up onto it, and a step whose floor is the lava with him
+      more than 100 above it is `GROUND_STEP_LEFT_GROUND`, the instant un-squish to idle with
+      the speed intact (the `uscx` probe's idle at -413, 110 above, is Mario at the face's
+      height one step past its edge). Hence the conditions, with E the face's height at the
+      squish spot, F at the pushed spot, g the face's slope along the edge (the along
+      component over uy) and P the push (57 to 80 by the fraction): E at most 150 (the
+      ceiling), 100 < F = E - gP <= y + 78 (the pushed spot's face his floor and over 100),
+      y < E - 78, the pushed spot within the walk's 10 of the edge, and the side face steep,
+      -0.707 (uy + ux / s) > -0.5 for the +x edge, which at nZ 0.41 needs |nX| of 0.15 or
+      more: the movie's -0.15259 is the least that does (the game's normal there -0.4959,
+      the `uscx` movie's -0.4988). The push is downhill because F must lie under E. The
+      `uscz` movie's own squish cannot be cancelled by any push (measured: every placement
+      a pancake at 0 speed, the frame before a knockback): caught 13.7 above the lava where
+      the +x edge stands 99, the pushed spot's face is 59 downhill, or over 100 but more
+      than 78 above him uphill. Set at (254, 202) at the start of the squish frame, 37.7
+      up where the edge stands 146, the push straight down the edge at 0.3 to 0.5 gives
+      idle at -413.2, 105 to 116 above, and free fall at -413 the frame after: for this
+      setup the catch is 60 to 100 up the edge from the corner (E 130 to 150, z 195 to 230
+      at this normal) between 27 and 68 above the lava, and the placement straight along the
+      skewed edge (which recedes outward 0.08 a unit along +z, so the pushed spot is 5 to 6
+      inside by itself); the `uscx` edge's 5 degrees in puts him too deep for the walk
+      (squished on the face at 0 speed) and 5 out on the lava. Consequences: the line rule
+      and `PushReach` are wrong and go; their replacements are the exact edge, a departed
+      Mario on or within a few units outside it until the catch, and the catch frame's E, F
+      and y window above; the probe's placements should come from the geometry (the pushed
+      spot 2 to 9 inside the exact edge) rather than three fixed angles; and the run must
+      leave up the edge from the corner, not at it, which is the stage's aim (`PyramidGoal`,
+      the edge moves) and the maintainer's decision. The dr side needs nothing for `uscz`:
+      the movie's hand-over crossing is the stage's own. The maintainer's word on the movie (2026-10-10):
+      its cancel was never verified with his bully hack, and it may well be too close to
+      the corner; so the only verified `uscz` cancel is the moved catch above, and the
+      movie stands as the example of the oscillations, the run and the leave, not of the
+      squish spot. Built 2026-10-11 on the maintainer's go (the four pieces, the corner
+      distance computed and allowed a little less): `BitfsScEndingMetrics::Face`, the top
+      face as the game places it, from the normalized stored normal with the skew of the
+      z-aligned edges and the collision data's extents (307 on the positive sides, 306 on the
+      negative), with the top's and the sides' planes, the edges, the corners and the sides'
+      normals, pinned by `test_bitfs_ending_geometry.cpp` against the game's own `find_floor`
+      and `find_ceil` on both movies (the edges within 1.5, the top within 1.5, a side within
+      3: the game truncates its vertices to shorts toward zero, which puts an edge on a
+      negative side up to a unit nearer the apex); `CatchPlacements`, the catch and its
+      cancel in the decompilation's constants (the frame's face covering Mario, the top over
+      78 above him, the side within 150 of the lava; the side steep; three pushes, downhill
+      along the edge at the fractions 0.3 to 0.5 of the push-out distance, each landing him
+      on the top where it stands over 100 and within 78 above him, short of the top's end,
+      and inside the edge by the middle of the squished walk's reach, 2.5 a quarter step
+      over the lava and 2.5 uy over the top; every bound with its slack, `CatchSlack` 3 on
+      the heights, `DepthSlack` 1 on the edge, `SteepSlack` 0.003 on the side's normal, the
+      measured errors of the geometry, see below), pinned by the same test on the uscz movie's own catch (none),
+      the moved catch (three) and the uscx movie's (three); the probe gated on it and placing
+      its bully from it, three placements where it had nine, on the catch's frame alone
+      where it had every frame of the window (`catchPlacements` on the metric, `Catch` in
+      the CSV); `OverSquishEdge` and `EdgeDistance` by the face, in place of the `DetectEdge`
+      runs on the stand-in (the ending no longer includes it; the midpoint's coordinate those
+      used was up to 14 off the skewed edge at the corner, enough to refuse the uscz movie's
+      own departure); the rules: the line rule and `PushReach` gone, a departed Mario at
+      most `SweepReach` (26, eight sweeps) outside the exact edge, the edge at his position
+      standing at least `LeastEdgeHeight` (100 plus the top's fall over the shortest push)
+      less `CornerSlack` (5), and a catch with no cancelling push refused; and the run to the
+      edge aiming at `AimPoint`, where the edge stands at the middle of the catch's window
+      of heights, within 15 degrees, in place of the veer toward the high side. The probe
+      tests run on the uscx movie now (`pyramid_-1945_northeast.m64` beside the config's
+      movie): from its crossing at 4418 the probe runs on one frame, 4449, and finds the
+      cancel there (idle at -413, 109 above the lava), leaves the game as it found it, and
+      with the cancel frame's normal as the target runs there and nowhere else, with a
+      normal two steps on nowhere at all. The walk off the committed movie's frame 3330 the
+      tests used before stands where the +x edge is 189 high and tilts lower as he walks,
+      so no catch comes of it; the example movie is the honest setting. The first run on the
+      dr hand-over under these rules (8,000 shots asked, 50,000 before) hit the block cap at
+      4 million blocks after 85 seconds (4.14 ended the process): 2.5 million departed rows,
+      all but one never caught, states falling further outside the edge than any sweep could
+      reach in the window's remaining frames, kept alive by `SweepReach` alone and binned to
+      the unit. So the bound is now the sweep's travel over the frames the window has left
+      (the edge's move over the next frame, read from the stepped normal), within
+      `SweepReach`, plus the slack; and the CSV's forced rows are the departure, the frames
+      with a catch and the cancels, the sampled rows keeping the rest. The 8,000-shot runs under
+      that bound (27 and 37 seconds, 1.1 and 1.2 million blocks, 57,000 and 47,000 departed
+      rows) caught nothing: 10,000 and 4,900 of their leaves stood where the edge is 125 to
+      150 high, but with the normal's x spent, 0.0 to -0.1, where the edge no longer sweeps
+      and the side is no longer steep (the movie leaves at -0.23 and is caught at -0.16), the
+      aim having been read off this frame's face, whose edge at the hand-over's -0.42 stands
+      far too high everywhere. So the aim is read off the catch's face instead
+      (`CatchFace`): the target's normal when one is given, else the normal's component
+      across the squish edge flattened to the last value at which the side is still steep,
+      the latest catch the cancel allows. Measured with that aim (8,000 shots: 26 and 36
+      seconds, 1.27 and 1.31 million blocks, 6.5 and 9.7 million frame advances, 62,000 and
+      123,000 saves, 1.4 and 1.9 million loads; 89,000 and 57,000 departed rows): still no
+      catch. The leaves come too late for the tilt: from the uscz movie's crossing at 3452
+      they fall at 3476 to 3503, the median 38 frames after it, with the normal's x at -0.01
+      to -0.08, where the movie leaves 22 frames after it at -0.23 and is caught at -0.16;
+      from the dr hand-over at 3457 to 3489, the median 21 frames, at -0.06 to -0.14, under
+      the 0.15 the side needs at that tilt. The brake is the approach of half the leaves,
+      the dive of none. So the next piece is the run's timing, a moves question: the edge
+      reached and left within about 20 frames of the crossing, while the component across
+      the squish edge still stands at 0.15 or more (the lattice rule above already pins the
+      steps left on the platform in target mode; without a target nothing does), the dive
+      offered where the movie dives, and the brake sooner. The maintainer decides the form.
+      The block cap (4.14) stays the limiter of any longer run: 4 million blocks in 85
+      seconds before the sweep bound, 1.3 million in 30 under it. Built the same day on the
+      maintainer's go, with his old approach logic as the model (`BitFsScApproach_AttemptDr`,
+      and the deleted `Scattershot_BitfsDrRecover`, which refused a landing stop over 2 from
+      an edge): the dive recover is one move, the dive straight ahead with the pause buffer,
+      then the rollout a frame at a time with the stick, among the yaws within a quarter turn
+      toward uphill, that keeps it lowest within 4 of the platform (the compare family, as
+      his script), until it lands; the move is reverted when the rollout leaves the platform
+      or the band, or lands over `DrLandingReach` (30 now, 10 at first; see below) inside the
+      squish edge, and the gate on the floor's rise under the dive is gone. The brake and the held-back stick are
+      offered within `BrakeReach` (80) of the squish edge, not 160, and the run's
+      exploration keeps the stick full. Measured (8,000 shots: 23 and 26 seconds, 1.35 million
+      blocks each, 6.0 and 7.9 million frame advances, 48,000 and 69,000 saves, 1.3 million
+      loads each): from the uscz movie's crossing still no catch; from the dr hand-over the
+      first catches of any run, 41 rows at the normal (-0.19, 0.36), 45 to 53 above the
+      lava, at 254 to 286 along the +x edge, the probe tried on all of them (36 knockbacks,
+      where the frame's new edge had not quite reached him, 5 squishes with no un-squish)
+      and no cancel: the edge stands 128 at those catches, the bottom of the window, so the
+      pushed spot's top is 94 to 104 where it must exceed 100 and stay within 78 above him.
+      The tilt is right now and the height is right; the landing is 50 units too near the
+      corner (the aim's window at that normal is 200 to 230 along the edge). The next piece
+      is the pull toward the aim: the dive recover lands where the dive's arc ends, about
+      200 ahead of the dive, so the run must turn to +x sooner or the landing's reach must be
+      judged against the aim's window along the edge, not the edge alone. Built the same day
+      on the maintainer's go, with the time budget he asked about (nothing on the platform
+      refused a state that could no longer make it): on every platform frame the tilt across
+      the squish edge has (|across| - the catch's) / 0.01 frames before the catch, less
+      `FallFrames` (7, the movies' fall from the edge to the catch), and reaching the edge
+      takes at the least the distance from the half's middle, or from Mario once he is on
+      the edge's half, at his speed or `WalkOffSpeed` (4), so a state whose need exceeds what
+      is left by more than `BudgetSlack` (2) is refused; and the dive recover's landing is
+      kept only where the edge, on the catch's face, stands in the catch's window of heights
+      at that position (`InCatchWindow`), the window's bounds with their slack. Measured (8,000
+      shots): from the dr hand-over the first squish cancels of the pipeline, three solutions
+      in 20 seconds and 453,000 blocks (6.3 million frame advances, 72,000 saves, 1.2 million
+      loads; 303 catch rows, the probe on all of them, 104 squishes, 196 knockbacks, 3 idles
+      at -413 speed 115 above the lava), the budget having cut the table by two thirds; all
+      three the same leave, a brake at 3455 from 17 to 12, a walk off the +x edge at 3458 at
+      12 (`maxLeaveSpeed`), a fall drifting up the edge 12 a frame, the catch at 3465 at
+      (248, 206) 68 above the lava with the normal (-0.189, 0.383), the push 0.3 behind down
+      the edge; `scratchpad/dll_play.py` replays the exported movie with that placement and
+      reads idle at -413.3, 117.7 above the lava, on the face the frame after. The three
+      movies and `ending.json` are in `analysis/m64/ending-real/` (gitignored). From the
+      uscz movie's own crossing still nothing: 167,000 blocks, 7,000 departed rows, no catch;
+      its leaves stand at the window's height with the normal's x at -0.1 to -0.2, so the
+      budget lets them through, and why the sweep does not reach them is the next thing to
+      read off that run. Then a full run on the pipeline's own hand-overs, which the block cap
+      (4.14) must not end first. Read off it the same night: its falls reached the catch's
+      height with the normal's x at -0.10 to -0.12, past steep, the top within 78 of Mario;
+      the leaves had come at -0.18, let through by the budget's slack (the steep slack in
+      the catch's tilt, a fall of 7 where the catch waits 8 or 9 frames for the top to stand
+      78 over him, the two frames' slack). Tightened (the catch's tilt without its slack, the
+      fall at 8) the 8,000-shot runs found nothing where they had found three cancels, with
+      a fifth of the departures left, so the budget stands as it was and only a departed
+      state whose tilt across the edge is no longer a step over the catch's is refused at
+      once: the leaves the budget lets through late no longer hold the window's ten frames.
+      The uscz crossing's leaves are late because its run is, five frames behind the movie's
+      22 to the edge, and no rule makes a run faster: that is the moves again, or more shots. A 50,000-shot run from the dr hand-over under the budget as it stands (80 seconds,
+      1.03 million blocks, 24.7 million frame advances, 255,000 saves, 4.0 million loads):
+      1,105 catches, the probe on all of them, 405 squished to a pancake, 700 knockbacks, no
+      cancel, every catch near the corner, 270 to 285 along the edge, where the edge stands
+      128 at the catch; the three cancels had left at 278 and drifted up the edge to 206
+      during the fall, 12 a frame. So the window along the edge is now judged on every
+      departed state, at the position the fall will carry him to (his position along the
+      edge plus his drift along it over the frames the fall has left), on the catch's face:
+      the edge there must stand between `LeastEdgeHeight` less `CornerSlack` and
+      `SquishSpace` plus `SweepDepthSlack` (11, two sweeps' depth lowering the side), in
+      place of the corner rule on this frame's face. Measured (50,000 shots, 76 seconds, 677,000
+      blocks, 24.1 million frame advances, 245,000 saves, 4.1 million loads): one cancel, a
+      run off the edge at 20 with no brake, caught at (249, 206) 68 above the lava at the
+      normal (-0.189, 0.403), the push straight down the edge at 0.3, idle at -413 at 113
+      above (replayed outside the framework the same way; its movie is beside the first
+      three in `analysis/m64/ending-real/`); 265 catches at 170 to 230 along the edge, all
+      in the window now, and among them 99 pancakes whose side the geometry had as -0.508,
+      steep within the 0.01 slack and not in the game, and 165 knockbacks fired a frame early,
+      the frame's edge 0.3 to 2.4 short of Mario within the 3 of slack. So the slacks are
+      the geometry's measured errors and no more: the edge's `DepthSlack` 1, the side's
+      normal `SteepSlack` 0.003, the heights' `CatchSlack` 3 as before. Both movies' cancels
+      stand under them (the uscx movie's side is -0.5017 by the geometry, -0.4988 in the game). Measured under them (50,000 shots, 76 seconds, 566,000 blocks, 23.7 million
+      frame advances, 265,000 saves, 4.1 million loads): 54 catches, all at 196 to 210 along
+      the edge and 49 above the lava with the normal at (-0.18, 0.39), 45 of them probed a
+      frame early still (the frame's edge a unit short of him, the sweep 3.3), 9 pancakes,
+      no cancel; from the uscz crossing 764 departures and no catch. Four cancels in all so
+      far, from four runs of 8,000 to 50,000 shots that found 3, 0, 1 and 0: the rules now
+      keep the search in the window (the catches are where the cancels were) and the rate is
+      the search's, a cancel in tens of thousands of shots, so what comes next is the
+      exploration rather than another rule: longer runs, which the block cap (4.14, 1
+      million in the committed config, 4 million in the scratch runs) must not end, and a
+      look at which leaves cancel (the four were a brake to 12 and a run off at 20, none a
+      dive) to weight the moves. The uscz crossing's run is the other thread: five frames
+      slower to the edge than the movie's, its leaves come at -0.18 and are never caught. The dive recover itself landed in none of the night's runs (no row of any run carries
+      its approach): the dive needs 29, the run holds 29 to 30 for the first six frames
+      after the hand-over, 300 from the edge, and bleeds to 25 as the turn toward the aim
+      takes it uphill, while the movie runs along the low side at 28 and dives at 31 some
+      190 from the edge; and a dive taken 300 out lands 100 short of the edge, which the
+      landing's reach of 10 refused. So (the maintainer's go, 2026-10-11) the turn toward
+      the aim is offered only once the aim is within `DrReach` (200, the movie's dive and
+      rollout), the dive only where the edge is between the recover's reach and the
+      landing's, and the landing stop counts within `DrLandingReach` 30 of the edge, close
+      enough to walk off in a frame or two. Under that gating alone (50,000 shots, 56 seconds, 547,000
+      blocks) still no dive landed and, the run bleeding to 25 before the edge was within the
+      dive's reach, no catch either: the run's exploration move, a random stick within a
+      quarter turn, took it uphill. So until the edge is within the recover's reach the run
+      draws the minimum downhill angle toward the target corner six times in nine (the
+      deviation three, the random stick two), which at the hand-over's tilt is the uscz
+      movie's own heading, up the low edge toward the far corner, where it runs 12 frames
+      from 28 to 31 and dives; the approach, with the turn toward the aim, begins at the
+      edge's distance (`DrReach` plus the landing's), not the aim's. Measured (50,000 shots, 54
+      seconds, 487,000 blocks, 19.3 million frame advances, 152,000 saves, 2.7 million
+      loads): still no dive landed, 29 catches at 195 along the edge and 57 above, 21
+      pancakes, no cancel. The run's speed by frame, the median of the sampled rows: 26 to
+      29 for the first eight frames after the hand-over, 25 at the tenth, 22 at the
+      twentieth, 19 at the twenty-fourth; the dive's 29 is never there where the edge is
+      within its reach. The movie's run gains from 28 to 31 on the same heading, so the
+      difference is in the hand-over states or in how the stage's downhill angle is taken,
+      and reading that is where the dive recover stands: no dive recover has landed in any
+      run of 2026-10-11. The brake and the run off the edge remain the stage's leaves.
+
+- [ ] **4.12 The hand-over's lag: speed against a normal further back.** Opened 2026-10-07
+      on the maintainer's word: the oscillation stage selects first of all for speed at the
+      crossing, where the squish cancel is usually better served by giving up speed for a
+      normal further back, behind Mario, so that he has the time to cross the platform to
+      the squish spot before the face comes up under him; solving that dilemma is the
+      stage's design question, and the one the ending waits on. What the measurements of
+      2026-10-06 (4.6) say about it: the example's oscillation has both, since the
+      crossing speed is itself made of the lag (the turn's 2 to 4 plus about 2 a frame
+      until Mario's target normal catches the normal), so a normal 0.2 to 0.3 of sum
+      behind what his position asks for gives the example its 30 at the crossing and its
+      time at once; our lineages have spent the lag by the time they turn (a margin of
+      0.02 to 0.07, the turn at the crest, the crossing 7 to 12 frames later), because
+      the sum has to climb from the fixer's 0.55 to the regime, which only running outside
+      the normal does, and because a pass keeps the fastest crossing of one oscillation,
+      where turning inside pays two oscillations later; keeping the fastest per normal cell
+      (4.6) widened what is carried without producing such a lineage, so the answer is in
+      what the search tries and what it is judged by, not in what it keeps. Candidates: the
+      hand-over judged by the margin, or by the frames from the turn to the crossing, in
+      place of the crossing speed; the tilt set before the swings, the fixer handing over
+      at the regime's sum or a rest between, so the swings have nothing to build; the
+      turnaround offered and favoured up the slope, 6 to 8 frames into a climb of 0.3 or
+      more, as the example takes it, and the swing's end steered up the face rather than
+      along the edge. Done when the stage hands the ending roots at the regime's tilt with
+      the normal behind Mario by a stated margin, the example's 0.2 or more, and the
+      ending's run from them reaches the squish spot. The maintainer's sketch (2026-10-07),
+      recalling `osc-final`: oscillate for speed to the regime and in it, the ten fastest
+      carried each pass; from the third oscillation in the regime require the speed to
+      improve on the oscillation two before; when no improvement is found, rewind to the
+      last oscillation oriented away from the target quadrant and run one final oscillation
+      without the speed restriction, for a variety of crossings. Against the stage as it
+      stands: the first three steps are the passes, the keep and the regime speed rule as
+      built (the rule compares two crossings in the regime, which is the third regime
+      crossing on); the rewind is the fall-back, which today takes the last pass of the
+      final pass's parity and hands its roots straight on; the new piece is the free final
+      pass from the pass of the other parity. `osc-final` itself (the committed copy) was a
+      brake-to-target search from the dr hand-over, its solution the normal within ten
+      steps of the target after the brake, its fitness the speed on the run and the
+      slowness in the brake, with no gate on the downhill peak; the downhill-peak
+      comparison is the dr speed rule's own second condition. What the measurements say of
+      the sketch: the last pass's solutions already span 12 to 24 at the crossing under the
+      rule, the ending found nothing in them, and the lag is spent at the turn before any
+      speed rule applies, so a free final pass widens the crossings without putting the
+      normal behind Mario; the margin at the hand-over is the number to read it by. Built
+      2026-10-07 as the maintainer asked: the per-cell keep removed (the fastest `keepTop`
+      again), the final pass free of the speed rule and keeping every solution
+      (`ValidateCrossingData`'s `speedRule`, false on the final pass; the unit test pins it),
+      and the rewind running the final oscillation from the roots of the last pass whose
+      crossing heads away from the squish-cancel quadrant (the parity of the final pass's
+      roots), a free pass that finds nothing rewinding a pass pair further; the leg test's
+      third part pins the rewind from the leg. The final oscillation starts from a crossing
+      heading away from the squish-cancel quadrant and ends at one heading toward it, which
+      is the committed parity (the last pass toward the far end). Measured the same day from
+      the pass-1 roots, the speed rule on, 1,000 solutions a pass: at seven oscillations the
+      rule never starved (passes 2 to 6 full or nearly, 28 to 30 at the second, 25 to 27 at
+      the fifth, 5 roots at the sixth) and the free final pass found 116 at 12.7 to 21.5; at
+      nine, the sixth pass found nothing, the stage rewound to the fourth pass's ten roots
+      and the free final oscillation found 1,449 solutions in 53 cells at 9.9 to 27.1, in
+      154 seconds; the ending's nothing from either hand-over is void (below). Five of
+      the 1,449 replayed (the two fastest, the median, the two slowest; the ending's nothing in
+      these scratch runs is void, their configs carrying `targetEdge` x, see below): the last turn before
+      the hand-over ended 14 to 33 above the lava with a margin of -0.01 to +0.08, and at the
+      hand-over the position asked for 0.72 to 0.78 of sum against the normal's 0.712, so
+      the normal is not behind Mario in any of them: the free pass widens the crossings, as
+      foreseen, without the lag the ending needs. The maintainer's second approach
+      (2026-10-08) replaced the rewind: no rewinding; a pass under the speed rule that
+      yields nothing drops the rule, runs again from the same roots without it, and the
+      stage goes on without the rule to the final oscillation, which moves to the next
+      oscillation after that pass whose crossing heads toward the squish-cancel quadrant,
+      so two or three oscillations run without the rule (two when the failed pass's
+      crossing heads away, three when it heads toward); only the final pass runs under the
+      final pass's configuration and hands on every solution, the passes before it carrying
+      their `keepTop` fastest (`speedRule` on `Scattershot_BitfsDr`, set by the stage; the
+      leg test's third part pins the second attempt, with a pass made to refuse everything
+      by a rule the speed rule has no part in, since a short run has no failure the speed
+      rule alone causes). Measured the same day from the pass-1 roots at nine oscillations,
+      the speed rule on: passes 2 to 6 under the rule (28 to 30 at the second, 27 at the
+      fifth, 30 solutions at the sixth), the seventh found nothing, the rule dropped, the
+      seventh again without it found 937 (its ten carried at 24.5 to 25.2), the eighth 833
+      (24.1 to 24.9), and the final ninth 712 in 40 cells at 12.5 to 24.5, three oscillations
+      without the rule since the seventh's crossing heads toward the squish-cancel quadrant;
+      96 seconds; the ending's nothing from the 712 in that run is void, its scratch config
+      carrying `targetEdge` x. What the ending does from them under the committed config, and
+      what stands in its way, is 4.11's finding of 2026-10-08. The maintainer's third design
+      (2026-10-10), replacing the second: no oscillations without the speed rule; a pass that
+      yields nothing rewinds to the last crossing heading toward the squish-cancel quadrant and
+      hands its roots on (the form of 2026-10-06); and a new rule for the lag itself, the
+      crossing's normal at least `minCrossingAxisDiff` further along one axis than the
+      other, from the second crossing on, set to the example's 0.26: at the example's
+      crossings |nX| and |nZ| differ by 0.27 to 0.31 (0.21 at its first), the normal still
+      pointing at the end Mario just left, where ours differ by 0.33, 0.29, 0.23 and 0.13
+      after the -x end's turn and by 0.17 to 0.19 after the +z end's. Built the same day;
+      the unit test pins the rule and the leg test's third part the rewind. Measured from
+      the pass-1 roots at nine oscillations, the speed rule on: the second pass found 922,
+      its ten carried at 29.0 to 30.2, the third 317, carried at 27.2 to 28.8, the fourth
+      nothing in 2,000 shots, so the stage handed the third's ten on. Three of them replayed:
+      crossings at 26.3, 30.0 to 31.7 and 28.1 to 29.8, the axes 0.27 to 0.37 apart at each,
+      13 to 16 frames after the turn (where the lineages before the rule crossed 8 to 12
+      frames after it at 21 to 27), the turns still past the edges (ending 35 to 56 above
+      the lava at 308 to 384 from the home) and the margin at them still -0.06 to +0.06: the
+      rule buys the later crossing and its speed without moving the turn inward. The ending
+      from the ten under the committed config, the block cap raised to 4,000,000 so it could
+      run on: 3,963,000 blocks, 1,647,000 rows sampled, 1,230,000 of them departed at 0 to
+      16 off the edge, Mario squished in 17,370, no squish cancel (every probe a knockback
+      or the lava boost), then the cap (4.14). The stage's own test cases pass; the hand-over
+      is three oscillations now, since the fourth pass finds nothing under the rule. The
+      maintainer's amendment (2026-10-10): the speed rule applies in the regime only, so the
+      swings below it build tilt free of it and the stage reaches the regime before the rule
+      can starve a pass; with a regime crossing never compared with one before it, the
+      regime's first oscillation is free as well, and the rewind, holding its roots to the
+      last pass's tilt floor, hands on an oscillation made in the regime or nothing. The
+      `regimeSpeedRatchet` knob went with it. Open (2026-10-11): the `--test` case "the first
+      oscillation comes from the fixer's hand-over in every corner" finished its first corner
+      in two minutes and then ran 100 minutes in its second at a third of a core, twice, and
+      was stopped both times; whether it stalls or merely crawls under the current specs is
+      not known, and the group is not CI's. Find out before relying on the case. Measured as before: the second pass 909 (ten
+      carried at 29.0 to 30.2, their sum 0.672, in the regime already), the third 352 (28.0
+      to 29.4 at 0.692), the fourth nothing, the third's ten handed on; the fourth dies on
+      the speed rule itself, its crossing and the second's both in the regime (nothing either
+      with the axis floor at 0.2 or off), the crossing speed not beating the second's 29 to
+      30. So the regime's one free oscillation is the third pass, and the hand-over is the
+      three-oscillation one at 28 to 29 until a crossing in the regime can beat the one two
+      before it. Later the same day the maintainer had the rule apply below the regime as
+      well, whatever the tilt did there too, the crossing across the regime's edge alone
+      uncompared; measured once more from the same roots: the second pass 557 (ten carried
+      at 28.8 to 30.2), the third 337 (28.2 to 28.7), the fourth nothing, the third's ten
+      handed on, the same hand-over as under the regime-only form, since the second crossing
+      beats the leg's end and the third the first crossing anyway.
+- [x] **4.13 A BitFS resource: the pyramid corner of the game reimplemented from the decomp.**
+      Opened 2026-10-11 on the maintainer's word: a resource that runs only what the
+      squish-cancel search needs of the game (Mario's physics, the lava, the two tilting
+      pyramids, the track platform), so that the stages can run on it or on `LibSm64`,
+      the one for the search and the other to compare and to check. Decided the same day:
+      **same structs, same symbols.** The resource owns the decomp's own types from
+      `sm64/` (`MarioState`, `Object` with its `rawData`, `Surface`, `Camera`) and serves
+      the symbols the scripts already read, `gMarioStates`, `gObjectPool` with the same
+      slots (84, 83, 85, 27, Mario's 89), `gCamera`, the `bhv*` sentinels; so
+      `(MarioState*)ReadState("gMarioStates")` is the same line on either resource,
+      `VerifyLayout` and `BitFsExpectedObjects` run on it unchanged, and hard rule 2 holds
+      by construction. Not the shape of `PyramidUpdate`, whose `PyramidUpdateMem` is a
+      parallel model (its own `Sm64MarioState` and `Sm64Surface`, and an empty
+      `UpdateMario`), which is why every user of it converts through
+      `ExportSave<PyramidUpdateMem>` and no `LibSm64` script can run on it.
+      Why (docs/performance.md): in `fixed` mode a frame advance is 14.9 us, a save 42.7
+      and a load 41.2 (Tier B); the game is 62% of the measured run's CPU and loads 13%,
+      and 95% of the frame advances replay known inputs because saves are rationed by
+      their cost. A state of ten to fifteen kilobytes (one `MarioState`, the modelled
+      objects, the camera, the transformed dynamic surfaces) makes a save or load a memcpy,
+      about a hundred times cheaper, and a frame Mario's quarter steps over the cell's
+      surfaces plus the pyramid loop, five to ten times cheaper; and with saves that cheap
+      the agnostic cost model saves nearly everywhere, so most of the replay share goes,
+      the gain no change to the DLL path reaches (ARCHITECTURE.md, "Resource and
+      savestates": the ratio of a load to an advance is what decides which algorithms are
+      affordable). Expected: five to ten times on the throughput runs, about two on the
+      deterministic run, whose CPU is 56% outside the resource already (the ticket queue,
+      3.15); the per-frame framework cost on the mock is 0.2 us
+      (`BM_Script_ExecuteAdhoc_OneFrame`) and is not the limit. Kilobyte states also reopen
+      4.3's per-block savestate cache, closed on gigabytes.
+      What the stages read of the game, measured in the ending, dr and approach scripts
+      (2026-10-11), and so what the port must carry beyond the pyramid loop (bit-exact
+      already, 3.3): the actions walking, turning around and finishing it, braking and its
+      stop, decelerating, idle, dive, dive slide, the forward and backward rollouts,
+      freefall and its landings, squished, and backward air knockback; the bully of slot 27
+      (`oBullyPrevX/Y/Z`, `oBullyKBTimerAndMinionKOCounter`, `oIntangibleTimer`,
+      `oInteractStatus`, `oAction`, `hitboxRadius`), so its behavior and Mario's collision
+      with objects are not optional for the ending; ceilings and walls (the squish's
+      steep-ceiling walk, the pushes at the edge), found in the game's cell order, since a
+      tie takes the cell's first surface; Mario's animation table, since the turn's finish,
+      the landing stops and the rollouts end on `is_anim_at_end`; the camera's yaw, which
+      Mario's intended yaw adds: mode 14 (8 directions) at -16384 through the frames
+      traced (3319 to 3330), a mode that turns only on a C press, which no BitFS script
+      makes, so the resource holds the constant and refuses a C press; both pyramids (the
+      `pyramid_-2866_*` movies are solutions on slot 83's); `gGlobalTimer` once. Imported
+      from the DLL at construction, never written by hand: the static surfaces with their
+      partition, the animation headers, the objects' collision data. The object set,
+      settled the same day from `dllcheck --objects` through `scripts/dll_symbols.py` (89
+      live objects at 3330): at the pyramids' height nothing but the two pyramids and, 725
+      units from slot 84's home, a `bhvStaticObject` (one of 23, a model with no behavior
+      and no collision); every other object is on the level's upper floor, 3,500 units and
+      more above (the red coins, the amps, the flamethrowers, the sinking platforms, the
+      other three small bullies at y 410 to 1,331), or across the lava (the track platform
+      3,866 units away; slot 27's bully 4,694, at (2598, -2764, 465), which only the
+      ending's probe brings to the pyramid). So the resource models Mario, the two pyramids
+      and the bully the probe places, and the track platform only if a stage turns out to
+      read it (one read today). The trace's RNG seed stays 0 over the frames traced, so no
+      object seems to draw from it; the harness below says, rather than the assumption.
+      The scripts: class templates on the resource with explicit instantiations at the
+      bottom of their `.cpp` (`template class Scattershot_BitfsScEnding<LibSm64>;` and the
+      other), so the header split and the compile times stay, and a stage picks its
+      resource from `config.json`; `Script`, `TopLevelScript` and `ScattershotThread` are
+      templates on the resource already, so the framework does not change. Two things do
+      want rule 10's word before they are written: `ImportSave` of a `LibSm64Mem` state
+      into the resource (the constructor-from-`Resource<Sm64Mem>` shape `PyramidUpdateMem`
+      has), and what a state's surface pointers (`m->floor` into the resource's pool) do
+      when a save crosses resources between threads. A consolidation falls out: the
+      physics reimplemented twice (`tasfw-core/src/decomp` and `PyramidUpdate`, Phase 5's
+      "One declared source") has this resource as its one home, and both retire into it.
+      Two nets, the first built before the physics (2026-10-11): the parity harness,
+      `test_libsm64_parity.cpp`, in the drift test's shape: two resources from the same
+      state under the same inputs, and after every frame everything the search reads
+      compared bit for bit (every value field of `gMarioStates`, Mario's object, his
+      platform and the surfaces under, over and beside him, the corner's four objects with
+      their transforms, the camera, the timer and the RNG seed; pointers as what they point
+      at). The fuzz: segments of up to 150 frames from a save at the anchor, the stick on a
+      random walk, B and the odd Z, never A or a C button, each segment ending on the frame
+      Mario touches the lava, the search's own boundary; 6,000 frames in the suite (under a
+      second), `TASFW_PARITY_FRAMES` for a long run. The game against a second copy of
+      itself first, since the comparator must find nothing there: a million frames
+      identical. Then the whole game against the cut one: a million frames identical in the
+      corner (931,812 of them on the pyramid, 45,091 airborne, 17,827 of 18,667 segments
+      ended in the lava), after a first run without the boundary found the whole game with
+      a floor at -3058.7 where the cut had the lava at -3071, 132 frames into a segment:
+      the boosts had carried Mario across the lava sea onto a sinking platform the cut
+      unloads, 3,000 units from the corner, which is why the boundary is where it is. A
+      port is one decomp function at a time, its fields turned on in the diff as it lands,
+      and a mismatch is a bug, never a rate (hard rule 1). The solution movies are the
+      second input set since 2026-10-12: every movie the pipeline exported under
+      `analysis/m64` (the fixer's dives and rollouts, the oscillations, the ending's
+      leaves with their C-up) is played from the frame the movies leave the source, 3250,
+      on the corner and on the game cut to the corner's objects, compared after every
+      frame; 40 of them in a test run, all with `TASFW_PARITY_MOVIE_LIMIT` 0. The whole
+      game is not the reference there because the way onto the pyramid passes a yellow
+      coin (slot 23, on the pyramid's top; frame 3277 of the fixer's movies) that the
+      corner has not got and Mario never meets on it: it changes his coin count and
+      heals him, nothing the search reads, and the first run found exactly that
+      (`mario.numCoins: 2 vs 1`). Against the cut: all 86,441 movies to their end with
+      no difference, 16,810,738 frames, 13,881,459 of them on the pyramid, in 8 minutes.
+      That the coin is all the whole game adds along those paths is its own case: the
+      whole game with that coin unloaded against the cut game, everything compared (the
+      camera, the particles and the other objects' effects on Mario included), the same
+      86,441 movies and 16,810,738 frames with no difference. So the corner differs from
+      the whole game along the solutions in the coin count and the heal, and in nothing
+      else. The second net: every solution found on the
+      resource is replayed on the DLL before it is exported, a few hundred frames each, so
+      the resource can miss a solution and never invent one. Floating point: contraction off on every compiler (clang's default is
+      on), under the flags the pyramid's bit-exact port already runs on.
+      Measured first, before any physics (2026-10-11, `dllcheck --keep-objects`, the
+      neutral-input frame at 3330 of the JP movie, 2,000 frames timed and the pages
+      written the median of 30, `fixed` mode on tyler-desktop; docs/libsm64.md): all 89
+      objects, 15.5 us and 52 pages a frame; every object but 84, 83, 85, 27 and Mario
+      deactivated the way `obj_mark_for_deletion` does it and unloaded by the next frame,
+      6.3 us and 17 pages; the pyramid and Mario alone 5.5 us and 14, each of the other
+      three about 0.3 us. So the rest of the level is 60% of the frame, and the floor the
+      resource has to beat on an advance is the 5.5 us of the game loop, Mario and one
+      pyramid with its collision reload, against which its saves are the hundredfold and
+      its advances two to five times. The same cut is a 2.4x on every advance of the DLL
+      path for a write before the start save, which keeps hard rule 1's function of (start
+      save, inputs) and replays; whether the search's outcome survives it was the harness's
+      first question, answered for the corner (a million frames identical, below); the
+      pipeline's use of it, a write into the game before the start save, is a rule 1
+      question for the maintainer, open. Then the resource's own Tier B row. Port order, by what the
+      ending exercises: surface collision, the ground and air steps, the actions, the
+      interactions (lava, bully), the bully, the track platform last (one read, slot 85
+      at -5744). The dr stage needs the first half and benefits first.
+      The resource's skeleton, 2026-10-11: `BitfsCorner` (`tasfw-resources/inc/BitfsCorner.hpp`;
+      the name is the maintainer's to change), three parts. `BitfsCornerLevel` is the level
+      as data, read once from the running game at a frame inside it and shared by every
+      resource in the process, so a run loads the game once rather than a copy per thread:
+      the static surfaces with their partition node for node in the game's cell order (a
+      tie between floors goes to the first in a cell's list, so the order is physics), the
+      four behaviors' scripts to their loop's end, the three surface objects' collision
+      data. `BitfsCornerMem` is a state, 41,504 bytes: Mario, the five objects by their
+      game slots, the sixteen object list heads, the camera, the controller, the timer,
+      the RNG seed, the time stop, the dynamic surfaces with their nodes and partition
+      (112 and 300 at 3330, every surface object in Mario's tangible range, modelled or
+      not; 160 and 640 is the room), the frame and the next inputs; a state records the
+      addresses its pointers were valid at and a load elsewhere relocates them, which is
+      how a state crosses threads and how one converts from the game
+      (`BitfsCornerMem(game, level)`, the shape `ExportSave<Sm64Mem>(level)` takes).
+      `BitfsCorner` owns the live globals and a full 240-slot pool on the heap, serves the
+      scripts' symbols from them (`gMarioState` and the other pointer-to-pointer symbols
+      as the game has them, the behaviors by name as the identity an object's `behavior`
+      carries), refuses any other name, and `advance` refuses until the frame is ported.
+      `test_bitfs_corner.cpp` checks the level against the game's own counts (1,215 static
+      surfaces, 3,649 nodes, 377 non-empty lists identical), the imported state against
+      Mario and the pyramid in the game, a save and a load, and a state moved to a second
+      resource with every pointer landed in its memory. Two new copied headers carry it,
+      `sm64/SurfaceLoad.hpp` and `sm64/Controller.hpp`, pinned like the rest
+      (docs/decomp.md); the structs they add, `SurfaceNode` and `Controller`, are read out
+      of the game and are in the layout table `test_sm64_layout.cpp` checks since
+      2026-10-12, with the camera's four (`PlayerCameraState` and the C-up mode's three):
+      13 structs, 851 fields, and `scripts/dll_layout.py` sizes a struct the game only
+      embeds from its embedding, or checks its fields alone (docs/libsm64.md, "Struct
+      layouts"). Found on the way and owed by the frame's port: the game nulls an
+      object's `throwMatrix` in its geo pass after drawing it (`geo_process_object`), and
+      that pass is where an animation's frame advances, so a frame boundary has the
+      matrix null and the corner's frame has to run that part of the pass for its objects
+      (the pyramid's behavior sets the matrix again before its collision loads); and
+      `gObjectListArray` has sixteen heads of which the game initializes `NUM_OBJ_LISTS`,
+      13, the rest null.
+      The frame, ported 2026-10-11 (the maintainer's go on the shape the same day): the
+      decomp's files for it (surface_load and surface_collision, math_util,
+      behavior_script's `cur_obj_update` with the four commands the corner's loops use,
+      object_helpers and obj_behaviors as far as the bully reaches, object_list_processor's
+      update order, platform_displacement, object_collision, interaction's path to the
+      lava, the death barrier and the bully, mario and mario_step with the stationary,
+      moving, airborne, object and automatic action files whole and `act_squished` of the
+      cutscene one, the pyramid's and the bully's behaviors, game_init's
+      `adjust_analog_stick`, graph_node's animation frame and rendering_graph_node's
+      animation step) copied at Refresh 13 into `tasfw-resources/src/bitfs-corner/decomp/`
+      and included into the body of one class, `BitfsCornerGame`, whose base is the
+      state's globals under the decomp's names and whose other members are the pool, the
+      level and the transients: 45 copies, each pinned with its residual
+      (scripts/decomp_pin.json; docs/decomp.md, "The BitFS corner's copies"). The four
+      objects (the two pyramids, the track platform and the bully) are each optional and
+      off unless asked for (the maintainer, 2026-10-11: `BitfsCornerObjects`, the state
+      import's parameter, so `ExportSave<Sm64Mem>(level, objects)` names what a run
+      has; the default is Mario alone); an object left out has an empty slot, its surfaces
+      are gone after the first frame, and a pointer the game had to it is null. The track
+      platform's path (40 waypoints) is the level's, read from the object's start waypoint
+      and re-pointed at import like the collision data; its init native, which chose path
+      and collision from the game's tables, is a refusal, and so is its moving (it spawns
+      its track balls), which the search never asks of it. What a copy reaches that the
+      corner has not got is a refusal (a spawn, a warp, a camera mode, a cutscene action, a
+      behavior command or interaction type outside the four and the one the corner's
+      scripts use); sound, the scene graph and the debug text are no-ops. Settled on the
+      way: a CALL_NATIVE resolves by its position in the script it is run from, since the
+      game exports not every native (`bhv_mario_update` is not one) and the scripts'
+      definitions in `data/behavior_data.c` name them in order; an object's behavior stack
+      is relocated with its command pointer (END_LOOP pops it); `AVOID_UB` is defined for
+      the copies, which is the game's build's own choice and which makes sm64.h's
+      `GET_HIGH_S16_OF_32` the shift rather than the big-endian pointer trick, the one
+      wrong-half read that cost an afternoon; Mario's animations are the level's, all 209
+      resolved once, and the one load in `set_mario_animation` is a pointer; a pointer to an
+      object outside the model (Mario's `interactObj`, the coins he took) is compared as
+      absent; and the particles are not modelled, so `oActiveParticleFlags` is not compared.
+      Measured by the harness, 2026-10-11, the corner with all four objects against the
+      game from the anchor: under neutral inputs 1,000,000 frames identical; under the fuzz
+      1,000,000 frames identical (931,812 on the pyramid, 45,091 airborne, 17,827 of 18,667
+      segments ended in the lava: standing, walking, turning, braking, the dive and the
+      rollouts, freefall and the landings, the lava touch), on MSVC and on clang-cl; and
+      the corner with the pyramid alone against the game cut to the pyramid, 1,000,000
+      fuzz frames identical (against the whole game they diverge where the boosts carry
+      Mario to the other pyramid, which is the option doing what it says). The bully's
+      interaction, the same day: the harness places it on both sides at every segment's
+      start the way the ending's probe does (`PlaceBullyAtRandom`: 40 to 200 units from
+      Mario, up to a quarter turn off his facing, at up to the probe's speed, pushing or
+      chasing), and the bully's death, which spawns smoke and a coin the corner refuses,
+      ends the segment rather than the run (`Options::refusalEndsSegment`, the one refusal
+      accepted by design, since the search reads the probe's frame and never the death).
+      Under neutral inputs 1,000,000 frames identical (26,198 segments, 3,609 ended by the
+      death), under the fuzz 1,000,000 identical (43,383 segments, 2,768 by the death):
+      the push, the knockback, the chase, Mario's attacks on it. The track platform
+      stands 3,866 units away through all of it; its behavior runs, and its moving (which
+      Mario riding it would start) is a refusal the search never meets. Tier B, the same
+      evening: `^BM_BitfsCorner_` and `^BM_BitfsCornerScaling` in `bench_libsm64.cpp`
+      (docs/performance.md, "Tier B"), the game's rows on a corner imported from the game
+      at the rows' anchor, the frame-advance rows in the 193-frame window before Mario's
+      death there (the game's row plays through the death and the level's reload;
+      `windowFrames`, exact). Measured (MSVC, tyler-desktop): a frame 1.82 us against the
+      game's 14.5 to 15, a save 1.9 against 42.7, a load 0.68 against 41.2, `addr` 7.7 ns
+      against 12.5, the state 41,784 bytes; the frame scales 99% to 8 threads and 77% at
+      16, the save 82 / 76 / 41 / 8%. The save's cost and its scaling are the state's
+      shape: the slot manager's pool moves a state into a map node per save and back per
+      erase, which `LibSm64Mem`, its buffers behind pointers, pays as a swap and the
+      corner's flat 41 KB state as a copy each way plus a 41 KB node, three copies and an
+      allocation per save where a load is one copy, so sixteen threads meet in the process
+      heap. The maintainer's rule and decision (2026-10-11): a state is copied when it is
+      saved to or loaded from a resource and never inside the framework, so the slot
+      manager, not the corner, changed: it pools the map's own nodes (`std::map::extract`),
+      a save into a recycled slot is that one copy and no allocation, and no state type has
+      to know about it (`test_slots.cpp`, "A recycled state is the same object"). Found on
+      the way: `addr`
+      compared through a `std::string`, an allocation for every behavior name a script
+      asks for (a `std::string_view` now). The suite against the 2026-09-15 baseline: no
+      count, allocation or efficiency regression, Tier D unchanged, the corner rows NEW;
+      four Tier A rows read +11 to +16% against that reference and the same against a
+      build of HEAD itself, a shift in the merged history, not here
+      (docs/performance-changelog.md). The two families' baselines were added to both
+      compilers' directories by a filtered `-SaveBaseline`, which adds or replaces just
+      the run's families and leaves the other families and the reference binaries alone
+      (`perf_compare.py baseline --add`, written for this on the maintainer's ask, since a
+      whole save would have re-measured thirteen families and replaced the reference for
+      two new files); the corner rows gate absolute until the next whole save. The slot
+      manager change, measured the same evening (docs/performance-changelog.md): the
+      corner's save 1.9 to 0.7 us, its load's cost, and 0.7 us at sixteen threads where it
+      was 19.6 (efficiency 10 to 94%); one allocation fewer per save on every resource;
+      the slot manager's own rows 6 to 19% faster; Tier D's counts unchanged.
+      How a script runs on either resource, decided 2026-10-12 after the template form
+      was shown and found ugly (every child-script call `this->template Modify<X<TResource>>`
+      on Clang and GCC): the two resources are kinds of one, `Sm64Resource`, an abstract
+      class over `Resource<Sm64Mem>` that adds nothing, and `Sm64Mem` is the one state type
+      they share, holding either's savestate (the corner's behind a pointer, so a game
+      slot's node stays small) or nothing until a save fills it, and refusing to hand one
+      resource the other's; a script is `Script<Sm64Resource>` and pays nothing per frame
+      for not knowing which it has, the operations it reaches being `Resource`'s virtuals
+      already. Done the same day in tasfw-resources alone (`Sm64Resource.hpp`, `Sm64Mem.hpp`,
+      the state types in `LibSm64Mem.hpp` and `BitfsCornerMem.hpp`), no framework file
+      touched, the suite's table in docs/performance-changelog.md: every steady-state row
+      and Tier D within noise, one allocation more per fresh corner slot (the block behind
+      the pointer, which the pool then recycles). The scripts' one-line change to
+      `Script<Sm64Resource>` is done (every script in tasfw-scripts and the pipeline's, the
+      two test scripts on the game, the examples in docs/tasing.md; `VerifyLayout` keeps
+      the DLL's header for `LibSm64ObjectPoolCapacity`; the frozen perf workloads stay
+      `Script<LibSm64>`, which is still valid): built and tested on both compilers, the
+      dry run passing, Tier D within 1% of the reference with every count unchanged
+      (docs/performance-changelog.md). Until the resource switch, `StageContext` still
+      holds the `LibSm64` vector and the scattershot stages hand the builder
+      `static_cast<Sm64Resource*>` pointers into it. The pipeline's switch, the same day:
+      a stage's `"resource"` (`game` or `corner`, with `"objects"` and `"lead"`; README.md,
+      "Configuration"), `StageContext` holding `Sm64Resource*` per thread and the game
+      beside them, the corners imported by a script (`CornerImport`, `ExportSave` of the
+      level and of a state) `lead` frames before the start frame, and every corner
+      solution replayed on the game and on a corner (`ReplayProbe`, `VerifyOnGame`) before
+      it counts. The deterministic Tier D stage on the corner
+      (`perf/tierd-deterministic-corner.json`, the row `TierD_DeterministicCorner`) is the
+      game's search bit for bit: 52 solutions in 600 shots, 111,860 blocks, 524,380
+      scripts, every solution's inputs and metrics identical, all 52 reproduced on the
+      game, in 18.4 s against 94.6 (docs/performance.md, "Tier D"). Found on the way: the
+      framework's stack overflow on a frame before the start save (4.17), and that the
+      ending's C-up leave presses a C button, which the corner refuses because its camera
+      is held: an exact C-up needs the camera's first-person mode from camera.c (the
+      `CAM_MOVE_C_UP_MODE` flag that sets Mario's `INPUT_FIRST_PERSON`, the mode's entry
+      and exit, and the yaw his stick is read against while it lasts; the ending's random
+      button draw weights C-up 0.1 as well, so the move cannot be left out by config), the
+      corner's next port (the maintainer's decision, 2026-10-12: port it). And that a
+      death ended a corner script where the game plays on: the ARE fixer's dive trials
+      reached the lava, Mario died, the game plays 48 frames of death and reloads the
+      level, and the corner refused the warp (`level_trigger_warp`), which ended the
+      whole fixer rather than the one trial. The maintainer's rule (2026-10-12): any
+      death action simply fails validation, and the reload is never reached, on either
+      resource; `MarioDeath::IsDying` (tasfw-scripts/inc/MarioDeath.hpp: a lava boost,
+      health below a segment, a death action, no floor) fails the three searches' state
+      validation and the fixer's trials at the first dying frame, and the corner's
+      refusal at the warp stays as the backstop a script must never reach. With it the
+      fixer runs on the corner: the same hand-over as on the game to the float, in 0.3 s
+      against 1.8, and a quarter fewer frames on both (docs/performance-changelog.md); a
+      short dr pass reproduces 1,000 of 1,000 solutions on the game. The camera's C-up
+      mode followed the same day: `decomp/camera.inc`, the game's own text for the mode
+      (its entry on a C-up press in the 8-direction mode, the zoom in, Mario's head on
+      the stick, the exit on A, B or another C button, and `set_camera_mode` for his
+      first-person action), the rest of the camera held as before (Lakitu's flight and
+      the other modes are not modelled; C-left, C-right and C-down, which would turn or
+      zoom it, stay refusals), the mode's four statics in the state and read out of the
+      game at the import (the DLL exports them), its three structs in `sm64/Camera.hpp`
+      beside `Camera` and in the layout table. The harness's fuzz presses C-up one frame
+      in fifty and compares `gCameraMovementFlags`: exact over a million frames in each
+      of the five corner cases, the camera's yaw never turned by it (the 8-direction
+      mode's yaw holds through C-up, since the game runs no Lakitu transition on the way
+      in or out of it from that mode). The ending stage runs on the corner: deterministic,
+      seed 6, 300 shots from the dr solutions, 20,253 blocks and 118,508 scripts on the
+      corner and on the game alike (no solution at that length on either; the game found
+      3 in 8,000 on 2026-10-11), 1.3 s against 5.8 (docs/performance-changelog.md). Found
+      on the way: with the CSV off, a stage whose `ForceAddToCsv` says yes writes to a
+      file that was never opened (4.18). The solution movies followed the same day (above,
+      with the harness), and then the last condition, `PyramidUpdate` and
+      `tasfw-core/src/decomp` gone (the maintainer's word, 2026-10-12: the stand-in is
+      deprecated, what it was made for the corner now does, and the calculation belongs in
+      the same script hierarchy). `GetMinimumDownhillWalkingAngle` is one script on
+      `Sm64Resource` now: a frame of its own, reverted with it, after which it reads the
+      pyramid's normal at the surface Mario stood on (the surface objects update before
+      the player in a frame, so that normal is the one his next step walks on whatever
+      the frame's inputs, and the surface pool is rebuilt in the same order every frame,
+      so the surface is the same one); its 14 callers, the frozen Tier C copies among
+      them, run it as `Test<GetMinimumDownhillWalkingAngle>`. With that the three files
+      of `tasfw-core/src/decomp` and their headers, the stand-in's three files, its drift
+      test and the `DownhillAngle_PyramidUpdate` row were removed; the dr metric's 0.01 step is
+      its own helper; `test_libsm64_downhill.cpp` checks the script's frame is reverted,
+      its angle is the normal one frame on, and the game and the corner answer alike.
+      The dr stage, deterministic, 150 shots from the fixer's solutions, before and after:
+      the same 1,000 solutions, 3,385 blocks and 20,981 scripts on the corner and on the
+      game, the corner's frame advances 139,675 to 139,696, the game's 89,747 to 89,659
+      (docs/performance-changelog.md). Every condition below is met.
+      Done when: the harness is exact over its fuzz and the solution corpus; every stage
+      runs on either resource from the config; a Tier D run on the resource reports its
+      delta table and work counts beside `LibSm64`'s; every solution the resource finds
+      reproduces on the DLL; `PyramidUpdate` and `tasfw-core/src/decomp` are gone.
+- [ ] **4.14 The block cap ends the process, not the run.** Found 2026-10-08: `UpsertBlock`
+      throws "Block cap reached" at `MaxBlocks` from inside the threads' parallel region, so
+      the exception is never caught, `std::terminate` ends the process with 0xC0000409, and
+      nothing is written: no solutions file, no summary, the stage's log ending mid-line
+      after a loop's statistics. ARCHITECTURE.md and docs/tasing.md say the run stops at
+      the cap, which is the intent; the ending stage hits it at about 970,000 blocks in
+      every run that gets going (4.11), so its 50,000-shot runs have never finished. Fix:
+      the cap ends the search as the shot and solution caps do, the blocks found so far
+      kept and the solutions written, with a line saying the cap was hit; a bug fix behind
+      an unchanged interface in tasfw-scattershot (the documented behavior), with a case in
+      `test_scattershot_mock.cpp` that reaches a small cap, and the suite's delta table
+      (rule 8). Until then a stage that may reach the cap needs `maxBlocks` raised or its
+      shots cut.
+- [ ] **4.15 The bare scattershot builder does not compile when used.** Found 2026-09-15
+      writing 3.17. `ScattershotBuilder::ConfigureMetricScript` (ScattershotBuilder.hpp)
+      calls `std::make_shared` without its template argument, and the same class's
+      `PipeFrom` names a return type without the metric-script parameters it constructs
+      with. Both are members of a class template no caller instantiates: every committed
+      stage calls `ImportResourcePerThread` first, and the import and config builders
+      override both members correctly, so the bare order has never been compiled and a
+      stage written in the other order fails to build with an error deep in the header.
+      Fix: the two forms the derived builders use, and a case in `test_scattershot_mock.cpp`
+      that builds a search in the bare order. A bug fix behind an unchanged interface
+      (hard rule 10 does not apply); the suite's delta table is still owed (rule 8), and
+      docs/tasing.md drops its note on the order once it holds.
+- [ ] **4.16 The scaling family's efficiency gate trips on unchanged code.** Seen
+      2026-10-11 while measuring the slot manager change (docs/performance-changelog.md):
+      `^BM_LibSm64Scaling` is gated on efficiency, the rate at n threads over the rate at
+      one thread, within 5 points of the reference at 2, 4 and 8 threads. Two runs of the
+      same binaries, minutes apart, tripped it on different rows each time (`SaveErase` at 8
+      threads by 5.1 points, then `FrameAdvance` at 2 and 4 by 6.3 and 5.1), while every
+      per-thread time stayed within 3% of the reference: the one-thread row that divides
+      every other moves by a few percent between runs, and the family is unpinned by
+      design. Fix: measure the run-to-run spread of the ratio over, say, ten runs of one
+      binary and set the tolerance from it, or gate these rows on the per-thread time
+      against the reference (which the compare already has) and report the efficiency
+      without gating it, as the 16-thread rows are. A `scripts/perf_compare.py` change
+      with docs/performance.md's "Gate" paragraph following.
+- [ ] **4.17 A load to a frame before the start save overflows the stack.** Found
+      2026-10-12 running the tilt-target stage on the corner: the corner was imported at
+      the stage's start frame, the stage rewinds ten frames before it
+      (`TiltTargetShot`, `LongLoad(_initialFrame - 10)`), and the framework, finding no
+      save at or before that frame, recursed until the stack ran out (a 0xC00000FD exit,
+      no message, the crash dump's one frame repeated). On the game it never shows: a
+      resource played from frame 0 has its start save there, and any frame of the movie
+      is reachable. The pipeline avoids it by importing the corner `lead` frames early
+      (README.md, "Configuration"), but the framework should refuse such a frame with a
+      message naming it and the start save's frame, in `Script::LongLoad` or the save
+      lookup under it (`GetLatestSave`), with a case in `test_script_*.cpp` on the mock
+      resource. A `tasfw-core` change: the maintainer's call first (rule 10).
+- [ ] **4.18 A forced CSV row is written with the CSV off.** Found 2026-10-12 running the
+      ending stage with `csvSamplePeriod` 0 (the scratch configs of 4.13; the committed
+      config samples every tenth block, so it never showed). `ScattershotThread::AddCsvRow`
+      runs the stage's `ForceAddToCsv` whether or not the CSV was opened (`OpenCsv`
+      returns at once when the period is 0), so a stage that forces rows, the ending for
+      its departures, writes each one to a stream that was never opened, prints "Error
+      writing to CSV row -1: 6" and "Retrying CSV row -1" per forced row (40 of them in a
+      300-shot run, on the game and on the corner alike) and goes on. The search is
+      unharmed; the frames the forced check spends are wasted. Fix: `AddCsvRow` returns
+      before the forced check when `CsvEnabled` is false, a bug fix behind an unchanged
+      interface in tasfw-scattershot; the frame-advance and script counts of a run with
+      the CSV off go down by the forced checks (the Tier D workloads force nothing, their
+      counts stay), with the suite's delta table (rule 8) and a case in
+      `test_scattershot_mock.cpp` whose thread forces a row with the CSV off.
+- [ ] **4.19 Tier C on the corner.** Since the `PyramidUpdate` stand-in was removed (4.13,
+      2026-10-12), the downhill look-ahead is a frame of a child script on the resource
+      the script runs on. The frozen Tier C workload `PyramidOscillation` is the old
+      oscillation script, which asks for that look-ahead every frame, so on the game the
+      row is now mostly game frames: 188,621 frame advances an iteration where it had
+      42,923, 2.9 s where it had 0.68 (docs/performance-changelog.md), so a change in the
+      framework shows less in it than before. The pipeline's own stages ask rarely and were not
+      moved. The rows are meant to measure the framework, so the fix is a corner variant
+      of the Tier C workloads (the corner imported from the game at the anchor, as the
+      Tier B corner rows do), the game rows kept beside it or retired once the corner
+      rows are baselined; the frozen copies run on `Sm64Resource` already, so this is
+      `bench_framework.cpp` and a baseline, no script change.
 
 ## Phase 5: toward a game- and console-agnostic framework
 
@@ -2188,11 +3416,14 @@ Not scheduled. Listed so decisions in earlier phases do not paint us into a corn
 - `Inputs`/`M64` assume an N64 controller and the Mupen m64 format; console-agnosticism
   means the controller and movie format become properties of the resource or console, and
   the frame stays as the resource's indexable step (ARCHITECTURE.md, "Resource and savestates").
-- A second resource (another libsm64 build or an emulator core) is the real test of the abstraction.
+- A second resource (another libsm64 build or an emulator core) is the real test of the
+  abstraction. The first is the BitFS resource of 4.13, the pyramid corner of the game on
+  the decomp's own structs, serving the same symbols as `LibSm64` (decided 2026-10-11).
 - **One declared source for a game's vocabulary.** How the game's structs, constants and
   reimplemented logic enter the repository today is copying: headers copied by hand at
-  different decomp revisions, the physics reimplemented twice, and the decomp pin and the
-  DWARF table as after-the-fact checks (docs/decomp.md). Haphazard by the maintainer's own
+  different decomp revisions, the physics as the corner resource's copies of the decomp's
+  own text (the two rewrites of it were removed with 4.13), and the decomp pin and the DWARF table
+  as after-the-fact checks (docs/decomp.md). Haphazard by the maintainer's own
   account (2026-09-13); it stays because it is verified. When the framework takes a second
   game, decide this once: a game module derived from a declared source (a DWARF layout, a
   decomp revision), or an access contract that needs no copies (the typed `ReadState`
@@ -2251,7 +3482,9 @@ Not scheduled. Listed so decisions in earlier phases do not paint us into a corn
   discussed; nothing should assume inputs are only controller states. The write side of the
   access contract goes with it, `HackMemory` beside `ReadState`, and `ReadState`'s own
   remainder from 3.2: reads typed by symbol, const, and guarded against invalid access (the
-  maintainer, 2026-09-15).
+  maintainer, 2026-09-15). The ending's squish probe (4.11, 2026-10-05) is the first
+  consumer and the measure of the design: a write inside a metric script's sandbox, which
+  hard rule 1 now allows under its discipline, that this input type would replace.
 - **A savestate policy the run chooses** (3.11, tabled here 2026-09-13). What the design
   discussion settled before tabling it:
   - The policy is a property of the scenario, not of the resource type. It is configured

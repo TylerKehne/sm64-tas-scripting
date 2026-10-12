@@ -212,7 +212,7 @@ probe: red with that requirement, with a single overload, with the state paramet
 requirement calling `State<PyramidUpdateMem>` for a concrete type at namespace scope or as
 a dependent call inside a class template, with a requires-expression calling a plain
 member (`r.SaveState()`), with a concept-id (`std::constructible_from<UState, const
-TResource&, Us...>` or the same on `const Resource<LibSm64Mem>&`), and with no constraint.
+TResource&, Us...>` or the same on `const Resource<Sm64Mem>&`), and with no constraint.
 Lookup is not involved: unqualified, `this->`, base-qualified and after a using-declaration
 all failed alike.
 
@@ -552,8 +552,8 @@ the record of what a second front end was worth:
 
 - `-Wempty-body`: `if (...);` with the body on the next line, in
   `Scattershot_BitfsDrApproach.hpp` (line 528) and `Scattershot_BitfsDrRecover.hpp` (line 592).
-  Both compute a rejection condition and discard it. These are in the currently disabled
-  stages; the intended action is almost certainly `return false;`.
+  Both computed a rejection condition and discarded it, fixed to `return false;` then;
+  both headers went with the ending stage on 2026-10-05 (ROADMAP 4.11).
 - `-Wreturn-type`: the `TurnAround` lambda in `Scattershot_BitfsDr.cpp` (line 695) can fall
   off the end. MSVC reports the same as C4715.
 - `-Wunused-value`: three `ModifyAdhoc(...).executed;` statements whose result is dropped.

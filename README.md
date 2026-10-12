@@ -74,11 +74,12 @@ The executable needs files that are not in git (see [docs/libsm64.md](docs/libsm
 # Running the pipeline
 
 ```
-bitfs-turn [--config <file>] [--stage <name>] [--list] [--dry-run]
+bitfs-turn [--config <file>] [--stage <name>] [--start <stage[:n]>] [--list] [--dry-run]
 ```
 
 `bitfs-turn.exe` runs the BitFS squish-cancel pipeline described by its config: every
-stage in order, or one stage with `--stage <name>`. Without `--config` it reads the
+stage in order, from a chosen stage on with `start` or `--start` (below), or one stage
+with `--stage <name>`. Without `--config` it reads the
 `config.json` next to the executable, which the build writes from
 [tasfw-bruteforcers/bitfs-turnaround/config.json](tasfw-bruteforcers/bitfs-turnaround/config.json)
 whenever the executable target builds, so a Visual Studio play button, which builds only
@@ -108,7 +109,11 @@ one: its solutions become the new run's root blocks. The blocks themselves are n
 writes nothing (a cancellation that exports what was found is a Phase 5 item). Stages with
 `"export": true` also write one movie per solution under `<outputDirectory>/m64/<stage>/`.
 Scattershot CSVs and the `error.m64` dump go to `<outputDirectory>` as well, and a stage
-with a `visualize` block opens the viewer on its CSV as it is written ("The viewer"). The stage
+with a `visualize` block opens the viewer on its CSV as it is written ("The viewer"). A stage
+on the corner (`"resource": "corner"`) first prints which objects its corners were imported
+with and at which frame, and after the search how many of its solutions the game reproduces
+(`replayed on the game: n of m solution(s) match`; the others are dropped, each with a line
+saying how it differed). The stage
 summary prints wall time and the frame advances, saves and loads summed over threads, which
 are the fixed-workload numbers a performance change has to report (AGENTS.md, hard rule 8),
 then the slot manager's line: the most savestates and bytes any thread held at once, and the
@@ -116,6 +121,16 @@ evictions and pool reuses (what the per-thread memory cap is up against; ROADMAP
 where the threads' CPU time went: the resource's own advance, save and load as shares of
 the process CPU time over the stage, with the cost of each, and the share outside the
 resource, which is the framework, the scripts and the search (docs/performance.md, "Tier D").
+
+A debugging loop need not start from scratch (the maintainer, 2026-10-06): `"start"` at
+the config's top level, or `--start` on the command line, names the stage a full run
+begins at; the stages before it are skipped and the first one run reads its input from
+the solutions file its input stage wrote, an error when that file is missing. As
+`<stage>:<n>` it begins the oscillation stage at its oscillation `n`, from the roots that
+stage's pass `n - 1` carried, which every pass writes to
+`<outputDirectory>/solutions/<stage>.oscillation<n>.json` as it ends (the leg is
+oscillation 0, and a pass file holds the yields of the passes before it). `--stage` still
+runs one stage alone; a pass in `start` applies to that stage when it is the one run.
 
 # Configuration
 
@@ -160,8 +175,8 @@ One JSON file. Relative paths resolve against the file's own directory, unless t
   for diagnosis), and `savestateBudgetMB` (default 8192), the process budget for savestate
   memory: a resource subtracts its limit from the balance when it is created, whether it
   ever uses it or not, or fails if the balance is too low. The pipeline gives each thread's
-  game resource an equal share of the budget less the 16 MB a script's `PyramidUpdate`
-  takes per thread. The default is what one thread alone was allowed before the budget
+  game resource an equal share of the budget, less what the corners of a corner stage
+  take. The default is what one thread alone was allowed before the budget
   existed; the BitFS stages hold at most 27 savestates per thread (38 MB of `fixed`
   slices), and the stage summary's slot line shows the high-water mark and any eviction.
 - `scattershot`: defaults for every stage, in the field names of `Configuration`
@@ -169,6 +184,9 @@ One JSON file. Relative paths resolve against the file's own directory, unless t
   `shotsPerUpdate`, `startFromRootEveryNShots`, `maxConsecutiveFailedPellets`,
   `maxSolutions`, `seed`, `fitnessTieGoesToNewBlock`, `deterministic`, `csvSamplePeriod`).
   A stage's own `scattershot` object overrides them.
+- `start`: optional, the stage a full run begins at, or `<stage>:<n>` for an oscillation
+  pass of the `dr` stage, from the cached solutions, which must exist ("Running the
+  pipeline"); `--start` on the command line overrides it.
 - `visualizer`: the viewer's path (`analysis/visualizer.py`), which a stage's `visualize`
   needs ("The viewer"). `visualize` at the top level holds defaults for every stage's
   block, overridden key by key by the stage's own; it enables nothing on its own. The
@@ -176,7 +194,14 @@ One JSON file. Relative paths resolve against the file's own directory, unless t
   categorical; the `dr` stage's own list adds `Oscillation`, `Crossing` and `Phase`.
 - A stage has a unique `name`, a `type` (`bitfs-turn --list`), a `startFrame`, optionally its
   own `m64`, an `input` (the name of an earlier stage), `args` for the stage type, a `select`
-  applied to its output, `export`, and a `visualize` block that opens the viewer on the
+  applied to its output, `export`, a `resource` (`game`, the default: the DLL, one copy per
+  thread; or `corner`: the BitFS corner of ROADMAP 4.13, one per thread, each imported from
+  the game `lead` frames before the stage's start frame (default 16: the stage's scripts
+  look a few frames back, the tilt target 12, and a corner cannot go before the frame it
+  was imported at), with the `objects` the stage names among `pyramid`, `otherPyramid`,
+  `trackPlatform` and `bully`, `[]` for Mario alone; a corner stage's solutions are
+  replayed on the game afterwards, and only those that match are kept, the stage's
+  summary saying how many), and a `visualize` block that opens the viewer on the
   stage's CSV: `title` (the stage's name unless given), `interpreter` (`pythonw` on Windows,
   `python3` elsewhere), the plot's columns `x`, `y`, `angle` and `speed` (`MarioZ`,
   `MarioX`, `MarioFYaw`, `MarioFSpd`), its bin sizes `binX`, `binY`, `binAngle` and
@@ -226,7 +251,12 @@ One JSON file. Relative paths resolve against the file's own directory, unless t
   0.753 gave the next pass nothing where 0.71 gave 100 to 583, but a ceiling of 0.733
   starved the fourth and fifth passes instead, since the sum climbs about 0.02 an
   oscillation, 1 run in 3 through against about 17 in 20 without; the last pass's
-  solutions are exempt either way, being the next stage's to judge); and the least height
+  solutions are exempt either way, being the next stage's to judge); the least height
+  above the lava a turnaround begun from a solution's frame would end at,
+  `minEndClearance` (20 in the committed config: the ceiling's precise form, since what
+  fails at a sinking end is the floor under the turnaround, not the sum; the run of
+  2026-10-06 lost its third pass to roots at -20 to +3 here, where the pass before it
+  turned 23 to 75 above); and the least height
   of Mario over the lava a state may have, `minLavaClearance` (0 in the committed config,
   none: lower, on a sinking end, the surface is under him before the swing can leave it,
   which is how the first swing's slow populations die, but at 20 the first oscillation
@@ -270,6 +300,11 @@ One JSON file. Relative paths resolve against the file's own directory, unless t
   16 the swing cannot reverse for the next oscillation, and of 58 logged runs every
   hand-over whose fastest root was under 16.1 died and every one over 17.5 continued; the
   later hand-overs part on the tilt sum instead, with a ceiling near 0.73 (ROADMAP 4.6).
+  The speed rule compares a crossing with the one two before it, in speed and in its
+  downhill peak, whatever the tilt did between, below the regime and in it alike (the
+  maintainer, 2026-10-10); only a crossing in the regime is never compared with one before
+  it, so the regime's first oscillation is free of the rule; ROADMAP 4.6 and 4.12 have the
+  measurements behind the form.
   Every swing, until its turnaround, is steered by the leads rather than
   the downhill angle (`LeadRun_1f`: of a fan of sticks around the face yaw, a quarter turn
   either side, the one that leaves the thinner lead largest among those that keep both
@@ -363,8 +398,14 @@ One JSON file. Relative paths resolve against the file's own directory, unless t
   edge to the adjacent corner, where the squish cancel is: `uscz` along a z edge, so the
   normal's x crosses the origin, `uscx` along an x edge, so z does; the committed setup
   oscillates in corner 4 and runs toward corner 1 along the +z edge, its target's x
-  (-0.179) still on the oscillation's side. Between its passes the stage carries the
-  `keepTop` (10) fastest solutions into the next, and after the first oscillation it commits
+  (-0.179) still on the oscillation's side. The two kinds are not alike (the maintainer,
+  2026-10-06): `uscz` is much more lenient, where `uscx` generally needs the movement to the
+  squish spot optimized, Mario having to reach it before the normal's y gets too low; the
+  committed setup is the lenient kind, so an `uscx` corner is where the ending stage's moves
+  will be judged (ROADMAP 4.11). Between its passes the stage carries the
+  `keepTop` (10) fastest solutions into the next (the last pass hands on all of its
+  solutions; the fastest of each 0.01 cell of the normal was tried on 2026-10-06 and
+  carried every tilt without a faster crossing, ROADMAP 4.6), and after the first oscillation it commits
   to the direction most of those took, dropping the other direction's solutions (which
   would need one oscillation more); a run's solutions arrive in block order, so the first
   of them says nothing, and committing to its direction was what made runs fail one time in
@@ -375,7 +416,14 @@ One JSON file. Relative paths resolve against the file's own directory, unless t
   the first oscillation, which comes about one run in two, ended no run in 16 (13 through
   against 11 without; the three failures were the last pass at the tilt ceiling), but a
   retry re-rolls that lottery rather than removing it, so the committed config asks none
-  and the knob is a diagnostic; the cause is ROADMAP 4.6's open item. After each pass the stage prints what it found and the
+  and the knob is a diagnostic; the cause is ROADMAP 4.6's open item. From the second
+  crossing on, a crossing's normal must sit at least `minCrossingAxisDiff` (0.26 in the
+  committed config) further along one axis than the other, the lag the example movies'
+  crossings carry (ROADMAP 4.12). A pass that yields nothing does not end the run: the
+  stage hands on the roots carried from the last earlier pass whose crossing heads
+  toward the squish-cancel quadrant (the final pass's parity, since the passes alternate)
+  that meet the last pass's rules, oscillation 5's when 7 fails (`handOverFallback`, true
+  in the committed config; false ends the stage with nothing). After each pass the stage prints what it found and the
   roots it carries, their speed, tilt and oscillation, and each retry, which is what to
   read when a run stalls.
 
@@ -383,7 +431,9 @@ The committed config is the pipeline as it stands: the ARE fixer (ROADMAP 4.8), 
 sets the adjusted remainder errors the setup needs on the pyramid's normal, one axis at a
 time, in two seconds and without a search, from the run before the movie's dive onto the
 platform (frame 3250), and hands Mario over running; then
-the oscillations, the final oscillation and the dive-recover chain, every stage from 3250, with
+the oscillations, and the ending (ROADMAP 4.11: the final run, the approach, the leave and
+the squish probe, one search whose solutions say which way through they took), every stage
+from 3250, with
 a CSV and the viewer on every search stage (every tenth novel block).
 
 # The viewer
@@ -404,14 +454,17 @@ other tabs. Beside each tab's plot is its filter panel, in the manner of a shop'
 a section per CSV column in the CSV's order (`Shot` and `Frame` included). Every column
 is a range, a min and a max box, either one empty for an open bound, applied with Enter,
 under the least and greatest value seen, except the columns the run names as categorical
-(the `visualize` block's `categorical`, written into the parameters file with the rest),
+(the `visualize` block's `categorical`, written into the parameters file with the rest; a
+column written as text must be one of them, since the viewer reads a text only there, and
+it shows every value as the CSV writes it, hex included),
 which have a checkbox per value with the number of sampled rows
 holding it: checked values pass, and none checked passes every row. The counts and ranges
 are over every sampled row of the run, whatever the filter, and grow as the run does; a
 categorical column that passes 256 distinct values becomes a range, and its section says
-so. The filters in force are listed at the top of the panel, each with
-a button that drops it, above a rule that separates them from the sections; the list takes
-only the room its lines need, and Clear all drops them all. The panel starts as the run's own
+so. The filters in force are listed at the top of the panel, as the grammar reads them (a
+hex column's values in hex), each with a button that drops it, above a rule that separates
+them from the sections; the list takes only the room its lines need, and Clear all drops
+them all. The panel starts as the run's own
 `filters`; every change re-reads the tab's CSV from the start under the new filter, at the
 configured bin sizes, since the raw rows are not kept, the same cost an opening tab pays,
 and a row that fails the filter is neither binned nor drawn. The filter is the tab's own
@@ -419,8 +472,10 @@ for the session and is written nowhere; the parameters file stays the search's. 
 above its max, or an entry that is not a number, is reported in the panel and changes
 nothing; the plot's title names the filter in force. The Filters box in the window's bar
 shows or hides the panel on every tab (kept in the settings file), and the sash between
-panel and plot sets its width. Every cell of the CSV is a number; a row with one that is
-not counts as unreadable. The refresh rate is set in the window and kept in
+panel and plot sets its width. Every cell of the CSV is a number (hex included, a name
+after the hex in parentheses allowed) or, in a column the stage names categorical, a text;
+a row with a cell that is neither counts as unreadable. The refresh rate is set in the
+window and kept in
 `analysis/visualizer_settings.json` with the port, the segment cap and whether the panels
 show, and next to it the
 window shows what the viewer costs: its own CPU time over the last 30 seconds as a share
@@ -445,8 +500,10 @@ which is how CI runs it. On Linux the window needs `python3-tk`. Headless,
 renders one PNG, which CI does on `tasfw-tests/data/scattershot_sample.csv`, plain and
 under a `--filter` whose drawn and filtered counts it pins; `--filter`
 takes a filter as text in place of the parameters file's `filters`: terms such as
-`MarioFSpd <= 8`, `3300 <= Frame <= 3400`, `Phase == 5` or `Phase in 1 3 5`, ranges
-inclusive, separated by commas or `and`, numbers decimal or hex. With
+`MarioFSpd <= 8`, `3300 <= Frame <= 3400`, `Phase == SWING`, `Phase in SWING AIR`,
+`Departed == true` or `MarioAction == 0x04000440`, ranges inclusive, separated by commas
+or `and`, numbers decimal or hex, a text value after its column; `--categorical` names
+the columns filtered by value when there is no parameters file. With
 `TASFW_VISUALIZER_HEADLESS=1` in the environment the viewer tails a run with no window
 instead, on the window's schedule with fixed defaults, and writes what it cost beside the
 parameters file (`*.visualizer.summary.json`), which the perf suite gates
@@ -458,11 +515,17 @@ one the search forced) and then the stage type's own:
 
 | Stage type | Columns after the first three |
 |---|---|
-| every type | `MarioX`, `MarioY`, `MarioZ`, `MarioFYaw`, `MarioFSpd`, `MarioAction`, `PlatNormX`, `PlatNormY`, `PlatNormZ` |
+| every type | `MarioX`, `MarioY`, `MarioZ`, `MarioFYaw`, `MarioFSpd`, `MarioAction` (in hex with the action's name after it, `0x04000440 (ACT_WALKING)` for walking; a filter on it reads the hex), `PlatNormX`, `PlatNormY`, `PlatNormZ` |
 | `tilt-target` | plus `MarioYVel` |
-| `osc-final` | plus `Phase`, `MarioYVel`, `NormalDistance` |
-| `dr-oscillations` | plus `Oscillation`, `Crossing`, `Phase`, `XzSum` (the tilt: the magnitudes of `PlatNormX` and `PlatNormZ` added) |
-| `dr-approach`, `dr-recover` | plus `Phase`, `MarioYVel` |
+| `dr-oscillations` | plus `Oscillation`, `Crossing`, `Phase` (the metric script's phase by name: `INITIAL`, `RUN_DOWNHILL`, `TURN_UPHILL`, `TURN_AROUND`, `RUN_DOWNHILL_PRE_CROSSING`, and two the search no longer reaches), `XzSum` (the tilt: the magnitudes of `PlatNormX` and `PlatNormZ` added) |
+| `sc-ending` | plus `Phase` (`SWING` the run, `DIVE`, `BRAKE`, `EDGE` stopped on the platform, `AIR` after the departure), `Approach` (`NONE`, `DIVE_RECOVER`, `BRAKE`), `StepsX`, `StepsZ` (the 0.01 steps from the normal to the target on each axis, signed; without a target, to the hand-over's normal), `Departed` and `SquishCancel` (`true` or `false`), `MarioYVel`, and on a probed frame what the probe's recorded placement made of Mario a frame on, `ProbeAction` (hex and name, `0x00000000 (-)` where the probe did not run), `ProbeSpeed`, `ProbeHeight`, `SquishEdgeDist` (Mario's distance inside the squish edge by the face as the game places it, negative outside it), `Catch` (whether the next frame's face squishes him where he is: -2 not looked at, -1 no, 0 a squish no push of the probe cancels, else how many of its pushes do) |
+
+A categorical column is written as text where text makes sense (the maintainer,
+2026-10-06): an enumeration by its names, a flag as `true` or `false`, the action in hex
+with its name from the decomp in parentheses (`Sm64ActionNames.hpp`, generated from the
+copied `Sm64.hpp` by `scripts/action_names.py`); counts stay numbers. The viewer reads a
+text only in a column the stage names categorical; the name after a hex cell it shows and
+leaves out of the comparison, so `MarioAction == 0x04000440` filters the cell above.
 
 A `visualize` column or filter the stage does not emit is reported in the tab's title and the
 log, and that tab stays empty.
