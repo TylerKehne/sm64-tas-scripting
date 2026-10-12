@@ -1,7 +1,9 @@
 #include <doctest/doctest.h>
 #include <sm64/Camera.hpp>
+#include <sm64/Controller.hpp>
 #include <sm64/ObjectFields.hpp>
 #include <sm64/Surface.hpp>
+#include <sm64/SurfaceLoad.hpp>
 #include <sm64/Types.hpp>
 
 #include <cstddef>
@@ -89,7 +91,7 @@ TEST_CASE("sm64 headers: every field offset and struct size matches the pinned D
 		CHECK(entry.second > 0);
 		checked += entry.second;
 	}
-	CHECK(report.checkedPerStruct.size() == 7);
+	CHECK(report.checkedPerStruct.size() == 13);
 
 	{
 		INFO("struct sizes that differ from the DLL's:" << Join(report.sizeMismatches));

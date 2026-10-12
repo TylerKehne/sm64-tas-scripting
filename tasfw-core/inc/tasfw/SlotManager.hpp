@@ -26,6 +26,21 @@ public:
 	SlotManager(Resource<TState>* resource) : _resource(resource) { }
 	~SlotManager() { SlotBudget::Give(_saveMemLimit); }
 
+	// A slot manager belongs to one resource: it points back at it and holds the budget it
+	// took. It is never copied, and it moves only into its new owner, which Resource's move
+	// constructor passes; the limit goes with it, so the old owner's destructor returns
+	// nothing. (Before 2026-10-11 the implicit copy served a Resource move: it copied every
+	// pooled state, left the pointer on the old resource and returned the limit twice.)
+	SlotManager(const SlotManager&) = delete;
+	SlotManager& operator=(const SlotManager&) = delete;
+	SlotManager(SlotManager&& other, Resource<TState>* owner)
+		: _resource(owner), slotsById(std::move(other.slotsById)), slotIdsByLastAccess(std::move(other.slotIdsByLastAccess)),
+		  slotLastAccessOrderById(std::move(other.slotLastAccessOrderById)), nextSlotId(other.nextSlotId),
+		  _saveMemLimit(std::exchange(other._saveMemLimit, 0)), _currentSaveMem(std::exchange(other._currentSaveMem, 0)),
+		  _pool(std::move(other._pool)), _pooledMem(std::exchange(other._pooledMem, 0)), _maxPooledStates(other._maxPooledStates)
+	{
+	}
+
 	// The resource's limit, taken from the process budget; Resource's constructor sets it once.
 	void SetLimit(int64_t bytes)
 	{
@@ -51,11 +66,16 @@ private:
 	int64_t _saveMemLimit = 0;
 	int64_t _currentSaveMem = 0;
 
-	// Erased and evicted states are kept here and handed to the next CreateSlot, so a save
-	// into a recycled state is one copy instead of allocating and zero-filling fresh buffers
-	// (a full LibSm64 save was 8x its load before this; ROADMAP 3.9). Pooled memory counts
-	// toward _saveMemLimit; the pool is bounded so idle memory does not pile up.
-	std::vector<TState> _pool;
+	// Erased and evicted states are kept here as the map's own nodes (std::map::extract) and
+	// handed to the next CreateSlot, which links the node back in under its new id. The slot
+	// manager therefore never copies, moves or reallocates a state, whatever its shape (the
+	// maintainer, 2026-10-11: a state is copied by the resource's save and load only); a save
+	// into a recycled state is that one copy. Before the pool every save allocated and
+	// zero-filled fresh buffers (a full LibSm64 save was 8x its load; ROADMAP 3.9), and
+	// before the nodes a pooled state was moved in and out, which copied a flat state whole
+	// (the corner's 41 KB, three times per save; ROADMAP 4.13). Pooled memory counts toward
+	// _saveMemLimit; the pool is bounded so idle memory does not pile up.
+	std::vector<typename std::map<int64_t, TState>::node_type> _pool;
 	int64_t _pooledMem = 0;
 	size_t _maxPooledStates = 32;
 };

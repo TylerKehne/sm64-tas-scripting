@@ -10,9 +10,10 @@ is the editing done while copying (#pragma once, IS_64_BIT resolved, a struct cu
 larger header, clang-format's wrapping). This script recomputes every residual and fails
 when one changed: a copy edited without moving its pin, or a pin moved without re-checking
 the copy. --show prints the residual diffs; --update records the residuals as they are now,
-the step after a deliberate edit or a moved pin (read --show first). The reimplemented
-files (tasfw-core/src/decomp/, PyramidUpdate) are cited in the same file by upstream
-function; nothing diffs them (docs/decomp.md).
+the step after a deliberate edit or a moved pin (read --show first). A file that
+reimplements upstream functions rather than copying them is cited in the same file under
+"derived", by upstream function, and nothing diffs it; the list is empty since the BitFS
+corner became the one home of the game's physics (ROADMAP 4.13; docs/decomp.md).
 
 Upstream files are fetched from raw.githubusercontent.com at the pinned commit, or read
 from a local clone with --checkout (git show <commit>:<path>), which needs no network.

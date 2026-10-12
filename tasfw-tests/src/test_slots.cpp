@@ -133,6 +133,46 @@ TEST_CASE("Erased and evicted slots are pooled and the next save reuses their st
 	CHECK(PerfAccess::LiveBytes(resource) == int64_t(2 * sizeof(MockState))); // c and d
 }
 
+TEST_CASE("A recycled state is the same object: the slot manager never copies or moves a state")
+{
+	// The maintainer's rule (2026-10-11): a state is copied by the resource's save and load
+	// only. The pool keeps the map's own nodes, so the state a save reuses stays where it was.
+	MockResource resource;
+	auto& slots = PerfAccess::Slots(resource);
+	int64_t a = slots.CreateSlot();
+	const MockState* where = &PerfAccess::SlotState(resource, a);
+	slots.EraseSlot(a);
+	resource.advance();
+	int64_t b = slots.CreateSlot();
+	CHECK(b != a);
+	CHECK(&PerfAccess::SlotState(resource, b) == where);
+	CHECK(resource.work.poolReuses == 1);
+}
+
+TEST_CASE("A moved resource keeps its slots, its slot manager serves the new object, and the budget is returned once")
+{
+	const int64_t MB = 1024 * 1024;
+	SlotBudget::Set(200 * MB);
+	{
+		MockResource first; // 64 MB
+		first.advance();
+		int64_t slot = first.SaveState();
+		uint64_t at1 = first.checksum();
+
+		MockResource second(std::move(first));
+		CHECK(SlotBudget::balance == 136 * MB); // the limit moved, it was not taken twice
+		CHECK(second.HasState(slot));
+		second.advance();
+		second.LoadState(slot); // the manager loads into the new object
+		CHECK(second.checksum() == at1);
+		int64_t another = second.SaveState(); // and saves from it
+		CHECK(second.HasState(another));
+		CHECK(PerfAccess::LiveSlots(second) == 2);
+	}
+	CHECK(SlotBudget::balance == 200 * MB); // given back once, by the new owner
+	SlotBudget::Set(0);
+}
+
 TEST_CASE("Resource counters and LoadState(-1) restore the start save")
 {
 	MockResource resource;

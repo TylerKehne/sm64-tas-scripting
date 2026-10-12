@@ -52,12 +52,4 @@
 #define SURFACE_CLASS_SLIPPERY 0x0014
 #define SURFACE_CLASS_NOT_SLIPPERY 0x0015
 
-void find_floor(
-	Vec3f* marioPos, struct Surface* surfaces, int surfaceCount,
-	struct Surface** floor);
-bool floor_is_slope(struct Surface* floor);
-void transform_surfaces(
-	struct Surface* surfaces, int numSurfaces, Mat4* transform);
-int get_surfaces(struct Object* obj, struct Surface** surfaces);
-
 #endif

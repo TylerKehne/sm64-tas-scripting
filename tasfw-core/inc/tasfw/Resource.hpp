@@ -5,6 +5,7 @@
 #include <map>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 #include <tasfw/Inputs.hpp>
@@ -51,7 +52,14 @@ public:
 	virtual ~Resource() = default;
 
 	Resource(const Resource<TState>&) = delete;
-	Resource(Resource<TState>&&) = default;
+	// A move hands the slot manager its new owner (it points back at its resource and
+	// holds the budget it took). The vectors of resources reserve before they fill, so a
+	// move is compiled for their growth and never runs in practice.
+	Resource(Resource<TState>&& other) noexcept(std::is_nothrow_move_constructible_v<TState>)
+		: work(other.work), useCostModel(other.useCostModel), startSave(std::move(other.startSave)), initialFrame(other.initialFrame),
+		  slotManager(std::move(other.slotManager), this)
+	{
+	}
 	Resource& operator= (const Resource<TState>&) = delete;
 
 	// What a derived resource implements: the game as save, load, advance, inputs, memory and

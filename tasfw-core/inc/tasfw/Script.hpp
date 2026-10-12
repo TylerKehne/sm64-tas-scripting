@@ -178,14 +178,14 @@ protected:
 	// State: the resource's memory, the script's state for a run on another resource, and the
 	// metrics at a frame.
 	// The resource's memory, read only: the address of a symbol (LibSm64: a DLL export,
-	// PyramidUpdate: a field of its own state; an unknown name throws). The one way a script
+	// BitfsCorner: the same name in its own state; an unknown name throws). The one way a script
 	// sees game memory (AGENTS.md, hard rule 9). A write is a hack, a kind of input the
 	// framework will apply for the script (ROADMAP Phase 5), never a store through this.
 	void* ReadState(const char* symbol) const;
 
 	// The script's state, exported as another resource's state type for a top-level run on
 	// that resource to import (TopLevelScriptBuilder::ImportSave): UState converts from the
-	// resource it is exported from (PyramidUpdateMem from a Resource<LibSm64Mem>) plus any
+	// resource it is exported from (Sm64Mem's corner state from a Resource<Sm64Mem>) plus any
 	// further parameters, through Resource::State. The first form exports the current
 	// frame; the second loads `frame` first and returns to the current frame after, both
 	// through the script's own loads, counted like any. The constraint is Resource::State's
