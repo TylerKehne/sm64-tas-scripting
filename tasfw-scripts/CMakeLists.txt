@@ -16,7 +16,6 @@ add_library(tasfw-scripts-bitfs-pyramid-osc STATIC
 	"src/bitfs-pyramid-osc/BitFsPyramidOscillation.cpp"
 	"src/bitfs-pyramid-osc/BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle.cpp"
 	"src/bitfs-pyramid-osc/BitFsPyramidOscillation_TurnAroundAndRunDownhill.cpp"
-	"src/bitfs-pyramid-osc/BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle.cpp"
 	"src/bitfs-pyramid-osc/BitFsPyramidOscillation_RunDownhill.cpp"
 	"src/bitfs-pyramid-osc/BitFsPyramidOscillation_Iteration.cpp"
 )
@@ -36,13 +35,22 @@ add_library(tasfw-scripts-scattershot-bitfs-dr STATIC
 	"src/scattershot-bitfsdr/BitfsDrMetrics.cpp"
 )
 
+add_library(tasfw-scripts-scattershot-bitfs-ending STATIC
+	"src/scattershot-bitfs-ending/Scattershot_BitfsScEnding.cpp"
+	"src/scattershot-bitfs-ending/BitfsScEndingMetrics.cpp"
+)
+
 target_link_libraries(tasfw-scripts-bitfs-sc-setup PUBLIC tasfw-scripts-general)
 target_link_libraries(tasfw-scripts-bitfs-pyramid-osc PUBLIC tasfw-scripts-general)
 target_link_libraries(tasfw-scripts-scattershot-bitfs-dr PUBLIC tasfw-core)
 target_link_libraries(tasfw-scripts-scattershot-bitfs-dr PUBLIC tasfw-scattershot)
 target_link_libraries(tasfw-scripts-scattershot-bitfs-dr PUBLIC tasfw-scripts-general)
 target_link_libraries(tasfw-scripts-scattershot-bitfs-dr PUBLIC tasfw-scripts-bitfs-pyramid-osc)
+target_link_libraries(tasfw-scripts-scattershot-bitfs-ending PUBLIC tasfw-core tasfw-scattershot tasfw-scripts-general tasfw-scripts-bitfs-pyramid-osc)
 
 add_optimization_flags(tasfw-scripts-bitfs-sc-setup)
 add_optimization_flags(tasfw-scripts-scattershot-bitfs-dr)
+add_optimization_flags(tasfw-scripts-scattershot-bitfs-ending)
 add_library(tasfw::scripts_bitfs_sc_setup ALIAS tasfw-scripts-bitfs-sc-setup)
+add_library(tasfw::scripts_scattershot_bitfs_dr ALIAS tasfw-scripts-scattershot-bitfs-dr)
+add_library(tasfw::scripts_scattershot_bitfs_ending ALIAS tasfw-scripts-scattershot-bitfs-ending)

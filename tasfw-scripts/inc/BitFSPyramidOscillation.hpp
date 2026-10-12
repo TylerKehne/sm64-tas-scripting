@@ -1,8 +1,8 @@
 #pragma once
 
 #include <tasfw/Script.hpp>
-#include "LibSm64.hpp"
-#include <PyramidUpdate.hpp>
+#include "Sm64Resource.hpp"
+#include <General.hpp>
 
 #ifndef SCRIPT_BITFS_PYRAMID_OSCILLATION_H
 #define SCRIPT_BITFS_PYRAMID_OSCILLATION_H
@@ -20,7 +20,7 @@ public:
 	bool ignoreXzSum = false;
 };
 
-class BitFsPyramidOscillation : public Script<LibSm64>
+class BitFsPyramidOscillation : public Script<Sm64Resource>
 {
 public:
 	class CustomScriptStatus
@@ -49,7 +49,7 @@ private:
 	bool _alwaysBrake = false;
 };
 
-class BitFsPyramidOscillation_TurnAroundAndRunDownhill : public Script<LibSm64>
+class BitFsPyramidOscillation_TurnAroundAndRunDownhill : public Script<Sm64Resource>
 {
 public:
 	class CustomScriptStatus
@@ -77,7 +77,7 @@ private:
 	BitFsPyramidOscillation_ParamsDto _oscillationParams;
 };
 
-class BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle : public Script<LibSm64>
+class BitFsPyramidOscillation_TurnThenRunDownhill_AtAngle : public Script<Sm64Resource>
 {
 public:
 	class CustomScriptStatus
@@ -113,7 +113,7 @@ private:
 		const ScriptStatus<BitFsPyramidOscillation_TurnAroundAndRunDownhill>& status2);
 };
 
-class BitFsPyramidOscillation_TurnThenRunDownhill : public Script<LibSm64>
+class BitFsPyramidOscillation_TurnThenRunDownhill : public Script<Sm64Resource>
 {
 public:
 	class CustomScriptStatus
@@ -146,7 +146,7 @@ private:
 
 // Find the optimal result of BitFsPyramidOscillation_TurnThenRunDownhill over a
 // range of frames
-class BitFsPyramidOscillation_Iteration : public Script<LibSm64>
+class BitFsPyramidOscillation_Iteration : public Script<Sm64Resource>
 {
 public:
 	class CustomScriptStatus
@@ -180,7 +180,7 @@ private:
 		const ScriptStatus<BitFsPyramidOscillation_TurnThenRunDownhill>& status2);
 };
 
-class BitFsPyramidOscillation_RunDownhill : public Script<LibSm64>
+class BitFsPyramidOscillation_RunDownhill : public Script<Sm64Resource>
 {
 public:
 	class CustomScriptStatus
@@ -214,35 +214,5 @@ private:
 	BitFsPyramidOscillation_ParamsDto _oscillationParams;
 };
 
-class BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle : public TopLevelScript<PyramidUpdate>
-{
-public:
-	class CustomScriptStatus
-	{
-	public:
-		Rotation downhillRotation = Rotation::NONE;
-		int32_t angleFacing = 0;
-		int32_t angleNotFacing = 0;
-		int32_t angleFacingAnalogBack = 0;
-		int32_t angleNotFacingAnalogBack = 0;
-		int32_t floorAngle = 0;
-		float steepness = 0;
-		bool isSlope = false;
-	};
-	CustomScriptStatus CustomStatus = CustomScriptStatus();
-
-	BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle(int16_t targetAngle) : _faceAngle(targetAngle), _targetAngle(targetAngle) { }
-	BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle(int16_t targetAngle, int16_t faceAngle) : _faceAngle(faceAngle), _targetAngle(targetAngle) { }
-
-	bool validation();
-	bool execution();
-	bool assertion();
-
-private:
-	int16_t _faceAngle;
-	int16_t _targetAngle;
-	PyramidUpdateMem::Sm64Object* _pyramid = nullptr;
-	int64_t _floorId;
-};
 
 #endif

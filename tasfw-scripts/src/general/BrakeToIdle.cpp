@@ -43,8 +43,8 @@ bool BrakeToIdle::execution()
 
 	// Quickturn uphill
 	auto status = Test<GetMinimumDownhillWalkingAngle>(marioState->faceAngle[1]);
-	if (!status.asserted)
-		return false;
+	if (!status.asserted || !status.isSlope)
+		return false; // no uphill on a flat floor
 
 	// Get closest cardinal controller input to uphill angle
 	int16_t uphillCardinalYaw =

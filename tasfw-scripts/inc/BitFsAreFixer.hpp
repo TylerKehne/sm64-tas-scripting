@@ -1,7 +1,7 @@
 #pragma once
 
 #include <tasfw/Script.hpp>
-#include <LibSm64.hpp>
+#include <Sm64Resource.hpp>
 #include <sm64/Camera.hpp>
 #include <sm64/Types.hpp>
 
@@ -30,7 +30,7 @@
 // sticks place (SearchTurn). The script's cursor stays on the rollout's first frame while it
 // searches the landing and on the rest while it searches the turn: every trial is an ad-hoc
 // block that reverts, and the one play that sets each axis is applied.
-class BitFsAreFixer : public Script<LibSm64>
+class BitFsAreFixer : public Script<Sm64Resource>
 {
 public:
 	struct Args

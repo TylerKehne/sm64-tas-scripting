@@ -29,7 +29,6 @@ bool BitFsScApproach_AttemptDr_BF::execution()
 {
 	MarioState* marioState = (MarioState*)(ReadState("gMarioStates"));
 	Camera* camera = *(Camera**)(ReadState("gCamera"));
-	Object* pyramid = marioState->floor->object;
 
 	//advance 1 frame at a time along the previous path
 	//each frame, do the following:
@@ -77,10 +76,7 @@ bool BitFsScApproach_AttemptDr_BF::execution()
 				[&]() //mutator
 				{
 					// Turn 2048 towrds uphill
-					auto m64 = M64();
-					auto uphillAngleStatus = TopLevelScriptBuilder<BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>::Build(m64)
-						.ImportSave(ExportSave<PyramidUpdateMem>(pyramid))
-						.Run(0);
+					auto uphillAngleStatus = Test<GetMinimumDownhillWalkingAngle>(0);
 					if (!uphillAngleStatus.validated)
 						return false;
 

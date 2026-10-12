@@ -41,10 +41,7 @@ bool BitFsPyramidOscillation::execution()
 	Object* pyramid		   = marioState->floor->object;
 
 	int16_t initAngle	 = -32768;
-	auto m64 = M64();
-	auto initAngleStatus = TopLevelScriptBuilder<BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>::Build(m64)
-		.ImportSave(ExportSave<PyramidUpdateMem>(pyramid))
-		.Run(initAngle);
+	auto initAngleStatus = Test<GetMinimumDownhillWalkingAngle>(initAngle);
 
 	if (!initAngleStatus.validated)
 		return false;

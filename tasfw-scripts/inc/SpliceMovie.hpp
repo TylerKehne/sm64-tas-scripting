@@ -1,6 +1,6 @@
 #pragma once
 
-#include <LibSm64.hpp>
+#include <Sm64Resource.hpp>
 #include <tasfw/Inputs.hpp>
 #include <tasfw/Script.hpp>
 
@@ -19,7 +19,7 @@
 // physics is the same on JP and US, the way there is not (docs/libsm64.md). The two frames
 // are the movies' frames of the same level transition, which LevelTransitions finds;
 // m64splice is the tool that does both.
-class SpliceMovie : public TopLevelScript<LibSm64>
+class SpliceMovie : public TopLevelScript<Sm64Resource>
 {
 public:
 	class CustomScriptStatus

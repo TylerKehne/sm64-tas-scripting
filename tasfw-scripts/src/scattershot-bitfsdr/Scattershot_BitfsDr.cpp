@@ -1,4 +1,6 @@
 #include <Scattershot_BitfsDr.hpp>
+#include <MarioDeath.hpp>
+#include <Sm64ActionNames.hpp>
 #include <ScriptMath.hpp>
 #include <limits>
 
@@ -340,6 +342,10 @@ bool Scattershot_BitfsDr::ValidateState()
     MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
     Object* pyramid = Pyramid();
 
+    // A dying Mario is a failed lineage (MarioDeath.hpp): the death is never played out.
+    if (MarioDeath::IsDying(*marioState))
+        return false;
+
     // Position sanity check: near the platform, and not above where it could carry him
     if (std::fabs(marioState->pos[0] - pyramid->oPosX) > SearchHalfExtent)
         return false;
@@ -483,8 +489,10 @@ bool Scattershot_BitfsDr::ValidateState()
     if (state.phase == BitfsDrMetrics::Phase::TURN_UPHILL && marioState->forwardVel <= 16.0f && state.currentCrossing > 1)
         return false;
 
-    // Ensure we gain speed each crossing. Check both directions separately to account for axis asymmetry
-    if (!BitfsDrMetrics::ValidateCrossingData(state, _normalSpecsDto.minMajor))
+    // Gain speed each crossing, below the regime and in it, and the crossing's normal at least
+    // minCrossingAxisDiff further along one axis than the other (the maintainer, 2026-10-10;
+    // ROADMAP 4.12).
+    if (!BitfsDrMetrics::ValidateCrossingData(state, _normalSpecsDto.minMajor, _normalSpecsDto.minCrossingAxisDiff))
         return false;
 
     // The first crossing at least the speed asked for (the leg's end is crossingData[0], the
@@ -567,33 +575,23 @@ std::string Scattershot_BitfsDr::GetCsvRow()
 
     auto state = GetMetrics(GetCurrentFrame());
 
-    int phaseValue;
-    switch (state.phase)
-    {
-    case BitfsDrMetrics::Phase::INITIAL: phaseValue = 0; break;
-    case BitfsDrMetrics::Phase::ATTEMPT_DR: phaseValue = 1; break;
-    case BitfsDrMetrics::Phase::QUICKTURN: phaseValue = 2; break;
-    case BitfsDrMetrics::Phase::RUN_DOWNHILL: phaseValue = 3; break;
-    case BitfsDrMetrics::Phase::TURN_AROUND: phaseValue = 4; break;
-    case BitfsDrMetrics::Phase::TURN_UPHILL: phaseValue = 5; break;
-    case BitfsDrMetrics::Phase::RUN_DOWNHILL_PRE_CROSSING: phaseValue = 6; break;
-    default: phaseValue = 7;
-    }
-
-    char line[256];
-    snprintf(line, sizeof(line), "%f,%f,%f,%d,%f,%d,%f,%f,%f,%d,%d,%d,%f",
+    // The action in hex with its name and the phase by name, as the viewer shows them (the
+    // maintainer, 2026-10-06).
+    char line[320];
+    snprintf(line, sizeof(line), "%f,%f,%f,%d,%f,0x%08X (%s),%f,%f,%f,%d,%d,%s,%f",
         marioState->pos[0],
         marioState->pos[1],
         marioState->pos[2],
         marioState->faceAngle[1],
         marioState->forwardVel,
-        marioState->action,
+        unsigned(marioState->action),
+        Sm64ActionName(marioState->action),
         pyramid->oTiltingPyramidNormalX,
         pyramid->oTiltingPyramidNormalY,
         pyramid->oTiltingPyramidNormalZ,
         state.currentOscillation,
         state.currentCrossing,
-        phaseValue,
+        BitfsDrMetrics::PhaseName(state.phase),
         state.xzSum); // the tilt, |nX| + |nZ| of the normal above, so a run can be filtered on it
 
     return std::string(line);
@@ -623,6 +621,23 @@ bool Scattershot_BitfsDr::IsSolution()
     // short (measured: every run at the ceiling died at its fourth or fifth oscillation).
     if (!_finalPass && state.xzSum > _normalSpecsDto.maxXzSum)
         return false;
+
+    // Nor one from which a turnaround, begun at once, would end under the lava: the pyramid
+    // keeps tilting toward him on the way to the end and the end sinks about 3.6 a frame, so a
+    // later turn ends lower still (the maintainer's run of 2026-10-06: every lineage of its
+    // third pass ended at the -x end 0 to 10 above the lava, from roots the fastest at the
+    // crossing and the most tilted toward it; ROADMAP 4.6).
+    if (!_finalPass && _normalSpecsDto.minEndClearance > 0.0f)
+    {
+        MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
+        Object* pyramid = Pyramid();
+        const float clearance = BitfsDrMetrics::TurnaroundClearance(
+            pyramid->oTiltingPyramidNormalX, pyramid->oTiltingPyramidNormalY, pyramid->oTiltingPyramidNormalZ,
+            marioState->pos[0], marioState->pos[2], marioState->faceAngle[1], marioState->forwardVel,
+            pyramid->oPosX, pyramid->oPosY, pyramid->oPosZ);
+        if (clearance < _normalSpecsDto.minEndClearance)
+            return false;
+    }
 
     // The last pass hands its solutions on: they must have the regime's tilt, which the
     // swings build up from the tilt the oscillation started at.
@@ -755,7 +770,6 @@ bool Scattershot_BitfsDr::TurnAround()
     return ModifyAdhoc([&]()
         {
             MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
-            Object* pyramid = Pyramid();
 
             if (marioState->action != ACT_WALKING || marioState->forwardVel <= 16.0f)
                 return true;
@@ -765,10 +779,7 @@ bool Scattershot_BitfsDr::TurnAround()
                 auto state = GetMetrics(GetCurrentFrame());
 
                 // Turn 2048 towrds uphill
-                auto m64 = M64();
-                auto status = TopLevelScriptBuilder<BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>::Build(m64)
-                    .ImportSave(ExportSave<PyramidUpdateMem>(pyramid))
-                    .Run(state.roughTargetAngle, marioState->faceAngle[1]);
+                auto status = Test<GetMinimumDownhillWalkingAngle>(state.roughTargetAngle, marioState->faceAngle[1]);
                 if (!status.asserted)
                     return true;
 
@@ -791,7 +802,6 @@ bool Scattershot_BitfsDr::TurnAround()
 bool Scattershot_BitfsDr::RunDownhill_1f(bool min)
 {
     MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
-    Object* pyramid = Pyramid();
 
     bool stepped = false;
     ModifyAdhoc([&]()
@@ -801,10 +811,7 @@ bool Scattershot_BitfsDr::RunDownhill_1f(bool min)
 
             auto state = GetMetrics(GetCurrentFrame());
 
-            auto m64 = M64();
-            auto status = TopLevelScriptBuilder<BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>::Build(m64)
-                .ImportSave(ExportSave<PyramidUpdateMem>(pyramid))
-                .Run(state.roughTargetAngle, marioState->faceAngle[1]);
+            auto status = Test<GetMinimumDownhillWalkingAngle>(state.roughTargetAngle, marioState->faceAngle[1]);
             if (!status.asserted)
                 return true;
 
@@ -839,7 +846,6 @@ bool Scattershot_BitfsDr::RunDownhill_1f(bool min)
 bool Scattershot_BitfsDr::TurnUphill_1f()
 {
     MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
-    Object* pyramid = Pyramid();
 
     bool stepped = false;
     ModifyAdhoc([&]()
@@ -848,10 +854,7 @@ bool Scattershot_BitfsDr::TurnUphill_1f()
                 return true;
 
             // Turn 2048 towrds uphill
-            auto m64 = M64();
-            auto status = TopLevelScriptBuilder<BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>::Build(m64)
-                .ImportSave(ExportSave<PyramidUpdateMem>(pyramid))
-                .Run(0);
+            auto status = Test<GetMinimumDownhillWalkingAngle>(0);
             if (!status.asserted)
                 return true;
 
@@ -875,7 +878,6 @@ bool Scattershot_BitfsDr::Quickturn()
         {
             MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
             Camera* camera = *(Camera**)(ReadState("gCamera"));
-            Object* pyramid = Pyramid();
 
             if (marioState->action != ACT_FREEFALL_LAND_STOP)
                 return false;
@@ -884,10 +886,7 @@ bool Scattershot_BitfsDr::Quickturn()
                 return false;
 
             // Turn 2048 towrds uphill
-            auto m64 = M64();
-            auto status = TopLevelScriptBuilder<BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>::Build(m64)
-                .ImportSave(ExportSave<PyramidUpdateMem>(pyramid))
-                .Run(marioState->faceAngle[1]);
+            auto status = Test<GetMinimumDownhillWalkingAngle>(marioState->faceAngle[1]);
             if (!status.asserted)
                 return true;
 
