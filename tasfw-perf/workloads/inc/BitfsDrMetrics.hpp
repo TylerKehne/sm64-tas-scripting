@@ -103,7 +103,7 @@ private:
     std::array<float, 3> targetNormal = { INFINITY, INFINITY, INFINITY };
 
     void SetStateVariables(MarioState* marioState, Object* pyramid);
-    void CalculateOscillations(CustomScriptStatus lastFrameState, MarioState* marioState, Object* pyramid);
+    void CalculateOscillations(CustomScriptStatus lastFrameState, MarioState* marioState);
     void CalculatePhase(CustomScriptStatus lastFrameState, MarioState* marioState, Object* pyramid);
     void CalculateARE(Object* pyramid);
 };

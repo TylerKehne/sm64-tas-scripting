@@ -50,7 +50,7 @@ bool BitfsDrMetrics::execution()
 
     CustomStatus.roughTargetAngle = lastFrameState.roughTargetAngle;
     CustomStatus.phase = lastFrameState.phase;
-    CalculateOscillations(lastFrameState, marioState, pyramid);
+    CalculateOscillations(lastFrameState, marioState);
 
     CalculatePhase(lastFrameState, marioState, pyramid);
 
@@ -74,7 +74,7 @@ void BitfsDrMetrics::SetStateVariables(MarioState* marioState, Object* pyramid)
     CustomStatus.frame = GetCurrentFrame();
 }
 
-void BitfsDrMetrics::CalculateOscillations(CustomScriptStatus lastFrameState, MarioState* marioState, Object* pyramid)
+void BitfsDrMetrics::CalculateOscillations(CustomScriptStatus lastFrameState, MarioState* marioState)
 {
     if (CustomStatus.phase == Phase::INITIAL)
         return;
@@ -121,10 +121,7 @@ void BitfsDrMetrics::CalculateOscillations(CustomScriptStatus lastFrameState, Ma
                 {
                     maxDownhillSpeed = marioState->forwardVel;
 
-                    auto m64 = M64();
-                    auto status = TopLevelScriptBuilder<BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>::Build(m64)
-                        .ImportSave(ExportSave<PyramidUpdateMem>(pyramid))
-                        .Run(marioState->faceAngle[1]);
+                    auto status = Test<GetMinimumDownhillWalkingAngle>(marioState->faceAngle[1]);
                     if (!status.asserted)
                         return true;
 

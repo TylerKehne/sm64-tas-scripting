@@ -4,7 +4,7 @@
   perf_compare.py compare BASELINE CURRENT.json [--reference REFERENCE.json]
                           [--threshold PCT] [--min-abs-ns NS]
   perf_compare.py merge -o OUT.json [--context KEY=VALUE ...] PART.json [PART.json ...]
-  perf_compare.py baseline -o DIR RESULT.json
+  perf_compare.py baseline -o DIR RESULT.json [--add]
 
 `compare` prints a delta table and exits 1 if any benchmark's real time regressed by more
 than the threshold (and by more than --min-abs-ns in absolute terms, so sub-nanosecond
@@ -38,7 +38,9 @@ Tier C and D rows carry work counts (frameAdvances, saves, loads, shots, scripts
 solutions, validationFailures). They are exact: the workloads run with the cost model off,
 or report only what is deterministic, so any increase is a regression ("the framework now
 does more work") and fails the compare; a decrease is printed and left for the reviewer to
-confirm and re-baseline. Counts always compare against the committed baseline; a reference
+confirm and re-baseline. Tier B's stateBytes (one state as the resource accounts it) and
+the corner's windowFrames (the neutral frames before the death at its anchor) are exact
+the same way. Counts always compare against the committed baseline; a reference
 whose counts differ from the baseline's is not the baseline commit's binary, and the
 compare says so.
 
@@ -83,7 +85,7 @@ import sys
 
 # Counters gated on exact equality (see the module docstring).
 EXACT_COUNTERS = ("frameAdvances", "saves", "loads", "shots", "scripts", "blocks", "solutions", "validationFailures",
-                  "stateBytes")
+                  "stateBytes", "windowFrames")
 
 THREADS_RE = re.compile(r"^(.*)/threads:(\d+)$")
 EFFICIENCY_GATE_MAX_THREADS = 8
@@ -235,13 +237,24 @@ def cycles_cell(anchor_row, cur_row):
 def cmd_merge(args):
     merged = None
     for path in args.parts:
+        if not os.path.isdir(path) and os.path.getsize(path) == 0:
+            # A binary with no row for the family writes nothing (Google Benchmark opens the
+            # file, matches no benchmark and exits 0): the reference built before a family
+            # existed. No rows from it; the compare reports the family's rows NEW.
+            print("%s: empty, the binary has no benchmark for this family" % path, file=sys.stderr)
+            continue
         data = read(path)
         if merged is None:
             merged = {"context": dict(data.get("context", {})), "benchmarks": []}
         merged["benchmarks"].extend(data.get("benchmarks", []))
     if merged is None:
-        print("no input files", file=sys.stderr)
-        return 1
+        if not args.parts:
+            print("no input files", file=sys.stderr)
+            return 1
+        # Every part empty: the binary has none of the run's families (the reference before
+        # they existed). A result without rows, which the compare takes as a reference that
+        # has none and gates every row against the baseline.
+        merged = {"context": {}, "benchmarks": []}
     for item in args.context or []:
         key, sep, value = item.partition("=")
         if not sep:
@@ -267,11 +280,23 @@ def cmd_baseline(args):
         print("%s: no benchmark rows" % args.result, file=sys.stderr)
         return 1
     os.makedirs(args.output, exist_ok=True)
-    for old in os.listdir(args.output):
-        if old.endswith(".json"):
-            os.remove(os.path.join(args.output, old))
+    manifest = {"context": data.get("context", {}), "families": list(families)}
+    if args.add:
+        # A filtered run adds or replaces its own families and leaves the others' files and
+        # the saved context alone; the family order keeps the existing list, new ones appended.
+        existing = {}
+        if os.path.exists(os.path.join(args.output, CONTEXT_FILE)):
+            existing = read_file(os.path.join(args.output, CONTEXT_FILE))
+        order = [f for f in existing.get("families", [])
+                 if f in families or os.path.exists(os.path.join(args.output, f + ".json"))]
+        order += [f for f in families if f not in order]
+        manifest = {"context": existing.get("context", data.get("context", {})), "families": order}
+    else:
+        for old in os.listdir(args.output):
+            if old.endswith(".json"):
+                os.remove(os.path.join(args.output, old))
     with open(os.path.join(args.output, CONTEXT_FILE), "w", encoding="utf-8") as f:
-        json.dump({"context": data.get("context", {}), "families": list(families)}, f, indent=2)
+        json.dump(manifest, f, indent=2)
         f.write("\n")
     for family, rows in families.items():
         with open(os.path.join(args.output, family + ".json"), "w", encoding="utf-8") as f:
@@ -617,7 +642,10 @@ def main(argv):
 
     bp = sub.add_parser("baseline", help="write a result as a baseline directory, one file per family")
     bp.add_argument("result", help="a merged result file (or a baseline directory to rewrite)")
-    bp.add_argument("-o", "--output", required=True, help="the baseline directory; its .json files are replaced")
+    bp.add_argument("-o", "--output", required=True, help="the baseline directory; its .json files are replaced (kept with --add)")
+    bp.add_argument("--add", action="store_true",
+                    help="add or replace only the families the result has, keeping the directory's other families "
+                         "and its context (a filtered run)")
     bp.set_defaults(func=cmd_baseline)
 
     tp = sub.add_parser("tierd", help="turn a bitfs-turn stage log into one benchmark row")

@@ -33,7 +33,9 @@
 
 .PARAMETER SaveBaseline
     Store this run as the baseline instead of comparing, and the current binaries as the
-    reference for it.
+    reference for it. With -Filter, add or replace just the run's families in the baseline
+    and leave the reference binaries alone (the added rows gate absolute until the next
+    whole save).
 
 .PARAMETER Threshold
     Regression threshold in percent (default 10).
@@ -57,8 +59,9 @@
 .PARAMETER Affinity
     Processor affinity mask for the single-threaded benchmark process (default 0x10, one
     logical CPU of a performance core). The process also runs at High priority. Pass 0 to
-    leave scheduling alone. The thread-scaling family (^BM_LibSm64Scaling) is never pinned;
-    it measures parallelism, and packing it onto the performance cores hung it (see docs).
+    leave scheduling alone. The thread-scaling families (^BM_LibSm64Scaling,
+    ^BM_BitfsCornerScaling) are never pinned, nor is a -Filter that reaches one of their rows;
+    they measure parallelism, and packing one onto the performance cores hung it (see docs).
 
 .PARAMETER Compiler
     msvc (default) or clang. Uses build\<Config>-clang and the baseline
@@ -549,6 +552,8 @@ try {
         '^BM_LibSm64Fixed',
         '^BM_LibSm64Dirty',
         '^BM_LibSm64Scaling',
+        '^BM_BitfsCorner_',
+        '^BM_BitfsCornerScaling',
         '^BM_Framework'
     )
     if ($Filter) { $families = @($Filter) }
@@ -600,14 +605,21 @@ try {
     if ($machineFactor) { $contextArgs += @("--context", "machine_factor=$machineFactor") }
 
     $launches = $families.Count * $Processes * $(if ($useReference) { 2 } else { 1 })
-    Write-Host "Running $($families.Count) families x $Processes processes$(if ($useReference) { ' x 2 binaries (reference, current)' }), $Repetitions repetitions each ($launches launches), pinned to $(Format-Mask $affinityMask) (scaling family unpinned)"
+    Write-Host "Running $($families.Count) families x $Processes processes$(if ($useReference) { ' x 2 binaries (reference, current)' }), $Repetitions repetitions each ($launches launches), pinned to $(Format-Mask $affinityMask) (scaling families unpinned)"
     $index = 0
     foreach ($family in $families) {
         [uint64]$mask = $affinityMask
-        # The scaling family measures parallelism up to 16 threads; one CPU would measure
-        # nothing, and packing its 16 threads onto the performance cores' 16 logical CPUs
-        # hung it in 2 of 20 launches, both binaries (docs/performance.md, Tier B).
-        if ($family -match 'Scaling') { $mask = 0 }
+        # A scaling family (the game's, the corner's) measures parallelism up to 16 threads;
+        # one CPU would measure nothing, and packing the game's 16 threads onto the
+        # performance cores' 16 logical CPUs hung it in 2 of 20 launches, both binaries
+        # (docs/performance.md, Tier B). A -Filter is one family whatever it matches, so it
+        # is unpinned as soon as it reaches a scaling row: '^BM_BitfsCorner' pinned both
+        # corner families to one CPU and the frame rows time-shared it (2026-10-12).
+        $scalingRows = @('BM_LibSm64Scaling_FrameAdvance', 'BM_BitfsCornerScaling_FrameAdvance')
+        if ($scalingRows | Where-Object { $_ -match $family }) {
+            if ($mask -ne 0 -and $family -notmatch 'Scaling') { Write-Host "note: '$family' reaches a scaling family, so its process is unpinned" }
+            $mask = 0
+        }
         for ($p = 0; $p -lt $Processes; $p++) {
             if ($useReference) {
                 $index++
@@ -639,7 +651,11 @@ try {
             # The same two with the viewer tailing the run headless (ROADMAP 4.10): the current
             # binary only, gated within the session against the plain rows and on the viewer's cost.
             @{ Name = 'TierD_DeterministicViewer'; Config = 'tierd-deterministic-viewer.json'; Exact = $true; OnePerCore = $true; Viewer = $true },
-            @{ Name = 'TierD_ThroughputViewer'; Config = 'tierd-throughput-viewer.json'; Exact = $false; OnePerCore = $false; Viewer = $true }
+            @{ Name = 'TierD_ThroughputViewer'; Config = 'tierd-throughput-viewer.json'; Exact = $false; OnePerCore = $false; Viewer = $true },
+            # The deterministic run on the corner resource (ROADMAP 4.13): the same stage and seed
+            # on BitfsCorner, its solutions replayed on the game. The current binary only: a
+            # reference built before the corner cannot read the config.
+            @{ Name = 'TierD_DeterministicCorner'; Config = 'tierd-deterministic-corner.json'; Exact = $true; OnePerCore = $true; Viewer = $false; CurrentOnly = $true }
         )
         foreach ($spec in $specs) {
             $configPath = Join-Path $root ("perf\" + $spec.Config)
@@ -654,7 +670,7 @@ try {
             if ($mask -ne 0) { $pinText = "pinned to $(Format-Mask $mask) (one thread per performance core)" }
             $contextArgs += @("--context", "$($spec.Name)_affinity=$(Format-Mask $mask)")
             $binaries = @()
-            if ($useRefTurn -and -not $spec.Viewer) { $binaries += @{ Exe = $refTurn; Tag = 'ref' } }
+            if ($useRefTurn -and -not $spec.Viewer -and -not $spec.CurrentOnly) { $binaries += @{ Exe = $refTurn; Tag = 'ref' } }
             $binaries += @{ Exe = $turn; Tag = 'cur' }
             $best = @{}
             for ($a = 1; $a -le $Alternations; $a++) {
@@ -737,9 +753,18 @@ if ($refParts.Count -gt 0) {
 
 if ($SaveBaseline) {
     # One file per family plus context.json (perf_compare.py baseline), so a family can be
-    # read or diffed on its own.
-    & $python.Source $compareScript baseline -o $Baseline $out
+    # read or diffed on its own. A filtered run adds or replaces just its own families and
+    # leaves the reference binaries alone: the other families keep their relative gate, and
+    # the added rows gate absolute against the baseline until the next whole save.
+    $baselineArgs = @('baseline', '-o', $Baseline, $out)
+    $partial = $Filter -or $TierDOnly # a filtered run, or Tier D alone: its families only
+    if ($partial) { $baselineArgs += '--add' }
+    & $python.Source $compareScript @baselineArgs
     if ($LASTEXITCODE -ne 0) { throw "writing the baseline failed" }
+    if ($partial) {
+        Write-Host "Added the run's families to the baseline at $Baseline; the reference in $Reference is unchanged, so the added rows gate absolute until the next whole -SaveBaseline"
+        exit 0
+    }
     Write-Host "Saved baseline to $Baseline"
     New-Item -ItemType Directory -Force $Reference | Out-Null
     Copy-Item $exe $Reference -Force

@@ -1,4 +1,4 @@
-# Performance suite: Tier A (DLL-free microbenchmarks), Tier B (the game DLL) and Tier C
+# Performance suite: Tier A (DLL-free microbenchmarks), Tier B (the game DLL, and the corner resource beside it) and Tier C
 # (framework workloads on the game); see docs/performance.md. Tier D runs bitfs-turn itself.
 # Only meaningful in Release / RelWithDebInfo. scripts/perf.ps1 is the supported runner.
 
@@ -48,7 +48,6 @@ add_executable(tasfw-perf
 	# runs (docs/performance.md, "Tier C"), so the family's exact counts stay a function of
 	# the framework while the live scripts in tasfw-scripts change with the brute forcer.
 	"workloads/src/BitFsPyramidOscillation.cpp"
-	"workloads/src/BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle.cpp"
 	"workloads/src/BitFsPyramidOscillation_Iteration.cpp"
 	"workloads/src/BitFsPyramidOscillation_RunDownhill.cpp"
 	"workloads/src/BitFsPyramidOscillation_TurnAroundAndRunDownhill.cpp"

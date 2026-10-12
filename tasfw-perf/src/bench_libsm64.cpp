@@ -3,6 +3,7 @@
 #include "resident.hpp"
 
 #include <LibSm64.hpp>
+#include <BitfsCorner.hpp>
 #include <tasfw/testing/PerfAccess.hpp>
 #include <tasfw/Inputs.hpp>
 #include <tasfw/M64.hpp>
@@ -12,6 +13,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
+#include <exception>
 #include <filesystem>
 #include <map>
 #include <memory>
@@ -35,6 +37,12 @@
 // which reloads the level and dirties four times as many pages. Each family
 // ends with a memory row (resident set per live slot), and a third family
 // (^BM_LibSm64Scaling) measures thread scaling on one DLL copy per thread.
+//
+// The corner resource (BitfsCorner, ROADMAP 4.13) has the same rows in two more families:
+// ^BM_BitfsCorner_ on one corner imported from the game at the anchor with every object, so
+// that each row measures the corner at the frame, the Mario and the warm-up the game's rows
+// measure; and ^BM_BitfsCornerScaling on one corner per thread, each loaded from that state.
+// The game's one copy serves them all, the corner needing it only to import.
 
 namespace
 {
@@ -77,20 +85,21 @@ namespace
 		return resource.SaveState();
 	}
 
+	std::unique_ptr<Game> processGame; // the process's one copy of the DLL
+
 	Game* LoadGame(LibSm64SaveMode mode, benchmark::State& state)
 	{
-		static std::unique_ptr<Game> game;
 		if (Env("TASFW_LIBSM64").empty() || Env("TASFW_M64").empty())
 		{
 			state.SkipWithMessage("TASFW_LIBSM64 / TASFW_M64 not set");
 			return nullptr;
 		}
-		if (game && game->mode != mode)
+		if (processGame && processGame->mode != mode)
 		{
 			state.SkipWithMessage("the DLL is already loaded in the other save mode; run this family in its own process");
 			return nullptr;
 		}
-		if (!game)
+		if (!processGame)
 		{
 			LibSm64Config config;
 			config.dllPath = Env("TASFW_LIBSM64");
@@ -116,20 +125,18 @@ namespace
 				resource.FrameAdvance();
 			}
 			loaded->anchor = AnchorAfterWarmup(resource, loaded->first);
-			game = std::move(loaded);
+			processGame = std::move(loaded);
 		}
-		return game.get();
+		return processGame.get();
 	}
 
+	// The rows, on either resource: the game's by save mode, the corner's at the end.
+	//
 	// Save into a recycled slot and release it: the steady-state cost of a save once the
 	// pool is warm, which is what a script pays per Save() during a search.
-	void SaveErase(benchmark::State& state, LibSm64SaveMode mode)
+	template <class TResource>
+	void SaveEraseLoop(benchmark::State& state, TResource& resource)
 	{
-		Game* game = LoadGame(mode, state);
-		if (!game)
-			return;
-		LibSm64& resource = *game->resource;
-
 		tasfw_perf::Measurement m0 = tasfw_perf::BeginMeasure();
 		for (auto _ : state)
 		{
@@ -139,14 +146,17 @@ namespace
 		tasfw_perf::EndMeasure(state, m0);
 	}
 
+	void SaveErase(benchmark::State& state, LibSm64SaveMode mode)
+	{
+		if (Game* game = LoadGame(mode, state))
+			SaveEraseLoop(state, *game->resource);
+	}
+
 	// Save into fresh storage: what a save costs when nothing has been released yet. Kept to
 	// a fixed few iterations because every one of them keeps its buffers until the end.
-	void SaveFresh(benchmark::State& state, LibSm64SaveMode mode)
+	template <class TResource>
+	void SaveFreshLoop(benchmark::State& state, TResource& resource)
 	{
-		Game* game = LoadGame(mode, state);
-		if (!game)
-			return;
-		LibSm64& resource = *game->resource;
 		PerfAccess::DropPool(resource);
 
 		std::vector<int64_t> ids;
@@ -159,34 +169,44 @@ namespace
 			resource.DisposeState(id);
 	}
 
-	void Load(benchmark::State& state, LibSm64SaveMode mode)
+	void SaveFresh(benchmark::State& state, LibSm64SaveMode mode)
 	{
-		Game* game = LoadGame(mode, state);
-		if (!game)
-			return;
-		LibSm64& resource = *game->resource;
+		if (Game* game = LoadGame(mode, state))
+			SaveFreshLoop(state, *game->resource);
+	}
 
+	template <class TResource>
+	void LoadLoop(benchmark::State& state, TResource& resource, int64_t anchor)
+	{
 		tasfw_perf::Measurement m0 = tasfw_perf::BeginMeasure();
 		for (auto _ : state)
-			resource.LoadState(game->anchor);
+			resource.LoadState(anchor);
 		tasfw_perf::EndMeasure(state, m0);
+	}
+
+	void Load(benchmark::State& state, LibSm64SaveMode mode)
+	{
+		if (Game* game = LoadGame(mode, state))
+			LoadLoop(state, *game->resource, game->anchor);
 	}
 
 	// One game frame with neutral inputs, from the anchor frame; the anchor is reloaded at
 	// the end so the family's other benchmarks start from the same state.
-	void FrameAdvance(benchmark::State& state, LibSm64SaveMode mode)
+	template <class TResource>
+	void FrameAdvanceLoop(benchmark::State& state, TResource& resource, int64_t anchor)
 	{
-		Game* game = LoadGame(mode, state);
-		if (!game)
-			return;
-		LibSm64& resource = *game->resource;
-
 		resource.setInputs(Inputs());
 		tasfw_perf::Measurement m0 = tasfw_perf::BeginMeasure();
 		for (auto _ : state)
 			resource.FrameAdvance();
 		tasfw_perf::EndMeasure(state, m0);
-		resource.LoadState(game->anchor);
+		resource.LoadState(anchor);
+	}
+
+	void FrameAdvance(benchmark::State& state, LibSm64SaveMode mode)
+	{
+		if (Game* game = LoadGame(mode, state))
+			FrameAdvanceLoop(state, *game->resource, game->anchor);
 	}
 
 	// Resident set per live slot: N fresh saves from the anchor state with the working set
@@ -195,14 +215,11 @@ namespace
 	// only when the save layout does); rssPerSlot is what the process grew by per slot,
 	// slot-map nodes included, and is informational. Skipped when N states would pass 4 GB
 	// (full saves at 1,000 slots).
-	void ResidentPerSlot(benchmark::State& state, LibSm64SaveMode mode)
+	template <class TResource>
+	void ResidentPerSlotLoop(benchmark::State& state, TResource& resource, int64_t anchor)
 	{
-		Game* game = LoadGame(mode, state);
-		if (!game)
-			return;
-		LibSm64& resource = *game->resource;
 		const int64_t slots = state.range(0);
-		const double stateBytes = double(resource.getStateSize(PerfAccess::SlotState(resource, game->anchor)));
+		const double stateBytes = double(resource.getStateSize(PerfAccess::SlotState(resource, anchor)));
 		if (stateBytes * double(slots) > 4.0 * 1024 * 1024 * 1024)
 		{
 			state.SkipWithMessage("more than 4 GB of states");
@@ -226,6 +243,12 @@ namespace
 		for (int64_t id : ids)
 			resource.DisposeState(id);
 		PerfAccess::DropPool(resource);
+	}
+
+	void ResidentPerSlot(benchmark::State& state, LibSm64SaveMode mode)
+	{
+		if (Game* game = LoadGame(mode, state))
+			ResidentPerSlotLoop(state, *game->resource, game->anchor);
 	}
 
 	// Thread scaling: n threads, each on its own DLL copy with dirty-page saves, as the
@@ -343,7 +366,7 @@ namespace
 	{
 		if (!game)
 			return;
-		LibSm64& resource = *game->resource;
+		auto& resource = *game->resource;
 		size_t i = 0;
 		for (auto _ : state)
 		{
@@ -354,6 +377,221 @@ namespace
 	}
 
 	void Addr(benchmark::State& state, LibSm64SaveMode mode) { AddrLoop(state, LoadGame(mode, state)); }
+
+	// The corner (BitfsCorner, ROADMAP 4.13): its level read once from the game, one
+	// resource imported from the game at the anchor with every object (the search's shape),
+	// its anchor that imported state. The game in any save mode serves, the one this process
+	// has loaded or else the search's.
+	Game* LoadGameAnyMode(benchmark::State& state)
+	{
+		return LoadGame(processGame ? processGame->mode : LibSm64SaveMode::Fixed, state);
+	}
+
+	struct Corner
+	{
+		std::shared_ptr<const BitfsCornerLevel> level;
+		std::unique_ptr<BitfsCorner> resource;
+		int64_t anchor = -1;
+		int64_t window = 0; // neutral frames from the anchor before the corner refuses one
+	};
+
+	// The frame-advance rows play neutral frames from the anchor, and the game's play through
+	// Mario's death there (the level reloads; the row's comment above). The corner refuses a
+	// death, a warp it has not got, so its rows play the window before it, the anchor state
+	// copied back whenever the window runs out, with the timing paused; the window is found
+	// once, by playing to the refusal, and reported on the row (windowFrames).
+	constexpr int64_t FrameAdvanceIterations = 3000;
+
+	int64_t NeutralFramesBeforeRefusal(BitfsCorner& resource, int64_t anchor)
+	{
+		resource.setInputs(Inputs());
+		int64_t frames = 0;
+		try
+		{
+			for (; frames < FrameAdvanceIterations; frames++)
+				resource.FrameAdvance();
+		}
+		catch (const std::exception&)
+		{
+		}
+		resource.LoadState(anchor);
+		return frames;
+	}
+
+	Corner* LoadCorner(benchmark::State& state)
+	{
+		static std::unique_ptr<Corner> corner;
+		if (!corner)
+		{
+			Game* game = LoadGameAnyMode(state);
+			if (!game)
+				return nullptr;
+			LibSm64& resource = *game->resource;
+			resource.LoadState(game->anchor);
+			auto loaded = std::make_unique<Corner>();
+			loaded->level = std::make_shared<const BitfsCornerLevel>(resource);
+			loaded->resource = std::make_unique<BitfsCorner>(loaded->level);
+			loaded->resource->load(BitfsCornerMem(resource, *loaded->level, BitfsCornerObjects::All()));
+			loaded->anchor = loaded->resource->SaveState();
+			loaded->window = NeutralFramesBeforeRefusal(*loaded->resource, loaded->anchor);
+			corner = std::move(loaded);
+		}
+		return corner.get();
+	}
+
+	// One corner frame with neutral inputs inside the window; the anchor is reloaded at the
+	// end as the game's row does.
+	void CornerFrameAdvanceLoop(benchmark::State& state, BitfsCorner& resource, int64_t anchor, int64_t window)
+	{
+		const Sm64Mem& anchorState = PerfAccess::SlotState(resource, anchor);
+		resource.setInputs(Inputs());
+		int64_t played = 0;
+		tasfw_perf::Measurement m0 = tasfw_perf::BeginMeasure();
+		for (auto _ : state)
+		{
+			if (played == window)
+			{
+				state.PauseTiming();
+				resource.load(anchorState); // the plain copy: no slot, no allocation to count
+				played = 0;
+				state.ResumeTiming();
+			}
+			resource.FrameAdvance();
+			played++;
+		}
+		tasfw_perf::EndMeasure(state, m0);
+		state.counters["windowFrames"] = benchmark::Counter(double(window));
+		resource.LoadState(anchor);
+	}
+
+	// A refusal (the corner reaching what it has not got; BitfsCorner.hpp) ends the row with
+	// its message, not the process.
+	template <class TRow>
+	void CornerRow(benchmark::State& state, TRow&& row)
+	{
+		try
+		{
+			if (Corner* corner = LoadCorner(state))
+				row(*corner);
+		}
+		catch (const std::exception& e)
+		{
+			state.SkipWithError(e.what());
+		}
+	}
+
+	void CornerSaveErase(benchmark::State& state)
+	{
+		CornerRow(state, [&](Corner& corner) { SaveEraseLoop(state, *corner.resource); });
+	}
+
+	void CornerSaveFresh(benchmark::State& state)
+	{
+		CornerRow(state, [&](Corner& corner) { SaveFreshLoop(state, *corner.resource); });
+	}
+
+	void CornerLoad(benchmark::State& state)
+	{
+		CornerRow(state, [&](Corner& corner) { LoadLoop(state, *corner.resource, corner.anchor); });
+	}
+
+	void CornerFrameAdvance(benchmark::State& state)
+	{
+		CornerRow(state, [&](Corner& corner) { CornerFrameAdvanceLoop(state, *corner.resource, corner.anchor, corner.window); });
+	}
+
+	void CornerResidentPerSlot(benchmark::State& state)
+	{
+		CornerRow(state, [&](Corner& corner) { ResidentPerSlotLoop(state, *corner.resource, corner.anchor); });
+	}
+
+	void CornerAddr(benchmark::State& state)
+	{
+		CornerRow(state, [&](Corner& corner) { AddrLoop(state, &corner); });
+	}
+
+	// Thread scaling for the corner: n threads, one corner each on the shared level, loaded
+	// from the single corner's anchor state (a load between resources relocates it), the
+	// shape a search on the corner has. Nothing is copied but the state; the level is read
+	// once and the game not loaded again.
+	struct ThreadCorner
+	{
+		std::unique_ptr<BitfsCorner> resource;
+		int64_t anchor = -1;
+		int64_t window = 0;
+	};
+
+	ThreadCorner* LoadThreadCorner(benchmark::State& state)
+	{
+		static std::mutex mutex;
+		static std::map<int, std::unique_ptr<ThreadCorner>> corners;
+		std::lock_guard<std::mutex> lock(mutex);
+		Corner* corner = LoadCorner(state);
+		if (!corner)
+			return nullptr;
+		auto found = corners.find(state.thread_index());
+		if (found != corners.end())
+			return found->second.get();
+		auto loaded = std::make_unique<ThreadCorner>();
+		loaded->resource = std::make_unique<BitfsCorner>(corner->level);
+		loaded->resource->load(PerfAccess::SlotState(*corner->resource, corner->anchor));
+		loaded->anchor = loaded->resource->SaveState();
+		loaded->window = corner->window;
+		return (corners[state.thread_index()] = std::move(loaded)).get();
+	}
+
+	void CornerScalingFrameAdvance(benchmark::State& state)
+	{
+		try
+		{
+			ThreadCorner* corner = LoadThreadCorner(state);
+			if (!corner)
+				return;
+			BitfsCorner& resource = *corner->resource;
+			const Sm64Mem& anchorState = PerfAccess::SlotState(resource, corner->anchor);
+			resource.setInputs(Inputs());
+			int64_t played = 0;
+			for (auto _ : state)
+			{
+				if (played == corner->window)
+				{
+					state.PauseTiming();
+					resource.load(anchorState);
+					played = 0;
+					state.ResumeTiming();
+				}
+				resource.FrameAdvance();
+				played++;
+			}
+			state.SetItemsProcessed(state.iterations());
+			resource.LoadState(corner->anchor);
+		}
+		catch (const std::exception& e)
+		{
+			state.SkipWithError(e.what());
+		}
+	}
+
+	void CornerScalingSaveErase(benchmark::State& state)
+	{
+		try
+		{
+			ThreadCorner* corner = LoadThreadCorner(state);
+			if (!corner)
+				return;
+			BitfsCorner& resource = *corner->resource;
+			for (auto _ : state)
+			{
+				int64_t id = resource.SaveState();
+				resource.DisposeState(id);
+			}
+			state.SetItemsProcessed(state.iterations());
+		}
+		catch (const std::exception& e)
+		{
+			state.SkipWithError(e.what());
+		}
+	}
 }
 
 static void BM_LibSm64Full_SaveErase(benchmark::State& state) { SaveErase(state, LibSm64SaveMode::Full); }
@@ -395,3 +633,21 @@ static void BM_LibSm64Scaling_FrameAdvance(benchmark::State& state) { ScalingFra
 static void BM_LibSm64Scaling_SaveErase(benchmark::State& state) { ScalingSaveErase(state); }
 BENCHMARK(BM_LibSm64Scaling_SaveErase)->Unit(benchmark::kMicrosecond)->Iterations(2000)->UseRealTime()->ThreadRange(1, 16);
 BENCHMARK(BM_LibSm64Scaling_FrameAdvance)->Unit(benchmark::kMicrosecond)->Iterations(3000)->UseRealTime()->ThreadRange(1, 16);
+
+static void BM_BitfsCorner_SaveErase(benchmark::State& state) { CornerSaveErase(state); }
+static void BM_BitfsCorner_SaveFresh(benchmark::State& state) { CornerSaveFresh(state); }
+static void BM_BitfsCorner_Load(benchmark::State& state) { CornerLoad(state); }
+static void BM_BitfsCorner_FrameAdvance(benchmark::State& state) { CornerFrameAdvance(state); }
+BENCHMARK(BM_BitfsCorner_SaveErase)->Unit(benchmark::kMicrosecond);
+BENCHMARK(BM_BitfsCorner_SaveFresh)->Unit(benchmark::kMicrosecond)->Iterations(200);
+BENCHMARK(BM_BitfsCorner_Load)->Unit(benchmark::kMicrosecond);
+static void BM_BitfsCorner_ResidentPerSlot(benchmark::State& state) { CornerResidentPerSlot(state); }
+BENCHMARK(BM_BitfsCorner_ResidentPerSlot)->Unit(benchmark::kMillisecond)->Arg(100)->Arg(1000)->Iterations(1);
+static void BM_BitfsCorner_Addr(benchmark::State& state) { CornerAddr(state); }
+BENCHMARK(BM_BitfsCorner_Addr)->Unit(benchmark::kNanosecond)->Iterations(200000);
+BENCHMARK(BM_BitfsCorner_FrameAdvance)->Unit(benchmark::kMicrosecond)->Iterations(FrameAdvanceIterations);
+
+static void BM_BitfsCornerScaling_FrameAdvance(benchmark::State& state) { CornerScalingFrameAdvance(state); }
+static void BM_BitfsCornerScaling_SaveErase(benchmark::State& state) { CornerScalingSaveErase(state); }
+BENCHMARK(BM_BitfsCornerScaling_SaveErase)->Unit(benchmark::kMicrosecond)->Iterations(2000)->UseRealTime()->ThreadRange(1, 16);
+BENCHMARK(BM_BitfsCornerScaling_FrameAdvance)->Unit(benchmark::kMicrosecond)->Iterations(FrameAdvanceIterations)->UseRealTime()->ThreadRange(1, 16);

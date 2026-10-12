@@ -1,0 +1,17 @@
+{
+	"_comment": "The Tier D deterministic run on the corner resource (docs/performance.md, ROADMAP 4.13): the same tilt-target stage as tierd-deterministic.json, 8 threads, cost model off, on BitfsCorner instead of the DLL, with every object the corner has. Its solutions are replayed on the game before they count, so the stage's summary says how many of the game's solutions the corner reproduces. Run by scripts/perf.ps1; paths resolve against this file.",
+	"resources": { "dllDirectory": "../res", "dllPattern": "sm64_jp_{}.dll", "threads": 8, "saveMode": "fixed", "costModel": false },
+	"m64": "../movies/bitfs-pyramid-jp.m64",
+	"outputDirectory": "results/tierd-deterministic-corner",
+	"scattershot": {
+		"maxShots": 600, "pelletsPerShot": 100, "shotsPerUpdate": 200, "maxSolutions": 100000,
+		"deterministic": true, "seed": 3, "csvSamplePeriod": 0
+	},
+	"stages": [
+		{
+			"name": "tierd-deterministic-corner", "type": "tilt-target", "startFrame": 3330,
+			"resource": "corner", "objects": ["pyramid", "otherPyramid", "trackPlatform", "bully"],
+			"args": { "targetNx": -0.17944, "targetNz": 0.3936, "neighborhood": 100, "targetDimension": "x" }
+		}
+	]
+}
