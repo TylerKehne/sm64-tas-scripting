@@ -11,3 +11,8 @@ Claude-specific notes:
   that changed non-documentation files. When it blocks your stop, follow the procedure it
   hands you (update docs for extensions, ask before touching docs for deviations); never
   work around it.
+- Write plainly (AGENTS.md, "Plain language"): everyday words in their everyday meaning,
+  short sentences, the idea before the mechanism. This applies to replies in chat as much
+  as to the docs. Before you finish a turn, reread what you wrote as a newcomer would and
+  fix what needs a second reading; the Stop hook's review asks for the same pass on turns
+  it blocks, but the rule holds on every turn.
