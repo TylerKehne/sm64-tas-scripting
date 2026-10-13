@@ -4,6 +4,41 @@ Every hot-path change records its delta table here, newest first; the policy, th
 how to run it are in [performance.md](performance.md). The first measurements (2026-09-07),
 which everything since is compared against, are at the bottom.
 
+## 2026-10-12: the corner resource models the pause (ROADMAP 4.22)
+
+`BitfsCorner` now freezes the level through a pause as the game does: START enters the
+pause after that frame's update, and the three frames after it update neither the level
+nor the camera while the controller is read, the animations advance and the timer runs on
+(level_update.c's pause entry and `play_mode_paused` as members of `BitfsCornerGame`,
+ingame_menu.c's pause menu as the pinned copy `decomp/ingame_menu.inc`). The dive recover's
+pause buffer, which the ending stage's dive recover is made of, works on the corner from
+here (ROADMAP 4.11). Per frame in normal play the cost is one branch on the play mode, the
+pause press test (three loads) and the menu's render, two compares and a store. The play
+mode and the menu's cursor join the state, 12 bytes at its end so that the fields before
+keep their places: `stateBytes` 41,896 to 41,904, which the count gate flags by design and
+the corner family's baseline is to be re-saved for (`perf.ps1 -Filter '^BM_BitfsCorner_'
+-SaveBaseline`, additive). Release, MSVC on tyler-desktop, pinned, three processes, against
+the previous commit's binary built in a scratch worktree and run in the same session as
+the reference (`-Reference`), the fastest repetition of each:
+
+| Row | Reference | Now | Delta |
+|---|---|---|---|
+| `BM_BitfsCorner_SaveErase` | 0.7 us | 0.7 us | +0.1% |
+| `BM_BitfsCorner_SaveFresh/200` | 9.5 us | 9.6 us | +0.5% |
+| `BM_BitfsCorner_Load` | 0.7 us | 0.6 us | -3.8% |
+| `BM_BitfsCorner_Addr` | 7.4 ns | 6.7 ns | -10.7% (below the 1 ns gate) |
+| `BM_BitfsCorner_FrameAdvance` (193-frame window) | 1.6 us | 1.7 us | +3.4%; the process-to-process spread of either binary is 1.63 to 1.75 us |
+| `BM_BitfsCorner_ResidentPerSlot/100` | 0.9 ms | 1.0 ms | +5.8% (a row whose spread is 5 to 8%) |
+| `BM_BitfsCorner_ResidentPerSlot/1000` | 10.7 ms | 10.7 ms | +0.4%; `stateBytes` 41,896 to 41,904 |
+| `BM_BitfsCornerScaling_FrameAdvance` 1 / 2 / 4 / 8 / 16 threads | 1.7 / 1.7 / 1.7 / 1.7 / 2.1 us | 1.7 / 1.7 / 1.7 / 1.8 / 2.1 us | +1.3% to +3.4% |
+| `BM_BitfsCornerScaling_SaveErase` 1 to 16 threads | 0.7 to 0.8 us | 0.7 to 0.8 us | -0.3% to -0.7% |
+
+The parity harness's fuzz now presses a pause one frame in fifty and starts its generator
+fresh each segment: the corner is exact against the game over a million frames with
+37,522 START presses in 19 seconds, and with the bully on Mario with 36,728 in 21. The
+ending stage on the corner, 50,000 shots from the day's dr roots: 23 seconds, 432,000
+blocks, 9.0 million scripts, where the run before the pause was 21 seconds, 515,000 blocks
+and 10.7 million scripts (a different search: the dive recover now lands and goes on).
 ## 2026-10-12: the dr stage's rewind hands on every solution at the exit tilt (ROADMAP 4.21)
 
 The maintainer saw a run end at a failed fourth oscillation: the rewind took only the

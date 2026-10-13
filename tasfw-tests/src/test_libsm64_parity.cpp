@@ -438,12 +438,24 @@ namespace
 	// The fuzz's inputs: the stick a random walk (a new direction one frame in seven, a
 	// third of them neutral, the magnitude with it), B one frame in twenty, Z one in fifty,
 	// C-up one in fifty (the camera's C-up mode: Mario brakes into it from a walk, stands
-	// looking in it, and leaves it on B), never A and never another C button (they turn or
-	// zoom the camera, which the corner refuses). The generator's raw words rather than a
+	// looking in it, and leaves it on B), a pause one in fifty (START, then the three
+	// frames the game does not update the level on: neutral, START again to close the
+	// menu, neutral; the stick neutral through them, since a stick pushed on the menu's
+	// frame moves its cursor to the exit from the course when Mario stands idle, which the
+	// corner refuses; ROADMAP 4.22), never A and never another C button (they turn or zoom
+	// the camera, which the corner refuses). The generator's raw words rather than a
 	// distribution, so the sequence is the same on every standard library.
-	Inputs FuzzInputs(std::mt19937& rng, const Inputs& previous)
+	struct FuzzInputs
 	{
+		int pauseStep = 0; // frames of a pause sequence still to write
+		Inputs operator()(std::mt19937& rng, const Inputs& previous)
+		{
 		auto pct = [&]() { return int(rng() % 100); };
+		if (pauseStep > 0)
+		{
+			pauseStep--;
+			return Inputs(pauseStep == 1 ? Buttons::START : 0, 0, 0);
+		}
 		int8_t x = previous.stick_x;
 		int8_t y = previous.stick_y;
 		if (pct() < 15)
@@ -465,8 +477,14 @@ namespace
 			buttons |= Buttons::Z;
 		if (pct() < 2)
 			buttons |= Buttons::C_UP;
+		if (pct() < 2)
+		{
+			buttons |= Buttons::START;
+			pauseStep = 3;
+		}
 		return Inputs(buttons, x, y);
-	}
+		}
+	};
 
 	// The stationary frame: nothing pressed, so Mario stands where he is.
 	Inputs NeutralInputs(std::mt19937&, const Inputs&)
@@ -484,6 +502,7 @@ namespace
 		int segmentsEndedInLava = 0;
 		int segmentsEndedByRefusal = 0; // the refusal the options let end a segment
 		int framesCameraTurned = 0; // the camera's yaw is not the anchor's (the resource of 4.13 holds it constant)
+		int pausePresses = 0;       // START presses the fuzz wrote, each the start or the end of a pause (ROADMAP 4.22)
 		std::string mismatch;      // the first difference and where, or empty
 		std::string refusal;       // what the second resource refused to run, and where, or empty
 	};
@@ -510,9 +529,13 @@ namespace
 			setup(rng, va, vb);
 			Inputs inputs;
 			bool reloaded = false;
+			// A fresh copy of the generator each segment: a pause sequence cut by the segment's
+			// end would otherwise go on from the reloaded save, its closing press opening a pause.
+			TInputs segmentInputs = inputsFor;
 			for (int f = 0; f < segmentFrames && run.frames < totalFrames; f++, run.frames++)
 			{
-				inputs = inputsFor(rng, inputs);
+				inputs = segmentInputs(rng, inputs);
+				run.pausePresses += (inputs.buttons & Buttons::START) != 0;
 				a.setInputs(inputs);
 				a.FrameAdvance();
 				b.setInputs(inputs);
@@ -700,7 +723,7 @@ namespace
 	void Report(const ParityRun& run)
 	{
 		MESSAGE("frames: " << run.frames << " in " << run.segments << " segments, on the pyramid " << run.framesOnPyramid
-			<< ", airborne " << run.framesAirborne << ", camera turned " << run.framesCameraTurned
+			<< ", airborne " << run.framesAirborne << ", camera turned " << run.framesCameraTurned << ", START presses " << run.pausePresses
 			<< ", segments ended in the lava " << run.segmentsEndedInLava << ", by the accepted refusal " << run.segmentsEndedByRefusal
 			<< ", with a level reload " << run.segmentsReloaded);
 		if (!run.mismatch.empty())
@@ -947,7 +970,7 @@ TEST_CASE("libsm64 parity: two copies of the game agree under the fuzz"
 	* doctest::skip(!HaveDllCopy(1)))
 {
 	GamePair games;
-	ParityRun run = Fuzz(games.a.game, games.b.game, ParityFrames(), SegmentFrames, CornerObjects, Options{}, FuzzInputs);
+	ParityRun run = Fuzz(games.a.game, games.b.game, ParityFrames(), SegmentFrames, CornerObjects, Options{}, FuzzInputs{});
 	Report(run);
 	CHECK(run.framesOnPyramid > 0);
 	CHECK(run.framesAirborne > 0);
@@ -966,7 +989,7 @@ TEST_CASE("libsm64 parity: the game with only the pyramid corner's objects agree
 	games.b.game.FrameAdvance();
 	MESSAGE("objects: " << ActiveObjects(games.a.game) << " in the whole game, " << ActiveObjects(games.b.game) << " in the cut one (" << unloaded << " unloaded)");
 	CHECK(ActiveObjects(games.b.game) == int(CornerObjects.size()) + 1);
-	ParityRun run = Fuzz(games.a.game, games.b.game, ParityFrames(), SegmentFrames, CornerObjects, Options{}, FuzzInputs);
+	ParityRun run = Fuzz(games.a.game, games.b.game, ParityFrames(), SegmentFrames, CornerObjects, Options{}, FuzzInputs{});
 	Report(run);
 	CHECK(run.framesOnPyramid > 0);
 	CHECK(run.framesAirborne > 0);
@@ -991,7 +1014,7 @@ TEST_CASE("BitfsCorner parity: the corner agrees with the game under the fuzz"
 	options.cameraYawOnly = true;
 	options.particles = false;
 	options.unmodelledAbsent = true;
-	ParityRun run = Fuzz(pair.at.game, pair.corner, ParityFrames(), SegmentFrames, CornerObjects, options, FuzzInputs);
+	ParityRun run = Fuzz(pair.at.game, pair.corner, ParityFrames(), SegmentFrames, CornerObjects, options, FuzzInputs{});
 	Report(run);
 	CHECK(run.framesOnPyramid > 0);
 }
@@ -1017,7 +1040,7 @@ TEST_CASE("BitfsCorner parity: the corner with the pyramid alone agrees with the
 	options.cameraYawOnly = true;
 	options.particles = false;
 	options.unmodelledAbsent = true;
-	ParityRun run = Fuzz(pair.at.game, pair.corner, ParityFrames(), SegmentFrames, PyramidAlone, options, FuzzInputs);
+	ParityRun run = Fuzz(pair.at.game, pair.corner, ParityFrames(), SegmentFrames, PyramidAlone, options, FuzzInputs{});
 	Report(run);
 	CHECK(run.framesOnPyramid > 0);
 }
@@ -1047,6 +1070,6 @@ TEST_CASE("BitfsCorner parity: the corner agrees with the game with the bully on
 	options.particles = false;
 	options.unmodelledAbsent = true;
 	options.refusalEndsSegment = "spawning";
-	ParityRun run = Fuzz(pair.at.game, pair.corner, ParityFrames(), SegmentFrames, CornerObjects, options, FuzzInputs, PlaceBullyAtRandom);
+	ParityRun run = Fuzz(pair.at.game, pair.corner, ParityFrames(), SegmentFrames, CornerObjects, options, FuzzInputs{}, PlaceBullyAtRandom);
 	Report(run);
 }

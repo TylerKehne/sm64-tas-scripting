@@ -45,6 +45,11 @@
 #include <decomp/mario_step.h>
 #include <decomp/mario_animation_ids.h>
 #include <decomp/level_update.h>
+#include <decomp/ingame_menu.h>
+
+// level_update.c's play modes, defined in the file itself (the copied header has none).
+#define PLAY_MODE_NORMAL 0
+#define PLAY_MODE_PAUSED 2
 #include <decomp/camera.h>
 #include <decomp/sounds.h>
 #include <decomp/course_table.h>
@@ -150,6 +155,57 @@ public:
 	void set_sound_moving_speed(u8, u8) {}
 	void raise_background_noise(s32) {}
 	void lower_background_noise(s32) {}
+	// --- The pause (ROADMAP 4.22): level_update.c's play modes and ingame_menu.c's pause
+	// menu, the state in BitfsCornerMem::Globals. The menu reads the controller the game
+	// copies player 1's into (game_init.c's read_controller_inputs), the same here.
+	Controller* gPlayer3Controller = nullptr; // gPlayer1Controller, set once
+	s16 gDialogID = -1;        // no dialog is ever open on the corner
+	s16 gDialogTextAlpha = 0;  // the menu's drawing
+	s16 gDialogColorFadeTimer = 0;
+	s8 gDialogCameraAngleIndex = 1; // CAM_SELECTION_MARIO; read by the camera options, a refusal
+	s16 get_dialog_id() { return gDialogID; }
+	// level_update.c: the pause is pressed when START is, Mario tangible and no dialog or
+	// warp in progress (the corner has neither).
+	u32 pressed_pause()
+	{
+		u32 val4 = get_dialog_id() >= 0;
+		u32 intangible = (gMarioState->action & ACT_FLAG_INTANGIBLE) != 0;
+		return !intangible && !val4 && (gPlayer1Controller->buttonPressed & START_BUTTON) ? TRUE : FALSE;
+	}
+	void set_play_mode(s16 playMode) { sCurrPlayMode = playMode; }
+	void level_set_transition(s16 length, void*) { sTransitionTimer = length; }
+	// play_mode_paused: the menu's first frame opens it, the frame after the one that
+	// closed it returns to play; the exit the menu's second option asks for is a warp.
+	s32 play_mode_paused()
+	{
+		if (gPauseScreenMode == 0)
+			set_menu_mode(RENDER_PAUSE_SCREEN);
+		else if (gPauseScreenMode == 1)
+		{
+			raise_background_noise(1);
+			gCameraMovementFlags &= ~CAM_MOVE_PAUSE_SCREEN;
+			set_play_mode(PLAY_MODE_NORMAL);
+		}
+		else
+			Refuse("the pause menu's exit from the course");
+		return 0;
+	}
+	// The menu's drawing is nothing to the state; the castle's menu (the level is a course),
+	// the course-complete screen and a dialog are never reached; the camera's options,
+	// the cursor's third line, pick the camera selection the corner has not got.
+	void create_dl_ortho_matrix() {}
+	void shade_screen() {}
+	void render_pause_my_score_coins() {}
+	void render_pause_red_coins() {}
+	void change_dialog_camera_angle() {} // sets the menu's camera index from the selection, which the corner holds
+	void highlight_last_course_complete_stars() { Refuse("the castle's pause menu"); }
+	void print_hud_pause_colorful_str() { Refuse("the castle's pause menu"); }
+	void render_pause_castle_menu_box(s16, s16) { Refuse("the castle's pause menu"); }
+	void render_pause_castle_main_strings(s16, s16) { Refuse("the castle's pause menu"); }
+	void render_pause_camera_options(s16, s16, s8*, s16) { Refuse("the pause menu's camera options (the camera's selection)"); }
+	s16 render_course_complete_screen() { Refuse("the course-complete screen"); }
+	void print_peach_letter_message() { Refuse("a dialog"); }
+	void render_dialog_entries() { Refuse("a dialog"); }
 	void play_infinite_stairs_music() {}
 	void play_cap_music(u16) {}
 	void stop_cap_music() {}
@@ -415,6 +471,7 @@ public:
 #include <decomp/platform_displacement.inc>
 #include <decomp/game_init.inc>
 #include <decomp/area.inc>
+#include <decomp/ingame_menu.inc>
 #include <decomp/camera.inc>
 #include <decomp/rendering_graph_node.inc>
 #include <decomp/graph_node.inc>

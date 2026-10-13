@@ -162,6 +162,19 @@ public:
 		int32_t gSurfaceNodesAllocated = 0;
 		int64_t frame = 0;
 		Inputs inputs; // the next frame's
+		// The play mode and the pause menu (level_update.c, area.c, ingame_menu.c; ROADMAP
+		// 4.22; after the frame and the inputs, so the fields before keep their places): START enters the pause after that frame's update, and the three frames
+		// after it update neither the level nor the camera (the menu opens, takes the START
+		// or A that closes it, and returns to play), the controller read and the timer
+		// running on. The dive recover's pause buffer is made of those frames.
+		int16_t sCurrPlayMode = 0;    // PLAY_MODE_NORMAL; PLAY_MODE_PAUSED is 2
+		int16_t sTransitionTimer = 0; // the pause menu sets it -1 as it opens and 0 as it closes
+		int16_t gPauseScreenMode = 0; // what the menu's render returned: 1 closes the pause, 2 exits the course
+		int16_t gMenuMode = -1;       // -1 none; the pause menu is RENDER_PAUSE_SCREEN
+		int8_t gDialogBoxState = 0;   // DIALOG_STATE_OPENING
+		int8_t gDialogLineNum = 1;    // the menu's cursor: 1 continue, 2 exit the course, 3 the camera's options
+		int8_t gMenuHoldKeyIndex = 0; // the cursor's stick, held
+		int8_t gMenuHoldKeyTimer = 0;
 	};
 
 	Globals globals;

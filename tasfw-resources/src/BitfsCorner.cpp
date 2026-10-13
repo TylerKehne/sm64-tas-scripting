@@ -572,6 +572,16 @@ BitfsCornerMem::BitfsCornerMem(const Resource<Sm64Mem>& game, const BitfsCornerL
 	globals.gTimeStopState = Read<uint32_t>(game, "gTimeStopState");
 	globals.gAreaUpdateCounter = Read<int16_t>(game, "gAreaUpdateCounter");
 	globals.gCameraMovementFlags = ReadOr<int16_t>(game, "gCameraMovementFlags", 0);
+	// The play mode and the pause menu (ROADMAP 4.22): normal play unless the build exports
+	// them and says otherwise.
+	globals.sCurrPlayMode = ReadOr<int16_t>(game, "sCurrPlayMode", 0);
+	globals.sTransitionTimer = ReadOr<int16_t>(game, "sTransitionTimer", 0);
+	globals.gPauseScreenMode = ReadOr<int16_t>(game, "gPauseScreenMode", 0);
+	globals.gMenuMode = ReadOr<int16_t>(game, "gMenuMode", -1);
+	globals.gDialogBoxState = ReadOr<int8_t>(game, "gDialogBoxState", 0);
+	globals.gDialogLineNum = ReadOr<int8_t>(game, "gDialogLineNum", 1);
+	globals.gMenuHoldKeyIndex = ReadOr<int8_t>(game, "gMenuHoldKeyIndex", 0);
+	globals.gMenuHoldKeyTimer = ReadOr<int8_t>(game, "gMenuHoldKeyTimer", 0);
 	// camera.c's statics the C-up mode is made of. Outside that mode the mode's entry sets
 	// them, so a build that does not export them is fine until an import inside it.
 	globals.sModeInfo = ReadOr<ModeTransitionInfo>(game, "sModeInfo", {});
@@ -594,6 +604,7 @@ BitfsCornerGame::BitfsCornerGame(const BitfsCornerLevel& level) : level(level)
 	gCamera = &gCameras[0];
 	gCurrentArea = &gAreas[0];
 	gPlayer1Controller = &gControllers[0];
+	gPlayer3Controller = gPlayer1Controller;
 	gMarioStates[0].controller = gPlayer1Controller;
 	sMarioCamState = &gPlayerCameraState[0];
 	gCurrLevelArea = level.levelNum * 16 + level.areaIndex;
@@ -613,12 +624,16 @@ BitfsCornerGame::BitfsCornerGame(const BitfsCornerLevel& level) : level(level)
 }
 
 // One frame of the game for the corner, in the game's order (game_init.c's loop,
-// level_update.c's play_mode_normal, rendering_graph_node.c's pass, display_and_vsync):
-// the controller read, the level's objects updated, the camera's mode step (the
-// 8-direction mode held at its constant yaw, with its C-up input; the C-up mode whole;
-// Lakitu's flight not modelled), the geo pass's one effect on state (an animation's frame
-// advances and the throw matrix is dropped, for every object it draws), and the global
-// timer.
+// level_update.c's play_mode_normal and play_mode_paused, rendering_graph_node.c's pass,
+// area.c's render_game, display_and_vsync): the controller read; in normal play the
+// level's objects updated, the camera's mode step (the 8-direction mode held at its
+// constant yaw, with its C-up input; the C-up mode whole; Lakitu's flight not modelled)
+// and the pause entered on a START press; paused, the menu's step instead (ROADMAP
+// 4.22); then the geo pass's one effect on state (an animation's frame advances and the
+// throw matrix is dropped, for every object it draws, paused or not), the menu's render,
+// which is where the pause closes, and the global timer. The pause screen's zoom of the
+// drawn camera (camera.c's zoom_out_if_paused_and_outside) moves the scene graph's
+// camera, not the game's, and is left out.
 void BitfsCornerGame::Frame()
 {
 	// read_controller_inputs for player 1: the raw stick, the buttons and the press edge.
@@ -629,23 +644,41 @@ void BitfsCornerGame::Frame()
 	controller->buttonDown = inputs.buttons;
 	adjust_analog_stick(controller);
 
-	area_update_objects();
+	if (sCurrPlayMode == PLAY_MODE_NORMAL)
+	{
+		area_update_objects();
 
-	// update_camera's mode step, for the two modes the corner has. In the 8-direction mode
-	// only the C-button input of mode_8_directions_camera runs (radial_camera_input: C-up
-	// enters the C-up mode), after C-left, C-right and C-down, which would turn or zoom
-	// the camera, are refused; the C-up mode runs whole (mode_c_up_camera: the zoom in,
-	// Mario's head on the stick, the exit on A, B or another C button). Any other mode
-	// is held as it is, with C-up refused in it.
-	Camera* camera = gCamera;
-	if (camera->mode == CAMERA_MODE_C_UP)
-		mode_c_up_camera(camera);
-	else if (controller->buttonPressed & (D_CBUTTONS | L_CBUTTONS | R_CBUTTONS))
-		Refuse("a C button other than C-up (the camera would turn or zoom)");
-	else if (camera->mode == CAMERA_MODE_8_DIRECTIONS)
-		radial_camera_input(camera, 0.0f);
-	else if (controller->buttonPressed & U_CBUTTONS)
-		Refuse(("C-up in camera mode " + std::to_string(camera->mode) + " (the corner has the 8-direction mode's)").c_str());
+		// update_camera's mode step, for the two modes the corner has. In the 8-direction mode
+		// only the C-button input of mode_8_directions_camera runs (radial_camera_input: C-up
+		// enters the C-up mode), after C-left, C-right and C-down, which would turn or zoom
+		// the camera, are refused; the C-up mode runs whole (mode_c_up_camera: the zoom in,
+		// Mario's head on the stick, the exit on A, B or another C button). Any other mode
+		// is held as it is, with C-up refused in it.
+		Camera* camera = gCamera;
+		if (camera->mode == CAMERA_MODE_C_UP)
+			mode_c_up_camera(camera);
+		else if (controller->buttonPressed & (D_CBUTTONS | L_CBUTTONS | R_CBUTTONS))
+			Refuse("a C button other than C-up (the camera would turn or zoom)");
+		else if (camera->mode == CAMERA_MODE_8_DIRECTIONS)
+			radial_camera_input(camera, 0.0f);
+		else if (controller->buttonPressed & U_CBUTTONS)
+			Refuse(("C-up in camera mode " + std::to_string(camera->mode) + " (the corner has the 8-direction mode's)").c_str());
+
+		// play_mode_normal's end: a transition still running would change the area; a START
+		// press enters the pause, after this frame's update.
+		if (sTransitionTimer != 0)
+			Refuse("an area change (the transition timer is running)");
+		if (pressed_pause())
+		{
+			lower_background_noise(1);
+			gCameraMovementFlags |= CAM_MOVE_PAUSE_SCREEN;
+			set_play_mode(PLAY_MODE_PAUSED);
+		}
+	}
+	else if (sCurrPlayMode == PLAY_MODE_PAUSED)
+		play_mode_paused();
+	else
+		Refuse(("play mode " + std::to_string(sCurrPlayMode) + " (an area or level change)").c_str());
 
 	for (Object& object : gObjectPool)
 	{
@@ -655,6 +688,10 @@ void BitfsCornerGame::Frame()
 			geo_set_animation_globals(&object.header.gfx.animInfo, (object.header.gfx.node.flags & GRAPH_RENDER_HAS_ANIMATION) != 0);
 		object.header.gfx.throwMatrix = nullptr;
 	}
+
+	// render_game's menu step: the pause menu's state machine, whose return play_mode_paused
+	// reads next frame.
+	gPauseScreenMode = render_menus_and_dialogs();
 
 	gGlobalTimer++;
 	frame++;
