@@ -105,7 +105,9 @@ class BitfsScEndingMetrics : public Script<Sm64Resource>
 {
 public:
     // SWING: the final run toward the target corner. DIVE: from the dive to its rollout's
-    // landing. BRAKE: from the first braking frame; back to SWING if Mario accelerates again
+    // landing, the flight over the platform included where it rises out of the band (the
+    // maintainer, 2026-10-12; past the platform's edge it is a departure like any). BRAKE:
+    // from the first braking frame; back to SWING if Mario accelerates again
     // (the oscillation stage's own turnarounds look like a brake until they do). EDGE: stopped
     // on the platform after an approach. AIR: from the departure on, whatever Mario does.
     enum class Phase { SWING, DIVE, BRAKE, EDGE, AIR };
@@ -367,17 +369,18 @@ public:
         RUN_DOWNHILL_MIN, // the minimum downhill angle toward the target corner
         RUN_DOWNHILL,     // the same with a deviation
         TURN_UPHILL,      // toward uphill by up to 2048
-        RUN_TO_EDGE,      // a full stick toward the squish edge, veering up to 40 degrees away from the run's edge, held one to six frames: the turn the dive goes the way of
-        DIVE,             // the dive recover: the dive straight ahead at 29 speed or more (with the pause buffer, four frames), then the rollout steered low over the platform to a landing stop within DrLandingReach of the squish edge
+        RUN_TO_EDGE,      // a full stick toward the squish edge, veering up to 40 degrees away from the run's edge, held one to six frames: the brake's way to the edge
+        DIVE,             // the dive recover: the turn to the aim, drawn across the catch's window, the dive straight ahead at 29 speed or more once the edge is in reach (with the pause buffer, four frames), then the rollout steered low over the platform to a landing stop within DrLandingReach of the squish edge
         ROLLOUT,          // B pressed on a dive slide the search finds itself in: the recover, its stick random
         HOLD_BACK,        // the stick against the facing: the turnaround, then braking
         RELEASE,          // a neutral stick: braking, decelerating
-        WALK_OFF,         // a small stick off the edge
+        WALK_OFF,         // a small stick off the edge, from straight off to the edge's own line
+        LEAVE_ALONG,      // from a stop: the quickturn to idle, then a walk off along the edge toward the catch window, within 45 degrees of the edge's line; three frames
         PARALLEL,         // a full stick along the edge
         QUICKTURN,        // from a landing or braking stop: a minimum-magnitude stick, then neutral; two frames
         CUP_DECEL,        // C-up with a small stick or none
         WAIT,             // a neutral frame
-        STRAIN_BACK       // in the air: the stick back over the platform
+        STRAIN_BACK       // in the air: the stick in or out on the platform's line, at the magnitude that holds Mario where the sweeping edge catches him
     };
 
     // How far from the pyramid's home the search lets Mario be, on each axis.
@@ -407,21 +410,39 @@ public:
     // of the night's runs landed).
     static constexpr float DrLandingReach = 30.0f;
     // How far the dive recover carries Mario, dive and rollout: the uscz movie's 200. The
-    // turn toward the aim, uphill and a unit of speed a frame, is offered within this of
-    // the aim, so that the run keeps its speed along the low edge until then (the movie
-    // dives at 31 some 190 from the edge; the night's runs turned early, bled to 25 and
-    // never had the dive's 29 where it could reach the edge), and the dive itself where
-    // the edge is within its reach.
+    // recover, its turn toward the aim counted, is offered within this of the edge, so
+    // that the run keeps its speed along the low edge until then (the movie dives at 31
+    // some 190 from the edge; the night's runs turned early, bled to 25 and never had the
+    // dive's 29 where it could reach the edge), and the dive itself where the edge is
+    // within its reach.
     static constexpr float DrReach = 200.0f;
+    // What a frame of the turn toward the aim costs in speed, for whether a run can still
+    // dive at 29 after it: the turn is uphill on both axes, where the slope takes about
+    // 0.85 a frame and the run's own gain gives back 1.1 less a 43rd of the speed, 0.4 at
+    // 30 and nothing over 32 (the uscz movie's turn, 35 to 31 in five frames). A little
+    // less than the cost at 30, so the gate refuses a little less than it could.
+    static constexpr float TurnSpeedCost = 0.5f;
+    // The least the floor must rise a frame under a dive, along its heading at its speed, for
+    // the rollout to stay within the band of 4 over the platform: the movies' dives rise 24
+    // to 27, a dive straight at the squish edge 13, which the rollout out-climbs.
+    static constexpr float DiveRise = 16.0f;
     // The time budget on the platform (the maintainer, 2026-10-11): the fall from the edge to
     // the catch, in frames of the tilt flattening (the first solutions' 7, the uscz movie's
     // 8), the slowest a leave moves (a walk off from a stop), and the frames allowed over
     // the budget, so that the bound, computed, refuses a little less than it could: at 8
     // with the catch's tilt taken without its slack the 8,000-shot runs found nothing where
-    // they had found three cancels, a fifth of the departures left (2026-10-11).
+    // they had found three squish cancels, a fifth of the departures left (2026-10-11).
     static constexpr int FallFrames = 7;
+    // The frames from the edge's reach to the leave, between the run and the fall: a brake
+    // or a landing stop, the quickturn and the step off (the squish cancels of 2026-10-11 and
+    // 2026-10-13 leave two to three frames after their brake).
+    static constexpr int LeaveFrames = 3;
     static constexpr float WalkOffSpeed = 4.0f;
     static constexpr float BudgetSlack = 2.0f;
+    // Where the strain in the air holds Mario once he is deep enough for the squish: this far
+    // past the squish edge as it will stand a frame on, for the next sweep to cover him;
+    // before that it holds him a sweep further out, clear of the edge.
+    static constexpr float StrainTarget = 1.0f;
     // The shortest fall a leave can have: a step leaves the ground only over a drop of more
     // than 100 units, and a fall from rest covers 84 in six frames and 112 in seven.
     static constexpr int MinFallFrames = 7;
@@ -467,10 +488,11 @@ private:
     // edge by half the push-out distance.
     float LeastEdgeHeight(const BitfsScEndingMetrics::Face& face, float pushDistance) const;
     // The point on the squish edge at a coordinate along it from the home, and the point
-    // where the edge stands at the middle of the catch's window of heights (LeastEdgeHeight
-    // to SquishSpace), the aim of the run to the edge.
+    // where the edge stands at a fraction of the catch's window of heights (LeastEdgeHeight
+    // to SquishSpace) from its low end, the middle by default: the aim of the run to the
+    // edge, and of the dive recover's turn.
     void EdgePoint(const BitfsScEndingMetrics::Face& face, float along, float& x, float& z) const;
-    void AimPoint(const BitfsScEndingMetrics::Face& face, float pushDistance, float& x, float& z) const;
+    void AimPoint(const BitfsScEndingMetrics::Face& face, float pushDistance, float& x, float& z, float fraction = 0.5f) const;
     // The normal's component across the squish edge at the catch, and the face there, for
     // the aim, the landing and the time budget: with a target, the target's; without one,
     // this frame's component flattened to the last value at which the side is still steep,
@@ -479,10 +501,23 @@ private:
     // aims where the edge will stand far too high).
     float CatchAcross(const Object* pyramid) const;
     BitfsScEndingMetrics::Face CatchFace(const Object* pyramid) const;
+    // The face at the catch a dive recover from here is heading for, for its aim and its
+    // landing (the run to the edge keeps the latest catch's, the brake's leave being the
+    // search's to place): this frame's
+    // component across the squish edge stepped toward flat once a frame for the frames
+    // the catch is away, and no further than CatchAcross (the maintainer, 2026-10-13: the
+    // aim at the latest catch the cancel allows put the dive recover's landings 20 to 40
+    // units nearer the corner than the catches that cancel, where the edge was too low
+    // by the time the fall was caught). FramesToCatch is that count: the frames to the
+    // edge at the run's speed or a walk-off's, LeaveFrames for the stop and the step off,
+    // and the fall's.
+    float FramesToCatch(const MarioState* marioState, const Object* pyramid) const;
+    BitfsScEndingMetrics::Face ExpectedCatchFace(const Object* pyramid, float framesToCatch) const;
     // Whether the squish edge, on the catch's face, stands within the catch's window of
     // heights at Mario's position along it: where a landing must be for the fall from it
     // to be caught where the cancel works.
     bool InCatchWindow(const MarioState* marioState, const Object* pyramid) const;
+    bool InCatchWindow(const MarioState* marioState, const Object* pyramid, const BitfsScEndingMetrics::Face& catchFace) const;
     // The steps the normal's axis (0 x, 2 z) is further from flat than the target, from the
     // metric's count of steps to the target: negative when it is nearer flat than the target.
     int StepsToFlat(const BitfsScEndingMetrics::CustomScriptStatus& state, int axis) const;
@@ -505,14 +540,25 @@ private:
     bool RunRandom();
     bool RunToEdge();
     // The dive recover (the maintainer's BitFsScApproach_AttemptDr logic, 2026-10-11): the
-    // dive straight ahead, the pause buffer, then the rollout a frame at a time with the
+    // turn toward the aim, drawn across the catch's window, then the dive straight ahead as
+    // soon as the edge is in reach, the pause buffer, then the rollout a frame at a time with the
     // stick, among the yaws within a quarter turn toward uphill, that keeps it lowest over
-    // the platform, until it lands; false, the frames reverted, when the rollout leaves
-    // the platform or the band, or lands further than DrLandingReach inside the squish edge.
+    // the platform, until it lands; false, the frames reverted, when the turn is not done
+    // by the dive's window, the speed is under the dive's 29 after it, the floor does not
+    // rise under the dive, or the rollout leaves the platform or the band, or lands further
+    // than DrLandingReach inside the squish edge.
     bool Dive();
     bool Rollout();
     bool HoldBack();
     bool WalkOff();
+    // The leave the squish cancels of 2026-10-11 and 2026-10-13 have, as one move from a stop: the
+    // quickturn to idle, so that the walk starts the way the stick points, then the stick
+    // along the edge toward the catch window, turned outward by up to 45 degrees; the walk
+    // then drifts little outward while it falls, within what the sideways strain in the air
+    // cancels and the sweep catches (a leave straight off, the dive recover's landings' way,
+    // drifts out of the sweep's reach before the fall is deep enough). False, the frames
+    // written, when the quickturn does not reach idle.
+    bool LeaveAlong();
     bool Parallel();
     bool Quickturn();
     bool CUpDecel();

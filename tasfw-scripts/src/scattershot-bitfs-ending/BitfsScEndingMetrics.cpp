@@ -222,7 +222,14 @@ void BitfsScEndingMetrics::CalculatePhase(const CustomScriptStatus& last, MarioS
         return;
     }
 
-    if (!CustomStatus.onPlatform)
+    // The dive recover's flight (the maintainer, 2026-10-12): a rollout that rises over the
+    // band of 4 with the pyramid still the floor under him, and lands back on it, is the
+    // approach, not a departure; the normal steps toward flat on both axes while he is out
+    // of the band, which the catch's rules judge from the normal itself. Past the
+    // platform's edge the floor is the lava's, and the flight is a departure like any.
+    const bool recoverFlight = (action == ACT_DIVE || action == ACT_DIVE_SLIDE || action == ACT_FORWARD_ROLLOUT)
+        && marioState->floor != nullptr && marioState->floor->object == pyramid;
+    if (!CustomStatus.onPlatform && !recoverFlight)
     {
         // The departure (the maintainer, 2026-10-05): the pyramid is not Mario's platform at
         // this frame's end, so from here its normal returns toward flat unless he lands back on
