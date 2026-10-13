@@ -61,23 +61,23 @@
 				"minFirstCrossingSpeed": 17, // Mario's forward speed at the first crossing at least this (the 'gain speed each crossing' rule ratchets up from it; 0 asks none): under the turnaround's 16 the swing cannot reverse for the next oscillation, and of 58 logged runs every hand-over whose fastest root was under 16.1 died and every one over 17.5 continued (2026-10-03)
 				"targetNx": -0.1792, "targetNz": 0.3929998875, // the setup's normal, the fixer's targets: the adjusted remainder error conserved is measured against it
 				"maxOscillations": 9, // the last pass is at this oscillation (+1 when the first crossing went toward the far end)
-				"firstShots": 2000, // shots of the first pass, the leg from the rest
-				"shots": 2000, // shots of each oscillation pass
+				"firstShots": 5000, // shots of the first pass, the leg from the rest
+				"shots": 5000, // shots of each oscillation pass
 				"lastShots": 5000, // shots of the last pass
 				"lastMaxSolutions": 1000000, // solution cap of the last pass (the other passes stop at scattershot maxSolutions)
-				"keepTop": 10, // the fastest solutions carried from an oscillation pass into the next; the leg hands on its whole pool (its ten fastest give the first oscillation nothing), and the last pass hands on all of its solutions
+				"keepTop": 100, // the fastest solutions carried from an oscillation pass into the next; the leg hands on its whole pool (its ten fastest give the first oscillation nothing), and the last pass hands on all of its solutions
 				"passRetries": 0, // a pass that yields fewer than keepTop solutions (the last pass: none) runs again from the same roots under a seed derived from the run's, up to this many times, its solutions pooled. 0, none: a retry re-rolls the first oscillation's one-in-two rather than removing it (with 3, 16 sequential runs went 13 through against 11, the first oscillation ending none), and the maintainer wants the cause fixed, not masked (2026-10-04); the knob is a diagnostic
 				"handOverFallback": true, // a pass that yields nothing hands the next stage every earlier solution at the exit tilt (minXzSum, with the step parity) from the passes whose crossing heads toward the squish-cancel quadrant (the final pass's parity, the passes alternating), each pass's whole pool, oscillations 5, 3 and 1 when 7 fails (the maintainer, 2026-10-06; widened to the whole pools on 2026-10-12, ROADMAP 4.21); false ends the stage with nothing
 				"requireIncrementParity": true, // the last pass's solutions need x and z step counts of the same parity
 				"normalSpecs": {
 					"onlyMinMajor": true, // true: no window check on the last crossing's axes (minMajor still gates a crossing: one axis at least it)
-					"startXzSum": 0.67, // the regime's tilt floor: once the tilt has been there it may not fall below it (default minXzSum; the tilt may also never fall 0.05 below the rest's own)
-					"minXzSum": 0.69, // the tilt the last pass's solutions must have
+					"startXzSum": 0.66, // the regime's tilt floor: once the tilt has been there it may not fall below it (default minXzSum; the tilt may also never fall 0.05 below the rest's own)
+					"minXzSum": 0.68, // the tilt the last pass's solutions must have
 					"legExitSpeed": 17.5, // the forward speed at which the leg from the rest ends and the first swing begins (16, the game's turnaround threshold, by default): the swing crosses only if it reverses within a frame or two of the leg's end, an uphill frame that costs about a unit of speed and then the turnaround, which the game refuses under 16, so a leg handed over at 16 cannot (the census of 2026-10-04, ROADMAP 4.6)
 					"legMinClearance": 0, // the least height of Mario over the lava at the leg's end for the leg to count as a solution (0: none). Measured 2026-10-04 at 60 on deterministic seeds: three of four found no first oscillation at all (seed 8 found it in 50 shots), where without it all four do, so the leg's height is the wrong lever; the knob is a diagnostic
 					"maxXzSum": 2, // the tilt a solution carried into a next pass may not exceed (2: none; the last pass's solutions are the next stage's to judge). Roots at 0.753 gave the next pass nothing, at 0.733 12 to 142, at 0.71 100 to 583, but a ceiling of 0.733 starved the fourth and fifth passes instead (the sum climbs about 0.02 an oscillation): 1 run in 3 through against about 17 in 20 without it (2026-10-03)
 					"minEndClearance": 20, // the least height above the lava a turnaround begun from a solution's frame would end at (Mario running on to a stop at the game's 4.8 a frame, the normal stepping toward him meanwhile), for a pass's solution to be a root the next pass can continue from (0: none): the precise form of maxXzSum, since what fails at a sinking end is the floor under the turnaround, not the sum. The run of 2026-10-06 lost its third pass to roots at -20 to +3 here, every lineage ending at the end 0 to 10 above the lava, where the pass that succeeded turned 23 to 75 above; the ten carried are the fastest at the crossing, which are the most tilted toward the end, so without this the pass dies whenever all ten are low
-					"minCrossingAxisDiff": 0.26, // the least difference between |nX| and |nZ| at a crossing, from the second crossing on (0: none): the normal lagging Mario by that much, as at the example movies' crossings, 0.27 to 0.31, where ours had 0.13 to 0.19 after the +z end's turn (the maintainer, 2026-10-10; ROADMAP 4.12)
+					"minCrossingAxisDiff": 0.15, // the least difference between |nX| and |nZ| at a crossing, from the second crossing on (0: none): the normal lagging Mario by that much, as at the example movies' crossings, 0.27 to 0.31, where ours had 0.13 to 0.19 after the +z end's turn (the maintainer, 2026-10-10; ROADMAP 4.12)
 					"minAxis": 0.05, // each axis of the normal stays at least this far into the corner's quadrant
 					// maxRetreat (absent here: no limit): how far the first swing may fall back from the leg's end along the way to its target before the state is refused. Measured 2026-10-04 on 16 sequential runs a setting, it does not move the first oscillation (8 full and 3 thin of 16 without, 8 and 1 at 90; 60 cuts the turnaround's own overshoot, 3 of 16); a table taken while series overlapped on the machine had said 14 of 16 and was wrong
 					"minLavaClearance": 0, // the least height of Mario over the lava a state may have (0: none): lower, on the sinking +z end, the surface is under him before the swing can leave it, the first swing's trap; measured at 20 the first oscillation came 7 runs in 14, no more often than without (2026-10-03), so the rule prunes drowning states but does not steer the search to the lineage that leaves the end
@@ -96,7 +96,7 @@
 			"resource": "corner", "objects": ["pyramid", "otherPyramid", "trackPlatform", "bully"], // the stage on the corner resource (README.md, "Configuration"); its solutions are replayed on the game before they count
 			"startFrame": 3250,
 			"input": "dr",
-			"scattershot": { "csvSamplePeriod": 10, "maxShots": 50000, "maxSolutions": 1000 },
+			"scattershot": { "csvSamplePeriod": 10, "maxShots": 500000, "maxSolutions": 1000 },
 			"args": {
 				"initialFrame": "input:equilibriumFrame", // the fixer's hand-over, read from the input's solution: the error conserved is the one a frame after it, as the dr stage conserves it
 				"targetQuadrant": 1, // the corner the final run goes toward (1 +x+z, 2 +x-z, 3 -x-z, 4 -x+z); the oscillation corner is the one across the run's edge, derived with targetEdge

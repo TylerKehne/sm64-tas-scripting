@@ -2869,7 +2869,181 @@ goals are (status as stated by the maintainer, 2026-09-08):
       within its reach. The movie's run gains from 28 to 31 on the same heading, so the
       difference is in the hand-over states or in how the stage's downhill angle is taken,
       and reading that is where the dive recover stands: no dive recover has landed in any
-      run of 2026-10-11. The brake and the run off the edge remain the stage's leaves.
+      run of 2026-10-11. The brake and the run off the edge remain the stage's leaves. Read
+      2026-10-12 with a scratch script on the game from the uscz movie's crossing, four runs
+      of twelve frames beside each other: the stage's minimum downhill angle, exact, gains
+      exactly as the movie does (27.7 to 35.9 by the ninth frame against the movie's 35.4 by
+      the eighth), the margin inside the range the same, the movie's heading held the same
+      until it runs off the low edge; so the angle was never at fault, the search's other
+      draws were (a random stick, a neutral frame, the uphill turn), and the movie's run is
+      eight frames at that angle, then five frames of turning toward +x at the walking
+      rate's 2048, from 35 down to 31, then the dive at 31 some 190 from the edge. The dive
+      recover from the movie's own dive point, run with the stage's steering, showed the
+      rollout landing at once: the steering took a landing over the flight wherever it came.
+      It now follows the maintainer's script in full: a landing counts only within
+      `DrLandingReach` of the squish edge where the edge will stand in the window, else the
+      rollout flies on, its first two frames the lowest, then the highest within the band of
+      4 over the platform and the lowest where none is; from the movie's dive point it then
+      flies at 3 to 6 over the platform for four frames to 23 inside the edge, one frame
+      and one turn step short of the movie's landing at 3 inside because the script dove a
+      frame earlier than the movie (the movie's dive input is the frame after its last turn
+      step; the frozen frames, the rollout's press and its heights over the floor, 3 to 4,
+      match the movie's). And the approach begins early enough for the turn: `approaching`
+      is the edge within `DrReach` plus the landing's reach plus the turn's distance, the
+      frames the turn from the run's heading to the aim's takes at 2048 a frame, at the
+      run's speed. The corner run that followed (50,000 shots in 23 seconds, 550,000 blocks,
+      from the day's 736 dr roots at their fifth oscillation, 23 at the crossing) still
+      landed no dive, with 818 sampled run frames at 29 or more in the dive's window; a
+      scratch trace of the move's attempts showed every one taken on the run's heading up
+      the low edge, 5,000 to 9,000, before the turn, the dive flying over that edge and
+      still in the air 75 to 90 above the lava four frames on, no rollout step possible. So the dive
+      is offered facing the aim, within an eighth of a turn of it, as the movie dives after
+      its turn. Traced again under that gate, the dives faced the squish edge and their
+      rollouts flew to 10 to 25 from it, 20 to 36 above the floor, where neither a landing
+      nor a step over the platform was left: a rollout rises about 26 a frame of its own,
+      and stays within 4 of the platform only where the floor rises under it nearly as fast,
+      which it does under the movie's dive (24 a frame, uphill on both axes at 46) and not
+      under a dive straight at the squish edge (13). So the dive is offered only where the
+      floor rises along the facing, at the dive's speed, by at least `DiveRise` (16) a
+      frame. That was the dive's condition before 2026-10-11 and was removed then so that
+      the search would judge each dive by its outcome; it cannot, because the stick in the
+      rollout's air only bends its path a little and never lowers its arc. Traced under
+      that condition (8,000 shots on the corner from the day's 736 dr roots, which cross at
+      23): no dive was offered at all; every frame in the dive's window at 29 or more had
+      Mario heading up the low edge, 4,000 to 10,500, with the floor falling along his
+      facing, 0 to 15 a frame, where the aim lay at 23,000 to 26,000. The turn toward the
+      aim costs about a unit of speed a frame for four or five frames, so the run has to
+      reach the turn at 33 or more for the dive's 29 after it; the movie reaches it at 35
+      from a crossing at 28, these roots reach the window at 29 to 31 from their 23. So
+      until the approach the run draws the minimum downhill angle eight times in eleven and
+      its deviation twice, the random stick not at all. What that cannot make up is the
+      speed of the hand-over itself, which the dr stage decides (the day's config keeps a
+      hundred roots a pass where it kept ten, so slower roots reach the ending).
+      Measured next (50,000 shots on the corner, 2026-10-12): the runs reach 34 at most,
+      seven frames after the crossing, and then lose half a unit a frame; in the dive's
+      window every frame at 29 or more still heads up the low edge. The turn drawn a
+      frame at a time (`RUN_TO_EDGE`, one to six frames, against the run's other draws
+      and a fitness that is the speed) is never completed, so the turn is now the dive
+      recover's own: `Dive` turns toward the aim with a full stick each frame, the aim
+      drawn across the catch's window of heights (`AimPoint` takes the fraction; nearer
+      the corner the turn is shorter), and dives as soon as the facing is within one turn
+      step of it and the edge within the recover's reach; the move is offered where the
+      speed the turn would leave, `TurnSpeedCost` (0.5) a frame of it, is still the dive's
+      29, and the run keeps the minimum downhill angle at eight draws in fourteen
+      throughout. Traced on the corner (8,000 shots, the move's outcomes): the turn costs
+      0.5 a frame and takes a frame or two more than the direction to the aim at its start
+      says, since that direction turns as Mario nears the edge; of 478 attempts 12 dived, at 29.0 from
+      starts of 32.4 to 33.3, and every rollout then climbed to 36 to 39 over the floor at
+      27 of speed with the edge 9 to 18 away: **the corner resource does not model the
+      pause**, its `Frame` runs the level on every frame whatever the buttons
+      (`BitfsCornerGame::Frame`, `tasfw-resources/src/BitfsCorner.cpp`), so the three
+      frames the pause buffer means to freeze are three frames of the dive slide, uphill,
+      44 down to 27 and 86 units on. On the game, where the pause freezes them (the
+      movie's replica of 2026-10-12 showed it: the rollout's first frame moves from the
+      dive's spot), the same build and roots in 8,000 shots: 18 dives, 7 landed within 0.1
+      to 7.3 of the squish edge in the catch's window, the rollouts 2.6 to 6.1 over the
+      floor at 41 to 43 for four to five frames, as the movie's. So the dive recover works
+      as a move; on the corner it cannot until the resource freezes the level through a
+      pause as the game does (`play_mode_normal` enters the pause on the frame START is
+      pressed, after that frame's update; the pause menu's first frame opens, its second
+      takes the START or A that closes it, the third returns to play, none of the three
+      updating the level or the camera, the controller read and the global timer going
+      on: level_update.c's `play_mode_paused`, ingame_menu.c's
+      `render_pause_courses_and_castle`), which is the resource's design and the
+      maintainer's call (the ending on the game meanwhile, or the dive recover without the
+      pause: one slide frame, about six of speed and forty units, the rollout then landing
+      seven frames out). Measured (50,000 shots on the game, 256 seconds, 398,000 blocks):
+      63 dives, 20 landing stops 1.4 to 21.7 inside the squish edge in the catch's
+      window, and not one became a block: every rollout that landed had flown 4.8 to
+      6.1 over the platform for three frames, which is a departure by the rule of
+      2026-10-05 (the pyramid not his platform at a frame's end: the game's
+      `update_mario_platform` asks for under 4 over the floor), in the middle of the
+      platform, which `ValidateState` refuses; the rollouts that kept under 4 flew past
+      the edge without landing. The arithmetic: a rollout climbs 30 on its first frame
+      and 4 less each frame after, so the band holds only where the floor rises 26 or
+      more under it, the dive's speed times the top's slope along the heading. The uscz
+      movie, replayed frame by frame (`dll_play.py`): it turns one step past +x to
+      19,910, dives at 30.7 for 45.9, and its rollout stays at 3.3, 4.0 and 3.9 over the
+      platform, the platform kept, because its top slopes 0.58 along that heading (the
+      normal (-0.293, 0.787, 0.394), its y low since the oscillations swing Mario far
+      from the centre) and 45.9 times 0.58 is 26.5. Ours dive at 29.0 for 44.2 on a top
+      whose normal is (-0.37, 0.85, 0.32), slope 0.56 at best along the steepest
+      heading: 24.8 a frame, so the first rollout frame is 5 over the platform whatever
+      the heading. The dive recover is short at every step from these roots: 23 at the
+      crossing against the movie's 27.7, 29 at the dive against 30.7, and the top less
+      steep. What could change that, for the maintainer: the hand-over (two more units of speed, or
+      a normal whose y is nearer 0.79, from the dr stage), or the rule (a rollout that
+      lands back on the platform within its reach counted as the approach it is, not a
+      departure: off the platform the run's axis steps toward flat for those frames,
+      0.03 of it, which the catch's rules would then judge). The maintainer chose the
+      rule and the pause (2026-10-12): a dive recover's flight over the platform, above
+      the band with the pyramid still the floor under Mario, is the approach, not a
+      departure (`BitfsScEndingMetrics`; past the platform's edge it is one like any),
+      and a landing further than `DrLandingReach` inside the squish edge is refused
+      (`ValidateState`); the corner freezes the pause's frames (4.22). Measured (50,000
+      shots on the corner, 23 seconds, 432,000 blocks): the recover lands and goes on,
+      93 sampled landing stops 0 to 16 inside the edge, 372 rows on the edge after one,
+      2,218 departed rows from one, and none of them caught, nor any of the brake's
+      8,777 (the day's roots catch nothing on the corner, where the roots of the day
+      before caught 1,105 states on the game). The recover's leaves go the way Mario
+      faces at the landing, 45 to 65 degrees outward from the edge's line (a walk from a
+      landing stop starts in the facing; from idle it starts in the stick's direction),
+      1 to 7 units a frame outward, and the falls end at 83 above the lava at the
+      lowest: the catch needs Mario 78 below the top, six or seven frames of fall, by
+      which the drift has carried him past what the sweep covers, and the sweep rule
+      ends the lineage. In the four squish cancels of 2026-10-11 Mario stepped off the edge moving nearly along it, toward the far corner. Next: the
+      leave after a recover's landing along the edge (the quickturn to idle, then a walk
+      whose stick lies near the edge's line), and the day's roots against the day
+      before's. Done 2026-10-13 (the maintainer: proceed, and no pause outside the dive
+      recover): the walk off the edge is drawn from straight off to the edge's own line;
+      a new move, `LEAVE_ALONG`, from a stop is the squish cancels' leave as one move (the
+      quickturn to idle, then a stick along the edge toward the catch window turned
+      outward by up to an eighth of a turn, a full or half stick); the recover's aim and
+      landing are judged on the catch it is heading for (`ExpectedCatchFace`: the
+      component across the edge stepped toward flat for `FramesToCatch` frames, no further
+      than the latest catch) where the run to the edge keeps the latest; the CSV gains
+      `LeaveAction`, the action Mario left the platform from; and `ValidateState` refuses
+      a frame that pressed START with Mario not on the dive slide (no move draws START,
+      the dive recover's pause buffer is the one place it is written, in every stage).
+      Measured on the corner, 50,000 shots in 14 to 16 seconds, the day before's roots
+      (28 at the crossing) cut from their squish cancel movies a few frames before the crossing's
+      end, three seeds: 108, 62 and 75 squish cancels, then 43 and 17 with the recover's aim
+      drawn past the window; every squish cancel the brake's or a run-off's, Mario stepping off the edge
+      moving nearly along it, toward the far corner (895 of 1,582 such falls caught on their sixth frame at 48 to 74 above the lava,
+      185 to 240 along the edge; of the falls straight off, none); the same roots on the
+      game, 8,000 shots, 0 to 84 squish cancels by the cut and the seed, so a run of 8,000 says
+      little. The day's roots (23 at the crossing): no catch by any route, in 50,000 shots
+      on either resource. The dive recover: it lands (90 to 467 landing stops sampled in
+      50,000 shots from the fast roots) and leaves, 356 to 20,754 departed rows, and not
+      one of its falls is caught: its landings come 240 to 306 along the edge, 30 to 80
+      nearer the corner than the catches whose squish cancels, where the edge is too low for the
+      window, and the window's rule ends the fall on its sixth frame (the aim does not
+      move the landing: it is where the rollout comes down, set by the dive point at the
+      end of the run up the low edge and the heading the turn can afford). A recover that
+      ends in a squish cancel needs its dive from further up the edge or a heading further toward the far
+      corner, which these roots have not the speed for, or a walk up the edge after the
+      landing, which the time budget has not the frames for. So the brake's leave is the
+      pipeline's ending from the roots it has, and the roots are what decides the yield:
+      the hand-over's speed and tilt (4.12). The maintainer's note on the falls straight
+      off the edge (2026-10-13): he has had them caught by hand, stepping off at a low
+      speed and managing the drift with the stick in the air. So the strain in the air
+      (`STRAIN_BACK`) is now that management: among seven sticks on the line in and out of
+      the platform, from a full stick back to a full stick out, the one that holds Mario a
+      sweep clear of the edge as it will stand a frame on while the top is within
+      `FloorReach` above him (covered there he lands on the top, the game's floor search
+      reaching that far up) and `StrainTarget` (1) outside it once he is deeper, for the
+      next sweep to cover him; a hold just outside the edge at every depth landed the
+      falls on the top and the yield fell to 22, 16 and 37 on the three seeds. With the
+      hold by depth: 93, 64 and 36, then 33, 82 and 104 with the stick out among the
+      choices, the yield of the falls along the edge as before, and still none of the
+      3,981 falls straight off caught: those left at 2 to 16 a frame (median 12), the
+      slow ones overtaken by the sweep within a frame or two and landed on the top, the
+      fast ones 6 to 17 outside the edge on the sixth frame, where the stick's 1.5 a
+      frame cannot bring them back before the sweep rule ends them. A fall straight off
+      that is caught needs its leave at about the sweep's pace, 3 to 4 a frame, which the
+      walk off from idle at the stick's magnitude 2 to 4 gives; what the maintainer's
+      hand-made fall did exactly (its leave speed, its frames, where it was caught) would
+      pin the rule, as the uscz movie pinned the oscillations.
 
 - [ ] **4.12 The hand-over's lag: speed against a normal further back.** Opened 2026-10-07
       on the maintainer's word: the oscillation stage selects first of all for speed at the
@@ -3000,6 +3174,51 @@ goals are (status as stated by the maintainer, 2026-09-08):
       at 28.8 to 30.2), the third 337 (28.2 to 28.7), the fourth nothing, the third's ten
       handed on, the same hand-over as under the regime-only form, since the second crossing
       beats the leg's end and the third the first crossing anyway.
+      The uscz movie's crossings as the dr stage defines them (the first frame both
+      components of the normal step toward the far corner), read 2026-10-13 from the game:
+      frame 3336 toward +x+z at 11.6 of speed, the tilt 0.731 with the axes 0.049 apart;
+      3369 toward -x-z at 29.7, 0.616, 0.394 apart; 3397 toward +x+z at 28.8, 0.688, 0.054
+      apart; 3422 toward -x-z at 27.2, 0.636, 0.350 apart; and the hand-over, 3452 toward
+      +x+z at 29.0, the tilt 0.687 with the normal (-0.423, 0.846, 0.264), 0.159 apart,
+      Mario at (-229, 222) 20 above the lava. Its tilt over the last two oscillations runs
+      from 0.616 to 0.688. Against the committed config: `minXzSum` 0.69 refuses the
+      hand-over's 0.687; `startXzSum` 0.67 refuses the swings, which dip to 0.616;
+      `minCrossingAxisDiff` 0.26 refuses every crossing toward +x+z (0.054 and 0.159;
+      the 0.27 to 0.31 it was set from are the uscx movies'); and the gain-speed rule
+      refuses the crossing at 3422, 27.2 after 29.7 at the one two before it. To admit
+      the example's own oscillation: `minXzSum` 0.68, `startXzSum` 0.61,
+      `minCrossingAxisDiff` 0.05 (0.15 admits the hand-over alone), and the gain-speed
+      rule relaxed for the crossings toward the near corner.
+      The maintainer's run with `startXzSum` 0.66, `minXzSum` 0.68, `minCrossingAxisDiff`
+      0.15, `keepTop` 100 and 5,000 shots a pass (2026-10-13, 01:34): the crossings toward
+      the squish-cancel corner hand on 24 to 28 at the first oscillation, 25.7 to 28.3 at
+      the third and 24 to 26 at the fifth; the other way, 27 to 30 at the second and 25.8
+      to 28.1 at the fourth; the sixth pass found 3 at 24.4 to 24.8, so the rewind handed
+      the ending 1,333 hand-overs from the fifth and the third (speed 21.9 in the middle,
+      28.3 at most, 4 of them at 28 or more with the axes within 0.2 and the tilt 0.67 to
+      0.70), and the ending found 18 squish cancels, every one the brake's, squished at
+      frame 3458, from the third oscillation's roots. The swings reach as far as the
+      example's (x -442 to 54, z -170 to 412 against its -330 to 59, 30 to 317, in the
+      sampled rows) and run as fast in them (30 to 33), so what the hand-over lacks is the
+      speed at the crossing itself: the example's comes 14 frames after its turnaround at
+      29, ours sooner, before the run has built it, which is this item's lag.
+      The maintainer's thought (2026-10-13): oscillate at a lower tilt, where the swings
+      keep their speed, and raise the tilt as fast as possible at the end; and the
+      crossing need not be at 29, since the run builds speed after it (the ending's dives
+      came from runs that began their turn at 32 to 33 five or six frames after a crossing
+      at about 26). A scratch run of the dr stage toward that (the committed config with
+      `startXzSum` 0.58, `maxXzSum` 0.68, `minXzSum` 0.68, `minCrossingAxisDiff` 0.15,
+      `keepTop` 100, 20,000 shots a pass, from the fixer's solutions): the carried
+      crossings held 28.2 to 29.9 at the first oscillation, 29.0 to 30.4 at the second and
+      28.2 to 30.6 at the third, at tilts of 0.61 to 0.67, where the run of 01:34 at the
+      floor 0.66 had 24 to 28, 27 to 30 and 25.7 to 28.3; then the fourth, pinned at the
+      ceiling's last cell (0.672), fell to 20.8 to 24.0 with 370 found, and the fifth
+      found nothing, the exit's 0.68 a step above the roots. So a low tilt does keep the
+      crossing's speed, and the stage has no way yet to raise the tilt at the end: a
+      ceiling under the exit tilt is refused by the config check (`maxXzSum` not below
+      `minXzSum`, Stages.cpp), and a last pass from roots under the exit must climb in one
+      swing, which 20,000 shots did not do for a step. The climb at the end is the
+      stage's design question, the maintainer's.
 - [x] **4.13 A BitFS resource: the pyramid corner of the game reimplemented from the decomp.**
       Opened 2026-10-11 on the maintainer's word: a resource that runs only what the
       squish-cancel search needs of the game (Mario's physics, the lava, the two tilting
@@ -3311,7 +3530,8 @@ goals are (status as stated by the maintainer, 2026-09-08):
       in fifty and compares `gCameraMovementFlags`: exact over a million frames in each
       of the five corner cases, the camera's yaw never turned by it (the 8-direction
       mode's yaw holds through C-up, since the game runs no Lakitu transition on the way
-      in or out of it from that mode). The ending stage runs on the corner: deterministic,
+      in or out of it from that mode). The pause followed (4.22), the same harness exact
+      with it. The ending stage runs on the corner: deterministic,
       seed 6, 300 shots from the dr solutions, 20,253 blocks and 118,508 scripts on the
       corner and on the game alike (no solution at that length on either; the game found
       3 in 8,000 on 2026-10-11), 1.3 s against 5.8 (docs/performance-changelog.md). Found
@@ -3476,6 +3696,35 @@ goals are (status as stated by the maintainer, 2026-09-08):
       definition above keeps the two apart, and the exit tilt stays `minXzSum`, the
       ending's requirement, not the regime's floor.
 
+- [x] **4.22 The corner resource and the pause.** Done 2026-10-12, the maintainer's word
+      ("fix the pause as well"). The problem: `BitfsCornerGame::Frame` ran the level on
+      every frame whatever the buttons, so a pause did nothing on the corner, where in the
+      game START enters the pause after that frame's update and the next three frames
+      update neither the level nor the camera (the pause menu opens, takes the START or
+      A that closes it, and returns to play; the controller is read, the scene behind the
+      menu is still drawn, so animations advance, and the global timer runs on). The
+      pause-buffered dive recover (`pauseBuffer`, the example movies' recipe) is made of
+      those frozen frames: on the corner they were three frames of the dive slide uphill,
+      44 down to 27 of speed, and no rollout landed, where the game landed 7 of 18 dives
+      in 8,000 shots. Built: the play mode and the pause menu's state in
+      `BitfsCornerMem::Globals` (`sCurrPlayMode`, `sTransitionTimer`, `gPauseScreenMode`,
+      `gMenuMode`, `gDialogBoxState`, `gDialogLineNum`, the cursor's hold-key pair);
+      level_update.c's pause entry and `play_mode_paused` as members of
+      `BitfsCornerGame` (the menu's exit from the course, a warp, is a refusal, as is a
+      transition timer still running); ingame_menu.c's pause menu as a pinned copy
+      (`decomp/ingame_menu.inc` with `ingame_menu.h`: the menu's state machine, its
+      cursor with the stick, the course's menu; the camera options on the cursor's third
+      line, which pick a camera selection the corner has not got, a refusal); the menu's
+      render after the geo pass, as `render_game` orders it; the pause screen's zoom of
+      the drawn camera left out (it moves the scene graph's camera, not the game's). The
+      import reads the play mode and the menu from a build that exports them, normal play
+      otherwise. The parity harness's fuzz presses a pause one frame in fifty (START, then
+      neutral, START, neutral, the stick neutral through them: a stick pushed on the
+      menu's frame moves its cursor when Mario stands idle) and starts its generator
+      fresh each segment, so a pause cut by a segment's end is not carried into the next
+      (its closing press would open one): the corner is exact against the game over a
+      million frames with 37,522 START presses, and with the bully on Mario with 36,728.
+      The ending's dive recover then lands on the corner (4.11).
 ## Phase 5: toward a game- and console-agnostic framework
 
 Not scheduled. Listed so decisions in earlier phases do not paint us into a corner.

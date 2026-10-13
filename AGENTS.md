@@ -95,7 +95,7 @@ its place with numbers, and "it is cleaner" is not a number.
 |---|---|
 | `tasfw-core/` | Engine: `Script`, `TopLevelScript`, `Resource`, savestate slots, m64 I/O, input math. Header-heavy templates, one header per concept under `inc/tasfw/`; `<tasfw/Script.hpp>` is a script's one include, it pulls in the root and the builders at its bottom. |
 | `tasfw-core/inc/sm64/` | Hand-copied decomp structs, enums and trig tables. Must match the DLL's x64 layout. |
-| `tasfw-resources/` | `Sm64Resource`, the SM64 game as a script sees it (`Script<Sm64Resource>`): an abstract resource over the one shared state type `Sm64Mem`, which holds either kind's savestate; its two kinds are `LibSm64` (drives the game DLL; state `LibSm64Mem`) and `BitfsCorner` (ROADMAP 4.13: the pyramid corner of BitFS on the decomp's own structs, serving `LibSm64`'s symbols, so a script runs on either; state `BitfsCornerMem`, with its level and objects in `BitfsCornerMem.hpp`; its level read once from the game and shared, its state convertible from the game's; its frame is the decomp's own text, 46 pinned copies under `src/bitfs-corner/decomp/` included into one class, exact against the game over a million fuzz frames of Mario on the pyramids with the lava and the camera's C-up (its 8-direction camera held at its constant yaw, the C-up mode run; the other C buttons, which turn or zoom it, refused); its four objects, the two pyramids, the track platform and the bully, are each optional and off unless a run asks for them (`BitfsCornerObjects`); the bully's push, knockback and chase are exact too; what it has not got is a refusal, never a guess, except the level's coins, which Mario never meets on it: on the game he may collect one on the way onto the pyramid, which changes his coin count and heals him, nothing the search reads). |
+| `tasfw-resources/` | `Sm64Resource`, the SM64 game as a script sees it (`Script<Sm64Resource>`): an abstract resource over the one shared state type `Sm64Mem`, which holds either kind's savestate; its two kinds are `LibSm64` (drives the game DLL; state `LibSm64Mem`) and `BitfsCorner` (ROADMAP 4.13: the pyramid corner of BitFS on the decomp's own structs, serving `LibSm64`'s symbols, so a script runs on either; state `BitfsCornerMem`, with its level and objects in `BitfsCornerMem.hpp`; its level read once from the game and shared, its state convertible from the game's; its frame is the decomp's own text, 46 pinned copies under `src/bitfs-corner/decomp/` included into one class, exact against the game over a million fuzz frames of Mario on the pyramids with the lava, the camera's C-up (its 8-direction camera held at its constant yaw, the C-up mode run; the other C buttons, which turn or zoom it, refused) and the pause (ROADMAP 4.22: the play mode and the pause menu's state, so START freezes the level for the three frames the game does; the menu's exit from the course and its camera options refused); its four objects, the two pyramids, the track platform and the bully, are each optional and off unless a run asks for them (`BitfsCornerObjects`); the bully's push, knockback and chase are exact too; what it has not got is a refusal, never a guess, except the level's coins, which Mario never meets on it: on the game he may collect one on the way onto the pyramid, which changes his coin count and heals him, nothing the search reads). |
 | `tasfw-scattershot/` | Header-only OpenMP brute-force search (blocks, segments, solutions, CSV export, and the launch of the CSV's viewer: `Visualization.hpp`). One header per concept under `inc/`; `<Scattershot.hpp>` is the one include, it pulls in the thread and the builders at its bottom. |
 | `tasfw-scripts/` | Reusable BitFS scripts (pyramid oscillation, downhill angle search, dive-recover attempts, the ARE fixer of ROADMAP 4.8: `BitFsAreFixer`, the target's adjusted remainder error set on each axis of the pyramid's normal, x by a rest and z by the turn out of a run from it, from the run before the movie's dive onto the platform, handing Mario over running in the corner asked for), the scattershot searches (the oscillations, `Scattershot_BitfsDr`; the ending of ROADMAP 4.11, `Scattershot_BitfsScEnding`: the final run, the approach, the leave and the squish probe), and the scripts that look at the game rather than play it (`VerifyLayout`, `LevelTransitions`, `MarioTrace`, `SpliceMovie`), which the tools and tests run; `Sm64ActionNames.hpp` there is generated (`scripts/action_names.py`), never edited. |
 | `tasfw-bruteforcers/bitfs-turnaround/` | The only executable (`bitfs-turn.exe`): the BitFS pipeline as config-selected stages (`config.json`, `Stages.cpp`, `PipelineConfig`), each on the game's DLL or on the corner resource (`"resource"`; a corner stage's solutions are replayed on the game before they count). `--list`, `--dry-run`, `--stage`, `--start`, and `--test`, its own optional doctest cases on the config's game (`Tests.cpp`), which neither CI nor `tasfw-tests` runs. |
@@ -440,16 +440,39 @@ Agents without hooks follow the same procedure by hand at the end of every chang
 - **Departure**: the first frame at whose end the pyramid is not Mario's platform (he is
   more than 4 units above its surface, or past its edge); its normal returns toward flat
   from there unless he lands back on it, and the ending's squish cancel is a frame after
-  it, with the normal the target's on that frame.
+  it, with the normal the target's on that frame. A dive recover's flight over the
+  platform, above the band with the pyramid still the floor under him, is not one (the
+  maintainer, 2026-10-12): it is the approach, and a flight past the platform's edge is
+  a departure like any.
 - **NUT spot**: a spot at the platform's edge where the frame's displacement, through the
   rounding its name recalls (non-integer unit truncation, the maintainer's recollection of
   it), leaves Mario off the platform, so an action that cancels to freefall (idle, a stop,
   a deceleration) falls on the next frame with no step of his own; running does not.
 - **PBDR**: pause-buffered dive recover: a dive, a pause in which B is released, and B
   pressed on the slide's first frame for the rollout (the ending's `Dive` and `Rollout`);
-  the pause freezes three frames, so the press is the fourth frame after the dive's.
+  the pause freezes three frames, so the press is the fourth frame after the dive's. The
+  pause buffer is the one place a BitFS script presses START (the maintainer,
+  2026-10-13): no move draws it, and the ending refuses a frame that pressed it with
+  Mario not on the dive slide.
 - **uscx / uscz**: the squish cancel off the x-aligned or the z-aligned edge of the pyramid's
   top, the edge running along that axis (the maintainer's naming, 2026-10-06); the edge's
   height above the lava is set by the other axis's tilt component. The committed setup
   squishes off the z-aligned +x edge: uscz.
+- **Sweep**: the outward movement of the pyramid's top edge as its tilt flattens, about 3.3
+  units a frame on the squish edge; a Mario falling beside the edge is overtaken by it.
+- **Catch**: the frame on which the sweep first covers a falling Mario's position at the
+  frame's start, with the top more than 78 above him and the side face within 150 of the
+  lava: the frame the game squishes him. The ending's bully is tried on the frame before it.
+- **Catch window**: the stretch of the squish edge where a squish can be cancelled, the
+  edge standing between about 130 and 150 above the lava at the catch, so that the push
+  lands Mario on the top where it is over 100 above the lava and within 78 above him.
+- **Pancake**: a squish that no bully push cancels; Mario stays squished on the lava.
+- **Band**: the 4 units above the pyramid's top within which the game keeps the pyramid as
+  Mario's platform; the normal steps toward flat on both axes while he is out of it. A
+  dive recover's rollout may fly out of it over the platform and still be the approach
+  (see Departure).
+- **Aim**: the point on the squish edge the run and the dive recover head for, where the
+  edge will stand at a chosen height within the catch window.
+- **Steep side**: the side face under the squish edge with its normal's y above -0.5,
+  the game's condition for walking a squished Mario along it, which the cancel needs.
 - **Block / segment / pellet / shot**: scattershot terms, defined in ARCHITECTURE.md.
