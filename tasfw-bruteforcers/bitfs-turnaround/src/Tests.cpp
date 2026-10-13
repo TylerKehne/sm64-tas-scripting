@@ -278,6 +278,14 @@ TEST_CASE("dr-oscillations: the first pass runs the swing's first leg from the c
 	REQUIRE(cached.passSolutions.size() == 1);
 	CHECK(cached.passSolutions[0] == int64_t(cached.solutions.size()));
 	CHECK(cached.Metric("equilibriumFrame") == rest.Metric("handoverFrame"));
+	// And the pass's whole pool beside it (ROADMAP 4.21), for the rewind: the leg's is its
+	// carried set, since the leg hands on all it found.
+	fs::path poolFile = passFile;
+	poolFile.replace_extension(".pool.json");
+	REQUIRE(fs::exists(poolFile));
+	SolutionSet pool = SolutionSet::Load(poolFile);
+	CHECK(pool.solutions.size() == cached.solutions.size());
+	CHECK(pool.passSolutions == cached.passSolutions);
 
 	PipelineConfig resumed = pipeline;
 	resumed.SetStart(stage.name + ":1");
@@ -289,13 +297,15 @@ TEST_CASE("dr-oscillations: the first pass runs the swing's first leg from the c
 	REQUIRE(again.passSolutions.size() == 2);
 	CHECK(again.passSolutions[0] == cached.passSolutions[0]);
 
-	// The rewind (the maintainer, 2026-10-06, kept 2026-10-10; ROADMAP 4.12): a pass that yields
-	// nothing hands on the roots carried from the last earlier pass whose crossing heads toward
-	// the squish-cancel quadrant. The first oscillation's pass is made to refuse every solution
-	// (an end clearance no root can have) under three oscillations, so that pass is the leg
-	// (pass 0, the final pass's parity), and the leg's roots, held to the last pass's rules
-	// under a tilt floor they meet, are what the stage returns, the failed pass's yield
-	// recorded as none.
+	// The rewind (the maintainer, 2026-10-06, kept 2026-10-10, ROADMAP 4.12; from the whole
+	// pools since 2026-10-12, ROADMAP 4.21): a pass that yields nothing hands on the solutions
+	// of the earlier passes whose crossing heads toward the squish-cancel quadrant that meet the
+	// last pass's rules, read from the pool files under this run's rules. The first
+	// oscillation's pass is made to refuse every solution (an end clearance no root can have)
+	// under three oscillations, so that pass is the leg (pass 0, the final pass's parity), and
+	// the leg's pool, held to the last pass's rules under a tilt floor it meets (this run's,
+	// not the rules of the run that wrote the file), is what the stage returns, the failed
+	// pass's yield recorded as none.
 	PipelineConfig fallbackRun = pipeline;
 	fallbackRun.SetStart(stage.name + ":1");
 	StageConfig third = stage;
@@ -331,9 +341,12 @@ TEST_CASE("dr-oscillations: the first oscillation comes from the fixer's hand-ov
 	const StageConfig& drTemplate = StageOfType(pipeline, "dr-oscillations");
 	const float targetNx = std::fabs(fixerTemplate.args["targetNx"].get<float>()); // the setup's normal, which every stage of the config carries
 	const float targetNz = std::fabs(fixerTemplate.args["targetNz"].get<float>());
-	const int budget = 2000; // shots of the first oscillation's pass; its full yield is the scattershot's maxSolutions
-	const int full = drTemplate.scattershot.contains("maxSolutions") ? drTemplate.scattershot["maxSolutions"].get<int>()
-		: pipeline.scattershotDefaults.value("maxSolutions", 100);
+	const int budget = 2000; // shots of the first oscillation's pass
+	// The least first-oscillation solutions the pass must find within the budget, a fixed
+	// number rather than the pass's own cap (the maintainer, 2026-10-12: at the config's cap of
+	// 1,000 the corners found 768, 530, 1,000 and 772, and 530 is plenty for the ten the next
+	// pass carries; a cap raised for the pool's variety is not a bar for the search).
+	const int full = 200;
 	std::vector<LibSm64> resources;
 	OneResource(pipeline, resources);
 	std::vector<Sm64Resource*> pointers { &resources[0] };

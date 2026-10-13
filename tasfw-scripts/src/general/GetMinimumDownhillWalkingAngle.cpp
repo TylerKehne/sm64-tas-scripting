@@ -32,15 +32,21 @@ bool GetMinimumDownhillWalkingAngle::execution()
 	MarioState* marioState = (MarioState*) (ReadState("gMarioStates"));
 
 	// The pyramid tilts toward where Mario stands before he steps (the surface objects
-	// update before the player in a frame), so one frame on, this same surface of the
-	// pyramid (reloaded in place: the surface pool is rebuilt in the same order every
-	// frame) carries the normal his next step will walk on, whatever that step's inputs.
-	// The frame is this script's own and is reverted with it.
-	Surface* floor = marioState->floor;
-	Object* pyramid = floor->object;
+	// update before the player in a frame), so one frame on, the floor under him carries
+	// the normal his next step will walk on, whatever that step's inputs. The frame is
+	// this script's own and is reverted with it.
+	//
+	// The floor is read again after the frame, never kept across it. The game rebuilds its
+	// surface pool every frame, and an object's surfaces take other slots when another
+	// surface object's collision loads or unloads (the other pyramid's does, 1000 units
+	// from Mario, right where the oscillations turn around), so a Surface pointer kept
+	// across a frame can point at a slot nothing reloaded, still holding the old normal
+	// (docs/tasing.md, "Pitfalls").
+	Object* pyramid = marioState->floor->object;
 	AdvanceFrameRead();
-	if (floor->object != pyramid)
-		return false; // the surface slot is not the pyramid's any more: nothing to read
+	Surface* floor = marioState->floor;
+	if (!floor || floor->object != pyramid)
+		return false; // the frame took Mario off the pyramid: nothing to read
 
 	short floorAngle = atan2s(floor->normal.z, floor->normal.x);
 	CustomStatus.isSlope = FloorIsSlope(floor->normal.y, marioState->action);

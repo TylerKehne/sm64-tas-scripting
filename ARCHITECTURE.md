@@ -124,8 +124,12 @@ Frame ordering that answer depends on: within a game frame the terrain objects (
 pyramid) update **before** the player object, so the pyramid loop reads Mario's object
 position and platform pointer as his previous update left them, steps the normal 0.01
 toward its goal, and displaces `gMarioState->pos` before Mario's own update runs. One frame
-on, whatever that frame's inputs, the pyramid's surface Mario stood on carries the normal
-his next step walks on, which is what the child script reads.
+on, whatever that frame's inputs, the floor under Mario carries the normal his next step
+walks on, which is what the child script reads, from Mario's floor as it is after that
+frame: the game rebuilds its surface pool every frame, and the pyramid's surfaces take
+other slots when the other pyramid's collision loads or unloads at 1000 units from Mario,
+so a surface pointer kept across the frame can point at a slot nothing reloaded
+(docs/tasing.md, "Pitfalls").
 
 ## Scripts
 

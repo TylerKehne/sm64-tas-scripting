@@ -443,6 +443,53 @@ namespace
 			set.Save(file);
 			carriedSets[targetOscillation] = std::move(set);
 		};
+		// The last pass's exit rules, which a solution must meet to leave the stage: the regime's
+		// tilt (minXzSum) and the step parity. The rewind below hands on only such solutions.
+		auto meetsExitRules = [&](const SolutionRecord& record)
+		{
+			auto metric = [&](const char* name)
+			{
+				auto found = record.metrics.find(name);
+				return found == record.metrics.end() ? 0.0 : found->second;
+			};
+			return metric("xzSum") >= double(specs.minXzSum)
+				&& (!requireIncrementParity || std::fmod(std::fabs(metric("incrementFrames0")), 2.0) == std::fmod(std::fabs(metric("incrementFrames2")), 2.0));
+		};
+		// Each pass's whole pool, before the hand-over trims it, kept by pass and written beside
+		// the pass file (<stage>.oscillation<n>.pool.json) so a run started at a later oscillation
+		// reads it too: where the rewind takes its solutions, filtered by the exit rules of the run
+		// that rewinds, not of the run that wrote the file (the maintainer, 2026-10-12, ROADMAP
+		// 4.21: eligibility is the solution's, by the exit tilt; the direction is the pass's).
+		std::map<int, SolutionSet> poolSets;
+		auto poolFile = [&](int pass) { return context.pipeline.PassFile(context.stage.name, pass).replace_extension(".pool.json"); };
+		auto recordPool = [&](int targetOscillation, const std::vector<Solution>& pool)
+		{
+			SolutionSet set = ToSet(context, pool);
+			set.passSolutions = passSolutions;
+			for (SolutionRecord& record : set.solutions)
+				record.metrics["equilibriumFrame"] = double(equilibriumFrame);
+			fs::path file = poolFile(targetOscillation);
+			fs::create_directories(file.parent_path());
+			set.Save(file);
+			poolSets[targetOscillation] = std::move(set);
+		};
+		// A pass's solutions that meet the exit rules: from its pool, this run's or the file a
+		// resumed run's earlier pass wrote, else (a run from before the pool files) from what
+		// that pass carried.
+		auto exitSet = [&](int pass)
+		{
+			SolutionSet pool;
+			if (auto found = poolSets.find(pass); found != poolSets.end())
+				pool = found->second;
+			else if (fs::path file = poolFile(pass); fs::exists(file))
+				pool = SolutionSet::Load(file);
+			else if (auto found = carriedSets.find(pass); found != carriedSets.end())
+				pool = found->second;
+			else if (fs::path file = context.pipeline.PassFile(context.stage.name, pass); fs::exists(file))
+				pool = SolutionSet::Load(file);
+			std::erase_if(pool.solutions, [&](const SolutionRecord& record) { return !meetsExitRules(record); });
+			return pool;
+		};
 		// The hand-over, for the run's log: what a pass found and what the next one starts from,
 		// by 0.01 by 0.01 cell of the pyramid's normal (one lattice point, the normal stepping
 		// 0.01 an axis): how many, their fastest and slowest.
@@ -461,6 +508,16 @@ namespace
 			std::printf("\n");
 		};
 
+		// The roots a pass hands to the next: the keepTop fastest of its solutions (the
+		// maintainer, 2026-10-07; the fastest of each 0.01 cell of the normal was tried on
+		// 2026-10-06 and carried the pass's every tilt without a faster crossing, ROADMAP 4.6).
+		auto keepFastest = [&](std::vector<Solution>& found)
+		{
+			std::stable_sort(found.begin(), found.end(), [](const Solution& x, const Solution& y) { return x.data.fSpd > y.data.fSpd; });
+			if (found.size() > keepTop)
+				found.resize(keepTop);
+		};
+
 		const int startOscillation = context.pipeline.startStage == context.stage.name ? context.pipeline.startPass : 0;
 		std::vector<Solution> solutions;
 		if (startOscillation == 0)
@@ -470,7 +527,12 @@ namespace
 			solutions = runWithRetries(0, initial, maxOscillations <= 1);
 			passSolutions.push_back(int64_t(solutions.size()));
 			{
-				// The leg's hand-over, for the run's log: how many roots the first oscillation starts from and their spread.
+				// The leg's hand-over, for the run's log: how many roots the first oscillation
+				// starts from and their spread. The leg hands on its whole pool, up to the
+				// scattershot's maxSolutions; keepTop trims the oscillation passes' output only
+				// (the maintainer, 2026-10-12: held to its keepTop fastest, which are one end of the
+				// chord, the leg gives the first oscillation nothing, on master's code as on this;
+				// docs/performance-changelog.md).
 				auto speeds = solutions | std::views::transform([](const Solution& s) { return s.data.fSpd; });
 				auto tilts = solutions | std::views::transform([](const Solution& s) { return s.data.xzSum; });
 				std::printf("dr-oscillations: the leg found %llu solution(s)", (unsigned long long)solutions.size());
@@ -479,6 +541,7 @@ namespace
 				std::printf("\n");
 			}
 			cachePass(0, solutions);
+			recordPool(0, solutions);
 		}
 		else
 		{
@@ -523,41 +586,35 @@ namespace
 			if (solutions.empty())
 			{
 				// The rewind (the maintainer, 2026-10-06, kept on 2026-10-10 over the free oscillations
-				// tried between; ROADMAP 4.12): a pass that yields nothing hands on the roots carried
-				// from the last earlier pass whose crossing heads toward the squish-cancel quadrant
-				// (the final pass's parity, the passes alternating), the nearest of them with roots
-				// that meet the last pass's rules, the regime's tilt and the step parity. A failing
-				// middle pass thus ends the stage early instead of ending the run; none at all is the
-				// failure it was. The roots are handed on as the pass wrote them, records with their
-				// metrics (a pipe-in keeps only the inputs, and the next stage reads the metrics: the
-				// direction, the hand-over frame), from this run or from the pass files of the run a
-				// start at a later oscillation resumed.
-				auto metric = [](const SolutionRecord& record, const char* name)
-				{
-					auto found = record.metrics.find(name);
-					return found == record.metrics.end() ? 0.0 : found->second;
-				};
+				// tried between, ROADMAP 4.12; widened on 2026-10-12, ROADMAP 4.21): a pass that yields
+				// nothing hands on every earlier solution that meets the last pass's rules, the
+				// regime's tilt and the step parity, from the passes whose crossing heads toward the
+				// squish-cancel quadrant (the final pass's parity, the passes alternating), each pass's
+				// whole pool, not only the roots it carried. Eligibility is the solution's, the
+				// direction the pass's, so a set that mixes regime and sub-regime tilts hands on its
+				// regime part. A failing middle pass thus ends the stage early instead of ending the
+				// run; none at all is the failure it was. The solutions are handed on as the pass
+				// wrote them, records with their metrics (a pipe-in keeps only the inputs, and the
+				// next stage reads the metrics: the direction, the hand-over frame), from this run
+				// or from the pool files of the run a start at a later oscillation resumed.
 				SolutionSet fallback;
-				int fallbackPass = -1;
-				for (int pass = targetOscillation - 1; handOverFallback && pass >= 0 && fallback.solutions.empty(); pass--)
+				std::string fallbackPasses;
+				for (int pass = targetOscillation - 1; handOverFallback && pass >= 0; pass--)
 				{
 					if ((maxOscillations - 1 - pass) % 2 != 0)
 						continue;
-					SolutionSet candidate;
-					if (auto carried = carriedSets.find(pass); carried != carriedSets.end())
-						candidate = carried->second;
-					else if (fs::path file = context.pipeline.PassFile(context.stage.name, pass); fs::exists(file))
-						candidate = SolutionSet::Load(file);
-					std::erase_if(candidate.solutions, [&](const SolutionRecord& record)
-						{
-							return metric(record, "xzSum") < double(specs.minXzSum)
-								|| (requireIncrementParity && std::fmod(std::fabs(metric(record, "incrementFrames0")), 2.0) != std::fmod(std::fabs(metric(record, "incrementFrames2")), 2.0));
-						});
-					if (!candidate.solutions.empty())
+					SolutionSet candidate = exitSet(pass);
+					if (candidate.solutions.empty())
+						continue;
+					if (fallback.solutions.empty())
 					{
-						fallback = std::move(candidate);
-						fallbackPass = pass;
+						fallback.stage = candidate.stage;
+						fallback.type = candidate.type;
+						fallback.startFrame = candidate.startFrame;
 					}
+					fallbackPasses += (fallbackPasses.empty() ? "" : ", ") + std::to_string(pass) + " (" + std::to_string(candidate.solutions.size()) + ")";
+					fallback.solutions.insert(fallback.solutions.end(),
+						std::make_move_iterator(candidate.solutions.begin()), std::make_move_iterator(candidate.solutions.end()));
 				}
 				if (fallback.solutions.empty())
 				{
@@ -566,8 +623,8 @@ namespace
 					none.passSolutions = passSolutions;
 					return none;
 				}
-				std::printf("dr-oscillations: no solutions at target oscillation %d; handing on the %llu root(s) carried from oscillation %d, the last pass whose crossing heads toward the squish-cancel quadrant, that meet the last pass's rules\n",
-					targetOscillation, (unsigned long long)fallback.solutions.size(), fallbackPass);
+				std::printf("dr-oscillations: no solutions at target oscillation %d; handing on the %llu solution(s) at the exit tilt from oscillation(s) %s, the passes whose crossing heads toward the squish-cancel quadrant\n",
+					targetOscillation, (unsigned long long)fallback.solutions.size(), fallbackPasses.c_str());
 				fallback.passSolutions = passSolutions;
 				return fallback;
 			}
@@ -593,16 +650,12 @@ namespace
 					maxOscillations++;
 			}
 
+			recordPool(targetOscillation, solutions);
+
+			// The roots the next pass starts from: the keepTop fastest. The last pass hands on
+			// all of its solutions.
 			if (targetOscillation < maxOscillations - 1)
-			{
-				// The roots the next pass starts from: the keepTop fastest (the maintainer, 2026-10-07;
-				// the fastest of each 0.01 cell of the normal was tried on 2026-10-06 and carried the
-				// pass's every tilt without a faster crossing, ROADMAP 4.6). The last pass hands on
-				// all of its solutions.
-				std::stable_sort(solutions.begin(), solutions.end(), [](const Solution& x, const Solution& y) { return x.data.fSpd > y.data.fSpd; });
-				if (solutions.size() > keepTop)
-					solutions.resize(keepTop);
-			}
+				keepFastest(solutions);
 
 			logHandOver(targetOscillation, found, solutions);
 			cachePass(targetOscillation, solutions);

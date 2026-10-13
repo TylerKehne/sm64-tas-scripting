@@ -2,6 +2,7 @@
 #include <BitfsCorner.hpp>
 #include <General.hpp>
 #include <LibSm64.hpp>
+#include <sm64/ObjectFields.hpp>
 #include <sm64/Sm64.hpp>
 #include <sm64/Trig.hpp>
 #include <sm64/Types.hpp>
@@ -10,12 +11,15 @@
 #include "libsm64_env.hpp"
 
 #include <cstdint>
+#include <cstdlib>
 #include <memory>
 
 // GetMinimumDownhillWalkingAngle (ROADMAP 4.13): the downhill angle one tilt on, asked of the
 // resource itself as a child script, where a PyramidUpdate stand-in used to answer it. The
-// child's frame is reverted with it; the angle it reports is the pyramid's normal one frame
-// on, read at the surface Mario stood on; and the game and the corner answer alike.
+// child's frame is reverted with it; the angle it reports is the floor under Mario one frame
+// on, read then (a Surface pointer is good for one frame: docs/tasing.md, "Pitfalls"), which
+// is the pyramid's normal after that frame's tilt up to the rounding of the surface's s16
+// vertices; and the game and the corner answer alike.
 
 using namespace tasfw::tests;
 
@@ -36,7 +40,9 @@ namespace
 		int rotation = 0;
 		float steepness = 0;
 		bool isSlope = false;
-		int16_t normalAngleOneFrameOn = 0; // the root's own neutral frame, then the surface's normal
+		int16_t normalAngleBefore = 0; // the pyramid's normal at the child's frame
+		int16_t normalAngleOneFrameOn = 0; // the pyramid's normal after the root's own neutral frame
+		int16_t floorAngleOneFrameOn = 0; // Mario's floor after that frame, read then
 	};
 
 	class DownhillProbe : public TopLevelScript<Sm64Resource>
@@ -48,7 +54,19 @@ namespace
 		bool execution() override
 		{
 			MarioState* mario = (MarioState*)ReadState("gMarioStates");
-			Surface* floor = mario->floor;
+			Object* pyramid = mario->floor->object;
+			// The anchor is a rest, where the normal is at its goal and would not move in the
+			// child's frame: run Mario a few frames first, until the normal is moving.
+			int16_t previous = atan2s(pyramid->oTiltingPyramidNormalZ, pyramid->oTiltingPyramidNormalX);
+			for (int i = 0; i < 12; i++)
+			{
+				AdvanceFrameWrite(Inputs(0, 0, 127));
+				int16_t now = atan2s(pyramid->oTiltingPyramidNormalZ, pyramid->oTiltingPyramidNormalX);
+				if (now != previous)
+					break;
+				previous = now;
+			}
+			_result.normalAngleBefore = atan2s(pyramid->oTiltingPyramidNormalZ, pyramid->oTiltingPyramidNormalX);
 			_result.frameBefore = GetCurrentFrame();
 			auto status = Test<GetMinimumDownhillWalkingAngle>(_target, _face);
 			_result.frameAfter = GetCurrentFrame();
@@ -65,7 +83,9 @@ namespace
 			_result.isSlope = status.isSlope;
 
 			AdvanceFrameWrite(Inputs());
-			_result.normalAngleOneFrameOn = atan2s(floor->normal.z, floor->normal.x);
+			_result.normalAngleOneFrameOn = atan2s(pyramid->oTiltingPyramidNormalZ, pyramid->oTiltingPyramidNormalX);
+			Surface* floor = mario->floor;
+			_result.floorAngleOneFrameOn = atan2s(floor->normal.z, floor->normal.x);
 			return true;
 		}
 		bool assertion() override { return true; }
@@ -83,9 +103,11 @@ namespace
 		TopLevelScriptBuilder<DownhillProbe>::Build(empty).ImportResource(&resource).Run(target, face, result);
 		return result;
 	}
+
+	int AngleGap(int16_t a, int16_t b) { return std::abs(int(int16_t(a - b))); }
 }
 
-TEST_CASE("libsm64: the downhill angle one tilt on is the pyramid's normal one frame on, the same on the game and on the corner"
+TEST_CASE("libsm64: the downhill angle one tilt on is Mario's floor one frame on, the pyramid's normal then, the same on the game and on the corner"
 	* doctest::skip(!HaveDll()))
 {
 	LibSm64 game(DllConfig(LibSm64SaveMode::Dirty));
@@ -107,7 +129,12 @@ TEST_CASE("libsm64: the downhill angle one tilt on is the pyramid's normal one f
 		CHECK(r->executed);
 		CHECK(r->asserted);
 		CHECK(r->frameAfter == r->frameBefore);
-		CHECK(int16_t(r->floorAngle) == r->normalAngleOneFrameOn);
+		CHECK(int16_t(r->floorAngle) == r->floorAngleOneFrameOn);
+		// One tilt on, not the frame's own: the normal moves at the anchor, and the answer is
+		// the normal after the move, up to the surface's rounding (tens of angle units at most).
+		CHECK(r->normalAngleOneFrameOn != r->normalAngleBefore);
+		CHECK(AngleGap(int16_t(r->floorAngle), r->normalAngleOneFrameOn) < AngleGap(int16_t(r->floorAngle), r->normalAngleBefore));
+		CHECK(AngleGap(int16_t(r->floorAngle), r->normalAngleOneFrameOn) < 64);
 		CHECK(r->steepness > 0.0f);
 	}
 	CHECK(onGame.floorAngle == onCorner.floorAngle);
@@ -118,6 +145,7 @@ TEST_CASE("libsm64: the downhill angle one tilt on is the pyramid's normal one f
 	CHECK(onGame.rotation == onCorner.rotation);
 	CHECK(onGame.steepness == onCorner.steepness);
 	CHECK(onGame.isSlope == onCorner.isSlope);
-	MESSAGE("floor angle one tilt on " << onGame.floorAngle << ", facing " << onGame.angleFacing << " / " << onGame.angleNotFacing
+	MESSAGE("floor angle one tilt on " << onGame.floorAngle << " (the normal " << onGame.normalAngleBefore << " then "
+		<< onGame.normalAngleOneFrameOn << "), facing " << onGame.angleFacing << " / " << onGame.angleNotFacing
 		<< ", steepness " << onGame.steepness << ", slope " << onGame.isSlope);
 }

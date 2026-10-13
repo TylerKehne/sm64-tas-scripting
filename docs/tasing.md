@@ -636,6 +636,13 @@ The full list is in AGENTS.md; these are the ones a script author meets.
   out of a run from that rest, where Mario's own position sets it, and hands over within 20
   units of the diagonal, since the swings after the first cross at their usual rate from
   there and mostly not from 40.
+- A `Surface*` (Mario's `floor`, `wall` or `ceil`, or any surface of an object) is good
+  for one frame. The game rebuilds its surface pool every frame, and an object's surfaces
+  take other slots whenever another surface object's collision loads or unloads, which
+  happens at 1000 units from Mario: the other pyramid's crosses that distance right where
+  the oscillations turn around. A pointer kept across a frame then points at a slot nothing
+  reloaded, which still holds the old normal and the old object. Read the surface again
+  after every frame (`GetMinimumDownhillWalkingAngle` does); never cache one.
 - A `GetMetrics` reference dies at the next write at or before its frame; copy it.
 - `ModifyAdhoc` reverts when the lambda returns false, and reports `executed == false`.
 - Check `asserted`, not `executed`; a metric script that did not assert stores a default

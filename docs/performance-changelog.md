@@ -4,6 +4,112 @@ Every hot-path change records its delta table here, newest first; the policy, th
 how to run it are in [performance.md](performance.md). The first measurements (2026-09-07),
 which everything since is compared against, are at the bottom.
 
+## 2026-10-12: the dr stage's rewind hands on every solution at the exit tilt (ROADMAP 4.21)
+
+The maintainer saw a run end at a failed fourth oscillation: the rewind took only the
+roots the nearest right-direction pass had carried (`keepTop` of them) and only those at
+the exit tilt (`minXzSum`, 0.69), and a lineage that had just reached the regime had
+nothing at that tilt behind it. His decision: eligibility is the solution's (the exit
+tilt and the step parity), the direction the pass's, and the tilt stays `minXzSum`.
+Every pass now writes its whole pool beside its pass file
+(`<stage>.oscillation<n>.pool.json`), and a pass that finds nothing hands on every
+eligible solution from every earlier right-direction pass's pool, the rules applied by the
+rewinding run. The dr stage, Release, MSVC, deterministic, seed 6, on the corner, the same
+search as before to the block: the fifth oscillation finds nothing and the rewind hands
+the ending 213 solutions from the third oscillation's pool of 589 (none of the first
+oscillation's 1,000 are at the exit tilt), where it handed on 3 of the 10 carried roots
+before; stage time 77.5 s against 84.3 s, within the run-to-run spread. The pool files
+cost a write per pass (6 MB for a pool of 10,000 solutions). The stage's own test checks
+the leg's pool file beside its pass file and the rewind reading it under the rewinding
+run's rules.
+
+## 2026-10-12: what the dr stage's leg hands to the first oscillation
+
+Commit ad9901f (this morning) raised the dr stage's `maxSolutions` from 100 to 1,000
+without saying so, and the leg, which hands on its whole pool, began starting the first
+oscillation from 1,000 roots instead of up to 100. The maintainer read that as `keepTop`
+no longer respected and asked for the ten fastest at every hand-over, the leg's included.
+Measured, the dr stage, Release, MSVC, deterministic, seed 6, on the corner, with the
+look-ahead fix below in, the leg's pool of 1,000 solutions (all at tilt 0.532, speed 17.50
+to 18.96, the normal's direction from (-0.45, 0.08) to (-0.31, 0.22)):
+
+| Leg hands on | Oscillation 1 | The run's passes after it |
+|---|---|---|
+| all 1,000 | 1,000 solutions in 1,975 shots | 1,000 / 589 / 180 / none at 5 |
+| the 10 fastest (speed 18.92 to 18.96) | 0 in 2,000 shots, 616 blocks | |
+| the first 10 found | 1,000 in 996 shots | 1,000 / 688 / 95 / none at 5 |
+| 10 spread over the speed order | 1,000 in 1,642 shots | 1,000 / 548 / 171 / none at 5 |
+| the fastest of each cell of the normal, up to 10 | 671 in 2,000 shots | 633 / 283 / none at 4 |
+
+The ten fastest are one end of the chord (one cell of the normal), and the first
+oscillation finds nothing from them; speed grows along the chord, so any choice that
+prefers speed leans to that end. The same ten-fastest rule on master's code (a scratch
+copy of master with the one trim added, on the game, deterministic, seed 6, from its own
+fixer's solution): the leg finds the same 1,000 solutions in 165 shots, hands on the same
+ten (speed 18.92 to 18.96), and oscillation 1 finds 0 in 2,000 shots, 581 blocks. So the
+ten fastest from the leg have never produced a first oscillation; master's runs worked
+because its leg handed on its whole pool, capped at 100. The maintainer's decision: the
+leg hands on its whole pool at the cap of 1,000 (the first row of the table), and
+`keepTop` trims the oscillation passes' output as it always did. `Stages.cpp` is back to
+that; the cap stays 1,000.
+
+## 2026-10-12: the downhill look-ahead reads Mario's floor after its frame, not before (ROADMAP 4.13)
+
+The maintainer found the dr stage's oscillation passes failing after the stand-in's removal
+below ("osc 1 now usually fails when it always succeeded before"; in seven runs the second
+oscillation found nothing in six). The cause: `GetMinimumDownhillWalkingAngle` kept the
+`Surface*` of Mario's floor across its frame and read the normal there. The game rebuilds
+its surface pool every frame, and the pyramid's six surfaces move down six slots whenever
+the other pyramid's collision unloads, at 1000 units from Mario, which is right where the
+oscillations turn around; the kept pointer then pointed at a slot nothing reloaded, still
+holding the normal before the step, where the stand-in had answered the normal after it
+(169 of 196 stale answers in 1,000 shots of a deterministic run; 6 more were Mario crossing
+to the top face's other triangle, 21 the surface's own rounding). The script now reads
+Mario's floor again after the frame (docs/tasing.md, "Pitfalls"); the frozen Tier C copy
+had the same edit.
+
+The dr stage, Release, MSVC, deterministic, seed 6, on the corner, every pass from the
+fixer's solutions, the stand-in (a build of the commit before its removal) against the
+script before and after the fix:
+
+| Pass | Stand-in | Script, floor kept across the frame | Script, floor read after the frame |
+|---|---|---|---|
+| leg | 1,000 solutions in 165 shots | 1,000 in 165 | 1,000 in 165 |
+| oscillation 1 | 1,000 in 1,269 | 1,000 in 996 | 1,000 in 1,975 |
+| oscillation 2 | 1,000 in 1,962 | 0 in 2,000 | 1,000 in 1,204 |
+| oscillation 3 | 416 in 2,000 | | 589 in 2,000 |
+| oscillation 4 | 179 in 2,000 | | 180 in 2,000 |
+| oscillation 5 | 0 in 2,000 | | 0 in 2,000 |
+
+Not the stand-in's counts to the shot: its surfaces rounded differently from the game's
+(6 to 30 angle units off the normal, where the game's own surface is within about 20), so
+the two searches diverge within a pass; the passes themselves are back. The every-corner
+case of `bitfs-turn --test` (one thread, on the game, the first oscillation's yield within
+2,000 shots at the cap of 1,000) shows the same divergence: master's stand-in gives 1,000,
+680, 1,000 and 1,000 in corners 1 to 4 (a scratch copy of master at that cap, since
+removed), the fixed script 768, 530, 1,000 and 772. The case's bar is a fixed 200 from
+2026-10-12 (the maintainer: 530 is plenty for the ten the next pass carries); whether the
+exact answer wants a margin where the oscillation scripts compare the facing with it to
+the unit is ROADMAP 4.20.
+
+The same stage, same seed, on the game, is the same search to the block (the same
+solutions, blocks and scripts in every pass) and takes 438.6 s to the corner's 84.3 s,
+Release, deterministic (the threads serialised), so about five times faster on the corner
+pass by pass: the first oscillation 80 s to 16 s, the second 101 to 26, the third 102 to
+16, the fourth 78 to 13, the fifth 76 to 13. Frame advances 26,930,316 on the game to
+22,902,281 on the corner, saves 1,620,234 to 3,427,111 (the corner's cheaper save is taken
+more often and replays less), loads 10,082,710 on both. The maintainer's "no faster" of
+the afternoon was a Debug build of the corner (README.md, "Running the pipeline").
+
+The Tier C rows (`^BM_Framework`, both compilers, against this morning's re-saved
+baseline below): `PyramidOscillation` 2.90 s to 2.88 s, its frame advances 188,621 to
+188,078, loads 5,259 to 5,246, allocations 140,403 to 140,221 (the fixed look-ahead
+answers differently in the stale cases, so the old oscillation script takes a slightly
+different path); `DownhillAngle` and `MetricsSweep` unchanged in time and counts. The
+family's baseline was re-saved for the new counts; its time gate against the 09-15
+reference binaries (+326%) is the stand-in's removal, recorded below, until a whole-suite
+save refreshes the reference.
+
 ## 2026-10-12: the PyramidUpdate stand-in and tasfw-core/src/decomp are gone (ROADMAP 4.13)
 
 The maintainer's word: the stand-in is deprecated, since what it was made for the corner

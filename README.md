@@ -83,7 +83,11 @@ with `--stage <name>`. Without `--config` it reads the
 `config.json` next to the executable, which the build writes from
 [tasfw-bruteforcers/bitfs-turnaround/config.json](tasfw-bruteforcers/bitfs-turnaround/config.json)
 whenever the executable target builds, so a Visual Studio play button, which builds only
-that target, keeps the copy current too.
+that target, keeps the copy current too. Run it from a Release build: the corner
+resource's frame is this repository's own code, which a Debug build compiles without
+optimization, while the game's DLL is optimized whatever the build, so in Debug the corner
+is slower than the game and its gain is invisible (the maintainer found this on
+2026-10-12 with the toolbar on clang-cl-debug).
 `--list` prints the stage types and the configured stages; `--dry-run` resolves every path,
 checks the files exist, loads one DLL, runs the `VerifyLayout` script to the first stage's
 start frame and prints its report (struct layout, the hardcoded object slots), exiting 1 on
@@ -113,7 +117,8 @@ with a `visualize` block opens the viewer on its CSV as it is written ("The view
 on the corner (`"resource": "corner"`) first prints which objects its corners were imported
 with and at which frame, and after the search how many of its solutions the game reproduces
 (`replayed on the game: n of m solution(s) match`; the others are dropped, each with a line
-saying how it differed). The stage
+saying how it differed). The committed config puts all three stages on the corner, each with
+every object, since 2026-10-12. The stage
 summary prints wall time and the frame advances, saves and loads summed over threads, which
 are the fixed-workload numbers a performance change has to report (AGENTS.md, hard rule 8),
 then the slot manager's line: the most savestates and bytes any thread held at once, and the
@@ -129,7 +134,10 @@ the solutions file its input stage wrote, an error when that file is missing. As
 `<stage>:<n>` it begins the oscillation stage at its oscillation `n`, from the roots that
 stage's pass `n - 1` carried, which every pass writes to
 `<outputDirectory>/solutions/<stage>.oscillation<n>.json` as it ends (the leg is
-oscillation 0, and a pass file holds the yields of the passes before it). `--stage` still
+oscillation 0, and a pass file holds the yields of the passes before it). Beside it every
+pass writes `<stage>.oscillation<n>.pool.json`, its whole pool before the hand-over
+trims it, from which the rewind below takes the solutions that meet the last pass's exit
+rules (the tilt `minXzSum`, the step parity) when a later pass finds nothing. `--stage` still
 runs one stage alone; a pass in `start` applies to that stage when it is the one run.
 
 # Configuration
@@ -402,10 +410,14 @@ One JSON file. Relative paths resolve against the file's own directory, unless t
   2026-10-06): `uscz` is much more lenient, where `uscx` generally needs the movement to the
   squish spot optimized, Mario having to reach it before the normal's y gets too low; the
   committed setup is the lenient kind, so an `uscx` corner is where the ending stage's moves
-  will be judged (ROADMAP 4.11). Between its passes the stage carries the
-  `keepTop` (10) fastest solutions into the next (the last pass hands on all of its
-  solutions; the fastest of each 0.01 cell of the normal was tried on 2026-10-06 and
-  carried every tilt without a faster crossing, ROADMAP 4.6), and after the first oscillation it commits
+  will be judged (ROADMAP 4.11). Each pass runs to the scattershot's `maxSolutions`
+  (1,000). The leg hands its whole pool to the first oscillation (the maintainer's choice,
+  2026-10-12: held to its ten fastest, which are all at one end of the chord, it gives the
+  first oscillation nothing, on master's code as on this branch;
+  docs/performance-changelog.md); from the first oscillation on, each pass carries its
+  `keepTop` (10) fastest solutions into the next, and the last pass hands on all of its
+  solutions (the fastest of each 0.01 cell of the normal was tried on 2026-10-06 and carried
+  every tilt without a faster crossing, ROADMAP 4.6); after the first oscillation the stage commits
   to the direction most of those took, dropping the other direction's solutions (which
   would need one oscillation more); a run's solutions arrive in block order, so the first
   of them says nothing, and committing to its direction was what made runs fail one time in
@@ -420,10 +432,17 @@ One JSON file. Relative paths resolve against the file's own directory, unless t
   crossing on, a crossing's normal must sit at least `minCrossingAxisDiff` (0.26 in the
   committed config) further along one axis than the other, the lag the example movies'
   crossings carry (ROADMAP 4.12). A pass that yields nothing does not end the run: the
-  stage hands on the roots carried from the last earlier pass whose crossing heads
-  toward the squish-cancel quadrant (the final pass's parity, since the passes alternate)
-  that meet the last pass's rules, oscillation 5's when 7 fails (`handOverFallback`, true
-  in the committed config; false ends the stage with nothing). After each pass the stage prints what it found and the
+  stage hands on every earlier solution that meets the last pass's rules (the tilt
+  `minXzSum`, the step parity) from the passes whose crossing heads toward the
+  squish-cancel quadrant (the final pass's parity, since the passes alternate), each
+  pass's whole pool and not only the roots it carried, oscillations 5, 3 and 1 when 7
+  fails (`handOverFallback`, true in the committed config; false ends the stage with
+  nothing). Eligibility is the solution's and the direction the pass's (the maintainer,
+  2026-10-12), so a carried set that mixes regime and sub-regime tilts, the usual case
+  while the tilt climbs, hands on its regime part, and a pass that fails right after its
+  lineage reached the regime has the earlier passes' eligible solutions behind it; a run
+  ends with nothing only when no earlier pass of the right direction found a solution at
+  the exit tilt. After each pass the stage prints what it found and the
   roots it carries, their speed, tilt and oscillation, and each retry, which is what to
   read when a run stalls.
 

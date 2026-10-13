@@ -1968,9 +1968,15 @@ goals are (status as stated by the maintainer, 2026-09-08):
       swing's `currentCrossing` 1 freed of the rule in the turnaround's offer and in the
       validation; the leg stays at A. A regression case guards it in `bitfs-turn --test` (the
       maintainer's ask): in every corner, the config's target normal mirrored into it, the
-      fixer rests and the first oscillation's pass comes full within 2,000 shots, one
-      thread, deterministic; the stage's per-pass yield (`passSolutions` on the solution
-      set) is what it reads. The probe behind it: the fixer rests in corners 1 to 3 as in 4
+      fixer rests and the first oscillation's pass finds at least 200 solutions within
+      2,000 shots, one thread, deterministic; the stage's per-pass yield (`passSolutions`
+      on the solution set) is what it reads. The bar was the pass's own cap until
+      2026-10-12, when the cap went to 1,000 for the pool's variety and the corners found
+      768, 530, 1,000 and 772 within the budget; the maintainer set the bar at a fixed 200
+      ("530 is still plenty" for the ten the next pass carries). The case reads the dr
+      stage's pool cap and `keepTop` from the config it is given, so its yields follow
+      them: under a working-copy config with the pool at 10,000 and `keepTop` 100 the
+      same build found 768, 606, 425 and 1,047, and passed. The probe behind it: the fixer rests in corners 1 to 3 as in 4
       (frames 3325 to 3329) and their first oscillations came in 155, 214 and 142 shots on
       16 threads. After it, the climb: the sum rises about 0.02 an oscillation and the
       fifth pass works at the lava's limit. The fixer is at its limit (rests at 0.65 and
@@ -2975,11 +2981,13 @@ goals are (status as stated by the maintainer, 2026-09-08):
       can starve a pass; with a regime crossing never compared with one before it, the
       regime's first oscillation is free as well, and the rewind, holding its roots to the
       last pass's tilt floor, hands on an oscillation made in the regime or nothing. The
-      `regimeSpeedRatchet` knob went with it. Open (2026-10-11): the `--test` case "the first
-      oscillation comes from the fixer's hand-over in every corner" finished its first corner
-      in two minutes and then ran 100 minutes in its second at a third of a core, twice, and
-      was stopped both times; whether it stalls or merely crawls under the current specs is
-      not known, and the group is not CI's. Find out before relying on the case. Measured as before: the second pass 909 (ten
+      `regimeSpeedRatchet` knob went with it. The `--test` case "the first oscillation comes
+      from the fixer's hand-over in every corner" ran 100 minutes in its second corner on
+      2026-10-11 and was stopped; on 2026-10-12 it ran through its four corners every
+      time, in 22 minutes on master's code and about 55 on the branch, one thread, on the
+      game, where the look-ahead's frame now costs a game frame per call (4.19). It
+      crawls, it does not stall; its yields repeat run to run (the case is deterministic);
+      the group is not CI's. Measured as before: the second pass 909 (ten
       carried at 29.0 to 30.2, their sum 0.672, in the regime already), the third 352 (28.0
       to 29.4 at 0.692), the fourth nothing, the third's ten handed on; the fourth dies on
       the speed rule itself, its crossing and the second's both in the regime (nothing either
@@ -3314,19 +3322,38 @@ goals are (status as stated by the maintainer, 2026-09-08):
       deprecated, what it was made for the corner now does, and the calculation belongs in
       the same script hierarchy). `GetMinimumDownhillWalkingAngle` is one script on
       `Sm64Resource` now: a frame of its own, reverted with it, after which it reads the
-      pyramid's normal at the surface Mario stood on (the surface objects update before
-      the player in a frame, so that normal is the one his next step walks on whatever
-      the frame's inputs, and the surface pool is rebuilt in the same order every frame,
-      so the surface is the same one); its 14 callers, the frozen Tier C copies among
-      them, run it as `Test<GetMinimumDownhillWalkingAngle>`. With that the three files
+      normal of the floor under Mario (the surface objects update before the player in a
+      frame, so that normal is the one his next step walks on whatever the frame's
+      inputs); its 14 callers, the frozen Tier C copies among them, run it as
+      `Test<GetMinimumDownhillWalkingAngle>`. Its first version kept the `Surface*` of
+      Mario's floor across the frame and read the normal there, and the dr stage's
+      second oscillation then failed in six runs of seven (the maintainer, 2026-10-12:
+      the first oscillation used to always succeed). The cause, traced on a deterministic
+      run: the game rebuilds its surface pool every frame, and the pyramid's six surfaces
+      move down six slots whenever the other pyramid's collision unloads, at 1000 units
+      from Mario, which is right where the oscillations turn around; the kept pointer then
+      points at a slot nothing reloaded, still holding the old normal, so the script answered
+      the tilt before the step where the stand-in had answered the tilt after it (169 of
+      196 stale answers in 1,000 shots; 6 more were Mario crossing to the top face's other
+      triangle, 21 the surface's own rounding). The script now reads Mario's floor again
+      after the frame (docs/tasing.md, "Pitfalls": a `Surface*` is good for one frame);
+      on seed 6 the dr stage reaches the same passes as it did on the stand-in, 1,000
+      solutions at the second oscillation where the kept pointer gave none
+      (docs/performance-changelog.md). With that the three files
       of `tasfw-core/src/decomp` and their headers, the stand-in's three files, its drift
       test and the `DownhillAngle_PyramidUpdate` row were removed; the dr metric's 0.01 step is
-      its own helper; `test_libsm64_downhill.cpp` checks the script's frame is reverted,
-      its angle is the normal one frame on, and the game and the corner answer alike.
+      its own helper; `test_libsm64_downhill.cpp` runs Mario from the anchor's rest until
+      the normal is moving, then checks the script's frame is reverted, its angle is
+      Mario's floor read after that frame and nearer the normal after the tilt than
+      before it, and the game and the corner answer alike.
       The dr stage, deterministic, 150 shots from the fixer's solutions, before and after:
       the same 1,000 solutions, 3,385 blocks and 20,981 scripts on the corner and on the
       game, the corner's frame advances 139,675 to 139,696, the game's 89,747 to 89,659
-      (docs/performance-changelog.md). Every condition below is met.
+      (docs/performance-changelog.md). The whole dr stage on seed 6, deterministic, is
+      the same search to the block on either resource and takes 84.3 s on the corner to
+      438.6 s on the game, about five times faster in every pass; a Debug build hides
+      that, since the corner's frame is this repository's own code (README.md, "Running
+      the pipeline"). Every condition below is met.
       Done when: the harness is exact over its fuzz and the solution corpus; every stage
       runs on either resource from the config; a Tier D run on the resource reports its
       delta table and work counts beside `LibSm64`'s; every solution the resource finds
@@ -3343,7 +3370,8 @@ goals are (status as stated by the maintainer, 2026-09-08):
       an unchanged interface in tasfw-scattershot (the documented behavior), with a case in
       `test_scattershot_mock.cpp` that reaches a small cap, and the suite's delta table
       (rule 8). Until then a stage that may reach the cap needs `maxBlocks` raised or its
-      shots cut.
+      shots cut: the committed config's cap is 10,000,000 since 2026-10-12, about 1 GB of
+      blocks with their segments, the cap's behavior unchanged (the maintainer's choice).
 - [ ] **4.15 The bare scattershot builder does not compile when used.** Found 2026-09-15
       writing 3.17. `ScattershotBuilder::ConfigureMetricScript` (ScattershotBuilder.hpp)
       calls `std::make_shared` without its template argument, and the same class's
@@ -3407,6 +3435,46 @@ goals are (status as stated by the maintainer, 2026-09-08):
       Tier B corner rows do), the game rows kept beside it or retired once the corner
       rows are baselined; the frozen copies run on `Sm64Resource` already, so this is
       `bench_framework.cpp` and a baseline, no script change.
+- [ ] **4.20 The first oscillation's yield with the exact look-ahead.** Since 2026-10-12
+      `GetMinimumDownhillWalkingAngle` answers with the game's own floor normal one frame
+      on, where the `PyramidUpdate` stand-in answered 6 to 30 angle units off it. The
+      every-corner case of `bitfs-turn --test` finds fewer first-oscillation solutions
+      within its 2,000 shots with the exact answer than with the stand-in's (768, 530,
+      1,000 and 772 against 1,000, 680, 1,000 and 1,000 in corners 1 to 4, at the cap of
+      1,000; both pass the case's bar of 200), and the seed-6 dr stage reaches its first
+      oscillation in 1,975 shots against the stand-in's 1,269. The oscillation scripts
+      compare Mario's facing with the look-ahead's `angleFacing` to the unit
+      (`BitFsPyramidOscillation_RunDownhill.cpp`) and round it to a HAU, so an answer on
+      the exact boundary of the downhill range may be a worse search target than one a
+      little inside it. Done when: the yields are measured with a margin inside the range
+      (and with the pyramid's own normal after the frame, the other exact reading) on the
+      same seeds, and the better rule is in the script with its numbers in
+      docs/performance-changelog.md, or the exact answer is kept with the reason written
+      down.
+- [x] **4.21 The dr stage's rewind under mixed tilts.** Done 2026-10-12, the maintainer's
+      decision ("not a bad idea, and it should be minXzSum"): eligibility is the
+      solution's (the exit tilt `minXzSum` and the step parity), the direction the pass's;
+      every pass writes its whole pool beside its pass file
+      (`<stage>.oscillation<n>.pool.json`), and a pass that finds nothing hands on every
+      solution meeting the exit rules from every earlier right-direction pass's pool,
+      instead of the carried roots of the nearest such pass (README.md, "Configuration").
+      The rules are the rewinding run's, applied when it rewinds, so a run resumed at a
+      later oscillation under other rules reads the pool files right; a pass file without
+      a pool file, from a run before this, is filtered as before. The record of the
+      problem: the rewind (`Stages.cpp`, the maintainer's rule of 2026-10-06) handed the
+      ending the roots of the nearest earlier
+      pass whose crossing heads the right way, keeping only those at the exit tilt
+      (`minXzSum`, 0.69) with the step parity. The carried sets are mixed from the second
+      oscillation on (lineages climb from the rest's 0.53 at different rates, and the
+      hand-over keeps the ten fastest whatever their tilt), so a pass that fails right
+      after its lineage reached the regime has nothing behind it at the exit tilt and the
+      run ends with no solutions (the maintainer saw one end at a failed fourth
+      oscillation, 2026-10-12; in the 16:46 run that day the rewind handed on 99 of
+      oscillation 3's 100 roots at 0.69). Eligible roots in a pass the rewind skips, or
+      in the part of a pool the hand-over dropped, were lost. The maintainer's view: the
+      behavior is hard to define while a set mixes regime and sub-regime tilts; the
+      definition above keeps the two apart, and the exit tilt stays `minXzSum`, the
+      ending's requirement, not the regime's floor.
 
 ## Phase 5: toward a game- and console-agnostic framework
 
