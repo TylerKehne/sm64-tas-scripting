@@ -34,6 +34,11 @@ public:
 private:
 	static bool FloorIsSlope(float normalY, uint32_t action);
 
+	// How far inside the downhill half the facing it reports lies, in angle units: the
+	// top face's two triangles and the stick's rounding move the boundary by up to about
+	// 20 (the comment in execution).
+	static constexpr int32_t DownhillMargin = 64;
+
 	int16_t _faceAngle;
 	int16_t _targetAngle;
 };

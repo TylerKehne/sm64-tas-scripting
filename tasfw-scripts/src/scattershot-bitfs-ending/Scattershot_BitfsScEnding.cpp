@@ -92,16 +92,11 @@ void Scattershot_BitfsScEnding::SelectMovementOptions()
         break;
 
     case BitfsScEndingMetrics::Phase::DIVE:
-        // The slide takes the rollout's press; the dive's and the rollout's air frames take
-        // the random stick, which strains.
-        if (action == ACT_DIVE_SLIDE)
-            AddRandomMovementOption(
-                {
-                    {CustomMoves::NO_SCRIPT, 1},
-                    {CustomMoves::ROLLOUT, 9}
-                });
-        else
-            AddMovementOption(CustomMoves::NO_SCRIPT);
+        // The dive recover's moves after the dive, nothing else: from the slide the rollout's
+        // press and first frame, from the rollout its flight to the landing stop. They are
+        // the frames the recover played as one move until 2026-10-13, steered by the same
+        // compares; they are moves of their own for the CSV's rows (Dive).
+        AddMovementOption(action == ACT_FORWARD_ROLLOUT ? CustomMoves::LANDING : CustomMoves::ROLLOUT);
         break;
 
     case BitfsScEndingMetrics::Phase::BRAKE:
@@ -126,7 +121,8 @@ void Scattershot_BitfsScEnding::SelectMovementOptions()
                 {CustomMoves::PARALLEL, _args.weightParallel},
                 {CustomMoves::QUICKTURN, stopped ? 3 * _args.weightQuickturn : 0},
                 {CustomMoves::CUP_DECEL, 2 * _args.weightCUp},
-                {CustomMoves::WAIT, 2 * _args.weightWait}
+                {CustomMoves::WAIT, 2 * _args.weightWait},
+                {CustomMoves::WAIT_FOR_TILT, stopped ? 3 * _args.weightWait : 0}
             });
         break;
 
@@ -143,7 +139,6 @@ void Scattershot_BitfsScEnding::SelectMovementOptions()
 
 bool Scattershot_BitfsScEnding::ApplyMovement()
 {
-    MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
     auto state = GetMetrics(GetCurrentFrame());
 
     if (!CheckMovementOptions(CustomMoves::NO_SCRIPT))
@@ -162,6 +157,8 @@ bool Scattershot_BitfsScEnding::ApplyMovement()
             return Dive();
         if (CheckMovementOptions(CustomMoves::ROLLOUT))
             return Rollout();
+        if (CheckMovementOptions(CustomMoves::LANDING))
+            return Landing();
         if (CheckMovementOptions(CustomMoves::HOLD_BACK))
             return HoldBack();
         if (CheckMovementOptions(CustomMoves::RELEASE) || CheckMovementOptions(CustomMoves::WAIT))
@@ -169,6 +166,8 @@ bool Scattershot_BitfsScEnding::ApplyMovement()
             AdvanceFrameWrite(Inputs(0, 0, 0));
             return true;
         }
+        if (CheckMovementOptions(CustomMoves::WAIT_FOR_TILT))
+            return WaitForTilt();
         if (CheckMovementOptions(CustomMoves::WALK_OFF))
             return WalkOff();
         if (CheckMovementOptions(CustomMoves::LEAVE_ALONG))
@@ -183,14 +182,14 @@ bool Scattershot_BitfsScEnding::ApplyMovement()
             return StrainBack();
     }
 
-    // The random frame. No A (the setup is for an A-button-challenge run), B only on the dive
-    // slide (the rollout), Z and C-up now and then, since anything but A is allowed (the
-    // maintainer, 2026-10-05). On the run it must keep the pyramid stepping; afterwards the
-    // validation judges the frame.
+    // The random frame. No A (the setup is for an A-button-challenge run), no B (the dive
+    // recover's moves press it, and no random frame is drawn in the recover), Z and C-up now
+    // and then, since anything but A is allowed (the maintainer, 2026-10-05). On the run it
+    // must keep the pyramid stepping; afterwards the validation judges the frame.
     Inputs inputs = RandomInputs(
         {
             {Buttons::A, 0},
-            {Buttons::B, marioState->action == ACT_DIVE_SLIDE ? 0.5 : 0},
+            {Buttons::B, 0},
             {Buttons::Z, 0.05},
             {Buttons::C_UP, 0.1}
         });
@@ -246,11 +245,13 @@ BinaryStateBin<16> Scattershot_BitfsScEnding::GetStateBin()
     }
 
     // The scenario so far keeps its own populations: the phase, the approach and the
-    // quickturn; near the edge and in the air the position to the unit. Speed is the
+    // quickturn; in the dive recover, near the edge and in the air the position to the unit
+    // (each of the recover's rows is a dive of its own, which a coarser bin would merge). Speed is the
     // fitness on the run, not a bin: with it the first run made 416,000 blocks in 1,730
     // shots, near-duplicates a block apart, and would have hit the block cap before the
     // leave was explored (2026-10-06).
-    const bool fine = metrics.phase == BitfsScEndingMetrics::Phase::EDGE || metrics.phase == BitfsScEndingMetrics::Phase::AIR;
+    const bool fine = metrics.phase == BitfsScEndingMetrics::Phase::DIVE || metrics.phase == BitfsScEndingMetrics::Phase::EDGE
+        || metrics.phase == BitfsScEndingMetrics::Phase::AIR;
     state.AddValueBits(bitCursor, 1, 1);
     state.AddValueBits(bitCursor, 4, actionValue);
     state.AddValueBits(bitCursor, 3, int(metrics.phase));
@@ -472,18 +473,23 @@ bool Scattershot_BitfsScEnding::ValidateState()
 
         // And heading for the catch's window along the edge: where he will be at the catch,
         // his position along the edge carried by his drift along it over the frames the fall
-        // has left, the edge on the catch's face must stand in the window of heights, from
-        // LeastEdgeHeight less CornerSlack to SquishSpace plus the depth two sweeps lower the
-        // side (the 50,000-shot run of 2026-10-11 caught 1,105 states, all near the corner
-        // where the edge stands 128 at the catch, 405 squished to a pancake, none cancelled;
-        // the three squish cancels had left at 278 along the edge and drifted to 206).
+        // has left, the edge on the face the fall ends on must stand in the window of
+        // heights, from LeastEdgeHeight less CornerSlack to SquishSpace plus the depth two
+        // sweeps lower the side (the 50,000-shot run of 2026-10-11 caught 1,105 states, all
+        // near the corner where the edge stands 128 at the catch, 405 squished to a pancake,
+        // none cancelled; the three squish cancels had left at 278 along the edge and
+        // drifted to 206). The face is the one expected when the fall's frames are up, not
+        // the latest the cancel allows: a brake's leave comes with the tilt nearly spent, so
+        // for it the two are the same, but a dive recover's landing leaves with 0.06 more
+        // across, where the latest face put the edge 20 lower than it stands at the catch
+        // and refused every one of its leaves (194 of 243, 2026-10-13).
         const float pushDistance = PushDistance(marioState);
         float outX, outZ, alongX, alongZ;
         SquishDirections(outX, outZ, alongX, alongZ);
         const float fallLeft = std::max(0.0f, float(FallFrames) - float(int64_t(GetCurrentFrame()) - state.departureFrame));
         const float along = alongX * (x - pyramid->oPosX) + alongZ * (z - pyramid->oPosZ)
             + (alongX * marioState->vel[0] + alongZ * marioState->vel[2]) * fallLeft;
-        const auto catchFace = CatchFace(pyramid);
+        const auto catchFace = ExpectedCatchFace(marioState, pyramid, fallLeft);
         float edgeX, edgeZ;
         EdgePoint(catchFace, along, edgeX, edgeZ);
         const float height = catchFace.TopHeight(edgeX, edgeZ) - BitfsScEndingMetrics::LavaHeight;
@@ -531,11 +537,18 @@ std::string Scattershot_BitfsScEnding::GetCsvLabels()
 
 bool Scattershot_BitfsScEnding::ForceAddToCsv()
 {
-    // The departure, the frames the next frame's face squishes him on, and the cancels: what
-    // a run's leaves are read by. Every departed frame was 2.5 million rows of a run the
-    // block cap ended (2026-10-11); the sampled rows keep the rest.
+    // The departure, the frames the next frame's face squishes him on, the squish cancels,
+    // and a dive recover's slide, rollout and landing stop (the maintainer, 2026-10-13: every
+    // landing that validates, not one in ten, and the recover itself in the viewer): what a
+    // run's leaves and recoveries are read by. Every departed frame was 2.5 million rows of
+    // a run the block cap ended (2026-10-11); the sampled rows keep the rest.
     const auto state = GetMetrics(GetCurrentFrame());
-    return state.departed && (int64_t(GetCurrentFrame()) == state.departureFrame || state.catchPlacements >= 0 || state.squishCancel);
+    if (state.departed)
+        return int64_t(GetCurrentFrame()) == state.departureFrame || state.catchPlacements >= 0 || state.squishCancel;
+    if (state.phase == BitfsScEndingMetrics::Phase::DIVE)
+        return true;
+    return state.phase == BitfsScEndingMetrics::Phase::EDGE && state.approach == BitfsScEndingMetrics::Approach::DIVE_RECOVER
+        && GetMetrics(GetCurrentFrame() - 1).phase == BitfsScEndingMetrics::Phase::DIVE;
 }
 
 std::string Scattershot_BitfsScEnding::GetCsvRow()
@@ -764,16 +777,35 @@ float Scattershot_BitfsScEnding::FramesToCatch(const MarioState* marioState, con
         + float(LeaveFrames) + float(FallFrames);
 }
 
-BitfsScEndingMetrics::Face Scattershot_BitfsScEnding::ExpectedCatchFace(const Object* pyramid, float framesToCatch) const
+BitfsScEndingMetrics::Face Scattershot_BitfsScEnding::ExpectedCatchFace(const MarioState* marioState, const Object* pyramid, float framesToCatch) const
 {
     if (_args.targetGiven)
         return CatchFace(pyramid);
     float nx = pyramid->oTiltingPyramidNormalX;
     float nz = pyramid->oTiltingPyramidNormalZ;
     float& across = _args.squishEdgeX != 0 ? nx : nz;
+    float& along = _args.squishEdgeX != 0 ? nz : nx;
+    const float frames = std::floor(framesToCatch);
     const float latest = CatchAcross(pyramid);
     const float sign = across < 0.0f ? -1.0f : 1.0f;
-    across = sign * std::max(std::fabs(across) - 0.01f * std::floor(framesToCatch), std::fabs(latest));
+    across = sign * std::max(std::fabs(across) - 0.01f * frames, std::fabs(latest));
+
+    // The run's axis: on the platform the normal approaches the goal Mario's position sets
+    // (the game's (dx, 500, dz) normalized, dx and dz his offset from the home) by 0.01 a
+    // frame, and off it the goal is flat. The frames on the platform are all but the
+    // fall's; the goal is read from where he is now, close enough to where the aim is
+    // drawn (0.54 at the dive, 0.43 at the landing; the normal reaches neither).
+    auto approach = [](float value, float goal, float steps)
+    {
+        const float move = std::min(std::fabs(goal - value), 0.01f * steps);
+        return value + (goal > value ? move : -move);
+    };
+    const float fallFrames = std::min(frames, float(FallFrames));
+    const float dx = marioState->pos[0] - pyramid->oPosX;
+    const float dz = marioState->pos[2] - pyramid->oPosZ;
+    const float goal = (_args.squishEdgeX != 0 ? dz : dx) / std::sqrt(dx * dx + 500.0f * 500.0f + dz * dz);
+    along = approach(along, goal, frames - fallFrames);
+    along = approach(along, 0.0f, fallFrames);
     return BitfsScEndingMetrics::Face::Of(nx, pyramid->oTiltingPyramidNormalY, nz, pyramid->oPosX, pyramid->oPosY, pyramid->oPosZ);
 }
 
@@ -996,7 +1028,11 @@ bool Scattershot_BitfsScEnding::Dive()
     if (marioState->forwardVel < 29.0f)
         return false;
 
-    // The whole recover is one move, reverted if it does not land at the edge.
+    // The recover's first move, reverted unless it dives: the turn, the dive and the pause.
+    // The rollout and its landing are the next two (Rollout, Landing), each a block of its
+    // own with a CSV row, so that the viewer shows the slide, the rollout and the landing
+    // stop (the maintainer, 2026-10-13); a dive whose rollout cannot land in reach leaves
+    // its slide in the table, a lineage the next move ends.
     return ModifyAdhoc([&]()
         {
             // The turn toward the aim first, a full stick at it each frame (the run turns 2048
@@ -1018,7 +1054,7 @@ bool Scattershot_BitfsScEnding::Dive()
                 if (marioState->action != ACT_WALKING && marioState->action != ACT_FINISH_TURNING_AROUND)
                     return false;
                 float aimX, aimZ;
-                AimPoint(ExpectedCatchFace(pyramid, FramesToCatch(marioState, pyramid)), PushDistance(marioState), aimX, aimZ, aimFraction);
+                AimPoint(ExpectedCatchFace(marioState, pyramid, FramesToCatch(marioState, pyramid)), PushDistance(marioState), aimX, aimZ, aimFraction);
                 const int16_t aimYaw = atan2s(aimZ - marioState->pos[2], aimX - marioState->pos[0]);
                 // Within a turn step of the aim: the game ends a turn on the stick's own yaw from
                 // there, and the frame saved is half a unit of speed.
@@ -1067,9 +1103,8 @@ bool Scattershot_BitfsScEnding::Dive()
                 // unpause's own transition; none of the three updates the level, and a press on
                 // any of them is lost (the maintainer's example movies replayed, 2026-10-06). A
                 // dive that lands on its own frame then has its slide's first update still ahead
-                // with B up, for the rollout's press. The corner resource runs the level on
-                // through a pause (ROADMAP 4.22), so on it the three frames are slide frames,
-                // uphill from 44 to 27, and no rollout lands: the recover needs the game there.
+                // with B up, for the rollout's press. The corner resource pauses as the game
+                // does (ROADMAP 4.22).
                 AdvanceFrameWrite(Inputs(Buttons::B | Buttons::START, stick.first, stick.second));
                 if (marioState->action != ACT_DIVE && marioState->action != ACT_DIVE_SLIDE)
                     return false;
@@ -1078,94 +1113,135 @@ bool Scattershot_BitfsScEnding::Dive()
                 AdvanceFrameWrite(Inputs(0, 0, 0));
             }
 
-            // The rollout, a frame at a time: B on the slide for the press, then the stick, among
-            // the yaws within a quarter turn toward uphill (the top rises against the normal's
-            // horizontal part) a step of 512 at a time, that keeps the rollout lowest over the
-            // platform, within the band of 4 above it where the pyramid stays his platform;
-            // landed, it is taken as it is.
-            const auto face = BitfsScEndingMetrics::Face::Of(pyramid);
-            const int16_t uphillYaw = atan2s(-face.uz, -face.ux);
-            const int rotation = int16_t(uphillYaw - marioState->faceAngle[1]) > 0 ? 1 : -1;
-            for (int frame = 0; frame < 12 && marioState->action != ACT_FREEFALL_LAND_STOP; frame++)
-            {
-                if (marioState->action != ACT_DIVE && marioState->action != ACT_DIVE_SLIDE && marioState->action != ACT_FORWARD_ROLLOUT)
-                    return false;
-                const uint16_t buttons = marioState->action == ACT_DIVE_SLIDE ? Buttons::B : 0;
-                const int16_t facing = marioState->faceAngle[1];
-                auto step = ModifyCompareAdhoc<RolloutStep, std::tuple<int8_t, int8_t>>(
-                    [&](auto iteration, auto& params) //paramsGenerator
-                    {
-                        if (iteration >= 33)
-                            return false;
-                        params = std::tuple(Inputs::GetClosestInputByYawHau(int16_t(facing + 512 * iteration * rotation), 32, camera->yaw));
-                        return true;
-                    },
-                    [&](auto status, int8_t stickX, int8_t stickY) //script
-                    {
-                        AdvanceFrameWrite(Inputs(buttons, stickX, stickY));
-                        status->landed = marioState->action == ACT_FREEFALL_LAND_STOP;
-                        status->height = marioState->pos[1] - marioState->floorHeight;
-                        if (marioState->floor->object != pyramid)
-                            return false;
-                        // A landing counts only within reach of the squish edge, where the edge will
-                        // stand in the catch's window; short of it the rollout flies on (the
-                        // maintainer's script: not landing right away), within the band.
-                        if (status->landed)
-                        {
-                            const float inside = SquishEdgeDistance(marioState, pyramid);
-                            return inside >= -1.0f && inside <= DrLandingReach
-                                && InCatchWindow(marioState, pyramid, ExpectedCatchFace(pyramid, FramesToCatch(marioState, pyramid)));
-                        }
-                        return marioState->action == ACT_FORWARD_ROLLOUT || marioState->action == ACT_DIVE_SLIDE;
-                    },
-                    [&](auto incumbent, auto challenger) //comparator
-                    {
-                        // A landing in reach over the flight; of the flight its first two frames the
-                        // lowest, then the highest within the band of 4 over the platform, to carry it
-                        // on, and the lowest where none is within it (the maintainer's
-                        // BitFsScApproach_AttemptDr).
-                        if (challenger->landed != incumbent->landed)
-                            return challenger->landed ? challenger : incumbent;
-                        if (frame < 2)
-                            return challenger->height < incumbent->height ? challenger : incumbent;
-                        const bool challengerIn = std::fabs(challenger->height) < 4.0f;
-                        const bool incumbentIn = std::fabs(incumbent->height) < 4.0f;
-                        if (challengerIn != incumbentIn)
-                            return challengerIn ? challenger : incumbent;
-                        if (challengerIn)
-                            return challenger->height > incumbent->height ? challenger : incumbent;
-                        return challenger->height < incumbent->height ? challenger : incumbent;
-                    },
-                    [&](auto challenger) { return challenger->landed; } //terminator
-                );
-                if (!step.executed)
-                    return false;
-            }
-
-            // Landed, within reach of the squish edge, where it will stand in the catch's window
-            // of heights (the maintainer, 2026-10-11: the first recoveries landed 50 units too
-            // near the corner, the edge 128 high at the catch, the bottom of the window).
-            if (marioState->action != ACT_FREEFALL_LAND_STOP)
-                return false;
-            const float inside = SquishEdgeDistance(marioState, pyramid);
-            return inside >= -1.0f && inside <= DrLandingReach
-                && InCatchWindow(marioState, pyramid, ExpectedCatchFace(pyramid, FramesToCatch(marioState, pyramid)));
+            // On the dive's slide, or in its air short of it: the rollout's moves are next.
+            return marioState->action == ACT_DIVE || marioState->action == ACT_DIVE_SLIDE;
         }).executed;
 }
 
 bool Scattershot_BitfsScEnding::Rollout()
 {
     MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
-    Camera* camera = *(Camera**)(ReadState("gCamera"));
-
-    if (marioState->action != ACT_DIVE_SLIDE)
+    if (marioState->action != ACT_DIVE && marioState->action != ACT_DIVE_SLIDE)
         return false;
 
-    // B pressed on the slide: the rollout, which the stick strains, up to 45 degrees either way.
-    int16_t intendedYaw = int16_t(marioState->faceAngle[1] + int(GetTempRng() % 16385) - 8192);
-    auto stick = Inputs::GetClosestInputByYawHau(intendedYaw, 32, camera->yaw);
-    AdvanceFrameWrite(Inputs(Buttons::B, stick.first, stick.second));
-    return marioState->action == ACT_FORWARD_ROLLOUT;
+    // The recover's second move: the rollout's press and its first frame, each the lowest
+    // over the platform (RolloutFrame). It ends in the rollout, for the landing's move; a
+    // rollout that lands this early must land in reach.
+    return ModifyAdhoc([&]()
+        {
+            const int rotation = RolloutRotation(marioState);
+            for (int frame = 0; frame < RolloutLowFrames; frame++)
+            {
+                if (!RolloutFrame(frame, rotation))
+                    return false;
+                if (marioState->action == ACT_FREEFALL_LAND_STOP)
+                    return LandedInReach();
+            }
+            return marioState->action == ACT_FORWARD_ROLLOUT;
+        }).executed;
+}
+
+bool Scattershot_BitfsScEnding::Landing()
+{
+    MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
+    if (marioState->action != ACT_FORWARD_ROLLOUT)
+        return false;
+
+    // The recover's third move: the rest of the rollout's flight, each frame the highest
+    // within the band over the platform (RolloutFrame), to its landing stop, in reach.
+    return ModifyAdhoc([&]()
+        {
+            const int rotation = RolloutRotation(marioState);
+            for (int frame = RolloutLowFrames; frame < RolloutFrames && marioState->action != ACT_FREEFALL_LAND_STOP; frame++)
+            {
+                if (!RolloutFrame(frame, rotation))
+                    return false;
+            }
+            return LandedInReach();
+        }).executed;
+}
+
+bool Scattershot_BitfsScEnding::RolloutFrame(int frame, int rotation)
+{
+    MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
+    Camera* camera = *(Camera**)(ReadState("gCamera"));
+    Object* pyramid = Pyramid();
+
+    // A frame of the recover after the dive's pause (frame, counted from the pause): B on the
+    // slide for the rollout's press, and the stick, among the yaws within a quarter turn
+    // toward uphill a step of 512 at a time (rotation), that keeps the rollout lowest over the
+    // platform for its first RolloutLowFrames frames, then highest within the band of 4 above
+    // it, where the pyramid stays his platform; landed, it is taken as it is.
+    if (marioState->action != ACT_DIVE && marioState->action != ACT_DIVE_SLIDE && marioState->action != ACT_FORWARD_ROLLOUT)
+        return false;
+    const uint16_t buttons = marioState->action == ACT_DIVE_SLIDE ? Buttons::B : 0;
+    const int16_t facing = marioState->faceAngle[1];
+    auto step = ModifyCompareAdhoc<RolloutStep, std::tuple<int8_t, int8_t>>(
+        [&](auto iteration, auto& params) //paramsGenerator
+        {
+            if (iteration >= 33)
+                return false;
+            params = std::tuple(Inputs::GetClosestInputByYawHau(int16_t(facing + 512 * iteration * rotation), 32, camera->yaw));
+            return true;
+        },
+        [&](auto status, int8_t stickX, int8_t stickY) //script
+        {
+            AdvanceFrameWrite(Inputs(buttons, stickX, stickY));
+            status->landed = marioState->action == ACT_FREEFALL_LAND_STOP;
+            status->height = marioState->pos[1] - marioState->floorHeight;
+            if (marioState->floor->object != pyramid)
+                return false;
+            // A landing counts only within reach of the squish edge, where the edge will
+            // stand in the catch's window; short of it the rollout flies on (the
+            // maintainer's script: not landing right away), within the band.
+            if (status->landed)
+                return LandedInReach();
+            return marioState->action == ACT_FORWARD_ROLLOUT || marioState->action == ACT_DIVE_SLIDE;
+        },
+        [&](auto incumbent, auto challenger) //comparator
+        {
+            // A landing in reach over the flight; of the flight its first frames the lowest,
+            // then the highest within the band of 4 over the platform, to carry it on, and the
+            // lowest where none is within it (the maintainer's BitFsScApproach_AttemptDr).
+            if (challenger->landed != incumbent->landed)
+                return challenger->landed ? challenger : incumbent;
+            if (frame < RolloutLowFrames)
+                return challenger->height < incumbent->height ? challenger : incumbent;
+            const bool challengerIn = std::fabs(challenger->height) < 4.0f;
+            const bool incumbentIn = std::fabs(incumbent->height) < 4.0f;
+            if (challengerIn != incumbentIn)
+                return challengerIn ? challenger : incumbent;
+            if (challengerIn)
+                return challenger->height > incumbent->height ? challenger : incumbent;
+            return challenger->height < incumbent->height ? challenger : incumbent;
+        },
+        [&](auto challenger) { return challenger->landed; } //terminator
+    );
+    return step.executed;
+}
+
+int Scattershot_BitfsScEnding::RolloutRotation(const MarioState* marioState)
+{
+    // Which way from the facing uphill lies: the top rises against the normal's horizontal
+    // part.
+    const auto face = BitfsScEndingMetrics::Face::Of(Pyramid());
+    const int16_t uphillYaw = atan2s(-face.uz, -face.ux);
+    return int16_t(uphillYaw - marioState->faceAngle[1]) > 0 ? 1 : -1;
+}
+
+bool Scattershot_BitfsScEnding::LandedInReach()
+{
+    MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
+    Object* pyramid = Pyramid();
+
+    // Landed, within reach of the squish edge, where it will stand in the catch's window of
+    // heights (the maintainer, 2026-10-11: the first recoveries landed 50 units too near the
+    // corner, the edge 128 high at the catch, the bottom of the window).
+    if (marioState->action != ACT_FREEFALL_LAND_STOP)
+        return false;
+    const float inside = SquishEdgeDistance(marioState, pyramid);
+    return inside >= -1.0f && inside <= DrLandingReach
+        && InCatchWindow(marioState, pyramid, ExpectedCatchFace(marioState, pyramid, FramesToCatch(marioState, pyramid)));
 }
 
 bool Scattershot_BitfsScEnding::HoldBack()
@@ -1193,7 +1269,7 @@ bool Scattershot_BitfsScEnding::LeaveAlong()
     float outX, outZ, alongX, alongZ;
     SquishDirections(outX, outZ, alongX, alongZ);
     float aimX, aimZ;
-    AimPoint(ExpectedCatchFace(pyramid, FramesToCatch(marioState, pyramid)), PushDistance(marioState), aimX, aimZ);
+    AimPoint(ExpectedCatchFace(marioState, pyramid, FramesToCatch(marioState, pyramid)), PushDistance(marioState), aimX, aimZ);
     const float toward = alongX * (aimX - marioState->pos[0]) + alongZ * (aimZ - marioState->pos[2]);
     const float sign = toward < 0.0f ? -1.0f : 1.0f;
     const int16_t lineYaw = atan2s(sign * alongZ, sign * alongX);
@@ -1278,6 +1354,33 @@ bool Scattershot_BitfsScEnding::CUpDecel()
     int16_t intendedYaw = int16_t(GetTempRng() % 65536);
     auto stick = Inputs::GetClosestInputByYawHau(intendedYaw, Magnitudes[draw - 1], camera->yaw);
     AdvanceFrameWrite(Inputs(Buttons::C_UP, stick.first, stick.second));
+    return true;
+}
+
+bool Scattershot_BitfsScEnding::WaitForTilt()
+{
+    MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
+    Object* pyramid = Pyramid();
+
+    // The frames the budget has left for the leave, as ValidateState counts them: the steps
+    // across the edge down to the catch's, less the fall's.
+    auto framesLeft = [&]()
+    {
+        const float across = _args.squishEdgeX != 0 ? pyramid->oTiltingPyramidNormalX : pyramid->oTiltingPyramidNormalZ;
+        return (std::fabs(across) - std::fabs(CatchAcross(pyramid))) / 0.01f - float(FallFrames);
+    };
+    if (framesLeft() <= float(LeaveFrames))
+        return false;
+    for (int frame = 0; frame < 16; frame++)
+    {
+        if (!(marioState->action & ACT_FLAG_STATIONARY))
+            return false;
+        AdvanceFrameWrite(Inputs(0, 0, 0));
+        if (marioState->marioObj->platform != pyramid)
+            return false;
+        if (framesLeft() <= float(LeaveFrames))
+            return true;
+    }
     return true;
 }
 

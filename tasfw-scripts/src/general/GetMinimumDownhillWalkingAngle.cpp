@@ -54,10 +54,19 @@ bool GetMinimumDownhillWalkingAngle::execution()
 	// names in namespace std (docs/compilers.md). Same instruction, same result.
 	CustomStatus.steepness = std::sqrt(floor->normal.x * floor->normal.x + floor->normal.z * floor->normal.z);
 
-	// m->floorAngle - m->faceAngle[1] >= -0x3FFF && m->floorAngle -
-	// m->faceAngle[1] <= 0x3FFF
-	int32_t lowerAngle = floorAngle + 0x3FFF;
-	int32_t upperAngle = floorAngle - 0x3FFF;
+	// The game runs downhill where m->floorAngle - m->faceAngle[1] is within (-0x4000,
+	// 0x4000): the facing nearest the target that is lies 0x3FFF from the floor's angle,
+	// less DownhillMargin. The margin is for what this frame cannot see: the top face is
+	// two triangles, and the game's rounding of their vertices sets their normals up to
+	// about 15 angle units apart, so the triangle under Mario's step can put a facing 1
+	// unit inside the half on this one 10 units outside it on the other; and the stick
+	// the frame writes gives a facing a few units from the one asked for. At 0x3FFF
+	// exactly, half of the ending's run frames at this angle were uphill, each the
+	// slope's gain lost twice over (1.8 of speed), and the runs reached 33 where the
+	// maintainer's example movie reaches 35 (2026-10-13). The cost of the margin is a
+	// heading 64 units further downhill, a third of a degree.
+	int32_t lowerAngle = floorAngle + 0x3FFF - DownhillMargin;
+	int32_t upperAngle = floorAngle - 0x3FFF + DownhillMargin;
 
 	int32_t lowerAngleDiff = abs(int16_t(lowerAngle - _targetAngle));
 	int32_t upperAngleDiff = abs(int16_t(upperAngle - _targetAngle));
