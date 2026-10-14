@@ -326,7 +326,7 @@ namespace
 		const json& a = context.stage.args;
 		RejectUnknownKeys(a,
 			{ "equilibriumFrame", "quadrant", "platform", "minOscillationFrames", "targetNx", "targetNz", "maxOscillations",
-				"firstShots", "shots", "lastShots", "lastMaxSolutions", "keepTop", "passRetries", "handOverFallback", "requireIncrementParity", "minFirstCrossingSpeed", "normalSpecs" },
+				"firstShots", "shots", "lastShots", "lastMaxSolutions", "keepTop", "lastKeepTop", "passRetries", "handOverFallback", "requireIncrementParity", "minFirstCrossingSpeed", "lastCrossingDirection", "normalSpecs" },
 			where);
 
 		int64_t equilibriumFrame = int64_t(ArgNumber(a, "equilibriumFrame", context.input, where));
@@ -342,10 +342,34 @@ namespace
 		long long shots = (long long)ArgNumber(a, "shots", context.input, 30000, where);
 		long long lastShots = (long long)ArgNumber(a, "lastShots", context.input, 30000, where);
 		int lastMaxSolutions = int(ArgNumber(a, "lastMaxSolutions", context.input, 1000000, where));
+		// The last pass hands on all of its solutions unless lastKeepTop says how many, the
+		// fastest (the maintainer, 2026-10-13: the final oscillation stage's hand-over to the
+		// ending trimmed as a pass's to the next is); 0 is all. The rewind's hand-over too.
+		size_t lastKeepTop = size_t(ArgNumber(a, "lastKeepTop", context.input, 0, where));
 		size_t keepTop = size_t(ArgNumber(a, "keepTop", context.input, 10, where));
 		int passRetries = int(ArgNumber(a, "passRetries", context.input, 0, where));
 		bool requireIncrementParity = ArgBool(a, "requireIncrementParity", true, where);
 		bool handOverFallback = ArgBool(a, "handOverFallback", true, where);
+		// Which way the last pass's solutions leave their crossing (the maintainer's two-stage
+		// lineup, 2026-10-13; ROADMAP 4.12): "far", Mario running toward the far end of the
+		// chord, the squish edge's corner, which the ending stage needs; "near", the other way,
+		// for a stage whose oscillations a second oscillation stage continues with one more,
+		// which then ends far. A crossing's roughTargetAngle is the end the normal steps toward,
+		// the one Mario came from, so the far way is the angle A of the quadrant.
+		std::string lastCrossingDirection = ArgString(a, "lastCrossingDirection", "far", where);
+		if (lastCrossingDirection != "far" && lastCrossingDirection != "near")
+			ConfigError("\"lastCrossingDirection\" in " + where + " must be \"far\" or \"near\", not \"" + lastCrossingDirection + "\"");
+		const bool wantFinalA = lastCrossingDirection == "far";
+		// Whether the last pass crosses at the angle A, given the angle a pass crosses at and
+		// which pass it is: the passes alternate. One oscillation more where the last would
+		// cross the other way.
+		auto settleLastPass = [&](int knownPass, bool knownPassA)
+		{
+			const int finalPass = maxOscillations - 1;
+			const bool finalA = (finalPass - knownPass) % 2 == 0 ? knownPassA : !knownPassA;
+			if (finalA != wantFinalA)
+				maxOscillations++;
+		};
 		float minFirstCrossingSpeed = float(ArgNumber(a, "minFirstCrossingSpeed", context.input, 0.0, where)); // 0: no floor
 
 		const json& specsJson = RequireObject(a, "normalSpecs", where);
@@ -511,14 +535,40 @@ namespace
 		// The roots a pass hands to the next: the keepTop fastest of its solutions (the
 		// maintainer, 2026-10-07; the fastest of each 0.01 cell of the normal was tried on
 		// 2026-10-06 and carried the pass's every tilt without a faster crossing, ROADMAP 4.6).
-		auto keepFastest = [&](std::vector<Solution>& found)
+		auto keepFastest = [&](std::vector<Solution>& found, std::size_t count)
 		{
 			std::stable_sort(found.begin(), found.end(), [](const Solution& x, const Solution& y) { return x.data.fSpd > y.data.fSpd; });
-			if (found.size() > keepTop)
-				found.resize(keepTop);
+			if (found.size() > count)
+				found.resize(count);
+		};
+		auto keepFastestRecords = [&](SolutionSet& set, std::size_t count)
+		{
+			auto speed = [](const SolutionRecord& record)
+			{
+				auto found = record.metrics.find("fSpd");
+				return found == record.metrics.end() ? 0.0 : found->second;
+			};
+			std::stable_sort(set.solutions.begin(), set.solutions.end(), [&](const SolutionRecord& x, const SolutionRecord& y) { return speed(x) > speed(y); });
+			if (set.solutions.size() > count)
+				set.solutions.resize(count);
 		};
 
-		const int startOscillation = context.pipeline.startStage == context.stage.name ? context.pipeline.startPass : 0;
+		// An input that is itself an oscillation stage's output continues its lineages: this
+		// stage begins at the oscillation after the input's, the input's solutions the roots
+		// the pass before carried, and its maxOscillations counts the oscillations it adds (the
+		// maintainer's two-stage lineup, 2026-10-13: a first stage at a lower tilt, where the
+		// swings keep their speed, ending the near way, and a final oscillation that raises the
+		// tilt to the ending's).
+		const bool continuesInput = context.input != nullptr && context.input->type == "dr-oscillations" && context.pipeline.startStage != context.stage.name;
+		int startOscillation = context.pipeline.startStage == context.stage.name ? context.pipeline.startPass : 0;
+		if (continuesInput)
+		{
+			std::optional<double> inputOscillation = context.input->Metric("currentOscillation");
+			if (!inputOscillation)
+				ConfigError("stage \"" + context.stage.name + "\": its input is an oscillation stage's output without a currentOscillation metric");
+			startOscillation = int(*inputOscillation) + 1;
+			maxOscillations += int(*inputOscillation) + 1;
+		}
 		std::vector<Solution> solutions;
 		if (startOscillation == 0)
 		{
@@ -545,30 +595,41 @@ namespace
 		}
 		else
 		{
-			// From the cache: the roots the pass before carried and the yields so far. The
-			// direction the first oscillation committed to is on every root it carried, and when
-			// it was the first direction it added an oscillation (the commitment below).
-			fs::path file = context.pipeline.PassFile(context.stage.name, startOscillation - 1);
-			if (!fs::exists(file))
-				ConfigError("\"start\" asks stage \"" + context.stage.name + "\" to begin at oscillation " + std::to_string(startOscillation)
-					+ " but " + file.string() + " does not exist; run the stage from an earlier oscillation first");
-			SolutionSet cached = SolutionSet::Load(file);
+			// From the cache, or from the input stage: the roots the pass before carried and the
+			// yields so far. The direction that pass crossed in is on every root it carried, and
+			// the last pass's direction follows from it (settleLastPass).
+			SolutionSet cached;
+			std::string source;
+			if (continuesInput)
+			{
+				cached = *context.input;
+				source = "stage \"" + cached.stage + "\"";
+			}
+			else
+			{
+				fs::path file = context.pipeline.PassFile(context.stage.name, startOscillation - 1);
+				if (!fs::exists(file))
+					ConfigError("\"start\" asks stage \"" + context.stage.name + "\" to begin at oscillation " + std::to_string(startOscillation)
+						+ " but " + file.string() + " does not exist; run the stage from an earlier oscillation first");
+				cached = SolutionSet::Load(file);
+				source = file.string();
+			}
 			if (cached.solutions.empty())
-				ConfigError(file.string() + " holds no roots to start from");
+				ConfigError(source + " holds no roots to start from");
 			solutions = PipeIn<Scattershot_BitfsDr_Solution>(&cached);
 			carriedSets[startOscillation - 1] = cached;
 			passSolutions = cached.passSolutions;
 			if (startOscillation >= 2)
 			{
 				std::optional<double> direction = cached.Metric("roughTargetAngle");
-				if (direction && int16_t(*direction) == BitfsDrMetrics::RoughTargetAngleA(quadrant))
-					maxOscillations++;
+				if (direction)
+					settleLastPass(startOscillation - 1, int16_t(*direction) == BitfsDrMetrics::RoughTargetAngleA(quadrant));
 			}
 			if (startOscillation >= maxOscillations)
 				ConfigError("\"start\" asks stage \"" + context.stage.name + "\" to begin at oscillation " + std::to_string(startOscillation)
 					+ ", past its last pass (maxOscillations " + std::to_string(maxOscillations) + ", the first oscillation's direction counted)");
-			std::printf("dr-oscillations: starting at oscillation %d from the %llu root(s) in %s\n",
-				startOscillation, (unsigned long long)solutions.size(), file.string().c_str());
+			std::printf("dr-oscillations: starting at oscillation %d from the %llu root(s) in %s, the last pass at %d\n",
+				startOscillation, (unsigned long long)solutions.size(), source.c_str(), maxOscillations - 1);
 		}
 
 		config.MaxShots = shots;
@@ -623,9 +684,11 @@ namespace
 					none.passSolutions = passSolutions;
 					return none;
 				}
-				std::printf("dr-oscillations: no solutions at target oscillation %d; handing on the %llu solution(s) at the exit tilt from oscillation(s) %s, the passes whose crossing heads toward the squish-cancel quadrant\n",
+				std::printf("dr-oscillations: no solutions at target oscillation %d; handing on the %llu solution(s) at the exit tilt from oscillation(s) %s, the passes whose crossing heads the last pass's way\n",
 					targetOscillation, (unsigned long long)fallback.solutions.size(), fallbackPasses.c_str());
 				fallback.passSolutions = passSolutions;
+				if (lastKeepTop > 0)
+					keepFastestRecords(fallback, lastKeepTop);
 				return fallback;
 			}
 			std::size_t found = solutions.size();
@@ -646,16 +709,17 @@ namespace
 				bool chooseA = towardA * 2 > fastest || (towardA * 2 == fastest && solutions[0].data.roughTargetAngle == angleA);
 				const int16_t other = chooseA ? angleB : angleA;
 				std::erase_if(solutions, [other](const Solution& s) { return s.data.roughTargetAngle == other; });
-				if (chooseA)
-					maxOscillations++;
+				settleLastPass(1, chooseA);
 			}
 
 			recordPool(targetOscillation, solutions);
 
 			// The roots the next pass starts from: the keepTop fastest. The last pass hands on
-			// all of its solutions.
+			// all of its solutions, or the lastKeepTop fastest.
 			if (targetOscillation < maxOscillations - 1)
-				keepFastest(solutions);
+				keepFastest(solutions, keepTop);
+			else if (lastKeepTop > 0)
+				keepFastest(solutions, lastKeepTop);
 
 			logHandOver(targetOscillation, found, solutions);
 			cachePass(targetOscillation, solutions);
@@ -1028,9 +1092,14 @@ void ExportSolutionSet(const StageContext& context, const SolutionSet& set)
 	for (const SolutionRecord& record : set.solutions)
 		diffs.push_back(record.m64Diff);
 
+	// On the stage's own resource: for a corner stage, a corner, where the replay is about seven
+	// times faster than on the game (915 movies in 1.2 s against 3.1 s, 2026-10-13). The movie is
+	// the same file either way: it holds only inputs, and the replay check before the export
+	// (VerifyOnGame) has kept only the solutions that end in the same state on both, which is
+	// what the file's name is made of.
 	Configuration config = context.pipeline.ScattershotConfiguration(context.stage);
 	M64 m64 = LoadMovie(config);
-	TopLevelScriptBuilder<ExportSolutions>::Build(m64).ImportResource(&context.game).Run(set.startFrame, diffs, directory);
+	TopLevelScriptBuilder<ExportSolutions>::Build(m64).ImportResource(context.resources[0]).Run(set.startFrame, diffs, directory);
 	std::printf("exported %llu movie(s) to %s\n", (unsigned long long)diffs.size(), directory.string().c_str());
 }
 

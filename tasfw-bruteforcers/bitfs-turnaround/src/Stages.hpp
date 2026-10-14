@@ -18,7 +18,7 @@ struct StageContext
 	const PipelineConfig& pipeline;
 	const StageConfig& stage;
 	std::vector<Sm64Resource*>& resources; // the stage's, one per thread: the game's DLL copies, or corners imported from the game (stage.resource)
-	LibSm64& game;                         // the game itself: a corner stage's solutions are replayed on it before they count, and the movies are exported from it
+	LibSm64& game;                         // the game itself: a corner stage's solutions are replayed on it before they count
 	const SolutionSet* input;              // nullptr when the stage has no input
 };
 
@@ -35,7 +35,7 @@ const StageType* FindStageType(const std::string& name);
 // Runs the stage named by context.stage.type; throws on an unknown type.
 SolutionSet RunStage(StageContext& context);
 
-// Replays every solution on the game and writes
+// Replays every solution on the stage's first resource (a game copy, or a corner) and writes
 // <outputDirectory>/m64/<stage>/<index>_<normal>_<speed>.m64.
 void ExportSolutionSet(const StageContext& context, const SolutionSet& set);
 
