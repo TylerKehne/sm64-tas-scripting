@@ -4,6 +4,107 @@ Every hot-path change records its delta table here, newest first; the policy, th
 how to run it are in [performance.md](performance.md). The first measurements (2026-09-07),
 which everything since is compared against, are at the bottom.
 
+## 2026-10-13: the viewer's counts follow the filter (ROADMAP 4.4)
+
+Not a framework change; the viewer only (`analysis/visualizer.py`, README.md "The viewer").
+The maintainer asked for the filter panel's counts to follow the filter. A value's count
+is now how many of its rows pass the filter on every other column. Before, the parse loop
+counted every row, then stopped checking a row at the first filter it failed. Now it checks
+every filter of a row before counting it. Measured as a full read of the maintainer's 388,845-row
+ending CSV through `RunData.poll` (24 columns, 8 of them counted), CPU seconds, best of
+three, two rounds with the build before and this one alternating:
+
+| Filter | Before | After |
+|---|---|---|
+| None | 2.70, 2.62 | 2.75, 2.67 |
+| `Phase in SWING AIR, MarioFSpd >= 20` | 2.67, 2.67 | 2.64, 2.66 |
+
+About 2% more with no filter, and no change with one. Tier D's viewer workloads set no
+filter. Their parse is a small part of the viewer's CPU (0.1 s of 3.3 s when the panel was
+measured on 2026-10-03), so 2% of it is far below the 10% gate. Not run: the perf suite.
+
+## 2026-10-13: a corner stage's movies are exported on the corner (ROADMAP 4.23)
+
+The maintainer found the dr stage's rewind slow next to its oscillation passes. Timed
+with temporary prints, Release, MSVC, the dr stage alone on the corner: gathering the
+rewind's solutions is not what is slow. It takes 0.004 s for about 910 solutions from
+the pools in memory, and 0.23 s when a resumed run reads them back from the pool files.
+What is slow is replaying those solutions on one thread after the stage: the replay
+check on the game, 2.2 s; on the corner, 0.3 s; and the movie export, 3.0 s, a second
+replay on the game. `ExportSolutionSet` now replays on the stage's first resource, a
+corner for a corner stage (for a game stage it was already that resource). The movies
+are the same files: a movie holds only inputs, and the replay check before the export
+keeps only the solutions that end in the same state on the game and on the corner, the
+state the file's name is made of. Compared byte for byte on 915 movies.
+
+| The dr stage resumed at oscillation 5, which finds nothing; the rewind hands on 915 | Before | After |
+|---|---|---|
+| The export | 3.15 s | 1.17 s |
+| The stage | 7.6 s | 5.7 s |
+| The movies | | identical, all 915 |
+
+A corner stage that exports now counts the export's replay in the frame advances, saves
+and loads it prints, about 190,000 frames for 915 solutions: the work moved from the
+game, which those counts leave out, to a corner, which they include. No perf tier
+exports, so no baseline moves. The game's replay check still runs on one thread (ROADMAP
+4.23).
+
+## 2026-10-13: the downhill look-ahead keeps its facing 64 units inside the downhill half (ROADMAP 4.11, 4.20)
+
+`GetMinimumDownhillWalkingAngle` reported the facing at the very edge of the half in which
+the game runs downhill: 0x3FFF from the floor's angle, one unit inside it. The top face is
+two triangles whose normals the game's vertex rounding sets up to about 15 angle units
+apart, and the stick a frame writes gives a facing a few units from the one asked for. So a
+facing at the edge on the look-ahead's triangle was often outside it on the triangle under
+the step, and the slope then took speed away instead of adding it. On the ending's run
+from the maintainer's `dr-final` roots, half of the minimum-downhill steps were uphill:
+0.5 of speed lost where 1.3 is gained. With the facing `DownhillMargin` (64 units, a third
+of a degree) inside the half, none of 295 steps from the same state was. The oscillation
+stage's swings use the same look-ahead.
+
+| Measure | At the edge | 64 units inside |
+|---|---|---|
+| `bitfs-turn --test`, the every-corner case: first-oscillation solutions within 2,000 shots in corners 1 to 4 (cap 1,000) | 768, 530, 1,000, 772 (2026-10-12) | 1,000, 478, 749, 804 |
+| The dr stage from the maintainer's `are-fix` rest, one run each, not deterministic: the fastest crossings of passes 1 to 3 | 27.1 to 27.9, 30.3 to 31.1, 29.4 to 29.8 | 27.1 to 27.9, 30.2 to 30.7, 28.1 to 29.2 |
+
+Neither measure moves beyond one run's spread. No perf tier runs the look-ahead: Tier D's
+stages are tilt-target ones, and Tier C runs frozen copies. So no baseline moves.
+
+## 2026-10-13: the ending's dive recover as three moves; the viewer reads every row (ROADMAP 4.11)
+
+The maintainer saw no dive recover in the viewer. It ran, but as one move from its turn to
+its landing stop, and the search writes a row only where a move ends; and the viewer
+skipped the rows the search forced, which most of the recover's landing rows were. The
+recover is now three moves: `Dive` (the turn, the dive and the pause, ending on the
+slide), `Rollout` (the press and the rollout's first frame) and `Landing` (the rest of the
+flight, to a landing stop in reach). Every frame after the pause is steered by the same
+compare as before, and each move's row is forced. `Sampled` is a checkbox column in every
+tab of the viewer, which reads every row: the `sampledOnly` switch is gone from
+`Visualization`, the pipeline's keys and the viewer. What the split costs: a shot that
+starts from a slide or rollout block replays the steered rollout in every pellet, about
+230 frames where an average pellet runs about 6.
+
+The ending stage on the maintainer's `dr-final` roots, Release, MSVC, on the corner,
+deterministic, 30,000 shots, the build before the split against the build with it:
+
+| Seed | Frame advances | Loads | Blocks | Seconds | Solutions | Landing stops | Slide, rollout rows |
+|---|---|---|---|---|---|---|---|
+| 6 | 34.28 M, 33.73 M | 8.70 M, 8.35 M | 324 k, 375 k | 159.4, 147.6 | 58, 65 | 354, 380 | 278, 359 |
+| 7 | 31.61 M, 32.54 M | 6.79 M, 7.43 M | 310 k, 319 k | 135.9, 136.3 | 126, 71 | 445, 327 | 249, 311 |
+| 8 | 32.30 M, 34.03 M | 7.24 M, 8.48 M | 355 k, 346 k | 129.0, 121.2 | 69, 54 | 333, 400 | 248, 341 |
+| 9 | 32.02 M, 33.91 M | 6.90 M, 8.65 M | 285 k, 350 k | 134.5, (194.9) | 147, 206 | 366, 419 | 263, 355 |
+| total | 130.21 M, 134.22 M (+3.1%) | 29.63 M, 32.91 M (+11%) | 1,275 k, 1,391 k | 424, 405 (seeds 6 to 8) | 400, 396 | 1,498, 1,526 | |
+
+Saves 16.15 M and 16.32 M (+1.1%). Seed 9's run of the split shared the machine with
+builds, so its time is left out. The seeds' own spread, 58 to 147 solutions with the same
+code, is wider than any difference the split makes. The viewer: a 300,000-row CSV of
+numbers only, as Tier D's are, rendered headless (`--once`) five times by the committed
+viewer and five by this one, alternating: a median of 2.47 and 2.50 seconds, Python's
+start and the drawing included. The extra work is one more counted column per row. Not
+run: the perf suite. None of its benchmark rows runs the ending, and Tier D's stages force
+no rows, so its viewer reads the same rows as before; its viewer rows, which gate the
+viewer's CPU, were not run with this change.
+
 ## 2026-10-12: the corner resource models the pause (ROADMAP 4.22)
 
 `BitfsCorner` now freezes the level through a pause as the game does: START enters the

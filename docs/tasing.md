@@ -530,9 +530,10 @@ not, once the cost model is off (`"costModel": false` in `config.json` for a dia
   that is not a function of state, a direct memory write, or a framework bug. It is never
   a rate to tolerate (hard rule 1); the failure handler dumps `error.m64` and says whether
   decoding itself is deterministic (ARCHITECTURE.md, "Sharp edges").
-- A solution is only ever a diff, and every export replays it through the game from the
-  stage's start frame (`ExportSolutions`), so an exported movie is by construction what
-  the game does with those inputs.
+- A solution is only ever a diff, and every export replays it from the stage's start frame
+  on the stage's own resource (`ExportSolutions`). On a corner stage, the replay check first
+  keeps only the solutions the game reproduces (`VerifyOnGame`), so an exported movie is,
+  either way, what the game does with those inputs.
 
 **Exports.** Each stage writes `<outputDirectory>/solutions/<stage>.json` (frames as
 `[frame, buttons, stickX, stickY]` plus the named metrics) and, with `"export": true`, one
@@ -643,6 +644,14 @@ The full list is in AGENTS.md; these are the ones a script author meets.
   the oscillations turn around. A pointer kept across a frame then points at a slot nothing
   reloaded, which still holds the old normal and the old object. Read the surface again
   after every frame (`GetMinimumDownhillWalkingAngle` does); never cache one.
+- The top face is two triangles, and the game rounds their transformed vertices to shorts,
+  so their normals differ by up to about 15 angle units. A facing that is just inside the
+  downhill half by the floor one frame on (the look-ahead's triangle) can be outside it on
+  the triangle under Mario's step, and the stick's rounding moves the facing a few units
+  more; the slope then takes its gain away instead of giving it, 1.8 of speed a frame at
+  the ending's tilts. `GetMinimumDownhillWalkingAngle` keeps the facing it reports
+  `DownhillMargin` (64 units) inside the half for that; at the boundary itself half of the
+  ending's run frames at the minimum angle were uphill (2026-10-13).
 - A `GetMetrics` reference dies at the next write at or before its frame; copy it.
 - `ModifyAdhoc` reverts when the lambda returns false, and reports `executed == false`.
 - Check `asserted`, not `executed`; a metric script that did not assert stores a default

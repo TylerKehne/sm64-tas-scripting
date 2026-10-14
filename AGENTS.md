@@ -449,11 +449,11 @@ Agents without hooks follow the same procedure by hand at the end of every chang
   it), leaves Mario off the platform, so an action that cancels to freefall (idle, a stop,
   a deceleration) falls on the next frame with no step of his own; running does not.
 - **PBDR**: pause-buffered dive recover: a dive, a pause in which B is released, and B
-  pressed on the slide's first frame for the rollout (the ending's `Dive` and `Rollout`);
-  the pause freezes three frames, so the press is the fourth frame after the dive's. The
-  pause buffer is the one place a BitFS script presses START (the maintainer,
-  2026-10-13): no move draws it, and the ending refuses a frame that pressed it with
-  Mario not on the dive slide.
+  pressed on the slide's first frame for the rollout (the ending's `Dive`, `Rollout` and
+  `Landing` moves); the pause freezes three frames, so the press is the fourth frame after
+  the dive's. The pause buffer is the one place a BitFS script presses START (the
+  maintainer, 2026-10-13): no move draws it, and the ending refuses a frame that pressed
+  it with Mario not on the dive slide.
 - **uscx / uscz**: the squish cancel off the x-aligned or the z-aligned edge of the pyramid's
   top, the edge running along that axis (the maintainer's naming, 2026-10-06); the edge's
   height above the lava is set by the other axis's tilt component. The committed setup

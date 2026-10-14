@@ -120,8 +120,10 @@ with and at which frame, and after the search how many of its solutions the game
 saying how it differed). The committed config puts all three stages on the corner, each with
 every object, since 2026-10-12. The stage
 summary prints wall time and the frame advances, saves and loads summed over threads, which
-are the fixed-workload numbers a performance change has to report (AGENTS.md, hard rule 8),
-then the slot manager's line: the most savestates and bytes any thread held at once, and the
+are the fixed-workload numbers a performance change has to report (AGENTS.md, hard rule 8).
+They count the stage's own resources only: for a corner stage, the corners' work (the
+search, the replay check's run on a corner and, with `"export": true`, the export), not the
+replay check's run on the game. Then come the slot manager's line: the most savestates and bytes any thread held at once, and the
 evictions and pool reuses (what the per-thread memory cap is up against; ROADMAP 3.5), and
 where the threads' CPU time went: the resource's own advance, save and load as shares of
 the process CPU time over the stage, with the cost of each, and the share outside the
@@ -219,7 +221,7 @@ One JSON file. Relative paths resolve against the file's own directory, unless t
   an error in the viewer, as a filter's is, so a stage whose CSV lacks a column named at
   the top level names its own list), `view` (`{ "x", "y", "width", "height" }`: a fixed window of the plot's units
   centered on x, y, drawn square to its units and never rescaled; without one the plot
-  follows its data) and `sampledOnly` (true). An empty block takes every default; only a
+  follows its data). An empty block takes every default; only a
   stage with a `csvSamplePeriod` has a CSV to show.
 - Numeric `args` accept a number or `"input:<metric>"`, which takes that metric from the
   first solution of the input stage (for example the equilibrium frame the tilt search found).
@@ -416,7 +418,9 @@ One JSON file. Relative paths resolve against the file's own directory, unless t
   first oscillation nothing, on master's code as on this branch;
   docs/performance-changelog.md); from the first oscillation on, each pass carries its
   `keepTop` (10) fastest solutions into the next, and the last pass hands on all of its
-  solutions (the fastest of each 0.01 cell of the normal was tried on 2026-10-06 and carried
+  solutions, or its `lastKeepTop` fastest when that is set (the committed `dr-final`
+  hands the ending its 100 fastest; the rewind's hand-over is trimmed the same way; the
+  fastest of each 0.01 cell of the normal was tried on 2026-10-06 and carried
   every tilt without a faster crossing, ROADMAP 4.6); after the first oscillation the stage commits
   to the direction most of those took, dropping the other direction's solutions (which
   would need one oscillation more); a run's solutions arrive in block order, so the first
@@ -442,7 +446,15 @@ One JSON file. Relative paths resolve against the file's own directory, unless t
   while the tilt climbs, hands on its regime part, and a pass that fails right after its
   lineage reached the regime has the earlier passes' eligible solutions behind it; a run
   ends with nothing only when no earlier pass of the right direction found a solution at
-  the exit tilt. After each pass the stage prints what it found and the
+  the exit tilt. The last pass's solutions leave their crossing running toward the far
+  end of the chord, the squish edge's corner, unless `lastCrossingDirection` is `"near"`,
+  the other way (the stage adds an oscillation where the count would end the wrong way).
+  A second oscillation stage whose `input` is an oscillation stage continues its lineages
+  (the maintainer's two-stage lineup, 2026-10-13, ROADMAP 4.12: the committed `dr` stage
+  oscillates at a lower tilt, where the swings keep their speed, and ends near; `dr-final`
+  adds one oscillation that raises the tilt to the ending's and ends far): it begins at
+  the oscillation after the input's, the input's solutions the roots the pass before
+  carried, and its `maxOscillations` counts the oscillations it adds. After each pass the stage prints what it found and the
   roots it carries, their speed, tilt and oscillation, and each retry, which is what to
   read when a run stalls.
 
@@ -475,10 +487,18 @@ is a range, a min and a max box, either one empty for an open bound, applied wit
 under the least and greatest value seen, except the columns the run names as categorical
 (the `visualize` block's `categorical`, written into the parameters file with the rest; a
 column written as text must be one of them, since the viewer reads a text only there, and
-it shows every value as the CSV writes it, hex included),
-which have a checkbox per value with the number of sampled rows
-holding it: checked values pass, and none checked passes every row. The counts and ranges
-are over every sampled row of the run, whatever the filter, and grow as the run does; a
+it shows every value as the CSV writes it, hex included). `Sampled` is such a column in
+every tab without being named (the maintainer, 2026-10-13): 1 for a row the sample period
+chose, 0 for a row the search forced. The ending forces a row for every departure, catch
+and squish cancel, and for the dive recover's slide, rollout and landing stop. These
+columns have a checkbox per value with the number of rows
+holding it: checked values pass, and none checked passes every row. A count follows the
+filter on every other column, as a shop's facets do (the maintainer, 2026-10-13). With
+`Phase == SWING` checked, every other column counts only the SWING rows. Phase's own
+values keep their counts, so each still shows how many of its rows the rest of the filter
+passes. A value stays listed at 0 when the rest of the filter passes none of its rows. The
+ranges are over every row of the run, whatever the filter. Counts and ranges grow as the
+run does; a
 categorical column that passes 256 distinct values becomes a range, and its section says
 so. The filters in force are listed at the top of the panel, as the grammar reads them (a
 hex column's values in hex), each with a button that drops it, above a rule that separates
@@ -530,14 +550,15 @@ parameters file (`*.visualizer.summary.json`), which the perf suite gates
 parameters file, and checks the summary and the image.
 
 The CSV's columns are `Shot`, `Frame`, `Sampled` (1 for a row the sample period chose, 0 for
-one the search forced) and then the stage type's own:
+one the search forced; a checkbox column in every tab of the viewer) and then the stage
+type's own:
 
 | Stage type | Columns after the first three |
 |---|---|
 | every type | `MarioX`, `MarioY`, `MarioZ`, `MarioFYaw`, `MarioFSpd`, `MarioAction` (in hex with the action's name after it, `0x04000440 (ACT_WALKING)` for walking; a filter on it reads the hex), `PlatNormX`, `PlatNormY`, `PlatNormZ` |
 | `tilt-target` | plus `MarioYVel` |
 | `dr-oscillations` | plus `Oscillation`, `Crossing`, `Phase` (the metric script's phase by name: `INITIAL`, `RUN_DOWNHILL`, `TURN_UPHILL`, `TURN_AROUND`, `RUN_DOWNHILL_PRE_CROSSING`, and two the search no longer reaches), `XzSum` (the tilt: the magnitudes of `PlatNormX` and `PlatNormZ` added) |
-| `sc-ending` | plus `Phase` (`SWING` the run, `DIVE`, `BRAKE`, `EDGE` stopped on the platform, `AIR` after the departure), `Approach` (`NONE`, `DIVE_RECOVER`, `BRAKE`), `StepsX`, `StepsZ` (the 0.01 steps from the normal to the target on each axis, signed; without a target, to the hand-over's normal), `Departed` and `SquishCancel` (`true` or `false`), `MarioYVel`, and on a probed frame what the probe's recorded placement made of Mario a frame on, `ProbeAction` (hex and name, `0x00000000 (-)` where the probe did not run), `ProbeSpeed`, `ProbeHeight`, `SquishEdgeDist` (Mario's distance inside the squish edge by the face as the game places it, negative outside it), `Catch` (whether the next frame's face squishes him where he is: -2 not looked at, -1 no, 0 a squish no push of the probe cancels, else how many of its pushes do), `LeaveAction` (on a departed row, the action Mario left the platform from, hex and name; `0x00000000 (-)` before the departure) |
+| `sc-ending` | plus `Phase` (`SWING` the run, `DIVE`, `BRAKE`, `EDGE` stopped on the platform, `AIR` after the departure; the dive recover is three moves, the dive, the rollout and the landing, and a row is written where a move ends in a new block, so a dive recover the search had not seen before has a `DIVE` row on the dive's slide, one in the rollout and an `EDGE` row at its landing stop, `ACT_DIVE_SLIDE`, `ACT_FORWARD_ROLLOUT` and `ACT_FREEFALL_LAND_STOP`, all forced and with `Approach` `DIVE_RECOVER`), `Approach` (`NONE`, `DIVE_RECOVER`, `BRAKE`), `StepsX`, `StepsZ` (the 0.01 steps from the normal to the target on each axis, signed; without a target, to the hand-over's normal), `Departed` and `SquishCancel` (`true` or `false`; the stage's solution is the squish cancel, so `SquishCancel` true marks exactly the solutions, and the search forces every such row), `MarioYVel`, and on a probed frame what the probe's recorded placement made of Mario a frame on, `ProbeAction` (hex and name, `0x00000000 (-)` where the probe did not run), `ProbeSpeed`, `ProbeHeight`, `SquishEdgeDist` (Mario's distance inside the squish edge by the face as the game places it, negative outside it), `Catch` (whether the next frame's face squishes him where he is: -2 not looked at, -1 no, 0 a squish no push of the probe cancels, else how many of its pushes do), `LeaveAction` (on a departed row, the action Mario left the platform from, hex and name; `0x00000000 (-)` before the departure) |
 
 A categorical column is written as text where text makes sense (the maintainer,
 2026-10-06): an enumeration by its names, a flag as `true` or `false`, the action in hex

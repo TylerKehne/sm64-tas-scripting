@@ -896,7 +896,11 @@ Goal: finish the thing the framework was built for.
       reads a hex cell as a number shown as written, the name left out of the comparison,
       and, in a categorical column only, a text as a value shown and filtered as written
       (`Phase in SWING AIR`); CI pins it on a second sample (`scattershot_text_sample.csv`),
-      and `--once --csv` takes `--categorical`.
+      and `--once --csv` takes `--categorical`. Since 2026-10-13 (the maintainer's ask) a
+      value's count follows the filter on every other column, as a shop's facets do, and a
+      value stays listed at 0 when that filter passes none of its rows; the ranges still
+      cover every row. CI pins the counts on the text sample; what the change costs is in
+      docs/performance-changelog.md.
 
 - [x] **4.5 Base-block validation failures.** Done 2026-09-08. `ValidateBaseBlock` found
       state-bin mismatches on about 2% of shots (5 to 9 per 400-shot deterministic
@@ -1981,6 +1985,23 @@ goals are (status as stated by the maintainer, 2026-09-08):
       16 threads. After it, the climb: the sum rises about 0.02 an oscillation and the
       fifth pass works at the lava's limit. The fixer is at its limit (rests at 0.65 and
       above drown the first swing, off the diagonal it has no first frame).
+      The maintainer (2026-10-13), for when the ending is settled: perhaps the brute forcer
+      run separately on every error pair the fixer can reach and every relevant sum and
+      difference of the normal. The scale, from 4.8's count and the corner resource's
+      timings (the fixer 0.3 s on one thread; the dr stage about 84 s and 50,000 ending
+      shots about 15 s on 16 threads): a setup has 28,147,276,212 pairs, and a run for
+      each, at least 100 s, comes to some 90,000 years; the fixer alone, run 16 at a time,
+      to about 17 years. The sum and difference pick a cell, one 0.01 step on each axis,
+      and every cell holds every pair exactly once, as one float. So the cells are what
+      can be enumerated: a setup has at most about 2,300 (48 steps on each axis over the
+      oscillations' 0.13 to 0.61), so at most about 37,000 runs for the 16 setups, some 40
+      days at 100 s, and fewer cells are relevant. The untargeted ending already records
+      each squish cancel's exact normal (`probeNormX`, `probeNormZ`), and a targeted run
+      (4.8) is the way to an exact float in a working cell. Open, to measure first once
+      the ending is stable, with a few hundred pairs run on one working cell: whether the
+      pair changes whether a squish cancel happens there. Within a cell a pair moves the
+      normal at most 0.005 on an axis, under 2 units of the squish edge's height (the
+      top's half-width is 307) against the catch window's 20.
 - [ ] **4.7 A solutions database.** Store the input files (or compressed versions) with
       numerical data about each, queryable and filterable. Nothing exists yet; the per-stage
       solution files from 1.4 (`solutions/<stage>.json`: diffs plus named metrics) are the
@@ -2297,6 +2318,23 @@ goals are (status as stated by the maintainer, 2026-09-08):
       landing's cell is the prediction's noise, 0.0005 by 0.0003 units; within 100 they
       hand over (237,091 advances). A validation refusing two frames at an exact match
       would be a rule from one measurement; the header's comment says it instead.
+      Counted 2026-10-13, at the maintainer's question how many error pairs the fixer can
+      reach (a compiled copy of `StepsReversibly` and `AdjustedRemainderError`, not
+      committed): each float within 0.005 of a target is one possible error on that axis,
+      and for the config's targets 167,772 of x's 671,089 survive and 167,771 of z's
+      335,545, so 28,147,276,212 of the 225,180,558,505 pairs: exactly an eighth, the 13%
+      above rounded. Within ±100 of the targets, 5,151 of the 40,401 pairs survive. The
+      count does not depend on the target; only the share does. The oscillations carry both
+      axes above 0.5, where the floats are coarsest and one 0.01 step spans 167,772 of them,
+      so about 167,772 chains survive on an axis wherever its target lies. Below 0.5 the
+      floats are finer and the same chains are spread over more of them: half of the
+      possible errors of a target between 0.25 and 0.5, a quarter of one between 0.125 and
+      0.25, all of one above 0.5 (targets drawn across each of those ranges gave the same
+      counts). z loses one chain more: the chain that touches both ends of its target's
+      band, whose error depends on the side it is walked from, which the walk refuses. So
+      the survey's 13% of float pairs, about 8.4 × 10^12 of them, is the same 2.8 × 10^10
+      chain pairs 300 times over (a chain has 12 values of x and 25 of z in that region).
+      That is what the arithmetic allows; the fixer itself has been run on the 24 above.
 - [ ] **4.9 Defects in the stage scripts.** Found 2026-09-15 writing 3.17; docs/tasing.md
       lists them as not to copy. Two left with their scripts on 2026-10-05, when the ending
       stage (4.11) replaced `osc-final`, `dr-approach` and `dr-recover`:
@@ -2731,7 +2769,9 @@ goals are (status as stated by the maintainer, 2026-09-08):
       the unit. So the bound is now the sweep's travel over the frames the window has left
       (the edge's move over the next frame, read from the stepped normal), within
       `SweepReach`, plus the slack; and the CSV's forced rows are the departure, the frames
-      with a catch and the cancels, the sampled rows keeping the rest. The 8,000-shot runs under
+      with a catch, the squish cancels and, since 2026-10-13 at the maintainer's ask, every
+      dive recover landing that validates (40 forced beside 8 sampled in an 8,000-shot
+      run), the sampled rows keeping the rest. The 8,000-shot runs under
       that bound (27 and 37 seconds, 1.1 and 1.2 million blocks, 57,000 and 47,000 departed
       rows) caught nothing: 10,000 and 4,900 of their leaves stood where the edge is 125 to
       150 high, but with the normal's x spent, 0.0 to -0.1, where the edge no longer sweeps
@@ -3044,6 +3084,173 @@ goals are (status as stated by the maintainer, 2026-09-08):
       walk off from idle at the stick's magnitude 2 to 4 gives; what the maintainer's
       hand-made fall did exactly (its leave speed, its frames, where it was caught) would
       pin the rule, as the uscz movie pinned the oscillations.
+      The dive recover's route, measured (2026-10-13; the maintainer: plenty of squish
+      cancels by the brake, none by the dive recover). First a move for the landing's
+      wait, `WAIT_FOR_TILT`: neutral frames from a stop until the tilt across the edge has
+      just the steps the leave and the fall need (the recover lands with 0.30 across where
+      the squish cancels leave at 0.26, and the sampled waits never strung the frames
+      together); its leaves came at -0.27 to -0.19, none caught. Then three scratch traces on his ten
+      `dr-final` roots at 29.6 to 29.8 (the corner, 50,000 shots a run): which rule
+      refuses each departed state and on which frame of its fall, what each dive attempt
+      ends in, and the speed before and after every minimum-downhill step of the run.
+      What they say. (1) The dive is rare. Of the 575 to 700 attempts a run that complete
+      their turn toward the aim, all but 1 to 14 end the turn at 28.0 to 28.9, under the
+      29 the game's dive needs (`check_ground_dive_or_punch`): the turn starts from 31 to
+      33 and costs 0.6 to 0.7 a frame over 6 or 7 frames, where the uscz movie starts it
+      at 35.4. Half of the run's minimum-downhill steps were uphill, 0.5 lost where 1.3 is
+      gained: the top face is two triangles whose normals the game's vertex rounding sets
+      up to 15 angle units apart, and `GetMinimumDownhillWalkingAngle` reported a facing
+      1 unit inside the downhill half of the look-ahead's triangle, which the triangle
+      under the step put outside it. Fixed with `DownhillMargin` (64 units) in the
+      look-ahead (docs/tasing.md, "Pitfalls"): the uphill steps from a given state went
+      from 150 of 295 to none. The run still peaks at 34 on these roots and loses speed
+      from there: it runs along the low edge 0 to 8 above the lava where the movie's run
+      is 7 to 14 above it (the hand-over's normal is (-0.47, 0.22) against the movie's
+      (-0.42, 0.26), which puts the low corner 12 units lower), so the fastest heading
+      steps into the lava and the
+      lineages that live have turned uphill. The margin changes the oscillation stage's
+      swings too, the same look-ahead (4.12); no perf tier runs it (Tier D's stages are
+      tilt-target ones, and Tier C runs frozen copies), so no baseline moves. (2) The
+      landings came 254 to 307 along the edge, 30
+      to 80 nearer the corner than the catches that cancel (194 to 225), because the aim
+      was read with this frame's tilt along the run's axis, 0.27 at the dive, where the
+      catch comes at 0.40: on the platform the normal approaches the goal Mario's position
+      sets ((dx, 500, dz) normalized) a step a frame. `ExpectedCatchFace` now steps that
+      axis too, toward the goal for the frames on the platform and toward flat for the
+      fall's; the landings moved to 257 to 272. (3) The window rule judged a leave on the
+      latest face the cancel allows, where a dive recover's leave, with 0.06 more tilt
+      across than a brake's, has its edge 20 higher at the catch; it refused 194 of 243
+      such leaves. The rule now judges the face expected once the fall's frames have passed
+      (`ExpectedCatchFace` with the frames left), for the brake the same face as before.
+      With the three: 1, 3 and 0 landings in three runs and 68, 37 and 94 squish cancels,
+      all the brake's. Where the dive recover's falls end now, from the run with 3
+      landings and 5,080 departed rows: the leaves come at -0.27 to -0.17 across (median
+      -0.24), 121 to 143 above the lava, 233 to 281 along the edge; on the sixth frame of
+      the fall Mario is 70 to 82 above the lava with the top 45 to 70 above him, short of
+      the 78 the squish needs, and on that frame the tilt-spent rule ends 4,846 of the
+      lineages. The side's steepness limit is not a fixed 0.15 across: it rises as the
+      normal's y and the run's axis flatten in the air, 0.14 at the leave and 0.18 to
+      0.20 on the sixth frame, so a fall loses 0.02 of its margin each frame, not the 0.01
+      the budget counts, and a seventh frame is never there. The brake's catches are at the
+      same limit on their sixth frame and are deep enough because they left from 138 to
+      154 above the lava at 194 to 225 along the edge, where the top stands 145 to 160.
+      So a dive recover that cancels needs its fall 30 to 40 further up the edge than it
+      lands, which a leave along the edge gives (`LEAVE_ALONG`, 8 a frame over the stop
+      and six frames of fall) or a landing there, which the turn cannot afford at 33.
+      Open: the roots' tilt direction (the movie's hand-over keeps the run's edge out of
+      the lava; a `dr-final` crossing with less tilt across and more along, its
+      `minCrossingAxisDiff` nearer the movie's 0.16 than these roots' 0.25), and the
+      recover's leave as part of its move. The example movie's own recover, replayed
+      (`dll_play.py`): the dive at 3465 from 30.7, a three-frame rollout within the band,
+      the landing stop at (234, 307) 116 above the lava, two frames of stop, a walk off at
+      5.2 straight out at 106 above the lava, two frames with the top under him again as
+      the edge swept out, the platform's displacement carrying him 7 out and 8 down, and
+      the squish on the lava at 3482, 0 above it, with the edge at 99: a pancake, as 4.11
+      measured before.
+      Why the viewer showed no dive recover (the maintainer, 2026-10-13: not one dive
+      recover action in the viewer, over many configurations). The recover runs. His
+      newest ending run (31,729 shots, roots whose run reaches 35.7) has 1,140 landing
+      stops by it, and 218,000 of its 315,000 rows are its lineages. One of its squish
+      cancels is a dive recover's, replayed on the game like every saved solution: the
+      dive at 3441, the pause at 3442 to 3444, the rollout's press at 3445, the departure
+      at 3453 from a landing stop, and the push's -413 at 3461. The viewer could not show
+      it, for two reasons. First, the recover was one move, from its turn to its landing
+      stop, and the search writes a row only where a move ends: no row held the dive's,
+      the slide's or the rollout's action, or the phase `DIVE`. Second, the viewer skipped
+      the forced rows (a `sampledOnly` switch, true by default): 925 of the 1,140 landing
+      rows were forced, and so was the row of the dive recover's squish cancel. Unreachable
+      then, since no move ended on the slide or in the recover's flight: the `DIVE` phase's
+      draw, the `ROLLOUT` move and the random B press on the slide. The maintainer's choices, the
+      same day. First, `Sampled` is a checkbox column like any categorical one, in every
+      tab, and the viewer reads every row: the `sampledOnly` switch is gone from
+      `Visualization`, the pipeline's keys and the viewer, and CI filters the text sample's
+      one forced row by it. Second, the recover is three moves, so that the viewer shows
+      it: `Dive` (the turn, the dive and the pause, ending on the slide), `Rollout` (the
+      press and the rollout's first frame) and `Landing` (the rest of the flight, to a
+      landing stop in reach). Every frame after the pause is steered by the same compare
+      as before; the dive phase draws only those two moves, and no random frame presses
+      B, so the unreachable code is gone. Each of the three moves' rows is forced, so a
+      new dive recover shows as `ACT_DIVE_SLIDE`, `ACT_FORWARD_ROLLOUT` and
+      `ACT_FREEFALL_LAND_STOP` rows, and the dive phase's position is binned to the unit,
+      so that two dives a few units apart stay two blocks. What it costs: a shot that
+      starts from a slide or rollout block replays the steered rollout in each of its
+      pellets, about 230 frames where an average pellet runs about 6, and a dive whose
+      rollout cannot land in reach leaves its slide in the table. Measured on his
+      `dr-final` roots, on the corner, deterministic, 30,000 shots, seeds 6 to 9, the
+      build before against this one (docs/performance-changelog.md): solutions 400 and
+      396 in all, landing stops 1,498 and 1,526, frame advances 3% more, loads 11% more,
+      blocks 9% more, and 424 against 405 seconds over seeds 6 to 8; each run of the split
+      wrote 249 to 278 slide rows and 311 to 359 rollout rows. The seeds' own spread, 58
+      to 147 solutions with the same code, is wider than any difference the split makes.
+      Squish cancels by both approaches, the same day. The maintainer's ending run of
+      10:42 saved one dive recover squish cancel among its 621 solutions (number 560,
+      replayed on the game like every saved solution: the dive at 3441, the departure at
+      3453, the bully tried at 3461). His run of 13:32, with the split, saved 257: 245 by
+      the brake and 12 by the dive recover. Of the dive recover's, all but one fell off
+      from the landing stop itself, with no step of Mario's own: a NUT spot. The bully was
+      tried at 3461 (one at 3462), with Mario 53 to 64 above the lava at x 249 and z 245
+      to 261 from the pyramid's home, and the push left each idle at 413 on the frame
+      after. The normal on that frame, the squish cancel's, against the setup's target
+      (-0.1792, 0.393), in 0.01 steps toward flat: the brake's 244 at (-0.1692, 0.383), one
+      step past the target on both axes, so a frame late, the normal having been the
+      target's exactly on the frame before; the dive recover's 11 at (-0.1892, 0.323), one
+      step short of the target on x and seven past it on z; one of each at x -0.1792, the
+      target's, with z two (the brake's) and four (the dive recover's) steps past it. The
+      stage ran without a target (`targetNx` is left out of its config), so it took every
+      normal; with one, the probe would have refused them all.
+      Pruning the corner, tried and dropped (the maintainer, 2026-10-13). Many of the ending's
+      blocks are states in the corner of the squish edge, where the edge stands too low for a
+      squish cancel. He asked for a rule that prunes them without ever cutting a legitimate
+      option. His run of 16:51 (323,176 rows, 379 squish cancels) shows what they are: most
+      of the corner's EDGE states move at 4 to 16 speed, many still heading into the corner,
+      with 5 to 11 frames left before the side under the edge is too flat. Every solution
+      that passes through the corner does it running at 25 to 28 back up the edge. The rule
+      tried was a bound that proves a state hopeless from the game's own limits. Per facing,
+      it tracked the most speed the walk allows: a turn of 2048 a frame, a gain of up to 1.1
+      plus the slope's pull when facing downhill, the same pull lost when facing uphill, and a
+      walk entered at up to 8. It added the platform's carry, and after the departure the
+      air's speed and the stick's sideways push of up to 10. A state was kept if some
+      departure could pass the departed window rule and some catch after it, within the
+      probe's window and while the side is steep, could find Mario in the catch window. Every
+      solution on disk was replayed through the game and checked against it (4,153 solutions
+      from 18 runs, 7,420 frames on the platform), and no version refused any of them. How
+      much it refuses depends on what Mario may do between the departure and the catch. In
+      the run's EDGE rows: if he may land back on the platform and walk again, 0%; if he only
+      falls, staying off the platform, 16% (48% if a catch cannot come within two frames of
+      the departure, which holds at these speeds but is not proven). The third case is a
+      hover over the platform: the edge's sweep covering him again, or the NUT cycle, in which
+      he lands on a NUT spot, leaves the ground again at once, and moves down with the top
+      while his falling speed keeps growing and the normal steps toward him. With hovers
+      allowed and every part of the bound made sound, it refuses 0.4%. A first prototype said
+      5%, because it took the carry after the departure from the departure frame's own
+      normals and positions. The maintainer chose to drop it at 0.4%. Why the corner cannot
+      be proven hopeless: a Mario who stays deep in the corner near the platform's centre line
+      makes the pyramid tilt further toward the corner, which keeps the side steep down to
+      almost no tilt across the edge, so a catch can still come late. The sideways push in
+      the air moves him up to 10 a frame along the edge, and a hover keeps the side steep for
+      its frames. The push's own limit does not help either. The bully pushes Mario at least
+      54 along the edge toward the corner, and `CatchPlacements` refuses a push that would
+      carry him past the top's end. But near this corner the pushed spot must also stand over
+      100 above the lava, and the edge drops below that first: 140 units (median over the
+      run's EDGE rows) before the push would overrun the corner. With that limit added to the
+      bound's catch check, it still refused the same 96 of 22,142 rows. The push's limit is
+      the nearer one only where the edge is nearly level along its length (the normal's z
+      part about 0.2 to 0.3), which is not where the corner states are. Two ways to prune
+      more were left untried: a rule that accepts one of the assumptions above, or an
+      empirical rule, backed by a search for a squish cancel that starts from deep-corner
+      states (cheap on the corner resource) and finds none. Facts
+      verified on the way, for later rules: the pyramid's six triangles are the default floor
+      class, so the slope's pull is 1.7 times the floor's steepness at any speed, and the
+      brake takes 4 a frame but only begins from 16 speed. A walk entered from a slower action
+      starts at up to 8 on any frame (`set_mario_action_moving`). Freefall's first frame does
+      not move Mario down, since gravity is applied after the step; after 2 to 7 frames he
+      has fallen 4, 12, 24, 40, 60 and 84. Before the departure Mario is always on the ground:
+      stationary actions snap him to the floor, and freefall needs him 100 above it, which is
+      already a departure. The pyramid's carry, how far it moves Mario with its tilt each
+      frame, is the change of its transform applied to his offset from the home,
+      `(T_new - T_old) . dist` (bhv_tilting_inverted_pyramid_loop). Over |nx| 0.02 to 0.7, ny
+      0.5 to 1 and |nz| up to 0.85 it is at most 13.2 a frame across the edge, and there the
+      top reaches 532 across and 434 along from the home.
 
 - [ ] **4.12 The hand-over's lag: speed against a normal further back.** Opened 2026-10-07
       on the maintainer's word: the oscillation stage selects first of all for speed at the
@@ -3219,6 +3426,49 @@ goals are (status as stated by the maintainer, 2026-09-08):
       `minXzSum`, Stages.cpp), and a last pass from roots under the exit must climb in one
       swing, which 20,000 shots did not do for a step. The climb at the end is the
       stage's design question, the maintainer's.
+      Built on the branch `osc-two-stages` (the maintainer's design, 2026-10-13): two
+      oscillation stages. The first oscillates at a lower tilt and ends the near way
+      (`lastCrossingDirection`: "far" is Mario leaving the last crossing toward the squish
+      edge's corner, which the ending needs; "near" the other way); the second, `dr-final`,
+      takes the first's output as its input and continues its lineages, beginning at the
+      oscillation after the input's with the input's solutions as the roots the pass
+      before carried, its `maxOscillations` the oscillations it adds, one here, which
+      ends far; the count of oscillations is settled in one place (`settleLastPass`: the
+      passes alternate, so one more where the last would cross the wrong way). The first
+      run (the committed config with the first stage at `startXzSum` 0.58 and `minXzSum`
+      0.62, from the fixer's solutions, 5,000 shots a pass; the final stage 20,000): the
+      first stage's passes carried 25, 28, 27.5 and 27 at oscillations 1 to 4, its fifth
+      found nothing and the rewind handed on 864 near crossings at tilts 0.63 to 0.71
+      (speed 24.3 in the middle, 29.7 at most, 224 at 26 or more); the final oscillation
+      found 353 far crossings at tilts 0.69 to 0.73, all 353 replayed on the game, at 12.7
+      to 25.7 of speed, 21 in the middle: the swing that raises the tilt costs four to six
+      of speed, and the ending found no squish cancel from them in 100,000 shots. The
+      maintainer then asked for `keepTop` on the final stage's hand-over too: `lastKeepTop`
+      (0, all, by default; the committed `dr-final` keeps 100) trims the last pass's
+      solutions to the fastest, and the rewind's hand-over the same way. A second run of
+      the same lineup: the first stage's fourth oscillation found nothing and the rewind
+      handed on 912 near crossings from its second, the final oscillation from them found
+      2,040 far crossings at tilts 0.69 to 0.71 and handed on its 100 fastest, 27.9 to
+      29.6, the axes 0.17 to 0.29 apart, and the ending found 3 squish cancels in 50,000
+      shots from them, the brake's, with 165 dive recover landings sampled and none of
+      their falls caught (4.11). The final pass's yield swings between runs: from the
+      first run's 864 roots it found 353 in the pipeline and then 0 three times when run
+      alone from the same file at 20,000 and 50,000 shots, the stage not deterministic in
+      the config. What to try next: a smaller climb (the first stage's exit tilt nearer
+      the final's), more shots on the final pass, and the first stage's own settings,
+      which the maintainer meant to lower further.
+      The run after the hand-over, measured 2026-10-13 (4.11): half of its minimum-downhill
+      steps were uphill until `GetMinimumDownhillWalkingAngle` kept its facing
+      `DownhillMargin` inside the downhill half (the top face's two triangles), which the
+      oscillation stage's swings draw from too. Measured once each way from his `are-fix`
+      rest, the passes' crossing speeds were alike: 27.1 to 27.9, 30.2 to 30.7 and 28.1
+      to 29.2 at the first three crossings with it, 27.1 to 27.9, 30.3 to 31.1 and 29.4 to
+      29.8 without it, and the fourth found by neither, so no difference beyond one run's
+      spread. No perf tier runs the look-ahead, so no baseline moves. On his `dr-final`
+      roots the ending's run then goes along the low
+      edge 0 to 8 above the lava and peaks at 34; the movie's hand-over, with less tilt
+      across and more along, keeps that run 7 to 14 above the lava and reaches 35.4
+      before its turn.
 - [x] **4.13 A BitFS resource: the pyramid corner of the game reimplemented from the decomp.**
       Opened 2026-10-11 on the maintainer's word: a resource that runs only what the
       squish-cancel search needs of the game (Mario's physics, the lava, the two tilting
@@ -3670,7 +3920,11 @@ goals are (status as stated by the maintainer, 2026-09-08):
       (and with the pyramid's own normal after the frame, the other exact reading) on the
       same seeds, and the better rule is in the script with its numbers in
       docs/performance-changelog.md, or the exact answer is kept with the reason written
-      down.
+      down. Measured 2026-10-13 with the facing 64 units inside the range
+      (`DownhillMargin`, added for the ending's run, 4.11): the every-corner case finds
+      1,000, 478, 749 and 804 in corners 1 to 4, against the exact edge's 768, 530, 1,000
+      and 772, a difference within one run's spread. Still to measure: the seed-6 dr stage
+      with the margin, and the pyramid's own normal after the frame.
 - [x] **4.21 The dr stage's rewind under mixed tilts.** Done 2026-10-12, the maintainer's
       decision ("not a bad idea, and it should be minXzSum"): eligibility is the
       solution's (the exit tilt `minXzSum` and the step parity), the direction the pass's;
@@ -3725,6 +3979,20 @@ goals are (status as stated by the maintainer, 2026-09-08):
       (its closing press would open one): the corner is exact against the game over a
       million frames with 37,522 START presses, and with the bully on Mario with 36,728.
       The ending's dive recover then lands on the corner (4.11).
+- [ ] **4.23 The replay check on the game runs on one copy of it.** Found 2026-10-13
+      timing the dr stage's rewind, which the maintainer found slow next to the
+      oscillation passes. Gathering the rewind's solutions is not the cost: 0.004 s for
+      about 910 of them with the pools in memory, 0.23 s read back from the pool files.
+      The cost is what follows every corner stage with many solutions. `VerifyOnGame`
+      replays each one on the game and on a corner, one solution after another on one
+      copy of each, and the game's replay takes 2.2 s for 912 solutions (about 210
+      frames each at about 11 µs a frame), where the four oscillation passes before it
+      took about 7 s together. The export used to replay them on the game a second time
+      (3.0 s) and now replays them on the corner (1.2 s;
+      docs/performance-changelog.md). Still to do: split the game's replay check across
+      several copies of the game, which would take about 0.15 s with 16. An all-corner run loads one copy
+      today (`main.cpp`, `BuildResources`), so the start-up time and memory of the extra
+      copies need measuring before deciding how many to load.
 ## Phase 5: toward a game- and console-agnostic framework
 
 Not scheduled. Listed so decisions in earlier phases do not paint us into a corner.

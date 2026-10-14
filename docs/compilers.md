@@ -428,6 +428,9 @@ status held `std::vector`s no compiler said anything; the day it became `std::ar
 `-Werror`, while MSVC at `/W3` (C4189 is a level 4 warning) and clang-cl 19.1 at `/W4` did
 not report it. The line is gone; the lookup only primed the metric script's cache for a frame
 nothing read there. Found in the containers before CI saw it: build every compiler.
+Again 2026-10-13, a plain pointer this time: `Scattershot_BitfsScEnding::ApplyMovement`
+kept `MarioState* marioState` after the change that removed its last use, and clang-cl
+rejected it (`-Wunused-variable` under `/WX`) while both MSVC configurations built clean.
 
 ### GCC 13: `-Wdangling-reference` on a reference returned past a temporary
 
