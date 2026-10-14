@@ -28,7 +28,6 @@ TEST_CASE("Visualization round-trips through JSON and absent keys keep their def
 	CHECK(j["y"] == "MarioX");
 	CHECK(j["binX"] == 5);
 	CHECK(j["binAngle"] == 16);
-	CHECK(j["sampledOnly"] == true);
 	CHECK(j["categorical"] == json::array({ "MarioAction", "Phase" }));
 	CHECK(j["filters"][0]["min"] == 0);
 	CHECK(j["filters"][0]["max"] == 100);

@@ -13,11 +13,13 @@ folds rows into a newest-per-bin table as they arrive (the R script's grouping, 
 row; the raw rows are dropped, so memory is bounded by the bins) and redraws the selected
 tab when rows came in, at the refresh rate set in the window. It lowers its own priority so
 the brute forcer's threads win any contested core; a tab whose run finished stops polling;
-a tab past the segment cap doubles its bins. A tab's filter panel lists every CSV column (one
-the run names categorical as checkboxes with counts, any other as a min and a max box under
-the range seen; it starts as the run's own `filters`) and keeps a row that fails the
-filter out of the table; since the raw rows are gone, a changed filter re-reads the CSV from
-its start, as an opening tab does.
+a tab past the segment cap doubles its bins. A tab's filter panel lists every CSV column:
+one the run names categorical as checkboxes with counts, `Sampled` (1 for a row the sample
+period chose, 0 for one the search forced) as checkboxes in every tab, and any other as a
+min and a max box under the range seen. A value's count is how many of its rows pass the
+filter on every other column; the ranges cover every row. The panel starts as the run's
+own `filters` and keeps a row that fails the filter out of the table; since the raw rows
+are gone, a changed filter re-reads the CSV from its start, as an opening tab does.
 
     python analysis/visualizer.py <params.json>                                  # what the search runs
     python analysis/visualizer.py --once --csv <file> [--out <png>] [--rows N] [--filter TERMS]   # headless, one PNG
@@ -196,8 +198,9 @@ class RunData:
     binned when every filtered column of it lies in the range and, with "values", is one of
     them. The parameters file's `filters` ({column, min, max}) start it; the tab's panel sets
     it, and --filter from text, "MarioFSpd <= 8, Phase in SWING AIR" (FILTER_GRAMMAR). Beside
-    the table the facets: per column, the least and greatest value seen and, for a column the
-    parameters file's `categorical` names, how many sampled rows hold each value. A cell is a
+    the table the facets: per column, the least and greatest value seen in any row and, for a
+    column the parameters file's `categorical` names, and `Sampled` always, how many rows hold
+    each value among those the filter on every other column passes. A cell is a
     number, decimal or hex (shown in hex then; a name after the hex in parentheses, as the
     stages write Mario's action, is shown and not compared), or, in a categorical column, a
     text, which is coded in order of first appearance and shown as written; "values" of the
@@ -218,9 +221,10 @@ class RunData:
             if part:
                 self.filter.setdefault(f["column"], {}).update(part)
         self.categorical = [str(c) for c in self.params.get("categorical", [])]  # filtered by value; every other column by range
+        if "Sampled" not in self.categorical:  # in every CSV: 1 a row the sample period chose, 0 one the search forced
+            self.categorical.append("Sampled")
         view = self.params.get("view")  # a fixed window centered on (x, y), square to its units
         self.view = {k: float(view[k]) for k in ("x", "y", "width", "height")} if view else None
-        self.sampled_only = bool(self.params.get("sampledOnly", True))
         self.finished = bool(self.params.get("finished", False))
         self.reported_rows = int(self.params.get("rows", 0))
         self.dirty = False
@@ -244,7 +248,7 @@ class RunData:
         self.error = None
         self.drained = False  # finished and nothing left to read
         self.lo = self.hi = None  # per column, the least and greatest value seen
-        self.counts = None  # per column, value -> sampled rows holding it for a categorical column, else None
+        self.counts = None  # per column, value -> rows holding it for a categorical column, else None
         self.counting = []  # the (index, counts) still counted
         self.overflowed = set()  # categorical columns past FACET_VALUES_CAP distinct values, ranges from then on
         self.parsers = None  # per column, how a cell becomes a value (_parsers), from the first data row
@@ -440,7 +444,7 @@ class RunData:
             log.error("%s: %s", self.title, self.error)
             return
         self.indices = {
-            "shot": self.header.index("Shot"), "frame": self.header.index("Frame"), "sampled": self.header.index("Sampled"),
+            "shot": self.header.index("Shot"), "frame": self.header.index("Frame"),
             "x": names[0], "y": names[1], "angle": names[2], "speed": names[3], "filters": filters,
         }
         self.counts = [{} if name in self.categorical else None for name in self.header]
@@ -486,9 +490,6 @@ class RunData:
             self.rows += 1
             i = self.indices
             try:
-                if self.sampled_only and row[i["sampled"]] != "1":
-                    self.skipped += 1
-                    continue
                 if len(row) != len(self.header):
                     raise ValueError("row length")
                 if self.parsers is None:
@@ -498,8 +499,7 @@ class RunData:
             except (ValueError, IndexError, OverflowError):
                 self.bad += 1
                 continue
-            # The facets take every sampled row, filtered or not: each column's range and, for
-            # a categorical column, how many rows hold each value.
+            # The ranges take every row, filtered or not.
             lo, hi = self.lo, self.hi
             if lo is None:
                 self.lo, self.hi = list(values), list(values)
@@ -509,20 +509,28 @@ class RunData:
                         lo[j] = v
                     elif v > hi[j]:
                         hi[j] = v
+            failed = [j for j, low, high, numbers, texts in i["filters"]  # the filtered columns the row fails
+                      if not (low <= values[j] <= high) or ((numbers or texts) and values[j] not in numbers and row[j] not in texts)] if i["filters"] else ()
+            # A categorical column counts the rows that pass every filter but its own, as a
+            # shop's facets do: a value's count is how many of its rows the rest of the filter
+            # passes, so the values checked in a column leave the counts of its other values
+            # alone. A value seen in any row is listed, at 0 when the rest of the filter
+            # passes none of its rows.
+            only = failed[0] if len(failed) == 1 else None
             for j, counts in self.counting:
                 text = row[j]
                 n = counts.get(text)
-                if n is not None:
+                if n is None:
+                    if len(counts) >= FACET_VALUES_CAP:  # too many to list: a range from here on (the loop runs on over the old list)
+                        self.counts[j] = None
+                        self.overflowed.add(self.header[j])
+                        self.counting = [c for c in self.counting if c[0] != j]
+                        continue
+                    n = counts[text] = 0
+                if not failed or j == only:
                     counts[text] = n + 1
-                elif len(counts) < FACET_VALUES_CAP:
-                    counts[text] = 1
-                else:  # too many to list: a range from here on (the loop runs on over the old list)
-                    self.counts[j] = None
-                    self.overflowed.add(self.header[j])
-                    self.counting = [c for c in self.counting if c[0] != j]
             self.stats_changed = True
-            if i["filters"] and any(not (low <= values[j] <= high) or ((numbers or texts) and values[j] not in numbers and row[j] not in texts)
-                                    for j, low, high, numbers, texts in i["filters"]):
+            if failed:
                 self.skipped += 1
                 continue
             x, y, angle, speed = values[i["x"]], values[i["y"]], values[i["angle"]], values[i["speed"]]
@@ -549,8 +557,9 @@ class RunData:
             log.info("%s: %d bins over the cap of %d, bins doubled to %s", self.title, len(merged), max_segments, self.bins)
 
     def facets(self):
-        """Per CSV column, in the CSV's order: (name, value -> sampled rows holding it or None
-        past FACET_VALUES_CAP distinct values, the least seen, the greatest seen)."""
+        """Per CSV column, in the CSV's order: (name, value -> rows holding it that pass the
+        filter on every other column, or None past FACET_VALUES_CAP distinct values, the least
+        seen, the greatest seen)."""
         if self.header is None or self.counts is None:
             return []
         lo = self.lo or [None] * len(self.header)
@@ -760,8 +769,8 @@ def forward(port, params_path):
 class FilterPanel:
     """A tab's filters beside its plot, in the manner of a shop's facets: a section per CSV
     column in the CSV's order. A column the run names categorical has a checkbox per value
-    with the number of sampled rows holding it (checked values pass; none checked passes
-    every row); every other has a min and a max box, applied with Enter, under the least and
+    with the number of rows holding it that the filter on every other column passes (checked
+    values pass; none checked passes every row); every other has a min and a max box, applied with Enter, under the least and
     greatest value seen. The filters in force are listed at the top, each
     with a button that drops it. Every change hands the whole filter to on_change, which
     returns the message when it is refused; the panel shows that and bad entries itself."""

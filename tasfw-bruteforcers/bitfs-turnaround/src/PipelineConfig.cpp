@@ -122,7 +122,7 @@ PipelineConfig PipelineConfig::Load(const fs::path& file)
 static void CheckVisualizeKeys(const json& block, const std::string& where)
 {
 	RejectUnknownKeys(block,
-		{ "title", "interpreter", "x", "y", "angle", "speed", "binX", "binY", "binAngle", "binSpeed", "filters", "categorical", "view", "sampledOnly" }, where);
+		{ "title", "interpreter", "x", "y", "angle", "speed", "binX", "binY", "binAngle", "binSpeed", "filters", "categorical", "view" }, where);
 	if (block.contains("categorical"))
 	{
 		const json& categorical = block.at("categorical");

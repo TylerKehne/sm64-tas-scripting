@@ -164,6 +164,11 @@ jobs:
           # Hex actions with their names, text phases and true/false flags (the ending's CSV, 2026-10-06): a text filters by name in a declared categorical column, hex by value, its name along for the display.
           $py analysis/visualizer.py --once --csv tasfw-tests/data/scattershot_text_sample.csv --out viewer-text.png --categorical MarioAction,Phase,Approach,Departed,SquishCancel --filter "Phase in SWING AIR, MarioAction == 0x04000440" | grep -q "3 drawn, 5 filtered"
           test -s viewer-text.png
+          # Sampled is a checkbox column in every tab and the viewer reads every row (the maintainer, 2026-10-13): the sample's one forced row, by itself.
+          $py analysis/visualizer.py --once --csv tasfw-tests/data/scattershot_text_sample.csv --out viewer-sampled.png --categorical MarioAction,Phase,Approach,Departed,SquishCancel --filter "Sampled == 0" | grep -q "1 drawn, 7 filtered"
+          test -s viewer-sampled.png
+          # A value's count is how many of its rows pass the filter on every other column (the maintainer, 2026-10-13): under "Phase in SWING AIR" Phase keeps its counts, the other columns count the 5 rows that pass.
+          $py -c "import sys; sys.path.insert(0, 'analysis'); import visualizer as v; d = v.RunData(params={'csv': 'tasfw-tests/data/scattershot_text_sample.csv', 'categorical': ['MarioAction', 'Phase', 'Approach', 'Departed', 'SquishCancel']}); d.set_filter_text('Phase in SWING AIR'); d.poll(); f = {n: c for n, c, lo, hi in d.facets()}; assert f['Phase'] == {'SWING': 3, 'DIVE': 1, 'BRAKE': 1, 'EDGE': 1, 'AIR': 2} and f['Sampled'] == {'1': 4, '0': 1} and f['MarioAction']['0x0188088A (ACT_DIVE)'] == 0, f"
           # The headless follow mode the perf suite gates (ROADMAP 4.10): a finished run drains on the first tick.
           $py -c "import json; json.dump({'csv': 'tasfw-tests/data/scattershot_sample.csv', 'title': 'ci', 'finished': True, 'rows': 600, 'categorical': ['MarioAction']}, open('ci.visualizer.json', 'w'))"
           TASFW_VISUALIZER_HEADLESS=1 $py analysis/visualizer.py ci.visualizer.json
