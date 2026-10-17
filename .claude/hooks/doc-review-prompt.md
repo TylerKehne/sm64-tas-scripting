@@ -36,7 +36,12 @@ Procedure:
      a decision only after it is given.
 4. If the change touches nothing the documentation describes, say "Doc review: no
    documentation impact" and do not invent updates.
-5. End your final message with a short "Doc review" section: which files you updated and
+5. Read what this turn wrote, the documentation edits and your final message, as a
+   newcomer to the project would (AGENTS.md, "Plain language"): replace words used in a
+   private sense and figures of speech with plain statements, split sentences that need
+   two readings, and define or link any term the glossary does not have. Fix the
+   documentation in place.
+6. End your final message with a short "Doc review" section: which files you updated and
    why, and any deviations awaiting approval.
 
 Never silently change a rule, requirement, goal or number. Never mark a roadmap item done

@@ -80,7 +80,7 @@ outside never see it, and the job skips when the secret is absent (ROADMAP 3.4).
 Every build below has been run through `dllcheck` and, where a movie exists for it, through
 the libsm64 test group (`scripts\test.ps1 -Dll <file> -Filter 'libsm64*'`): the layout
 checks, the golden state at frame 3330 of `movies/bitfs-pyramid-jp.m64`, save/load
-determinism, and the `PyramidUpdate` drift test (docs/performance.md, ROADMAP 3.3).
+determinism, and the parity harness of the corner resource (ROADMAP 4.13).
 
 | Build | File | Size, MD5 | Status (2026-09-08) |
 |---|---|---|---|
@@ -232,7 +232,7 @@ on the deliberate first-write faults unless told not to; use `full` there.
 ## Checking a DLL: `dllcheck`
 
 ```
-build\Release\out\dllcheck.exe <libsm64.dll> <movie.m64> <frame> [--version jp|us] [--save-mode full|fixed|dirty] [--leak-scan [frames]] [--objects] [--dirty-scan [frames]] [--dirty-replay] [--levels] [--trace [frames]]
+build\Release\out\dllcheck.exe <libsm64.dll> <movie.m64> <frame> [--version jp|us] [--save-mode full|fixed|dirty] [--leak-scan [frames]] [--objects] [--dirty-scan [frames]] [--dirty-replay] [--levels] [--trace [frames]] [--keep-objects <i,j,...>]
 ```
 
 Runs the `VerifyLayout` script (`tasfw-scripts/inc/VerifyLayout.hpp`) to `<frame>` (pick
@@ -285,6 +285,19 @@ These are the numbers behind ROADMAP 2.3 (docs/performance.md, "What the game wr
 the slot declarations in `BitFsObjects.hpp` were established (2026-09-08: 89 active objects
 at frame 3330, two of them `bhvBitfsTiltingInvertedPyramid`, at homes x = -2866 in slot 83
 and x = -1945 in slot 84; `bhvPlatformOnTrack` in slot 85 at (-5744, -3072, 0)).
+
+`--keep-objects <i,j,...>` measures how much of a frame is the rest of the level: at
+`<frame>` it times a neutral-input frame (2,000 of them) and counts the pages it writes
+(the median of 30 consecutive frames compared page by page), then deactivates every active
+object but the listed slots and Mario the way `obj_mark_for_deletion` does it
+(`activeFlags = 0`, unloaded by the game at the end of the next update), advances that one
+frame, and measures the same again; it prints both with the object counts and loads the
+state back. The write happens outside any script, on the tool's own state, and nothing is
+played on it. On the pinned DLL at frame 3330 (2026-10-11, `fixed` mode, tyler-desktop):
+15.5 us and 52 pages a frame with all 89 objects; 6.3 us and 17 pages with the two pyramids,
+the track platform and the ending's bully (`--keep-objects 84,83,85,27`); 5.5 us and 14
+pages with the pyramid of slot 84 alone, each of the other three about 0.3 us. The first
+measurement of ROADMAP 4.13, the resource that runs only those objects.
 
 `--levels` lists every frame up to `<frame>` at which the movie changes level or area (the
 `LevelTransitions` script, `tasfw-scripts/inc/LevelTransitions.hpp`): the frame, the level
@@ -445,7 +458,7 @@ making these derived instead of hardcoded.
    64-bit pointer handling (`IS_64_BIT` in `ObjectFields.hpp`); [docs/decomp.md](decomp.md)
    records the upstream commit each file came from. A field added or reordered in the decomp
    version wafel built from shifts every access, which is what "Struct layouts" below checks
-   on every run of the tests: the seven structs the code reads through, field for field,
+   on every run of the tests: the thirteen structs the code reads through, field for field,
    against the pinned DLL's DWARF. (The v0.8.5 build lays them out identically.)
 2. **The `fixed` save mode's slices** (`LibSm64FixedSlices` in `LibSm64.hpp`): byte offsets
    into `.data` and `.bss` chosen for this build. The `dirty` and `full` modes depend on
@@ -475,17 +488,23 @@ in that JSON are not from the DLL: the constants and the Object struct's `o*` fi
 macros (`wafel_layout/sm64_macro_defns.json`).
 
 `scripts/dll_layout.py` turns the JSON into `tasfw-tests/src/sm64_layout.inc`: one line per
-struct with its size and one per field with its offset, for the seven structs the code
+struct with its size and one per field with its offset, for the thirteen structs the code
 reads through (`MarioState`, `Object` with its 686 `o*` fields, `ObjectNode`, `GraphNode`,
-`GraphNodeObject`, `Surface`, `Camera`; the other structs in `Types.hpp` are unused). The
-sizes are the strides of the DWARF's pointers to and arrays of each struct.
+`GraphNodeObject`, `Surface`, `Camera`; and, read out of the game by `BitfsCorner`
+(ROADMAP 4.13), `SurfaceNode` in `sm64/SurfaceLoad.hpp`, `Controller` in
+`sm64/Controller.hpp`, and the camera's `PlayerCameraState`, `LinearTransitionPoint`,
+`ModeTransitionInfo` and `CameraStoredInfo`; the other structs in `Types.hpp` are unused).
+The sizes are the strides of the DWARF's pointers to and arrays of each struct, or, for a
+struct the game only embeds, the distance from one of its members to the next field of
+the struct that embeds it; `ModeTransitionInfo` and `CameraStoredInfo` have neither, so
+their fields are checked and their sizes are not (the table says so in a comment line).
 `test_sm64_layout.cpp` compiles the table against `tasfw-core/inc/sm64/` with `sizeof` and
 `offsetof` on every run of the tests, with or without the game. A field the DLL has and the
 headers do not (the newer decomp's names) is counted and tolerated up to a tenth of the
 fields; a field at another offset, or a struct of another size, fails and prints both
-numbers. The committed table is the pinned DLL's: 7 structs, 818 fields, 0 mismatches,
-42 names absent (`oUpVel`, `oBhvParams`, Bowser and coin fields, `animList`, all added to
-the decomp after the copies' revision; docs/decomp.md).
+numbers. The committed table is the pinned DLL's: 13 structs (11 with a size), 851 fields,
+0 mismatches, 42 names absent (`oUpVel`, `oBhvParams`, Bowser and coin fields, `animList`,
+all added to the decomp after the copies' revision; docs/decomp.md).
 
 To check a new build:
 

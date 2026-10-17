@@ -33,6 +33,28 @@ easier one to implement; hard rules 9 and 10 below are this principle applied to
 resource and to the framework's surface, and the `BasicMoves` discussion in
 ROADMAP.md (Phase 5) is a worked example.
 
+## Plain language
+
+Write so that someone who is comfortable with code but new to this project can follow
+without help (the maintainer, 2026-10-11). This applies to everything an agent writes: the
+documentation, the roadmap, code comments, commit messages and replies in chat.
+
+- Use words in their everyday meaning. Do not give an ordinary word a private meaning
+  ("owed" for planned work, "reads" for what a row shows, "lands" or "sits" for where a
+  number ends up). Where the project needs a term of its own, define it once in the
+  glossary and use that term.
+- Say what happens instead of using a figure of speech: the thing, what it does, the
+  number.
+- Explain the idea before the mechanism: what something is for and what goes wrong
+  without it, then how it works. Give the reader an intuition, not only the facts.
+- One idea per sentence, and short sentences. If a sentence has to be read twice, split
+  it.
+- Terms from the game or the framework are fine when the glossary or the surrounding text
+  defines them. Any other jargon is replaced or explained.
+
+The Stop hook's documentation review ends with a pass for this
+(`.claude/hooks/doc-review-prompt.md`, step 5).
+
 ## Performance is a correctness requirement
 
 This project is in C++ because it has to push millions of game frames through a search.
@@ -73,19 +95,19 @@ its place with numbers, and "it is cleaner" is not a number.
 |---|---|
 | `tasfw-core/` | Engine: `Script`, `TopLevelScript`, `Resource`, savestate slots, m64 I/O, input math. Header-heavy templates, one header per concept under `inc/tasfw/`; `<tasfw/Script.hpp>` is a script's one include, it pulls in the root and the builders at its bottom. |
 | `tasfw-core/inc/sm64/` | Hand-copied decomp structs, enums and trig tables. Must match the DLL's x64 layout. |
-| `tasfw-resources/` | `LibSm64` (drives the game DLL) and `PyramidUpdate` (standalone reimplementation of pyramid tilt physics used as a fast stand-in). |
+| `tasfw-resources/` | `Sm64Resource`, the SM64 game as a script sees it (`Script<Sm64Resource>`): an abstract resource over the one shared state type `Sm64Mem`, which holds either kind's savestate; its two kinds are `LibSm64` (drives the game DLL; state `LibSm64Mem`) and `BitfsCorner` (ROADMAP 4.13: the pyramid corner of BitFS on the decomp's own structs, serving `LibSm64`'s symbols, so a script runs on either; state `BitfsCornerMem`, with its level and objects in `BitfsCornerMem.hpp`; its level read once from the game and shared, its state convertible from the game's; its frame is the decomp's own text, 46 pinned copies under `src/bitfs-corner/decomp/` included into one class, exact against the game over a million fuzz frames of Mario on the pyramids with the lava, the camera's C-up (its 8-direction camera held at its constant yaw, the C-up mode run; the other C buttons, which turn or zoom it, refused) and the pause (ROADMAP 4.22: the play mode and the pause menu's state, so START freezes the level for the three frames the game does; the menu's exit from the course and its camera options refused); its four objects, the two pyramids, the track platform and the bully, are each optional and off unless a run asks for them (`BitfsCornerObjects`); the bully's push, knockback and chase are exact too; what it has not got is a refusal, never a guess, except the level's coins, which Mario never meets on it: on the game he may collect one on the way onto the pyramid, which changes his coin count and heals him, nothing the search reads). |
 | `tasfw-scattershot/` | Header-only OpenMP brute-force search (blocks, segments, solutions, CSV export, and the launch of the CSV's viewer: `Visualization.hpp`). One header per concept under `inc/`; `<Scattershot.hpp>` is the one include, it pulls in the thread and the builders at its bottom. |
-| `tasfw-scripts/` | Reusable BitFS scripts (pyramid oscillation, downhill angle search, dive-recover attempts, the ARE fixer of ROADMAP 4.8: `BitFsAreFixer`, the target's adjusted remainder error set on each axis of the pyramid's normal, x by a rest and z by the turn out of a run from it, from the run before the movie's dive onto the platform, handing Mario over running in the corner asked for), scattershot stages, and the scripts that look at the game rather than play it (`VerifyLayout`, `LevelTransitions`, `MarioTrace`, `SpliceMovie`), which the tools and tests run. |
-| `tasfw-bruteforcers/bitfs-turnaround/` | The only executable (`bitfs-turn.exe`): the BitFS pipeline as config-selected stages (`config.json`, `Stages.cpp`, `PipelineConfig`). `--list`, `--dry-run`, `--stage`, and `--test`, its own optional doctest cases on the config's game (`Tests.cpp`), which neither CI nor `tasfw-tests` runs. |
-| `tasfw-perf/` | Performance suite: Tier A microbenchmarks on an in-memory mock resource, Tier B on the game DLL, Tier C framework workloads through the frozen script copies under `workloads/` (docs/performance.md, "Tier C"; they do not follow `tasfw-scripts/`). Release only. |
+| `tasfw-scripts/` | Reusable BitFS scripts (pyramid oscillation, downhill angle search, dive-recover attempts, the ARE fixer of ROADMAP 4.8: `BitFsAreFixer`, the target's adjusted remainder error set on each axis of the pyramid's normal, x by a rest and z by the turn out of a run from it, from the run before the movie's dive onto the platform, handing Mario over running in the corner asked for), the scattershot searches (the oscillations, `Scattershot_BitfsDr`; the ending of ROADMAP 4.11, `Scattershot_BitfsScEnding`: the final run, the approach, the leave and the squish probe), and the scripts that look at the game rather than play it (`VerifyLayout`, `LevelTransitions`, `MarioTrace`, `SpliceMovie`), which the tools and tests run; `Sm64ActionNames.hpp` there is generated (`scripts/action_names.py`), never edited. |
+| `tasfw-bruteforcers/bitfs-turnaround/` | The only executable (`bitfs-turn.exe`): the BitFS pipeline as config-selected stages (`config.json`, `Stages.cpp`, `PipelineConfig`), each on the game's DLL or on the corner resource (`"resource"`; a corner stage's solutions are replayed on the game before they count). `--list`, `--dry-run`, `--stage`, `--start`, and `--test`, its own optional doctest cases on the config's game (`Tests.cpp`), which neither CI nor `tasfw-tests` runs. |
+| `tasfw-perf/` | Performance suite: Tier A microbenchmarks on an in-memory mock resource, Tier B on the game DLL and on the corner resource beside it, Tier C framework workloads through the frozen script copies under `workloads/` (docs/performance.md, "Tier C"; they do not follow `tasfw-scripts/`). Release only. |
 | `tasfw-tools/` | `dllcheck`: runs the `VerifyLayout` script against a DLL, reports fixed-slice coverage and what a savestate holds of the sections (`bytes:`, docs/libsm64.md "The game's bytes"), measures frame-advance and savestate cost, and lists a movie's level transitions (`--levels`) or Mario and the camera around a frame (`--trace`). `m64splice`: a movie for one game version out of two, the first up to the frame it enters a level, the second from its own, played and checked frame by frame (docs/libsm64.md, "A movie for the US game"). |
-| `tasfw-tests/` | Correctness tests (doctest), one file per subject; `script_fixtures.hpp` and `libsm64_env.hpp` hold what the `test_script_*` and `test_libsm64_*` files share. DLL-free tests always run; the libsm64 tests run when `res\` has the DLL and movie. `test_sm64_layout.cpp` compiles `sm64_layout.inc`, the pinned DLL's field offsets and struct sizes, against the copied headers, so the layout is checked without the game (docs/libsm64.md, "Struct layouts"). |
+| `tasfw-tests/` | Correctness tests (doctest), one file per subject; `script_fixtures.hpp` and `libsm64_env.hpp` hold what the `test_script_*` and `test_libsm64_*` files share. DLL-free tests always run; the libsm64 tests run when `res\` has the DLL and movie. `test_sm64_layout.cpp` compiles `sm64_layout.inc`, the pinned DLL's field offsets and struct sizes, against the copied headers, so the layout is checked without the game (docs/libsm64.md, "Struct layouts"). `test_libsm64_parity.cpp` is the parity harness of ROADMAP 4.13: two resources under one fuzz from the anchor frame, everything the search reads compared bit for bit after every frame (the game against a second copy of itself, then against the game with every object but the pyramid corner's unloaded, which need `sm64_jp_1.dll` beside the DLL; then `BitfsCorner` against the game, standing still and under the fuzz, with the pyramid alone against the game cut to it, and with the bully placed on Mario at every segment's start as the ending's probe places it; `TASFW_PARITY_FRAMES` for a long run; and the pipeline's exported solution movies under `analysis/m64`, every one played from the frame the movies leave the source on the corner against the game cut to the corner's objects, and on the whole game less its yellow coins against that cut, so that the coin on the way onto the pyramid is shown to be all the whole game adds; 40 of them in a test run, `TASFW_PARITY_MOVIE_LIMIT` 0 for all). `test_bitfs_corner.cpp` checks the corner's level and state imports against the game's own counts and pointers, a save, a load and a move between resources, and prints a one-off timing of its frame, save and load. `test_libsm64_downhill.cpp` checks `GetMinimumDownhillWalkingAngle`, the one-frame look-ahead that replaced the `PyramidUpdate` stand-in (ROADMAP 4.13), with Mario run from the anchor's rest until the pyramid's normal is moving: its child frame is reverted, the angle it reports is Mario's floor read after that frame (nearer the normal after the tilt than before it; a `Surface*` is good for one frame, docs/tasing.md "Pitfalls"), and the game and the corner answer alike. |
 | `tasfw-testing/` | Header-only test support shared by tests and benchmarks: `MockResource`, and `PerfAccess`, the friend through which a test or benchmark whose subject is Scattershot's table or the resource's slot manager reaches their internals (everything else uses the public operations). |
-| `perf/` | Committed benchmark baselines, one directory per machine and compiler (`tyler-desktop\`, `tyler-desktop-clang\`): a JSON file per benchmark family plus `context.json`, written by `scripts\perf.ps1 -SaveBaseline` and read through `perf_compare.py compare`, not by hand (the one hand edit is a renamed benchmark's row key, numbers untouched, as when the metric-script rows were renamed); `tierd-ci.json` is CI's Tier D baseline. `perf/results/` is gitignored. |
+| `perf/` | Committed benchmark baselines, one directory per machine and compiler (`tyler-desktop\`, `tyler-desktop-clang\`): a JSON file per benchmark family plus `context.json`, written by `scripts\perf.ps1 -SaveBaseline` (a whole run; with `-Filter`, just that family's file is added or replaced and the reference binaries stay) and read through `perf_compare.py compare`, not by hand (the one hand edit is a renamed benchmark's row key, numbers untouched, as when the metric-script rows were renamed); `tierd-ci.json` is CI's Tier D baseline. `perf/results/` is gitignored. |
 | `analysis/` | `visualizer.py`, the scattershot viewer (a live plot of a run's CSV, one tab per run; the search launches it, README.md "The viewer") with `requirements.txt`, which it installs into its own `analysis/.venv` on first start; also the pipeline's default output directory (CSVs, their `*.visualizer.json`, `solutions/*.json`, `m64/`), all gitignored. |
 | `res/` | Gitignored runtime inputs: 24 copies of the libsm64 DLL (made by `scripts/unlock_libsm64.py`), other source .m64 files, and thousands of exported solution .m64 files. |
 | `movies/` | The committed source movies: `bitfs-pyramid-jp.m64` (JP, 3,804 frames; the tests, the perf suite, CI and `config.json` use it), `bitfs-osc-final-jp.m64` (JP, 3,726 frames; the oscillations done by hand to frame 3604, once the source of a final-oscillation experiment, unreferenced now), `1keyU.m64` (US, 7,628 frames; a whole 1-key run, the source of the US way into BitFS) and `bitfs-pyramid-us.m64` (US, 3,871 frames; `1keyU.m64` to its BitFS entry, then the JP movie from its own: its frame 3397 is the JP movie's 3330, the libsm64 tests run on it when `res\` has the US DLL). |
-| `scripts/` | `build.ps1` (the supported build entry point on Windows), `test.ps1`, `perf.ps1` and its compare script, `unlock_libsm64.py` (the game from a ROM or the CI key), `perf_scaling_hang.ps1`, `dll_symbols.py`, `dll_layout.py` (the layout table from a DLL's DWARF), `dll_game_bytes.py` (a build's `LibSm64KnownGameBytes` entry from its COFF symbols: where the game's bytes of `.data` and `.bss` end and the C runtime's begin), `decomp_diff.py` with `decomp_pin.json` (the copied decomp files against their pinned upstream revision; docs/decomp.md), `decode_cache_model.py` (a model of a scattershot run's block tree and what a per-thread savestate cache would save of its decoding; ROADMAP 4.3), `are_cell_model.py` (where Mario must rest on the pyramid for a wanted adjusted remainder error, in the game's float32 arithmetic: the width and spacing of the position bands per axis; ROADMAP 4.8), `fetch_deps.py` (the dependency tarballs into `build/downloads` with retries, from the CMake files' own names, URLs and hashes; CI runs it after restoring that directory from its cache). |
+| `scripts/` | `build.ps1` (the supported build entry point on Windows), `test.ps1`, `perf.ps1` and its compare script, `unlock_libsm64.py` (the game from a ROM or the CI key), `perf_scaling_hang.ps1`, `dll_symbols.py`, `dll_layout.py` (the layout table from a DLL's DWARF), `dll_game_bytes.py` (a build's `LibSm64KnownGameBytes` entry from its COFF symbols: where the game's bytes of `.data` and `.bss` end and the C runtime's begin), `decomp_diff.py` with `decomp_pin.json` (the copied decomp files against their pinned upstream revision; docs/decomp.md), `action_names.py` (`tasfw-scripts/inc/Sm64ActionNames.hpp`, the Mario actions' names from the copied `Sm64.hpp`, which the stages' CSV rows carry beside the action's hex; `--check` in CI), `decode_cache_model.py` (a model of a scattershot run's block tree and what a per-thread savestate cache would save of its decoding; ROADMAP 4.3), `are_cell_model.py` (where Mario must rest on the pyramid for a wanted adjusted remainder error, in the game's float32 arithmetic: the width and spacing of the position bands per axis; ROADMAP 4.8), `fetch_deps.py` (the dependency tarballs into `build/downloads` with retries, from the CMake files' own names, URLs and hashes; CI runs it after restoring that directory from its cache). |
 | `cmake/` | `AddOptimizationFlags` (arch flag, FP determinism, LTO unless `TASFW_LTO=OFF`, OpenMP; applied to every first-party target), `Warnings` (`/W3`, `/W4`, `-Wall -Wextra` on every first-party target, and `TASFW_WARNINGS_AS_ERRORS`) and `SystemIncludes` (fetched dependencies as system headers, so their warnings never count). |
 | `docs/` | Provenance of the DLL (libsm64.md), what was copied from the decomp and at which revision (decomp.md), compiler pitfalls, performance, and how to TAS with the framework (tasing.md). |
 
@@ -120,9 +142,13 @@ its place with numbers, and "it is cleaner" is not a number.
   DLL, runs the `VerifyLayout` script to the first stage's frame and prints its report,
   hardcoded object slots included; it exits 1 on a `FAIL`. A real run makes the same check
   before its first stage). **Running it without
-  arguments runs every configured stage**: 16 threads, hours, thousands of .m64 files under
-  `analysis/m64/`, and the viewer's window, a tab per stage (README.md, "The viewer").
-  `--stage <name>` runs one stage from the previous stage's saved solutions
+  arguments runs every configured stage**: 16 threads, every stage on the corner resource in
+  the committed config (its solutions replayed on the game before they count), thousands of
+  .m64 files under `analysis/m64/`, and the viewer's window, a tab per stage (README.md,
+  "The viewer").
+  `--stage <name>` runs one stage from the previous stage's saved solutions; `start` in
+  the config, or `--start <stage[:n]>`, begins a full run at a stage, or at an
+  oscillation pass of the `dr` stage from the pass files every pass writes
   (README.md, "Running the pipeline").
 - Tests: `powershell -ExecutionPolicy Bypass -File scripts\test.ps1` (add `-Config Release`,
   `-Compiler clang`, `-Filter '*Script*'`). Under a second without the DLL, a few seconds with it.
@@ -130,8 +156,8 @@ its place with numbers, and "it is cleaner" is not a number.
   change needs `scriptsuild.ps1` first, or it runs the previous build (ROADMAP 3.14).
 - The DLL-level check is `build\Release\out\dllcheck.exe <dll> <m64> <frame>
   [--version jp|us] [--save-mode full|fixed|dirty] [--leak-scan [frames]] [--objects] [--dirty-scan [frames]]
-  [--dirty-replay] [--levels] [--trace [frames]]` (docs/libsm64.md). It plays to a frame,
-  verifies the struct layouts
+  [--dirty-replay] [--levels] [--trace [frames]] [--keep-objects <i,j,...>]` (docs/libsm64.md).
+  It plays to a frame, verifies the struct layouts
   against the game, and prints frame-advance and save/load cost in the chosen save mode.
   Takes under a second. `--leak-scan` lists every byte range of `.data`/`.bss` that a load
   does not restore; `--objects` lists every active object in `gObjectPool` with its
@@ -140,7 +166,10 @@ its place with numbers, and "it is cleaner" is not a number.
   the movie to it) and which of them the fixed slices miss; `--levels` lists every frame at
   which the movie changes level or area (how the frame a movie enters a level is found);
   `--trace` prints Mario, the camera and what a movie carries between levels for the frames
-  before the frame; `python scripts\dll_symbols.py
+  before the frame; `--keep-objects` times a neutral-input frame and counts its written
+  pages with every object alive and again with every object but the listed slots and
+  Mario deactivated (the share of a frame that is the rest of the level, ROADMAP 4.13);
+  `python scripts\dll_symbols.py
   <dll> -` names the offsets in any of these outputs from the DLL's exports.
 - A movie for another game version is made with `build\Release\out\m64splice.exe <dll a>
   <a.m64> <dll b> <b.m64> <level> <out.m64> [--lead frames]`: movie a to the frame it enters
@@ -168,9 +197,16 @@ its place with numbers, and "it is cleaner" is not a number.
 1. **Game state must be a pure function of (start save, inputs).** Only change the game by
    advancing frames with inputs (`AdvanceFrameWrite`, `Apply`). Direct pokes into DLL memory
    (marked `//! UNSAFE` where they exist) cannot be replayed from a savestate and silently
-   corrupt the search. Reads are fine. Any desync (a replay of the same inputs from the same
-   save reaching a different state, a decoded block not matching its recording) is a
-   critical error: establish the root cause; never tolerate it as a rate.
+   corrupt the search. Reads are fine. The one exception is a probe inside a metric script
+   (the maintainer, 2026-10-05; `BitfsScEndingMetrics::Probe`): it may write game memory,
+   then only advance frames with written inputs and read until its sandbox ends, never
+   load, save or run a child, since a plain advance takes no savestate and the sandbox's
+   revert replays from a clean one (a save it needs is made before the write); the write
+   is marked `//! UNSAFE`, and a test checks that the state after the probe is identical
+   to a replay without it, advanced to and loaded back to (`bitfs-turn --test`). Any
+   desync (a replay of the same inputs from the same save reaching a different state, a
+   decoded block not matching its recording) is a critical error: establish the root
+   cause; never tolerate it as a rate.
 2. **Do not edit struct layouts under `tasfw-core/inc/sm64/`** unless you are deliberately
    moving to a different DLL build. The DLL is ground truth; the headers mirror it.
    `test_sm64_layout.cpp` checks them against the pinned DLL's DWARF and
@@ -211,8 +247,9 @@ its place with numbers, and "it is cleaner" is not a number.
    `Load`, `LongLoad` and the child-script and ad-hoc runners, the frame through
    `GetCurrentFrame`. Game memory is read with `ReadState("symbol")`, the one way a script
    sees it (its typed, const and guarded form, and the write side, `HackMemory`, are Phase
-   5's, with the hacks), and a script's state reaches a run on another resource through
-   `ExportSave` and the builder's `ImportSave`. Savestate management is
+   5's, with the hacks; until then the one write is the metric probe rule 1 allows), and a
+   script's state reaches a run on another resource through `ExportSave` and the builder's
+   `ImportSave`. Savestate management is
    automatic in the normal case; the
    manual methods are escape hatches, and a design that needs a script author to call or
    know something new is the wrong design. This holds for user scripts, stage scripts and
@@ -248,7 +285,7 @@ its place with numbers, and "it is cleaner" is not a number.
   construction, the lifecycle the author implements, the runners, the cursor and the
   inputs, saves and loads, state; then friends, data, and the internals grouped by concern,
   a one-line comment naming each group; the `.t.hpp` defines in that order.
-- A script is `class X : public Script<LibSm64>` with a nested `CustomScriptStatus` and the
+- A script is `class X : public Script<Sm64Resource>` with a nested `CustomScriptStatus` and the
   three lifecycle methods. One that reads metrics names its metric script once,
   `using MetricScript = T;`, and calls `GetMetrics(frame)`; a metric script and a root name
   nothing. Child scripts are run with `Execute<X>` (revert), `Modify<X>`
@@ -265,6 +302,13 @@ its place with numbers, and "it is cleaner" is not a number.
   `//terminator`, as `BitFsScApproach_AttemptDr.cpp` does); and a script's own `Load` or
   `Rollback` to undo a trial is a code smell, since an ad-hoc body that returns false is
   reverted to where it began (docs/tasing.md, "Saves and loads are automatic").
+- A dying Mario fails the trial (the maintainer, 2026-10-12): a search's `ValidateState`
+  and any loop that advances until a condition check `MarioDeath::IsDying`
+  (`tasfw-scripts/inc/MarioDeath.hpp`: a lava boost, health below one segment, a death
+  action, no floor) and fail at the first dying frame, so no script plays the death or
+  reaches the level's reload. The corner resource refuses that reload; reaching its
+  refusal is a script bug, not a reason to catch it in the framework or model the game
+  past the death.
 - Compiler workarounds exist (`using` directives in `ScattershotThread`, the named static in
   `Inputs.cpp`). Each is catalogued in docs/compilers.md; add yours there.
 
@@ -353,17 +397,10 @@ Agents without hooks follow the same procedure by hand at the end of every chang
 
 ## Known problems you will run into
 
-- `tasfw-core/src/decomp/` (`Math.cpp`, `Surface.cpp`, `Pyramid.cpp`) reimplements pieces of
-  the game on the copied structs so the downhill-angle scripts can predict the floor angle
-  after the pyramid tilts without advancing a frame. It duplicates physics that
-  `PyramidUpdate` also has on its own surface type, and it is not covered by the drift test.
-  Its pyramid loop is not a model of Mario's rest after a landing either: it carries his
-  height along where the game resets it to the floor each frame, and the rest it computes
-  is about two units off the game's (ROADMAP 4.8).
-  `scripts/decomp_pin.json` cites the upstream functions each file came from (docs/decomp.md).
 - Warning C4715 in the `TurnAround` lambda of `Scattershot_BitfsDr.cpp` is a real bug (not
   all paths return a value).
-- The pyramid object is `gObjectPool[84]` and the track platform `gObjectPool[85]`,
+- The pyramid object is `gObjectPool[84]`, the track platform `gObjectPool[85]` and the
+  ending's bully `gObjectPool[27]`,
   level-specific indices that stay by decision (ROADMAP 2.4: two objects share the pyramid
   behavior). They are declared with their behavior and home in `BitFsObjects.hpp` and
   verified by the `VerifyLayout` script the pipeline runs before its first stage, so a
@@ -391,7 +428,51 @@ Agents without hooks follow the same procedure by hand at the end of every chang
 - **Pyramid normal / xzSum**: the tilting platform's surface normal; `|nX| + |nZ|` measures tilt.
 - **Crossing / oscillation**: the tilt direction reversing past equilibrium; an oscillation is
   a pair of crossings at least `minOscillationFrames` apart.
+- **Leg**: the dr stage's first pass, before any oscillation: Mario runs from the fixer's
+  resting spot along the pyramid until he can turn around. Its solutions, all of them up to
+  the pass's `maxSolutions`, are the states the first oscillation's pass starts from.
+- **Cell (of the normal)**: a 0.01 by 0.01 square of the pyramid normal's x and z
+  components; two states are in the same cell when both components round to the same
+  hundredths. The dr stage's hand-over log groups the solutions it carries by cell.
 - **HAU**: hexadecimal angle unit, an SM64 angle divided by 16.
 - **ARE**: adjusted remainder error, distance in float ULPs from a target normal after
   stepping in 0.01 increments (see `CalculateARE`).
+- **Departure**: the first frame at whose end the pyramid is not Mario's platform (he is
+  more than 4 units above its surface, or past its edge); its normal returns toward flat
+  from there unless he lands back on it, and the ending's squish cancel is a frame after
+  it, with the normal the target's on that frame. A dive recover's flight over the
+  platform, above the band with the pyramid still the floor under him, is not one (the
+  maintainer, 2026-10-12): it is the approach, and a flight past the platform's edge is
+  a departure like any.
+- **NUT spot**: a spot at the platform's edge where the frame's displacement, through the
+  rounding its name recalls (non-integer unit truncation, the maintainer's recollection of
+  it), leaves Mario off the platform, so an action that cancels to freefall (idle, a stop,
+  a deceleration) falls on the next frame with no step of his own; running does not.
+- **PBDR**: pause-buffered dive recover: a dive, a pause in which B is released, and B
+  pressed on the slide's first frame for the rollout (the ending's `Dive`, `Rollout` and
+  `Landing` moves); the pause freezes three frames, so the press is the fourth frame after
+  the dive's. The pause buffer is the one place a BitFS script presses START (the
+  maintainer, 2026-10-13): no move draws it, and the ending refuses a frame that pressed
+  it with Mario not on the dive slide.
+- **uscx / uscz**: the squish cancel off the x-aligned or the z-aligned edge of the pyramid's
+  top, the edge running along that axis (the maintainer's naming, 2026-10-06); the edge's
+  height above the lava is set by the other axis's tilt component. The committed setup
+  squishes off the z-aligned +x edge: uscz.
+- **Sweep**: the outward movement of the pyramid's top edge as its tilt flattens, about 3.3
+  units a frame on the squish edge; a Mario falling beside the edge is overtaken by it.
+- **Catch**: the frame on which the sweep first covers a falling Mario's position at the
+  frame's start, with the top more than 78 above him and the side face within 150 of the
+  lava: the frame the game squishes him. The ending's bully is tried on the frame before it.
+- **Catch window**: the stretch of the squish edge where a squish can be cancelled, the
+  edge standing between about 130 and 150 above the lava at the catch, so that the push
+  lands Mario on the top where it is over 100 above the lava and within 78 above him.
+- **Pancake**: a squish that no bully push cancels; Mario stays squished on the lava.
+- **Band**: the 4 units above the pyramid's top within which the game keeps the pyramid as
+  Mario's platform; the normal steps toward flat on both axes while he is out of it. A
+  dive recover's rollout may fly out of it over the platform and still be the approach
+  (see Departure).
+- **Aim**: the point on the squish edge the run and the dive recover head for, where the
+  edge will stand at a chosen height within the catch window.
+- **Steep side**: the side face under the squish edge with its normal's y above -0.5,
+  the game's condition for walking a squished Mario along it, which the cancel needs.
 - **Block / segment / pellet / shot**: scattershot terms, defined in ARCHITECTURE.md.

@@ -33,7 +33,8 @@ import tempfile
 
 # The structs the framework reads game memory through, and the structs those contain.
 # Every other struct in tasfw-core/inc/sm64/Types.hpp is unused and not checked.
-STRUCTS = ["MarioState", "Object", "ObjectNode", "GraphNode", "GraphNodeObject", "Surface", "Camera"]
+STRUCTS = ["MarioState", "Object", "ObjectNode", "GraphNode", "GraphNodeObject", "Surface", "SurfaceNode", "Controller", "Camera",
+           "PlayerCameraState", "LinearTransitionPoint", "ModeTransitionInfo", "CameraStoredInfo"]
 
 DEFAULT_OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                            "tasfw-tests", "src", "sm64_layout.inc")
@@ -52,7 +53,10 @@ def data_types(node):
 
 
 def struct_size(layout, name):
-    """The struct's size: the stride of any pointer to it or array of it in the layout."""
+    """The struct's size: the stride of any pointer to it or array of it in the layout, or,
+    for a struct the game only embeds, the distance to the field after one of its members
+    in a struct that embeds it; None when the layout has neither (the fields are still
+    checked, the size is not)."""
     base = {"kind": "Name", "data": "struct " + name}
     strides = set()
     for node in data_types(layout):
@@ -60,9 +64,18 @@ def struct_size(layout, name):
             stride = node["data"].get("stride")
             if stride:
                 strides.add(stride)
-    if len(strides) != 1:
+    if len(strides) > 1:
         sys.exit(f"struct {name}: expected one stride in the layout, found {sorted(strides)}")
-    return strides.pop()
+    if strides:
+        return strides.pop()
+    for entry in layout["type_defns"].values():
+        if entry["kind"] != "Struct":
+            continue
+        members = sorted(entry["data"]["fields"].values(), key=lambda info: info["offset"])
+        for member, following in zip(members, members[1:]):
+            if member["data_type"] == base:
+                return following["offset"] - member["offset"]
+    return None
 
 
 def run_sm64_layout(exe, dll):
@@ -102,7 +115,11 @@ def main(argv):
         entry = layout["type_defns"].get("struct " + name)
         if entry is None or entry["kind"] != "Struct":
             sys.exit(f"struct {name} is not in the layout")
-        lines.append(f"TASFW_LAYOUT_STRUCT({name}, {struct_size(layout, name)})")
+        size = struct_size(layout, name)
+        if size is None:
+            lines.append(f"// struct {name}: never pointed at, in an array or embedded before another field, so its size is not in the DWARF's strides; the fields are checked")
+        else:
+            lines.append(f"TASFW_LAYOUT_STRUCT({name}, {size})")
         members = sorted(entry["data"]["fields"].items(), key=lambda kv: (kv[1]["offset"], kv[0]))
         for field, info in members:
             lines.append(f"TASFW_LAYOUT_FIELD({name}, {field}, {info['offset']})")

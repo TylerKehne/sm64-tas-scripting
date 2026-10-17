@@ -32,13 +32,16 @@ editing done while copying, and it is what the check holds fixed.
 | Copy | Upstream file | Commit | Residual | What the residual is |
 |---|---|---|---|---|
 | `Types.hpp` | `include/types.h` | Refresh 13, `6d87c42` (2020-12-03) | +61 -127 | `#pragma once` and `sm64/UltraTypes.hpp` for the decomp's includes; `IS_64_BIT` resolved to 1 (the `ptrData` union); `Controller`, `SpTask` and the other structs the framework never reads dropped |
-| `ObjectFields.hpp` | `include/object_fields.h` | Refresh 13 | +26 -20 | `#pragma once` and the include; clang-format's comment wrapping and `+ 1` to `+1` |
+| `ObjectFields.hpp` | `include/object_fields.h` | Refresh 13 | +26 -32 | `#pragma once` and the include; `IS_64_BIT` resolved to 1 (the pointer fields through `ptrData`, as `Types.hpp` has them); clang-format's comment wrapping and `+ 1` to `+1` |
 | `Sm64.hpp` | `include/sm64.h` | Refresh 13 | +248 -132 | `#pragma once`; the includes; clang-format's wrapping of the action flag lists |
 | `SurfaceTerrains.hpp` | `include/surface_terrains.h` | Refresh 15, `1372ae1` (2021-10-14) | +1 -0 | `#pragma once`; copied later than the rest |
-| `Camera.hpp` | `src/game/camera.h` | Refresh 13 | +20 -674 | `struct Camera` alone, out of a 600-line header |
+| `Camera.hpp` | `src/game/camera.h` | Refresh 13 | +40 -677 | `struct Camera` and `struct PlayerCameraState` alone, out of a 600-line header |
 | `UltraTypes.hpp` | `include/PR/ultratypes.h` | Refresh 13 | +3 -18 | the typedefs alone, on `<stdint.h>` |
 | `Trig.hpp` | `include/trig_tables.inc.c` | Refresh 13 | +942 -150 | the three tables as `constexpr std::array`, `gCosineTable` written out; the values wrap at other columns, hence the size |
 | `Surface.hpp` | `include/surface_terrains.h` | Refresh 13 | +20 -180 | a selection of the surface types with `SURFACE_CLASS_*`, and the declarations of the reimplemented surface functions; mostly the framework's own |
+| `SurfaceLoad.hpp` | `src/engine/surface_load.h` | Refresh 13 | +12 -22 | `SurfaceNode`, the partition's enum and `SpatialPartitionCell` with `NUM_CELLS`, plus the level bounds and limits from `src/engine/surface_collision.h` they rest on; the externs and prototypes dropped; for the BitFS corner resource (ROADMAP 4.13) |
+| `Controller.hpp` | `include/types.h` | Refresh 13 | +8 -309 | `struct Controller` alone, its two OS pointers on forward declarations; for the BitFS corner resource |
+| `Area.hpp` | `src/game/area.h` | Refresh 13 | +23 -127 | `struct Area` alone, what it points at beside the camera on forward declarations; for the BitFS corner resource |
 
 The pins were found by matching each copy against every "Refresh" commit on upstream
 master (the decomp squashes its development into those): Refresh 13 fits every file best
@@ -47,16 +50,53 @@ from between Refresh 13 and 14: it lacks Refresh 14's `oUpVel` and `animList`, a
 the headers, which is why the 42 names the DLL's layout table has and the headers lack are
 all later additions (libsm64.md, "Struct layouts").
 
-The reimplemented files are cited in the same JSON under `derived`, all at Refresh 13 by
-assumption (their comments name a `tasfw-decomp` library at commit `69792ad` that no longer
-exists anywhere reachable, so the revision is inferred from the headers'):
+Nothing reimplements the game outside the corner's copies any more. `tasfw-core/src/decomp`
+(`Math.cpp`, `Surface.cpp`, `Pyramid.cpp`) and `PyramidUpdate` re-wrote the pyramid's tilt,
+the surface loading and the floor rules on their own types, for the look-ahead the
+oscillation scripts take; since 2026-10-12 that look-ahead is a frame of a child script on
+the resource the script runs on (`GetMinimumDownhillWalkingAngle`), the corner being cheap
+enough, and both were removed (ROADMAP 4.13). The pin's `derived` list, which cited them by
+upstream function, is empty and stays for the next file of that kind.
 
-| File | Upstream functions |
-|---|---|
-| `tasfw-core/src/decomp/Math.cpp` | `mtxf_align_terrain_normal`, `vec3f_cross`, `vec3f_normalize` (`src/engine/math_util.c`); `linear_mtxf_mul_vec3f` (`src/game/object_helpers.c`) |
-| `tasfw-core/src/decomp/Surface.cpp` | `find_floor` (`src/engine/surface_collision.c`); `load_object_surfaces`, `read_surface_data`, `get_object_vertices`, `surface_has_force`, `transform_object_vertices` as `transform_surfaces` (`src/engine/surface_load.c`); `mario_floor_is_slope` and `mario_get_floor_class` as `floor_is_slope` and `get_floor_class` (`src/game/mario.c`) |
-| `tasfw-core/src/decomp/Pyramid.cpp` | `bhv_tilting_inverted_pyramid_loop`, `create_transform_from_normals`, `approach_by_increment` (`src/game/behaviors/tilting_inverted_pyramid.inc.c`); `simulate_platform_tilt` is the framework's own composition of them |
-| `tasfw-resources/src/PyramidUpdate.cpp` | the same tilt loop, surface loading, `find_floor` and floor class on its own surface type |
+## The BitFS corner's copies
+
+`BitfsCorner` (ROADMAP 4.13) runs the game's frame for the pyramid corner from the decomp's
+own text: 48 files under `tasfw-resources/src/bitfs-corner/decomp/`, the `.inc` ones the
+functions of a `src/` file the frame reaches, included into the body of one class
+(`BitfsCornerGame`, `src/bitfs-corner/BitfsCornerGame.hpp`) so that they become its members
+and the globals they define its data, and the `.h` ones the headers they compile against
+with their includes dropped. Each is pinned in `scripts/decomp_pin.json` like the headers
+above, all at Refresh 13; the residual is what was left out of the file (a `.inc` keeps only
+what the corner reaches, so `-1483` lines on `object_helpers.inc` is the rest of the file)
+plus the edits made while copying, which are of a few kinds and are named where they are
+made: `static` dropped from functions (a member cannot be) and `register` from locals; the
+decomp's own `AVOID_UB` forms (`BitfsCornerGame.hpp` defines `AVOID_UB` before any header,
+which is also what gives `sm64.h`'s `GET_HIGH_S16_OF_32` its shift form rather than the
+big-endian pointer trick, wrong on x64); `return dest` for the vector copies' `return
+&dest`; a C conversion from `void *` made explicit; a function-pointer parameter made a
+pointer to member; the surface allocator pointed at the state's dynamic pool (the static
+surfaces are the level's); the interpreter's command table replaced by a switch over the
+commands the corner's scripts use, and its `CALL_NATIVE` resolved by position; the
+animation load replaced by a pointer into the level's resolved copies; the particle loop
+of `bhv_mario_update` and the handler table of `mario_process_interactions` reduced to the
+corner's one case; in `camera.inc` (the C-up mode and what it reaches, the rest of
+`camera.c` held), `set_camera_mode`'s table of mode transitions replaced by a switch over
+the corner's two modes, the JP build's `#ifndef` resolved, and `radial_camera_input`'s
+unread, uninitialized return value initialized; in `math_util.inc`, `mtxf_copy`'s words
+copied through `f32` pointers rather than `u32` (a float read through an integer pointer is
+undefined in C++, and GCC 14 took `mtxf_mul`'s result as never written); in
+`mario_actions_airborne.inc`, two locals the decomp sets only for the action arguments the
+game passes (`act_freefall`'s animation, `act_crazy_box_bounce`'s least speed) started at
+their first case's value (docs/compilers.md); in `ingame_menu.inc` (the pause menu,
+ROADMAP 4.22) the JP build's `#ifdef` resolved, the EU forms dropped, and
+`render_pause_course_options` cut to its cursor and its call of the camera options. The three structs the C-up mode's state
+is made of (`LinearTransitionPoint`, `ModeTransitionInfo`, `CameraStoredInfo`) live in
+`sm64/Camera.hpp` beside `Camera` and `PlayerCameraState`, and the corner's `camera.h`
+copy leaves them to it. `Prelude.hpp` beside them is the framework's own: the few definitions
+of `ultratypes.h`, `macros.h`, `graph_node.h`, `os_cont.h` and the like that the copies
+assume. The copies come through a system include path (`tasfw-resources/CMakeLists.txt`), so
+their warnings are the decomp's; what link-time code generation still reports (a missing
+return, an address of a parameter) is edited in the copy and recorded in its residual.
 
 ## Checking and moving the pin
 
@@ -71,6 +111,11 @@ come with a change to the pin. After a deliberate edit, or after moving a pin (s
 Refresh whose names a newer DLL exports), read `--show`, then `--update` records the
 residuals as they are now; the diff of `decomp_pin.json` in the pull request shows what
 was accepted.
+
+`tasfw-scripts/inc/Sm64ActionNames.hpp`, the Mario actions' names the stages' CSV rows carry
+beside the action's hex (README.md, "The viewer"), is generated from `Sm64.hpp` by
+`scripts/action_names.py`; after `Sm64.hpp` moves, run it again. CI's `--check` on the same
+job fails while the header is stale.
 
 Moving to a newer decomp revision is not the same as moving to a newer DLL. The DLL's fork
 tracks the decomp's development line ahead of master (libsm64.md, "Reproducing the DLL

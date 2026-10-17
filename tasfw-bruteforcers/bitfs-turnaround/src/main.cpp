@@ -1,12 +1,13 @@
 // bitfs-turn: runs the BitFS squish-cancel pipeline described by config.json, all stages in
-// order or a single one (ROADMAP 1.4). See README.md ("Configuration") for the file format
-// and Stages.cpp for what each stage type does.
+// order, from a chosen stage on, or a single one (ROADMAP 1.4). See README.md
+// ("Configuration") for the file format and Stages.cpp for what each stage type does.
 //
-//   bitfs-turn [--config <file>] [--stage <name>] [--list] [--dry-run] [--test [doctest args]]
+//   bitfs-turn [--config <file>] [--stage <name>] [--start <stage[:n]>] [--list] [--dry-run] [--test [doctest args]]
 //
 // Without --config the file is config.json next to the executable. Every stage writes its
-// solutions to <outputDirectory>/solutions/<stage>.json; a stage run alone reads its input
-// from the file its input stage wrote last time. --test runs the executable's own optional
+// solutions to <outputDirectory>/solutions/<stage>.json; a stage run alone, or the first
+// stage of a run started later ("start" in the config, or --start), reads its input from
+// the file its input stage wrote last time. --test runs the executable's own optional
 // tests on the config's game (Tests.cpp) and hands the arguments after it to doctest.
 #include <algorithm>
 #include <chrono>
@@ -14,13 +15,14 @@
 #include <exception>
 #include <filesystem>
 #include <map>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <vector>
 
 #include <BitFsObjects.hpp>
+#include <BitfsCorner.hpp>
 #include <LibSm64.hpp>
-#include <PyramidUpdate.hpp>
 #include <VerifyLayout.hpp>
 
 #include "PipelineConfig.hpp"
@@ -39,6 +41,7 @@ namespace
 	{
 		fs::path config;
 		std::string stage;
+		std::string start; // "<stage>" or "<stage>:<n>"; overrides the config's "start"
 		bool list = false;
 		bool dryRun = false;
 		bool help = false;
@@ -49,10 +52,13 @@ namespace
 	void PrintUsage()
 	{
 		std::printf(
-			"usage: bitfs-turn [--config <file>] [--stage <name>] [--list] [--dry-run] [--test [doctest args]]\n"
+			"usage: bitfs-turn [--config <file>] [--stage <name>] [--start <stage[:n]>] [--list] [--dry-run] [--test [doctest args]]\n"
 			"  --config <file>  pipeline config (default: config.json next to the executable)\n"
 			"  --stage <name>   run only this stage, reading its input from the solutions file\n"
 			"                   its input stage wrote earlier\n"
+			"  --start <stage[:n]>  run every stage from this one on, its input from that file;\n"
+			"                   <stage>:<n> starts the dr stage at oscillation n, from the roots\n"
+			"                   its pass n-1 wrote (solutions/<stage>.oscillation<n-1>.json)\n"
 			"  --list           print the stage types and the configured stages, then exit\n"
 			"  --dry-run        resolve paths, check the files exist, load one DLL and print its\n"
 			"                   layout report, then exit without searching\n"
@@ -85,6 +91,13 @@ namespace
 				if (!v)
 					return false;
 				options.stage = v;
+			}
+			else if (arg == "--start")
+			{
+				const char* v = value();
+				if (!v)
+					return false;
+				options.start = v;
 			}
 			else if (arg == "--list")
 				options.list = true;
@@ -144,12 +157,12 @@ namespace
 		}
 	};
 
-	ResourceCounters CountResourceWork(const std::vector<LibSm64>& resources)
+	ResourceCounters CountResourceWork(const std::vector<Sm64Resource*>& resources)
 	{
 		ResourceCounters total;
-		for (const LibSm64& resource : resources)
+		for (const Sm64Resource* resource : resources)
 		{
-			const ResourceWork& w = resource.work;
+			const ResourceWork& w = resource->work;
 			total.work.frameAdvances += w.frameAdvances;
 			total.work.saves += w.saves;
 			total.work.loads += w.loads;
@@ -160,7 +173,8 @@ namespace
 			total.work.evictions += w.evictions;
 			total.work.slotsLiveMax = std::max(total.work.slotsLiveMax, w.slotsLiveMax);
 			total.work.slotBytesMax = std::max(total.work.slotBytesMax, w.slotBytesMax);
-			if (const LibSm64DirtyPages* d = resource.dirtyPages())
+			const LibSm64* game = dynamic_cast<const LibSm64*>(resource); // the dirty pages are the game's; once per stage, not a hot path
+			if (const LibSm64DirtyPages* d = game ? game->dirtyPages() : nullptr)
 			{
 				total.dirty = true;
 				total.faults += d->faults;
@@ -171,17 +185,18 @@ namespace
 		return total;
 	}
 
-	std::vector<LibSm64> BuildResources(const PipelineConfig& pipeline, int count)
+	// The game: `count` DLL copies. `cornerThreads` is how many corners a stage on the corner
+	// will build beside them, each taking its own limit from the same budget.
+	std::vector<LibSm64> BuildResources(const PipelineConfig& pipeline, int count, int cornerThreads)
 	{
 		// The process cap on savestate memory is the config's total, and the threads' resources
-		// share it equally, less the room each thread needs for the resource its scripts
-		// create: one PyramidUpdate at a time, at its own budget (ROADMAP 3.5).
+		// share it equally, less what the corners take.
 		int64_t cap = pipeline.savestateBudgetMB * 1024 * 1024;
-		int64_t share = cap / pipeline.threads - PyramidUpdate::SavestateBudgetBytes;
+		int64_t corners = int64_t(cornerThreads) * BitfsCorner::SavestateBudgetBytes;
+		int64_t share = (cap - corners) / pipeline.threads;
 		if (share <= 0)
 			ConfigError("\"savestateBudgetMB\" " + std::to_string(pipeline.savestateBudgetMB) + " leaves no savestate memory per thread for "
-				+ std::to_string(pipeline.threads) + " thread(s) beyond the " + std::to_string(PyramidUpdate::SavestateBudgetBytes / (1024 * 1024))
-				+ " MB each reserves for a PyramidUpdate");
+				+ std::to_string(pipeline.threads) + " thread(s)" + (cornerThreads > 0 ? " beyond the " + std::to_string(BitfsCorner::SavestateBudgetBytes / (1024 * 1024)) + " MB each corner takes" : ""));
 		SlotBudget::Set(cap);
 
 		std::vector<fs::path> paths = pipeline.DllPaths();
@@ -235,6 +250,69 @@ namespace
 		return true;
 	}
 
+	// The stage a full run begins at: the config's "start" (or --start), else the first.
+	const StageConfig& StartStage(const PipelineConfig& pipeline)
+	{
+		if (pipeline.startStage)
+			return *pipeline.FindStage(*pipeline.startStage); // SetStart checked it exists
+		return pipeline.stages.front();
+	}
+
+	// The stages a run executes, in order: the one --stage names, else from the start stage
+	// to the last.
+	std::vector<const StageConfig*> StagesToRun(const PipelineConfig& pipeline, const std::string& stageOption)
+	{
+		std::vector<const StageConfig*> stages;
+		if (!stageOption.empty())
+		{
+			const StageConfig* stage = pipeline.FindStage(stageOption);
+			if (!stage)
+				ConfigError("no stage named \"" + stageOption + "\" (see --list)");
+			stages.push_back(stage);
+			return stages;
+		}
+		bool started = !pipeline.startStage;
+		for (const StageConfig& stage : pipeline.stages)
+		{
+			if (!started && stage.name != *pipeline.startStage)
+				continue;
+			started = true;
+			stages.push_back(&stage);
+		}
+		return stages;
+	}
+
+	std::string ObjectNames(const BitfsCornerObjects& objects)
+	{
+		std::string names;
+		for (const char* name : { objects.pyramid ? "pyramid" : "", objects.otherPyramid ? "otherPyramid" : "", objects.trackPlatform ? "trackPlatform" : "", objects.bully ? "bully" : "" })
+			if (*name)
+				names += (names.empty() ? "" : ", ") + std::string(name);
+		return names.empty() ? "Mario alone" : names;
+	}
+
+	// A start needs its cache: the start stage's input file, or the pass file before the
+	// pass asked for. Said before any DLL loads, the dry run included.
+	void CheckStartCache(const PipelineConfig& pipeline)
+	{
+		if (!pipeline.startStage)
+			return;
+		const StageConfig& stage = StartStage(pipeline);
+		if (pipeline.startPass > 0)
+		{
+			fs::path file = pipeline.PassFile(stage.name, pipeline.startPass - 1);
+			if (!fs::exists(file))
+				ConfigError("\"start\" asks stage \"" + stage.name + "\" to begin at oscillation " + std::to_string(pipeline.startPass)
+					+ " but " + file.string() + " does not exist; run the stage from an earlier oscillation first");
+		}
+		else if (stage.input)
+		{
+			fs::path file = pipeline.SolutionsFile(*stage.input);
+			if (!fs::exists(file))
+				ConfigError("\"start\" asks for stage \"" + stage.name + "\" but its input " + file.string() + " does not exist; run \"" + *stage.input + "\" first");
+		}
+	}
+
 	void ListStages(const PipelineConfig& pipeline)
 	{
 		std::printf("stage types:\n");
@@ -254,6 +332,8 @@ namespace
 	int Run(const Options& options)
 	{
 		PipelineConfig pipeline = PipelineConfig::Load(options.config);
+		if (!options.start.empty())
+			pipeline.SetStart(options.start);
 		if (options.list)
 		{
 			ListStages(pipeline);
@@ -261,6 +341,8 @@ namespace
 		}
 
 		CheckInputsExist(pipeline);
+		if (options.stage.empty() || pipeline.startStage == options.stage)
+			CheckStartCache(pipeline); // a lone --stage of another name does not use the start
 
 		if (options.dryRun)
 		{
@@ -275,9 +357,9 @@ namespace
 				std::printf("\nno stages configured; nothing to verify\n");
 				return 0;
 			}
-			std::vector<LibSm64> one = BuildResources(pipeline, 1);
+			std::vector<LibSm64> one = BuildResources(pipeline, 1, 0);
 			std::printf("\n");
-			return VerifyGame(one[0], pipeline, pipeline.stages.front()) ? 0 : 1;
+			return VerifyGame(one[0], pipeline, StartStage(pipeline)) ? 0 : 1;
 		}
 
 		// Scattershot writes CSVs and the error.m64 dump straight into the output directory from
@@ -285,24 +367,24 @@ namespace
 		fs::create_directories(pipeline.outputDirectory);
 		fs::create_directories(pipeline.outputDirectory / "solutions");
 
-		std::vector<LibSm64> resources = BuildResources(pipeline, pipeline.threads);
+		// The game: one DLL copy per thread when a stage runs on it; one copy, for the level,
+		// the layout check and the replay check, when every stage runs on the corner.
+		std::vector<const StageConfig*> toRun = StagesToRun(pipeline, options.stage);
+		bool anyGame = false;
+		bool anyCorner = false;
+		for (const StageConfig* stage : toRun)
+			(stage->OnCorner() ? anyCorner : anyGame) = true;
+		std::vector<LibSm64> games = BuildResources(pipeline, anyGame ? pipeline.threads : 1, anyCorner ? pipeline.threads : 0);
 
-		// Before any stage runs: the stage about to run, or the first one, names the frame.
+		// Before any stage runs: the stage about to run names the frame.
+		if (!toRun.empty())
 		{
-			const StageConfig* first = nullptr;
-			if (!options.stage.empty())
-			{
-				first = pipeline.FindStage(options.stage);
-				if (!first)
-					ConfigError("no stage named \"" + options.stage + "\" (see --list)");
-			}
-			else if (!pipeline.stages.empty())
-				first = &pipeline.stages.front();
-			if (first && !VerifyGame(resources[0], pipeline, *first))
+			if (!VerifyGame(games[0], pipeline, *toRun.front()))
 				return 1;
 			std::printf("\n");
 		}
 		std::map<std::string, SolutionSet> produced;
+		std::shared_ptr<const BitfsCornerLevel> level; // read from the game once, by the first stage on the corner
 
 		auto runOne = [&](const StageConfig& stage) -> size_t
 		{
@@ -325,6 +407,31 @@ namespace
 			}
 
 			std::printf("\n=== stage %s (%s, frame %lld) ===\n", stage.name.c_str(), stage.type.c_str(), (long long)stage.startFrame);
+
+			// The stage's resources: the game's copies, or corners built for this stage, each
+			// loaded with the state a script exported from the game at the stage's start frame.
+			std::vector<Sm64Resource*> resources;
+			std::vector<BitfsCorner> corners;
+			if (stage.OnCorner())
+			{
+				ImportedCorner imported = ImportCorner(games[0], pipeline, stage, level);
+				level = imported.level;
+				corners.reserve(size_t(pipeline.threads));
+				for (int i = 0; i < pipeline.threads; i++)
+				{
+					corners.emplace_back(level);
+					corners.back().load(imported.state.state);
+					corners.back().useCostModel = pipeline.costModel;
+					corners.back().ReportRefusals(true); // a refusal in a search thread ends the process; at least it says why
+					resources.push_back(&corners.back());
+				}
+				std::printf("resource: the corner, %d of them, imported from the game at frame %lld with %s\n", pipeline.threads,
+					(long long)imported.state.initialFrame, ObjectNames(stage.objects).c_str());
+			}
+			else
+				for (LibSm64& game : games)
+					resources.push_back(&game);
+
 			auto start = std::chrono::steady_clock::now();
 			uint64_t tscStart = get_time();
 			uint64_t cyclesBefore = 0;
@@ -333,8 +440,14 @@ namespace
 			bool haveCpu = ProcessCpuSeconds(cpuBefore);
 			ResourceCounters before = CountResourceWork(resources);
 
-			StageContext context { pipeline, stage, resources, input };
+			StageContext context { pipeline, stage, resources, games[0], input };
 			SolutionSet output = RunStage(context);
+			if (stage.OnCorner())
+			{
+				size_t found = output.solutions.size();
+				size_t dropped = VerifyOnGame(context, output);
+				std::printf("    replayed on the game: %zu of %zu solution(s) match%s\n", found - dropped, found, dropped ? "; the rest are dropped" : "");
+			}
 			output.Select(stage.select, "stages[" + stage.name + "].select");
 			output.Save(pipeline.SolutionsFile(stage.name));
 			if (stage.exportM64)
@@ -388,18 +501,18 @@ namespace
 		};
 
 		if (!options.stage.empty())
-		{
-			const StageConfig* stage = pipeline.FindStage(options.stage);
-			if (!stage)
-				ConfigError("no stage named \"" + options.stage + "\" (see --list)");
-			return runOne(*stage) > 0 ? 0 : 1;
-		}
+			return runOne(*toRun.front()) > 0 ? 0 : 1;
 
-		for (const StageConfig& stage : pipeline.stages)
+		// A start names where the run begins: the stages before it are skipped, and the first
+		// one run reads its input from the file its input stage wrote (runOne's error without it).
+		if (pipeline.startStage && !toRun.empty())
+			std::printf("start: stage %s%s; the stages before it are skipped\n", toRun.front()->name.c_str(),
+				pipeline.startPass > 0 ? (" at oscillation " + std::to_string(pipeline.startPass)).c_str() : "");
+		for (const StageConfig* stage : toRun)
 		{
-			if (runOne(stage) == 0)
+			if (runOne(*stage) == 0)
 			{
-				std::printf("stage %s produced no solutions; stopping\n", stage.name.c_str());
+				std::printf("stage %s produced no solutions; stopping\n", stage->name.c_str());
 				return 1;
 			}
 		}

@@ -3,6 +3,10 @@
 #include <tasfw/Script.hpp>
 #include <LibSm64.hpp>
 
+// The downhill angle one frame on: where the pyramid's tilt toward Mario leaves the floor
+// he stands on, and the facing angles that run down it or just short of uphill. One frame of
+// its own, reverted with it (ROADMAP 4.13: what the PyramidUpdate stand-in used to answer,
+// asked of the resource itself).
 class GetMinimumDownhillWalkingAngle : public Script<LibSm64>
 {
 public:
@@ -15,6 +19,7 @@ public:
 		int32_t angleFacingAnalogBack = 0;
 		int32_t angleNotFacingAnalogBack = 0;
 		int32_t floorAngle = 0;
+		float steepness = 0;
 		bool isSlope = false;
 	};
 	CustomScriptStatus CustomStatus = CustomScriptStatus();
@@ -27,6 +32,8 @@ public:
 	bool assertion();
 
 private:
+	static bool FloorIsSlope(float normalY, uint32_t action);
+
 	int16_t _faceAngle;
 	int16_t _targetAngle;
 };

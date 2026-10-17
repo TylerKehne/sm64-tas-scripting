@@ -22,11 +22,15 @@ add_executable(tasfw-tests
 	"src/test_sm64_layout.cpp"
 	"src/test_libsm64_smoke.cpp"
 	"src/test_libsm64_savemodes.cpp"
-	"src/test_libsm64_pyramid.cpp"
+	"src/test_libsm64_downhill.cpp"
+	"src/test_libsm64_parity.cpp"
+	"src/test_bitfs_corner.cpp"
 	"src/test_pipeline.cpp"
 	"src/test_visualization.cpp"
+	"src/test_bitfs_dr_rules.cpp"
+	"src/test_bitfs_ending_geometry.cpp"
 )
-target_link_libraries(tasfw-tests PRIVATE tasfw::core tasfw::resources tasfw::scattershot tasfw::testing tasfw::scripts_general tasfw::bitfs_pipeline doctest::doctest)
+target_link_libraries(tasfw-tests PRIVATE tasfw::core tasfw::resources tasfw::scattershot tasfw::testing tasfw::scripts_general tasfw::scripts_scattershot_bitfs_dr tasfw::scripts_scattershot_bitfs_ending tasfw::bitfs_pipeline doctest::doctest)
 target_compile_features(tasfw-tests PRIVATE cxx_std_23)
 set_target_properties(tasfw-tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/out")
 add_optimization_flags(tasfw-tests)

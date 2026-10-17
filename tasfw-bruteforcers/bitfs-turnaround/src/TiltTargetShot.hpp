@@ -3,6 +3,8 @@
 #include <ScriptMath.hpp>
 #include <Scattershot.hpp>
 #include <BitFSPyramidOscillation.hpp>
+#include <MarioDeath.hpp>
+#include <Sm64ActionNames.hpp>
 #include <cmath>
 #include <sm64/Camera.hpp>
 #include <sm64/Types.hpp>
@@ -41,7 +43,7 @@ public:
     int64_t equilibriumFrame = -1;
 };
 
-class TiltTargetShotMetrics : public Script<LibSm64>
+class TiltTargetShotMetrics : public Script<Sm64Resource>
 {
 public:
     int64_t _startFrame = 0;
@@ -339,8 +341,8 @@ private:
     }
 };
 
-using Alias_ScattershotThread_TiltTargetShot = ScattershotThread<BinaryStateBin<16>, LibSm64, TiltTargetShotMetrics, TiltTargetShotSolution>;
-using Alias_Scattershot_TiltTargetShot = Scattershot<BinaryStateBin<16>, LibSm64, TiltTargetShotMetrics, TiltTargetShotSolution>;
+using Alias_ScattershotThread_TiltTargetShot = ScattershotThread<BinaryStateBin<16>, Sm64Resource, TiltTargetShotMetrics, TiltTargetShotSolution>;
+using Alias_Scattershot_TiltTargetShot = Scattershot<BinaryStateBin<16>, Sm64Resource, TiltTargetShotMetrics, TiltTargetShotSolution>;
 
 class TiltTargetShot : public Alias_ScattershotThread_TiltTargetShot
 {
@@ -559,6 +561,10 @@ public:
     {
         MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
 
+        // A dying Mario is a failed lineage (MarioDeath.hpp): the death is never played out.
+        if (MarioDeath::IsDying(*marioState))
+            return false;
+
         // Position sanity check
         if (marioState->pos[0] < -2430 || marioState->pos[0] > -1450)
             return false;
@@ -680,13 +686,14 @@ public:
         Object* pyramid = &objectPool[84];
 
         char line[256];
-        snprintf(line, sizeof(line), "%f,%f,%f,%d,%f,%d,%f,%f,%f,%f",
+        snprintf(line, sizeof(line), "%f,%f,%f,%d,%f,0x%08X (%s),%f,%f,%f,%f", // the action in hex with its name, as the viewer shows it
             marioState->pos[0],
             marioState->pos[1],
             marioState->pos[2],
             marioState->faceAngle[1],
             marioState->forwardVel,
-            marioState->action,
+            unsigned(marioState->action),
+            Sm64ActionName(marioState->action),
             pyramid->oTiltingPyramidNormalX,
             pyramid->oTiltingPyramidNormalY,
             pyramid->oTiltingPyramidNormalZ,

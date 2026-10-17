@@ -56,7 +56,7 @@ Places where the code pays (or paid) for an abstraction it should not, gated by 
   `CustomStatus` move. The per-level containers are created on first use and, with
   `M64Diff::frames`, are `FrameMap`s (ROADMAP 3.7, 2026-09-14): a sandbox allocates
   nothing and a recorded frame 3 times instead of 14. The BitFS metric scripts' status objects
-  (`TiltTargetShotMetrics`, `BitfsOscFinalMetrics`, `BitfsDrMetrics`) hold their
+  (`TiltTargetShotMetrics`, `BitfsDrMetrics`, and `BitfsScEndingMetrics` since) hold their
   per-axis values in `std::array`s since the same day; as `std::vector`s they were
   thirteen allocations per construction and per copy in the tilt-target metric script, 7% of
   the throughput Tier D run (ROADMAP 3.8, performance-changelog.md). What remains per
@@ -67,7 +67,14 @@ Places where the code pays (or paid) for an abstraction it should not, gated by 
 Ordered by how much they dominate a typical scattershot run:
 
 1. **Frame advance** (`sm64_update`). Fixed cost per frame, on the order of tens of
-   microseconds. Everything else exists to advance fewer frames per useful frame of output.
+   microseconds: 15.5 us for a neutral-input frame at 3330 of the JP movie, of which the
+   level's 84 objects beyond Mario, the two pyramids, the track platform and the ending's
+   bully are 9 us, and the game loop, Mario and one pyramid 5.5 (`dllcheck --keep-objects`,
+   2026-10-11; docs/libsm64.md, ROADMAP 4.13). The corner resource's frame (`BitfsCorner`,
+   ROADMAP 4.13) is 1.8 us at Tier B's anchor (`^BM_BitfsCorner_`, below: the window before
+   Mario's death there) and 1.35 us idle on the pyramid (the resource test), its save and
+   its load 0.7 us each on a 41,896-byte state. Everything else exists to advance fewer
+   frames per useful frame of output.
 2. **Savestate save/load.** Depends on the save mode (docs/libsm64.md, "Savestates"): about
    122 pages (488 KB, 7 us) in `dirty` mode during BitFS play, 1.5 MB (41 to 49 us) for the
    `fixed` slices, 7.3 MB (190 us) for a `full` copy. Memory-bandwidth bound, so it scales
@@ -91,9 +98,10 @@ Ordered by how much they dominate a typical scattershot run:
    blocking on the turn counter (the barriers it replaced were 58% of the deterministic
    Tier D run's CPU, the spinning queue about 50%; with the wait blocking, the run's CPU
    outside the resource is about 24%, ROADMAP 3.15).
-7. **`PyramidUpdate` construction.** `ExportSave<PyramidUpdateMem>` reads and transforms every
-   pyramid surface out of the DLL each time it is called, which is once per frame in
-   `RunDownhill` and once per crossing in the metric scripts.
+7. **The downhill look-ahead.** `GetMinimumDownhillWalkingAngle` is one frame of a child
+   script and its revert, once per frame in `RunDownhill` and once per crossing in the
+   metric scripts; on the game that is a frame plus a load, on the corner about 2 us (until
+   2026-10-12 it was a `PyramidUpdate` stand-in built from every pyramid surface per call).
 
 Measured on the tilt-target workloads (2026-09-14, "Known hotspots, measured" below): the
 order holds, with the game at 62% of the production run's CPU, loads at 13%, and the
@@ -190,9 +198,11 @@ baseline (counted on every benchmark).
 
 ### Tier B: resource benchmarks (DLL required)
 
-Implemented in `tasfw-perf/src/bench_libsm64.cpp` as four families that `perf.ps1` runs
+Implemented in `tasfw-perf/src/bench_libsm64.cpp` as six families that `perf.ps1` runs
 in their own processes (a DLL path loads once per process): `^BM_LibSm64Full`,
-`^BM_LibSm64Fixed` and `^BM_LibSm64Dirty`, one per save mode, and `^BM_LibSm64Scaling`. They run when
+`^BM_LibSm64Fixed` and `^BM_LibSm64Dirty`, one per save mode, `^BM_LibSm64Scaling`, and
+the same rows on the corner resource, `^BM_BitfsCorner_` and `^BM_BitfsCornerScaling`
+(below). They run when
 `TASFW_LIBSM64`/`TASFW_M64` name a DLL and a movie (`perf.ps1` finds them in `res\` like
 `test.ps1` does) and are skipped otherwise, so the suite still runs in CI. The save-mode
 families play the movie to `TASFW_FRAME` (default 3330) once, then measure:
@@ -232,7 +242,43 @@ CPUs; MSVC and clang-cl within 3 points): frame advance 100 / 99 / 96 / 80% at 2
 mode existed; the family now runs `dirty`). Frames scale until the 16 threads start
 sharing physical cores; a bandwidth-bound save drops sooner.
 
-Gate: counts exact (`stateBytes` included); times within 10% of the reference; efficiency at
+`^BM_BitfsCorner_` is the same set of rows on the corner resource (`BitfsCorner`, ROADMAP
+4.13), beside the game's: once the game is at its anchor the corner's level is read from it,
+one corner is imported from that state with every object (`BitfsCornerObjects::All()`, the
+search's shape) and the imported state is the corner's anchor, so each row measures the
+corner at the frame, the Mario and the warm-up the game's rows measure. The game serves in
+whichever save mode the process has loaded (the corner needs it only to import), so the
+family is the one Tier B family that can share a process with any other. `stateBytes` is
+41,896, one flat state, exact (41,784 until the camera's C-up statics joined the state on
+2026-10-12); `rssPerSlot` matches it within 1% at 1,000 slots. The
+frame-advance row differs from the game's in one respect: the game's 3,000 neutral frames
+from the anchor pass through Mario's death (the warm-up pattern leaves him in the lava) and
+the level's reload, and the corner refuses a warp, so its row plays the window before the
+death, found once by playing to the refusal and reported on the row (`windowFrames`, 193 at
+the anchor; exact and gated like `stateBytes`, since a different death frame under the same
+inputs is a different physics), the anchor state copied back with the timing paused whenever
+the window runs out; a refusal in any corner row ends the row with its message (`ERROR OCCURRED`) rather
+than the process. `^BM_BitfsCornerScaling` is the scaling family on the corner: one corner
+per thread on the shared level, each loaded from the first corner's anchor state (a load
+between resources relocates the state's pointers), the same window; the DLL copies are not
+needed, the game being loaded once. Numbers (2026-10-11, MSVC on tyler-desktop, pinned,
+three processes): save and erase 0.7 us, fresh save 10.8, load 0.7, frame 1.7 in the
+window, `addr` 6.8 ns, against the game's `fixed` rows of 40.1, 284, 40.7, 14.5 to 15 us
+and 12.5 ns. Both scale as the search needs: the frame 100 / 100 / 98 / 82% at 2 / 4 / 8 /
+16 threads (1.8 us, then 2.2) and the save 92 / 97 / 95 / 94% (0.7 us at every count).
+clang-cl reads the corner a little faster and the game a little slower (frame 1.5 to 1.6 us
+against 15.1 to 15.2, save 0.7 against 44 to 46, load 0.6 against 43 to 44, `addr` 5.4 ns
+against 11.5; the save scales 95 / 94 / 92 / 88%). The camera's C-up step in the frame
+(2026-10-12) changed none of these beyond noise (docs/performance-changelog.md). A save
+costs what a load costs because the slot manager never copies a state: its pool holds the
+map's own nodes, and a state is copied only when the resource saves or loads it (the
+maintainer's rule, 2026-10-11; ARCHITECTURE.md, "Resource and savestates"). Before that,
+a pooled state was moved into a fresh map node per save and back per erase, which for a
+flat state like the corner's was a copy each way plus a 41 KB node: 1.9 us a save, and
+19.6 us at sixteen threads, where the allocations met in the process heap
+(performance-changelog.md, 2026-10-11).
+
+Gate: counts exact (`stateBytes` and `windowFrames` included); times within 10% of the reference; efficiency at
 2, 4 and 8 threads must not fall below the reference's by more than 5 points
 (`--efficiency-tolerance`; the baseline's where there is no reference).
 The 16-thread rows are reported, not gated: they share physical cores with each other and
@@ -249,17 +295,19 @@ Fixed workloads on the source movie:
 
 - `PyramidOscillation`: `BitFsPyramidOscillation` after the pyramid-osc-approach preamble
   (one stick input, wait until idle), 2 iterations.
-- `DownhillAngle_PyramidUpdate`: 1,000 calls of
-  `BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle` on a `PyramidUpdate` imported from
-  the game, exactly as `BitFsPyramidOscillation::execution` does, 3 iterations.
+- `DownhillAngle`: 1,000 calls of `GetMinimumDownhillWalkingAngle` as a child script on the
+  game, exactly as `BitFsPyramidOscillation::execution` does, 3 iterations (until 2026-10-12
+  `DownhillAngle_PyramidUpdate`, the same calls on a `PyramidUpdate` imported per call).
 - `MetricsSweep`: `BitfsDrMetrics` (the committed dr-oscillations parameters) over 500
   consecutive `AdvanceFrameRead`s, 3 iterations.
 
 The scripts these workloads run are frozen copies under `tasfw-perf/workloads/` (the
 maintainer, 2026-09-21): `BitFsPyramidOscillation` and its child scripts, `General.hpp`'s
 three, `ScriptMath.hpp`, and `BitfsDrMetrics` with `NormalSpecsDto` cut out of
-`Scattershot_BitfsDr.hpp`, verbatim from `tasfw-scripts/` at fa89730 (the one edit is that
-header's include). The rows measure the framework, so their workload stays fixed while the
+`Scattershot_BitfsDr.hpp`, verbatim from `tasfw-scripts/` at fa89730 (the edits since: that
+header's include; and on 2026-10-12, when the `PyramidUpdate` stand-in was removed, the same
+mechanical edit the live scripts had, the downhill look-ahead as a child script on the
+resource, `GetMinimumDownhillWalkingAngle`'s body with it). The rows measure the framework, so their workload stays fixed while the
 live scripts change with the brute forcer: the copies do not follow them and `tasfw-perf`
 links no script library; what runs under them (`tasfw-core`, `tasfw-resources`,
 `tasfw-scattershot`) is live, being what the rows measure. A framework change that alters
@@ -306,6 +354,21 @@ Run by `scripts/perf.ps1` through `bitfs-turn` on two configs under `perf/`, eac
   nothing, and the viewer is another process). Measured 2026-09-19 (performance-changelog.md):
   1.7% and 4.1% of one core, redraws of 117 and 259 ms at most, walls within 2% of the
   plain runs, the deterministic counts identical.
+- `tierd-deterministic-corner.json` (ROADMAP 4.13): the deterministic stage with the same
+  seed on the corner resource (`"resource": "corner"`, every object), 8 corners imported
+  from one DLL copy 16 frames before the start frame, the solutions replayed on the game
+  before they count. The row `TierD_DeterministicCorner` carries the same exact counts as
+  the game's row; the current binary only, since a reference built before the corner
+  cannot read the config, so its time gate is absolute against the baseline (saved
+  2026-10-12 at 18.1 s). First run (2026-10-12): the search is the game's bit for bit,
+  52 solutions in 600 shots, 111,860 blocks and 524,380 scripts, every solution's inputs
+  and metrics identical to the game run's and all 52 reproduced on the game by the replay
+  check, in 18.4 s against the game's 94.6 (5.1x), the resource's own share of CPU time
+  33% (2.0 us a frame) and the framework's, the scripts' and the search's 67%. The
+  frame-advance, save and load counts are the stage's own on either resource, so they
+  differ between the rows by what each does outside the search: the game plays the movie
+  to the start frame on every thread, the corner plays its 16-frame lead and the replay
+  check.
 
 A third config, `tierd-ci.json` (and `tierd-ci-linux.json` with the `.so` pattern and
 `dirty` saves), is the deterministic workload cut to 100 shots on 4 threads for CI, where
@@ -399,8 +462,8 @@ otherwise; the resource's own advance, save and load take 76% of it and the rest
    closed on 2026-09-19 (ROADMAP 4.3, the numbers there): by `scripts/decode_cache_model.py`
    a per-thread cache recovers about half of that share for gigabytes of states, the states
    cannot cross threads, and on this stage they would have to carry their metrics.
-2. `PyramidUpdateMem` construction copying and transforming all surfaces per call: not on
-   the tilt-target workload. The Tier C row says 3.2 us and 42 allocations per
+2. The downhill look-ahead's frame and revert per call (a `PyramidUpdate` stand-in built
+   per call until 2026-10-12): not on the tilt-target workload. The Tier C row says 3.2 us and 42 allocations per
    `GetMinimumDownhillWalkingAngle` call (56 before the FrameMap), which the downhill
    scripts make once per frame: about 30% the construction itself, 5% the stand-in's
    physics, the rest the `TopLevelScript`, resource and slot manager built and torn down
@@ -453,14 +516,15 @@ Found by the profile rather than suspected:
    (`GetEquilibriumMetrics`, 67% inclusive, about 33 frames), plus the rewinds
    `ApplyMovement` makes. The later calls of the same lookahead find their metrics
    cached, so the cost is one evaluation per script; only fewer or cheaper evaluation frames
-   change it (`PyramidUpdate` as the stand-in; a stage-script change, not scheduled, noted
-   where ROADMAP 4.3 closed).
+   change it (the corner resource for the evaluation; a stage-script change, not scheduled,
+   noted where ROADMAP 4.3 closed).
 10. **The metric script's status object is the heap**: `TiltTargetShotMetrics::CustomScriptStatus`
     held thirteen `std::vector`s for three-element arrays, constructed per recorded frame
     and copied whole wherever a `GetMetrics` result was taken by value: 7.0% of the CPU
     in the allocator alone (11.1% is heap in total), and most of the 8.9% in `std::vector`
     code. Fixed the same day in the stage scripts: the per-axis values are `std::array`s
-    in the tilt-target, osc-final and DR metric scripts and their solutions, and the tilt-target
+    in the tilt-target and DR metric scripts and their solutions (the ending's, written
+    later, the same), and the tilt-target
     metric script reads its previous states by reference (performance-changelog.md).
 11. **`resource->addr()` per call**: 1.5%, and `LdrGetProcedureAddressForCaller` takes the
     loader lock, so 16 threads contend on it (`RtlEnterCriticalSection`, `RtlBackoff`):
@@ -488,7 +552,8 @@ run: Tier A always, B and C when the DLL and movie are found, D when the DLL cop
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\perf.ps1                 # build Release, run, compare
 powershell -ExecutionPolicy Bypass -File scripts\perf.ps1 -SaveBaseline   # store this run as the baseline
-powershell -ExecutionPolicy Bypass -File scripts\perf.ps1 -Filter Script -NoBuild   # one family, no Tier D
+powershell -ExecutionPolicy Bypass -File scripts\perf.ps1 -Filter '^BM_X' -SaveBaseline   # add or replace just that family's baseline
+powershell -ExecutionPolicy Bypass -File scripts\perf.ps1 -Filter Script -NoBuild   # one family, no Tier D (a filter is one family, one process: filter one family at a time; one that reaches a scaling row runs unpinned)
 powershell -ExecutionPolicy Bypass -File scripts\perf.ps1 -NoTierD        # skip the five-minute Tier D
 powershell -ExecutionPolicy Bypass -File scripts\perf.ps1 -TierDOnly -NoBuild   # only Tier D (other rows read MISSING)
 powershell -ExecutionPolicy Bypass -File scripts\perf.ps1 -SetupDefender  # once per machine: exclude build\, res\ and perf\ from real-time scanning
@@ -517,7 +582,16 @@ and prints the committed baseline's numbers next to them with a **machine factor
 of reference over baseline across the rows) that says how the machine reads today. Exact
 counts and allocations gate against the committed baseline as before, and the compare warns
 when the reference's counts differ from the baseline's (it is then not the baseline commit's
-build). Without a reference (a fresh clone, a baseline saved elsewhere) the run compares
+build). A family the reference binary does not have (one added since the baseline was
+saved) runs on the current build alone, its reference launch matching nothing and writing
+an empty part the merge skips (a run of only such families has a reference without rows,
+and the compare says so and gates against the baseline); its rows read NEW until they have
+a baseline. `-SaveBaseline`
+with the same `-Filter`, or with `-TierDOnly`, gives them one without disturbing anything
+else: it adds or replaces just the run's families (`perf_compare.py baseline --add`) and
+leaves the other families' files and the reference binaries alone, so the added rows gate
+absolute against the baseline (status "(vs baseline)") until the next whole
+`-SaveBaseline`, which rewrites every family and makes the current binaries the reference. Without a reference (a fresh clone, a baseline saved elsewhere) the run compares
 absolute against the committed baseline and says so; build the baseline's commit and copy
 the two executables into that directory to get the relative gate back.
 

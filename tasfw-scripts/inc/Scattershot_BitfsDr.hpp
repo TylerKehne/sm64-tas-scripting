@@ -50,6 +50,19 @@ public:
     // lava, so a root carried there cannot be continued (the maintainer, 2026-10-03; near
     // 0.73 from the committed rest, the sum climbing about 0.02 an oscillation; 2 asks none).
     float maxXzSum = 2.0f;
+    // The least height above the lava a turnaround begun from a solution's frame would end
+    // at (BitfsDrMetrics::TurnaroundClearance), for a solution of a pass with a pass after it
+    // to be a root the next pass can continue from (0 asks none). The precise form of
+    // maxXzSum: what fails at a sinking end is the floor under the turnaround, not the sum
+    // (the maintainer's run of 2026-10-06 lost its third pass to roots at -20 to +3 here,
+    // every lineage ending at the end 0 to 10 above the lava; the pass that succeeded turned
+    // 23 to 75 above; ROADMAP 4.6).
+    float minEndClearance = 0;
+    // The least difference between |nX| and |nZ| at a crossing, from the second crossing on
+    // (0: none). The maintainer's rule of 2026-10-10 (ROADMAP 4.12): at the example movies'
+    // crossings the normal sits 0.27 to 0.31 further along one axis than the other, the lag
+    // its speed comes from; ours sat 0.13 to 0.19 after the turn at the +z end.
+    float minCrossingAxisDiff = 0;
     float minAxis = 0;
     // The least height of Mario over the lava a state may have: lower, on a sinking end, the
     // surface is under him before the swing can leave it (the first swing's trap; 0 asks none).
@@ -74,7 +87,7 @@ public:
     float regionsMinor = 0;
 };
 
-class BitfsDrMetrics : public Script<LibSm64>
+class BitfsDrMetrics : public Script<Sm64Resource>
 {
 public:
     enum class Phase
@@ -98,6 +111,7 @@ public:
         float nZ = 0;
         float maxSpeed = 0;
         float maxDownhillSpeed = 0;
+        bool inRegime = false; // the regime's tilt had been reached by this crossing
     };
 
     class CustomScriptStatus
@@ -133,7 +147,10 @@ public:
     };
     CustomScriptStatus CustomStatus = CustomScriptStatus();
 
-    static bool ValidateCrossingData(const BitfsDrMetrics::CustomScriptStatus& state, float componentThreshold);
+    // The crossing rules: gain speed on the crossing two before, never across the regime's edge; the
+    // normal's components at least componentThreshold on one axis and minCrossingAxisDiff apart.
+    static bool ValidateCrossingData(const BitfsDrMetrics::CustomScriptStatus& state, float componentThreshold, float minCrossingAxisDiff);
+    static const char* PhaseName(Phase phase); // the enumerator's name, what the CSV holds
 
     // The corner a quadrant names, as the signs of the pyramid normal's x and z there (1: +x +z,
     // 2: +x -z, 3: -x -z, 4: -x +z, the convention of BitFsPyramidOscillation_RunDownhill), and
@@ -143,6 +160,18 @@ public:
     static int CornerSignZ(int quadrant) { return quadrant == 1 || quadrant == 4 ? 1 : -1; }
     static int16_t RoughTargetAngleA(int quadrant) { return int16_t(-8192 + 16384 * (quadrant - 1)); }
     static int16_t RoughTargetAngleB(int quadrant) { return int16_t(24576 + 16384 * (quadrant - 1)); }
+
+    // The height above the lava Mario's floor would have at the end of a turnaround begun
+    // now: he runs on to a stop at the game's turnaround deceleration (about 4.8 a frame),
+    // the pyramid steps its normal toward him meanwhile (approach_by_increment, 0.01 an axis
+    // a frame), and the face's height there comes from the collision data (a square 307 wide
+    // either way, 307 above the pyramid's position, perpendicular to the normal made unit as
+    // the game's transform makes it). Negative: the floor is under the lava before he has
+    // stopped, and on a sinking end no later turn does better. Game-free, so a test can hold
+    // it to recorded hand-overs (test_bitfs_dr_rules.cpp).
+    static float StepToward(float goal, float value, float increment); // the pyramid's 0.01 step
+    static float TurnaroundClearance(float normalX, float normalY, float normalZ,
+        float marioX, float marioZ, int16_t faceYaw, float speed, float pyramidX, float pyramidY, float pyramidZ);
 
     BitfsDrMetrics() = default;
     BitfsDrMetrics(int64_t initialFrame, int quadrant, NormalSpecsDto normalSpecsDto, int minOscillationFrames, float targetNx, float targetNz, int platform = 84)
@@ -176,14 +205,14 @@ private:
     std::array<float, 3> targetNormal = { INFINITY, INFINITY, INFINITY };
 
     void SetStateVariables(MarioState* marioState, Object* pyramid);
-    void CalculateOscillations(CustomScriptStatus lastFrameState, MarioState* marioState, Object* pyramid);
+    void CalculateOscillations(CustomScriptStatus lastFrameState, MarioState* marioState);
     bool Handover() const { return normalSpecsDto.handoverXzSum > normalSpecsDto.restXzSum + 0.005f; } // the old lineup: the initial phase runs the tilt up to handoverXzSum first
     void CalculatePhase(CustomScriptStatus lastFrameState, MarioState* marioState, Object* pyramid);
     void CalculateARE(Object* pyramid);
 };
 
-using Alias_ScattershotThread_BitfsDr = ScattershotThread<BinaryStateBin<16>, LibSm64, BitfsDrMetrics, Scattershot_BitfsDr_Solution>;
-using Alias_Scattershot_BitfsDr = Scattershot<BinaryStateBin<16>, LibSm64, BitfsDrMetrics, Scattershot_BitfsDr_Solution>;
+using Alias_ScattershotThread_BitfsDr = ScattershotThread<BinaryStateBin<16>, Sm64Resource, BitfsDrMetrics, Scattershot_BitfsDr_Solution>;
+using Alias_Scattershot_BitfsDr = Scattershot<BinaryStateBin<16>, Sm64Resource, BitfsDrMetrics, Scattershot_BitfsDr_Solution>;
 
 class Scattershot_BitfsDr : public Alias_ScattershotThread_BitfsDr
 {

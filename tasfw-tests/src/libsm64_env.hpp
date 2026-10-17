@@ -4,7 +4,9 @@
 #include <tasfw/M64.hpp>
 #include <tasfw/testing/Env.hpp>
 
+#include <cctype>
 #include <cstdint>
+#include <filesystem>
 #include <string>
 
 // Shared by the libsm64 tests (test_libsm64_*.cpp). They run against the real game DLL, and
@@ -12,6 +14,9 @@
 // when present):
 //   TASFW_LIBSM64 = path to sm64_jp_N.dll or sm64_us_N.dll     TASFW_M64 = path to the source movie
 //   TASFW_FRAME   = frame inside a level (default 3330)
+// A test that needs a second copy of the game (the parity harness, test_libsm64_parity.cpp)
+// derives it from the DLL's name, sm64_jp_0.dll -> sm64_jp_1.dll, as the perf suite's thread
+// scaling does, and skips when the copy is not there.
 namespace tasfw::tests
 {
 	using tasfw::testing::Env;
@@ -19,6 +24,21 @@ namespace tasfw::tests
 	inline bool HaveDll()
 	{
 		return !Env("TASFW_LIBSM64").empty() && !Env("TASFW_M64").empty();
+	}
+
+	// The DLL copy with the given trailing index, beside the one TASFW_LIBSM64 names.
+	inline std::filesystem::path DllCopyPath(int index)
+	{
+		const std::filesystem::path base = Env("TASFW_LIBSM64");
+		std::string stem = base.stem().string();
+		while (!stem.empty() && std::isdigit(static_cast<unsigned char>(stem.back())))
+			stem.pop_back();
+		return base.parent_path() / (stem + std::to_string(index) + base.extension().string());
+	}
+
+	inline bool HaveDllCopy(int index)
+	{
+		return HaveDll() && std::filesystem::exists(DllCopyPath(index));
 	}
 
 	// The DLL the environment names, in the given save mode, declared to be the game its file

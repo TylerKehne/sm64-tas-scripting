@@ -27,7 +27,6 @@ add_executable(tasfw-bitfs-turnaround
 	"src/SelfPath.cpp"
 	"src/SelfPath.hpp"
 	"src/TiltTargetShot.hpp"
-	"src/BitfsOscFinal.hpp"
 	"src/Tests.cpp"
 	"src/Tests.hpp"
 )
@@ -41,6 +40,7 @@ target_link_libraries(tasfw-bitfs-turnaround PRIVATE
 	tasfw::scripts_bitfs_pyramid_osc
 	tasfw::scripts_bitfs_sc_setup
 	tasfw-scripts-scattershot-bitfs-dr
+	tasfw-scripts-scattershot-bitfs-ending
 )
 set_target_properties(tasfw-bitfs-turnaround PROPERTIES
 	OUTPUT_NAME "bitfs-turn"

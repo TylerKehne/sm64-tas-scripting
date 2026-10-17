@@ -1,6 +1,6 @@
 #pragma once
 
-#include <LibSm64.hpp>
+#include <Sm64Resource.hpp>
 #include <tasfw/Script.hpp>
 
 #include <cstdint>
@@ -15,7 +15,7 @@
 // selection, the RNG seed) is what a movie carries into a level from the way it got there,
 // which is what to look at when two traces part at the first frame the player controls.
 // Reads through ReadState(), each symbol resolved once. Not a hot path.
-class MarioTrace : public TopLevelScript<LibSm64>
+class MarioTrace : public TopLevelScript<Sm64Resource>
 {
 public:
 	struct Sample

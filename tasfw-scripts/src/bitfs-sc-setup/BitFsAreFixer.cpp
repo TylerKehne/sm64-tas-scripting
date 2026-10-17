@@ -1,4 +1,5 @@
 #include <BitFsAreFixer.hpp>
+#include <MarioDeath.hpp>
 
 #include <ScriptMath.hpp>
 #include <sm64/Camera.hpp>
@@ -489,6 +490,8 @@ Object* BitFsAreFixer::LandingPyramid()
 		for (int n = 0; n < 60; n++)
 		{
 			AdvanceFrameRead();
+			if (MarioDeath::IsDying(*_mario))
+				break;
 			if (_mario->action == ACT_DIVE_SLIDE && _mario->floor != nullptr)
 			{
 				pyramid = _mario->floor->object;
@@ -670,6 +673,8 @@ bool BitFsAreFixer::AdvanceToRest(Rest& rest)
 	{
 		auto stick = Inputs::GetClosestInputByYawHau(int16_t(faceYaw + _walk.dYaw), 32, _camera->yaw);
 		AdvanceFrameWrite(Inputs(0, stick.first, stick.second));
+		if (MarioDeath::IsDying(*_mario))
+			return false;
 	}
 	for (int n = 0; n < 200; n++)
 	{
@@ -677,6 +682,8 @@ bool BitFsAreFixer::AdvanceToRest(Rest& rest)
 		std::array<float, 3> pos = { _mario->pos[0], _mario->pos[1], _mario->pos[2] };
 		uint32_t action = _mario->action;
 		AdvanceFrameWrite(Inputs(0, 0, 0));
+		if (MarioDeath::IsDying(*_mario))
+			return false; // a dive into the lava rests nowhere: the trial fails here, never at the death
 		std::array<float, 3> normalNow = { _pyramid->oTiltingPyramidNormalX, _pyramid->oTiltingPyramidNormalY, _pyramid->oTiltingPyramidNormalZ };
 		std::array<float, 3> posNow = { _mario->pos[0], _mario->pos[1], _mario->pos[2] };
 		if (action == ACT_IDLE && _mario->action == ACT_IDLE && normalNow == normal && posNow == pos)

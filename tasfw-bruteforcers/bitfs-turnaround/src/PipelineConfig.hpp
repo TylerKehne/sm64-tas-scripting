@@ -12,6 +12,7 @@
 #include <vector>
 
 #include <nlohmann/json.hpp>
+#include <BitfsCornerMem.hpp>
 #include <LibSm64.hpp>
 #include <Scattershot.hpp>
 
@@ -27,6 +28,22 @@ struct StageConfig
 	nlohmann::json select;                    // SolutionSet::Select, applied to the output
 	bool exportM64 = false;                   // write one .m64 per solution
 	std::optional<Visualization> visualize;   // the run's viewer (ROADMAP 4.4): the pipeline's viewer script, this stage's plot
+	// Which resource the stage runs on (README.md, "Configuration"): "game", the DLL, one
+	// copy per thread (the default); or "corner", the BitFS corner (ROADMAP 4.13), one per
+	// thread, each imported from the game at the stage's start frame with the objects the
+	// stage names ("objects": "pyramid", "otherPyramid", "trackPlatform", "bully"; required
+	// for the corner, an empty list for Mario alone). A corner stage's solutions are
+	// replayed on the game before they count (Stages.hpp, VerifyOnGame).
+	std::string resource = "game";
+	BitfsCornerObjects objects;
+	// How many frames before startFrame the corner is imported ("lead", default 16): the
+	// stage's scripts look a few frames back (the tilt target rewinds 10 and reads metrics 2
+	// earlier; the metric scripts read 1 back), and a corner cannot go before the frame it
+	// was imported at. The search starts at startFrame as on the game, the lead played
+	// forward from the movie.
+	int lead = 16;
+	bool OnCorner() const { return resource == "corner"; }
+	int64_t ImportFrame() const { return startFrame - lead; }
 };
 
 struct PipelineConfig
@@ -45,6 +62,12 @@ struct PipelineConfig
 	nlohmann::json visualizeDefaults;                // "visualize" at the top level: defaults a stage's own block overrides key by key
 	nlohmann::json scattershotDefaults;
 	std::vector<StageConfig> stages;
+	// "start" (ROADMAP 4.2): where a full run begins. The stage named, every earlier one
+	// skipped and its input read from the solutions file its input stage wrote; or, as
+	// "<stage>:<n>", the oscillation stage's pass n, from the roots its pass n - 1 wrote
+	// (PassFile). Absent: the first stage. --start on the command line sets the same.
+	std::optional<std::string> startStage;
+	int startPass = 0;
 
 	static PipelineConfig Load(const std::filesystem::path& file);
 	static PipelineConfig Parse(const nlohmann::json& root, const std::filesystem::path& configDirectory);
@@ -54,6 +77,8 @@ struct PipelineConfig
 	std::vector<std::filesystem::path> DllPaths() const; // one per thread
 	const StageConfig* FindStage(const std::string& name) const;
 	std::filesystem::path SolutionsFile(const std::string& stageName) const;
+	std::filesystem::path PassFile(const std::string& stageName, int pass) const; // <outputDirectory>/solutions/<stage>.oscillation<n>.json: the roots a dr-oscillations pass carried, written as the pass ends
+	void SetStart(const std::string& spec); // "<stage>" or "<stage>:<n>"; a config error says what is wrong with it
 
 	// Defaults, then the pipeline's overrides, then the stage's; threads, movie, output and
 	// DLL paths from the pipeline; the start frame from the stage.

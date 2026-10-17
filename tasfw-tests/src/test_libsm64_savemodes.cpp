@@ -68,7 +68,7 @@ namespace
 		};
 		auto pagesOf = [&](int64_t slot)
 		{
-			return PerfAccess::SlotState(resource, slot).pages.size() / size_t(pagesize);
+			return PerfAccess::SlotState(resource, slot).Game().pages.size() / size_t(pagesize);
 		};
 
 		// s0 is the first slot of this run, so in Dirty mode it is where the resource takes its
@@ -212,7 +212,7 @@ TEST_CASE("libsm64: no save mode copies or restores the C runtime's bytes at the
 
 		if (mode == LibSm64SaveMode::Full)
 		{
-			const LibSm64Mem& state = PerfAccess::SlotState(resource, slot);
+			const LibSm64Mem& state = PerfAccess::SlotState(resource, slot).Game();
 			CHECK(state.buf1.size() == game->end[0] - game->begin[0]);
 			CHECK(state.buf2.size() == game->end[1] - game->begin[1]);
 		}
@@ -274,7 +274,7 @@ TEST_CASE("libsm64: dirty baselines hold copy-on-write pages, and every live sta
 			n += a[i] != b[i];
 		return n + (a.size() > b.size() ? a.size() - b.size() : b.size() - a.size());
 	};
-	auto pagesOf = [&](int64_t slot) { return PerfAccess::SlotState(resource, slot).pages.size() / size_t(pagesize); };
+	auto pagesOf = [&](int64_t slot) { return PerfAccess::SlotState(resource, slot).Game().pages.size() / size_t(pagesize); };
 	auto isLive = [&](int b) { return d->baselines.at(size_t(b)).pages != nullptr; };
 
 	// What a top-level run's import does: the start save at power-on, under baseline 0, which

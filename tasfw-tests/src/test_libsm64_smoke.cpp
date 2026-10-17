@@ -43,7 +43,7 @@ namespace
 		MarioSnapshot snapshot {};
 	};
 
-	class PlayAndSnapshot : public TopLevelScript<LibSm64>
+	class PlayAndSnapshot : public TopLevelScript<Sm64Resource>
 	{
 	public:
 		PlayAndSnapshot(int64_t frame, SmokeResults& results) : _frame(frame), _results(results) {}

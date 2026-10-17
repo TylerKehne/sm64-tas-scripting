@@ -4,7 +4,6 @@
 #include <BitFSPyramidOscillation.hpp>
 #include <BitfsDrMetrics.hpp>
 #include <LibSm64.hpp>
-#include <PyramidUpdate.hpp>
 #include <sm64/Camera.hpp>
 #include <sm64/Sm64.hpp>
 #include <sm64/Types.hpp>
@@ -151,10 +150,10 @@ namespace
 		Result& _result;
 	};
 
-	// GetMinimumDownhillWalkingAngle the way BitFsPyramidOscillation::execution calls it: the
-	// pyramid is imported from the game into a PyramidUpdate resource and the script runs on
-	// that. The counts come from the script statuses (the PyramidUpdate resource is created
-	// per call and not reachable from here); the game resource itself does nothing.
+	// GetMinimumDownhillWalkingAngle the way the oscillation scripts call it: a child script
+	// on the resource itself, one frame of its own, reverted (ROADMAP 4.13; before that the
+	// pyramid was imported into a PyramidUpdate stand-in per call). The counts come from the
+	// script statuses.
 	class DownhillAngleWorkload : public TopLevelScript<LibSm64>
 	{
 	public:
@@ -172,20 +171,16 @@ namespace
 		bool execution() override
 		{
 			MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
-			Object* pyramid = marioState->floor ? marioState->floor->object : nullptr;
-			if (!pyramid)
+			if (!marioState->floor || !marioState->floor->object)
 			{
 				_result.ok = false;
 				return false;
 			}
 
-			M64 empty;
 			for (int i = 0; i < _calls; i++)
 			{
 				int16_t targetAngle = int16_t(i * 4099); // walks the whole circle
-				auto status = TopLevelScriptBuilder<BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>::Build(empty)
-					.ImportSave(ExportSave<PyramidUpdateMem>(pyramid))
-					.Run(targetAngle);
+				auto status = Test<GetMinimumDownhillWalkingAngle>(targetAngle);
 				_result.ok = _result.ok && status.validated && status.executed;
 				_result.frameAdvances += status.nFrameAdvances;
 				_result.saves += status.nSaves;
@@ -283,7 +278,7 @@ static void BM_Framework_PyramidOscillation(benchmark::State& state)
 }
 BENCHMARK(BM_Framework_PyramidOscillation)->Unit(benchmark::kMillisecond)->Iterations(2);
 
-static void BM_Framework_DownhillAngle_PyramidUpdate(benchmark::State& state)
+static void BM_Framework_DownhillAngle(benchmark::State& state)
 {
 	Game* game = LoadGame(state);
 	if (!game)
@@ -322,7 +317,7 @@ static void BM_Framework_DownhillAngle_PyramidUpdate(benchmark::State& state)
 	state.counters["saves"] = benchmark::Counter(double(total.saves) / iterations);
 	state.counters["loads"] = benchmark::Counter(double(total.loads) / iterations);
 }
-BENCHMARK(BM_Framework_DownhillAngle_PyramidUpdate)->Unit(benchmark::kMillisecond)->Iterations(3);
+BENCHMARK(BM_Framework_DownhillAngle)->Unit(benchmark::kMillisecond)->Iterations(3);
 
 static void BM_Framework_MetricsSweep(benchmark::State& state)
 {

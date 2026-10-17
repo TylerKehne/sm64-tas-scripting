@@ -42,3 +42,57 @@ struct Camera
 	/// zoom_out_if_paused_and_outside
 	/*0x68*/ f32 areaCenY;
 };
+
+struct PlayerCameraState
+{
+	/**
+	 * Mario's action on this frame.
+	 */
+	/*0x00*/ u32 action;
+	/*0x04*/ Vec3f pos;
+	/*0x10*/ Vec3s faceAngle;
+	/*0x16*/ Vec3s headRotation;
+	/*0x1C*/ s16 unused;
+	/**
+	 * Set to nonzero when an event, such as entering a door, starting the credits, or throwing bowser,
+	 * has happened on this frame.
+	 */
+	/*0x1E*/ s16 cameraEvent;
+	/*0x20*/ struct Object* usedObj;
+};
+
+/**
+ * Point used in transitioning between camera modes and C-Up.
+ */
+struct LinearTransitionPoint
+{
+	Vec3f focus;
+	Vec3f pos;
+	f32 dist;
+	s16 pitch;
+	s16 yaw;
+};
+
+/**
+ * Info about transitioning between camera modes.
+ */
+struct ModeTransitionInfo
+{
+	s16 newMode;
+	s16 lastMode;
+	s16 max;
+	s16 frame;
+	struct LinearTransitionPoint transitionStart;
+	struct LinearTransitionPoint transitionEnd;
+};
+
+/**
+ * Stores the camera's info
+ */
+struct CameraStoredInfo
+{
+	/*0x00*/ Vec3f pos;
+	/*0x0C*/ Vec3f focus;
+	/*0x18*/ f32 panDist;
+	/*0x1C*/ f32 cannonYOffset;
+};

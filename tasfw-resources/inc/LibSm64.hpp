@@ -8,6 +8,7 @@
 #include <unordered_map>
 #include <vector>
 #include "tasfw/Resource.hpp"
+#include "Sm64Resource.hpp"
 #include <tasfw/Inputs.hpp>
 #include <tasfw/M64.hpp>
 
@@ -124,26 +125,8 @@ inline constexpr LibSm64GameBytes LibSm64KnownGameBytes[] = {
 	{0x2B04B0, 0x4A8710, {0x20, 0x20}, {0x2B03E0, 0x4A7B60}, 0x4A7BE0}, // wafel v0.8.5, US (bitfs-sbb's sm64_us.dll, res/sm64_us_0.dll)
 };
 
-struct LibSm64DirtyPages;
-
-// A savestate. Full and Fixed fill buf1/buf2 (the game's bytes of the sections, or the fixed
-// slices packed). Dirty records which baseline the state is relative to, which pages of the page
-// index space (.data's pages then .bss's) the game had written since that baseline began,
-// and those pages' contents in index order. SlotManager recycles these objects, so the
-// vectors keep their capacity and a save into a warm slot allocates nothing.
-class LibSm64Mem
-{
-public:
-	std::vector<uint8_t> buf1;
-	std::vector<uint8_t> buf2;
-	int baseline = -1;                  // the baseline this state was saved under and holds a reference on; -1 when none
-	LibSm64DirtyPages* dirty = nullptr; // where that reference is counted (the resource's, which outlives every state)
-	std::vector<uint64_t> written;
-	std::vector<uint8_t> pages;
-
-	// The slot manager erasing this state's slot: give the baseline its reference back.
-	void dispose();
-};
+// The savestate, LibSm64Mem, is in LibSm64Mem.hpp: one alternative of the SM64 resources'
+// shared state (Sm64Mem.hpp), which Sm64Resource.hpp brings in above.
 
 // The bookkeeping behind Dirty mode (ROADMAP 2.3). Whole pages covering .data and .bss (edge
 // pages included) form one index space and are all made read-only; the first write to a page
@@ -219,7 +202,7 @@ struct LibSm64DirtyPages
 	void AddBaseline();         // a new, empty current baseline
 };
 
-class LibSm64 : public Resource<LibSm64Mem>
+class LibSm64 : public Sm64Resource
 {
 public:
 	SharedLib dll;
@@ -230,12 +213,12 @@ public:
 	~LibSm64() override;
 	LibSm64(LibSm64&&) = default;
 
-	void save(LibSm64Mem& state) const override;
-	void load(const LibSm64Mem& state) override;
+	void save(Sm64Mem& state) const override;
+	void load(const Sm64Mem& state) override;
 	void advance() override;
 	void setInputs(const Inputs& inputs) override;
 	void* addr(const char* symbol) const override;
-	std::size_t getStateSize(const LibSm64Mem& state) const override;
+	std::size_t getStateSize(const Sm64Mem& state) const override;
 	uint32_t getCurrentFrame() const override;
 
 	// Is the movie for the game this DLL was declared to be (config.countryCode)? Empty when
@@ -266,6 +249,11 @@ public:
 	const LibSm64GameBytes* gameBytes() const { return _gameBytes; }
 
 private:
+	// The save and the load on the game's own alternative of the shared state (save's mode
+	// switch, load's; startSave: the start save is not a live slot in Dirty mode).
+	void SaveGame(LibSm64Mem& state, bool startSave) const;
+	void LoadGame(const LibSm64Mem& state);
+
 	// Resolved once at construction. DLL symbol addresses never move. (GetProcAddress
 	// measures ~60 ns on this DLL, so the four per-frame lookups this replaces were about
 	// 2% of a frame; caching is hygiene rather than a headline win. See dllcheck.)

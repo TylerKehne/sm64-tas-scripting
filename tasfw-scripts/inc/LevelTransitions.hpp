@@ -1,6 +1,6 @@
 #pragma once
 
-#include <LibSm64.hpp>
+#include <Sm64Resource.hpp>
 #include <tasfw/Script.hpp>
 
 #include <cstdint>
@@ -15,7 +15,7 @@
 // caller. A transition's frame is the first frame whose state shows the new level: the
 // state at frame f is what inputs 0..f-1 produced, so a movie spliced at f keeps inputs
 // 0..f-1 of the first movie.
-class LevelTransitions : public TopLevelScript<LibSm64>
+class LevelTransitions : public TopLevelScript<Sm64Resource>
 {
 public:
 	struct Transition

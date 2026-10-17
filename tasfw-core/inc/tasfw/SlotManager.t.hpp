@@ -24,13 +24,16 @@ int64_t SlotManager<TState>::CreateSlot()
 			TState* slot;
 			if (reuse)
 			{
-				_pooledMem -= _resource->getStateSize(_pool.back());
-				slot = &slotsById.emplace(slotId, std::move(_pool.back())).first->second;
+				// The pooled node goes back into the map as it is: no copy, no move, no allocation.
+				auto node = std::move(_pool.back());
 				_pool.pop_back();
+				_pooledMem -= _resource->getStateSize(node.mapped());
+				node.key() = slotId;
+				slot = &slotsById.insert(std::move(node)).position->second;
 				_resource->work.poolReuses++;
 			}
 			else
-				slot = &slotsById.emplace(slotId, TState()).first->second;
+				slot = &slotsById.try_emplace(slotId).first->second;
 
 			//NOTE: Order will not overflow on realistic timescales
 			int64_t newSlotOrder = slotIdsByLastAccess.size() == 0 ? 0 : std::prev(slotIdsByLastAccess.end())->first + 1;
@@ -80,14 +83,14 @@ void SlotManager<TState>::EraseSlot(int64_t slotId)
 		slot->second.dispose();
 	int64_t size = _resource->getStateSize(slot->second);
 	_currentSaveMem -= size;
+	int64_t slotOrder = slotLastAccessOrderById[slotId];
 	if (_pool.size() < _maxPooledStates)
 	{
-		_pool.push_back(std::move(slot->second));
+		_pool.push_back(slotsById.extract(slot)); // the node itself; the state is not touched
 		_pooledMem += size;
 	}
-
-	int64_t slotOrder = slotLastAccessOrderById[slotId];
-	slotsById.erase(slot);
+	else
+		slotsById.erase(slot);
 	slotLastAccessOrderById.erase(slotId);
 	slotIdsByLastAccess.erase(slotOrder);
 }

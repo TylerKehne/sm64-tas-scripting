@@ -28,7 +28,6 @@ TEST_CASE("Visualization round-trips through JSON and absent keys keep their def
 	CHECK(j["y"] == "MarioX");
 	CHECK(j["binX"] == 5);
 	CHECK(j["binAngle"] == 16);
-	CHECK(j["sampledOnly"] == true);
 	CHECK(j["categorical"] == json::array({ "MarioAction", "Phase" }));
 	CHECK(j["filters"][0]["min"] == 0);
 	CHECK(j["filters"][0]["max"] == 100);
@@ -80,13 +79,13 @@ TEST_CASE("The parameters file carries the CSV's path and, at the end, the run's
 
 	Visualization v;
 	v.script = "analysis/visualizer.py";
-	v.title = "osc-final";
+	v.title = "ending";
 	v.Write(file, "out/csv_1.csv", false, 0);
 	json started = json::parse(std::ifstream(file));
 	CHECK(started["csv"] == "out/csv_1.csv");
 	CHECK(started["finished"] == false);
 	CHECK(started["rows"] == 0);
-	CHECK(started["title"] == "osc-final");
+	CHECK(started["title"] == "ending");
 	CHECK(started["angle"] == "MarioFYaw");
 
 	v.Write(file, "out/csv_1.csv", true, 42);

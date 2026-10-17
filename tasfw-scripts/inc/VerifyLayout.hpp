@@ -1,6 +1,6 @@
 #pragma once
 
-#include <LibSm64.hpp>
+#include <LibSm64.hpp> // the DLL's layout is what it verifies (LibSm64ObjectPoolCapacity); the script itself runs on any Sm64Resource
 #include <tasfw/Script.hpp>
 
 #include <cstdint>
@@ -38,7 +38,7 @@ struct ExpectedObject
 // pipeline runs it once before its first stage (every DLL copy is the same file), the dry
 // run and dllcheck print its lines, and the libsm64 tests hand it a wrong list
 // (ROADMAP 1.1, 2.4).
-class VerifyLayout : public TopLevelScript<LibSm64>
+class VerifyLayout : public TopLevelScript<Sm64Resource>
 {
 public:
 	class CustomScriptStatus

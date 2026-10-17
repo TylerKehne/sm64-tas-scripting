@@ -1,14 +1,13 @@
 #pragma once
 
 #include <tasfw/Script.hpp>
-#include <LibSm64.hpp>
-#include <PyramidUpdate.hpp>
+#include <Sm64Resource.hpp>
 #include <BitFSPyramidOscillation.hpp>
 
 #ifndef BITFS_SC_APPROACH_H
 #define BITFS_SC_APPROACH_H
 
-class BitFsScApproach : public Script<LibSm64>
+class BitFsScApproach : public Script<Sm64Resource>
 {
 public:
 	class CustomScriptStatus
@@ -42,7 +41,7 @@ private:
 	int16_t _lastOscAngle = 0;
 };
 
-class BitFsScApproach_AttemptDr_BF : public Script<LibSm64>
+class BitFsScApproach_AttemptDr_BF : public Script<Sm64Resource>
 {
 public:
 	class CustomScriptStatus
@@ -67,7 +66,7 @@ private:
 	int64_t _maxFrame = -1;
 };
 
-class BitFsScApproach_AttemptDr : public Script<LibSm64>
+class BitFsScApproach_AttemptDr : public Script<Sm64Resource>
 {
 public:
 	class CustomScriptStatus

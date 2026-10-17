@@ -4,6 +4,600 @@ Every hot-path change records its delta table here, newest first; the policy, th
 how to run it are in [performance.md](performance.md). The first measurements (2026-09-07),
 which everything since is compared against, are at the bottom.
 
+## 2026-10-17: the corner's decomp copies build on GCC 14 (docs/compilers.md)
+
+Not a change of what the corner does: three edits in its copies of the decomp, for GCC
+14's `-Wmaybe-uninitialized` on the first pull request to build them with it
+(docs/compilers.md, docs/decomp.md). `mtxf_copy` copies the matrix through `f32` pointers
+instead of `u32` ones, the same 64-byte copy; `act_freefall`'s `animation` and
+`act_crazy_box_bounce`'s `minSpeed` start at their first case's value, one store each.
+The corner's state and every count are unchanged. Release, MSVC, tyler-desktop: the
+binaries from before the edit kept aside and run alternately with the new ones in one
+session, two rounds each, the corner family plain (`tasfw-perf
+--benchmark_filter='^BM_BitfsCorner_'`, the DLL and the movie given through the
+environment) and the one-off cost `test_bitfs_corner.cpp` prints:
+
+| Row | Before (rounds 1, 2) | After (rounds 1, 2) |
+|---|---|---|
+| `BM_BitfsCorner_FrameAdvance` | 1.83, 1.78 us | 1.81, 1.87 us |
+| `BM_BitfsCorner_SaveErase` | 0.714, 0.675 us | 0.677, 0.693 us |
+| `BM_BitfsCorner_Load` | 0.681, 0.681 us | 0.678, 0.689 us |
+| `BM_BitfsCorner_SaveFresh/200` | 11.6, 10.8 us | 11.1, 10.8 us; allocations 4.07 in both |
+| `BM_BitfsCorner_Addr` | 7.04, 8.03 ns | 7.79, 7.71 ns |
+| The test's one-off frame, save, load | 1.46, 0.71, 0.68 us; 1.43, 0.67, 0.63 us | 1.41, 0.70, 0.66 us; 1.42, 0.71, 0.69 us |
+
+Every difference is inside the spread between one binary's own two rounds. Not run: the
+perf suite (its committed corner baseline still records the state size from before the
+pause, so its count gate flags that row whatever the change), and GCC locally (no
+container; CI's ubuntu-24.04-gcc job is the check).
+
+## 2026-10-13: the viewer's counts follow the filter (ROADMAP 4.4)
+
+Not a framework change; the viewer only (`analysis/visualizer.py`, README.md "The viewer").
+The maintainer asked for the filter panel's counts to follow the filter. A value's count
+is now how many of its rows pass the filter on every other column. Before, the parse loop
+counted every row, then stopped checking a row at the first filter it failed. Now it checks
+every filter of a row before counting it. Measured as a full read of the maintainer's 388,845-row
+ending CSV through `RunData.poll` (24 columns, 8 of them counted), CPU seconds, best of
+three, two rounds with the build before and this one alternating:
+
+| Filter | Before | After |
+|---|---|---|
+| None | 2.70, 2.62 | 2.75, 2.67 |
+| `Phase in SWING AIR, MarioFSpd >= 20` | 2.67, 2.67 | 2.64, 2.66 |
+
+About 2% more with no filter, and no change with one. Tier D's viewer workloads set no
+filter. Their parse is a small part of the viewer's CPU (0.1 s of 3.3 s when the panel was
+measured on 2026-10-03), so 2% of it is far below the 10% gate. Not run: the perf suite.
+
+## 2026-10-13: a corner stage's movies are exported on the corner (ROADMAP 4.23)
+
+The maintainer found the dr stage's rewind slow next to its oscillation passes. Timed
+with temporary prints, Release, MSVC, the dr stage alone on the corner: gathering the
+rewind's solutions is not what is slow. It takes 0.004 s for about 910 solutions from
+the pools in memory, and 0.23 s when a resumed run reads them back from the pool files.
+What is slow is replaying those solutions on one thread after the stage: the replay
+check on the game, 2.2 s; on the corner, 0.3 s; and the movie export, 3.0 s, a second
+replay on the game. `ExportSolutionSet` now replays on the stage's first resource, a
+corner for a corner stage (for a game stage it was already that resource). The movies
+are the same files: a movie holds only inputs, and the replay check before the export
+keeps only the solutions that end in the same state on the game and on the corner, the
+state the file's name is made of. Compared byte for byte on 915 movies.
+
+| The dr stage resumed at oscillation 5, which finds nothing; the rewind hands on 915 | Before | After |
+|---|---|---|
+| The export | 3.15 s | 1.17 s |
+| The stage | 7.6 s | 5.7 s |
+| The movies | | identical, all 915 |
+
+A corner stage that exports now counts the export's replay in the frame advances, saves
+and loads it prints, about 190,000 frames for 915 solutions: the work moved from the
+game, which those counts leave out, to a corner, which they include. No perf tier
+exports, so no baseline moves. The game's replay check still runs on one thread (ROADMAP
+4.23).
+
+## 2026-10-13: the downhill look-ahead keeps its facing 64 units inside the downhill half (ROADMAP 4.11, 4.20)
+
+`GetMinimumDownhillWalkingAngle` reported the facing at the very edge of the half in which
+the game runs downhill: 0x3FFF from the floor's angle, one unit inside it. The top face is
+two triangles whose normals the game's vertex rounding sets up to about 15 angle units
+apart, and the stick a frame writes gives a facing a few units from the one asked for. So a
+facing at the edge on the look-ahead's triangle was often outside it on the triangle under
+the step, and the slope then took speed away instead of adding it. On the ending's run
+from the maintainer's `dr-final` roots, half of the minimum-downhill steps were uphill:
+0.5 of speed lost where 1.3 is gained. With the facing `DownhillMargin` (64 units, a third
+of a degree) inside the half, none of 295 steps from the same state was. The oscillation
+stage's swings use the same look-ahead.
+
+| Measure | At the edge | 64 units inside |
+|---|---|---|
+| `bitfs-turn --test`, the every-corner case: first-oscillation solutions within 2,000 shots in corners 1 to 4 (cap 1,000) | 768, 530, 1,000, 772 (2026-10-12) | 1,000, 478, 749, 804 |
+| The dr stage from the maintainer's `are-fix` rest, one run each, not deterministic: the fastest crossings of passes 1 to 3 | 27.1 to 27.9, 30.3 to 31.1, 29.4 to 29.8 | 27.1 to 27.9, 30.2 to 30.7, 28.1 to 29.2 |
+
+Neither measure moves beyond one run's spread. No perf tier runs the look-ahead: Tier D's
+stages are tilt-target ones, and Tier C runs frozen copies. So no baseline moves.
+
+## 2026-10-13: the ending's dive recover as three moves; the viewer reads every row (ROADMAP 4.11)
+
+The maintainer saw no dive recover in the viewer. It ran, but as one move from its turn to
+its landing stop, and the search writes a row only where a move ends; and the viewer
+skipped the rows the search forced, which most of the recover's landing rows were. The
+recover is now three moves: `Dive` (the turn, the dive and the pause, ending on the
+slide), `Rollout` (the press and the rollout's first frame) and `Landing` (the rest of the
+flight, to a landing stop in reach). Every frame after the pause is steered by the same
+compare as before, and each move's row is forced. `Sampled` is a checkbox column in every
+tab of the viewer, which reads every row: the `sampledOnly` switch is gone from
+`Visualization`, the pipeline's keys and the viewer. What the split costs: a shot that
+starts from a slide or rollout block replays the steered rollout in every pellet, about
+230 frames where an average pellet runs about 6.
+
+The ending stage on the maintainer's `dr-final` roots, Release, MSVC, on the corner,
+deterministic, 30,000 shots, the build before the split against the build with it:
+
+| Seed | Frame advances | Loads | Blocks | Seconds | Solutions | Landing stops | Slide, rollout rows |
+|---|---|---|---|---|---|---|---|
+| 6 | 34.28 M, 33.73 M | 8.70 M, 8.35 M | 324 k, 375 k | 159.4, 147.6 | 58, 65 | 354, 380 | 278, 359 |
+| 7 | 31.61 M, 32.54 M | 6.79 M, 7.43 M | 310 k, 319 k | 135.9, 136.3 | 126, 71 | 445, 327 | 249, 311 |
+| 8 | 32.30 M, 34.03 M | 7.24 M, 8.48 M | 355 k, 346 k | 129.0, 121.2 | 69, 54 | 333, 400 | 248, 341 |
+| 9 | 32.02 M, 33.91 M | 6.90 M, 8.65 M | 285 k, 350 k | 134.5, (194.9) | 147, 206 | 366, 419 | 263, 355 |
+| total | 130.21 M, 134.22 M (+3.1%) | 29.63 M, 32.91 M (+11%) | 1,275 k, 1,391 k | 424, 405 (seeds 6 to 8) | 400, 396 | 1,498, 1,526 | |
+
+Saves 16.15 M and 16.32 M (+1.1%). Seed 9's run of the split shared the machine with
+builds, so its time is left out. The seeds' own spread, 58 to 147 solutions with the same
+code, is wider than any difference the split makes. The viewer: a 300,000-row CSV of
+numbers only, as Tier D's are, rendered headless (`--once`) five times by the committed
+viewer and five by this one, alternating: a median of 2.47 and 2.50 seconds, Python's
+start and the drawing included. The extra work is one more counted column per row. Not
+run: the perf suite. None of its benchmark rows runs the ending, and Tier D's stages force
+no rows, so its viewer reads the same rows as before; its viewer rows, which gate the
+viewer's CPU, were not run with this change.
+
+## 2026-10-12: the corner resource models the pause (ROADMAP 4.22)
+
+`BitfsCorner` now freezes the level through a pause as the game does: START enters the
+pause after that frame's update, and the three frames after it update neither the level
+nor the camera while the controller is read, the animations advance and the timer runs on
+(level_update.c's pause entry and `play_mode_paused` as members of `BitfsCornerGame`,
+ingame_menu.c's pause menu as the pinned copy `decomp/ingame_menu.inc`). The dive recover's
+pause buffer, which the ending stage's dive recover is made of, works on the corner from
+here (ROADMAP 4.11). Per frame in normal play the cost is one branch on the play mode, the
+pause press test (three loads) and the menu's render, two compares and a store. The play
+mode and the menu's cursor join the state, 12 bytes at its end so that the fields before
+keep their places: `stateBytes` 41,896 to 41,904, which the count gate flags by design and
+the corner family's baseline is to be re-saved for (`perf.ps1 -Filter '^BM_BitfsCorner_'
+-SaveBaseline`, additive). Release, MSVC on tyler-desktop, pinned, three processes, against
+the previous commit's binary built in a scratch worktree and run in the same session as
+the reference (`-Reference`), the fastest repetition of each:
+
+| Row | Reference | Now | Delta |
+|---|---|---|---|
+| `BM_BitfsCorner_SaveErase` | 0.7 us | 0.7 us | +0.1% |
+| `BM_BitfsCorner_SaveFresh/200` | 9.5 us | 9.6 us | +0.5% |
+| `BM_BitfsCorner_Load` | 0.7 us | 0.6 us | -3.8% |
+| `BM_BitfsCorner_Addr` | 7.4 ns | 6.7 ns | -10.7% (below the 1 ns gate) |
+| `BM_BitfsCorner_FrameAdvance` (193-frame window) | 1.6 us | 1.7 us | +3.4%; the process-to-process spread of either binary is 1.63 to 1.75 us |
+| `BM_BitfsCorner_ResidentPerSlot/100` | 0.9 ms | 1.0 ms | +5.8% (a row whose spread is 5 to 8%) |
+| `BM_BitfsCorner_ResidentPerSlot/1000` | 10.7 ms | 10.7 ms | +0.4%; `stateBytes` 41,896 to 41,904 |
+| `BM_BitfsCornerScaling_FrameAdvance` 1 / 2 / 4 / 8 / 16 threads | 1.7 / 1.7 / 1.7 / 1.7 / 2.1 us | 1.7 / 1.7 / 1.7 / 1.8 / 2.1 us | +1.3% to +3.4% |
+| `BM_BitfsCornerScaling_SaveErase` 1 to 16 threads | 0.7 to 0.8 us | 0.7 to 0.8 us | -0.3% to -0.7% |
+
+The parity harness's fuzz now presses a pause one frame in fifty and starts its generator
+fresh each segment: the corner is exact against the game over a million frames with
+37,522 START presses in 19 seconds, and with the bully on Mario with 36,728 in 21. The
+ending stage on the corner, 50,000 shots from the day's dr roots: 23 seconds, 432,000
+blocks, 9.0 million scripts, where the run before the pause was 21 seconds, 515,000 blocks
+and 10.7 million scripts (a different search: the dive recover now lands and goes on).
+## 2026-10-12: the dr stage's rewind hands on every solution at the exit tilt (ROADMAP 4.21)
+
+The maintainer saw a run end at a failed fourth oscillation: the rewind took only the
+roots the nearest right-direction pass had carried (`keepTop` of them) and only those at
+the exit tilt (`minXzSum`, 0.69), and a lineage that had just reached the regime had
+nothing at that tilt behind it. His decision: eligibility is the solution's (the exit
+tilt and the step parity), the direction the pass's, and the tilt stays `minXzSum`.
+Every pass now writes its whole pool beside its pass file
+(`<stage>.oscillation<n>.pool.json`), and a pass that finds nothing hands on every
+eligible solution from every earlier right-direction pass's pool, the rules applied by the
+rewinding run. The dr stage, Release, MSVC, deterministic, seed 6, on the corner, the same
+search as before to the block: the fifth oscillation finds nothing and the rewind hands
+the ending 213 solutions from the third oscillation's pool of 589 (none of the first
+oscillation's 1,000 are at the exit tilt), where it handed on 3 of the 10 carried roots
+before; stage time 77.5 s against 84.3 s, within the run-to-run spread. The pool files
+cost a write per pass (6 MB for a pool of 10,000 solutions). The stage's own test checks
+the leg's pool file beside its pass file and the rewind reading it under the rewinding
+run's rules.
+
+## 2026-10-12: what the dr stage's leg hands to the first oscillation
+
+Commit ad9901f (this morning) raised the dr stage's `maxSolutions` from 100 to 1,000
+without saying so, and the leg, which hands on its whole pool, began starting the first
+oscillation from 1,000 roots instead of up to 100. The maintainer read that as `keepTop`
+no longer respected and asked for the ten fastest at every hand-over, the leg's included.
+Measured, the dr stage, Release, MSVC, deterministic, seed 6, on the corner, with the
+look-ahead fix below in, the leg's pool of 1,000 solutions (all at tilt 0.532, speed 17.50
+to 18.96, the normal's direction from (-0.45, 0.08) to (-0.31, 0.22)):
+
+| Leg hands on | Oscillation 1 | The run's passes after it |
+|---|---|---|
+| all 1,000 | 1,000 solutions in 1,975 shots | 1,000 / 589 / 180 / none at 5 |
+| the 10 fastest (speed 18.92 to 18.96) | 0 in 2,000 shots, 616 blocks | |
+| the first 10 found | 1,000 in 996 shots | 1,000 / 688 / 95 / none at 5 |
+| 10 spread over the speed order | 1,000 in 1,642 shots | 1,000 / 548 / 171 / none at 5 |
+| the fastest of each cell of the normal, up to 10 | 671 in 2,000 shots | 633 / 283 / none at 4 |
+
+The ten fastest are one end of the chord (one cell of the normal), and the first
+oscillation finds nothing from them; speed grows along the chord, so any choice that
+prefers speed leans to that end. The same ten-fastest rule on master's code (a scratch
+copy of master with the one trim added, on the game, deterministic, seed 6, from its own
+fixer's solution): the leg finds the same 1,000 solutions in 165 shots, hands on the same
+ten (speed 18.92 to 18.96), and oscillation 1 finds 0 in 2,000 shots, 581 blocks. So the
+ten fastest from the leg have never produced a first oscillation; master's runs worked
+because its leg handed on its whole pool, capped at 100. The maintainer's decision: the
+leg hands on its whole pool at the cap of 1,000 (the first row of the table), and
+`keepTop` trims the oscillation passes' output as it always did. `Stages.cpp` is back to
+that; the cap stays 1,000.
+
+## 2026-10-12: the downhill look-ahead reads Mario's floor after its frame, not before (ROADMAP 4.13)
+
+The maintainer found the dr stage's oscillation passes failing after the stand-in's removal
+below ("osc 1 now usually fails when it always succeeded before"; in seven runs the second
+oscillation found nothing in six). The cause: `GetMinimumDownhillWalkingAngle` kept the
+`Surface*` of Mario's floor across its frame and read the normal there. The game rebuilds
+its surface pool every frame, and the pyramid's six surfaces move down six slots whenever
+the other pyramid's collision unloads, at 1000 units from Mario, which is right where the
+oscillations turn around; the kept pointer then pointed at a slot nothing reloaded, still
+holding the normal before the step, where the stand-in had answered the normal after it
+(169 of 196 stale answers in 1,000 shots of a deterministic run; 6 more were Mario crossing
+to the top face's other triangle, 21 the surface's own rounding). The script now reads
+Mario's floor again after the frame (docs/tasing.md, "Pitfalls"); the frozen Tier C copy
+had the same edit.
+
+The dr stage, Release, MSVC, deterministic, seed 6, on the corner, every pass from the
+fixer's solutions, the stand-in (a build of the commit before its removal) against the
+script before and after the fix:
+
+| Pass | Stand-in | Script, floor kept across the frame | Script, floor read after the frame |
+|---|---|---|---|
+| leg | 1,000 solutions in 165 shots | 1,000 in 165 | 1,000 in 165 |
+| oscillation 1 | 1,000 in 1,269 | 1,000 in 996 | 1,000 in 1,975 |
+| oscillation 2 | 1,000 in 1,962 | 0 in 2,000 | 1,000 in 1,204 |
+| oscillation 3 | 416 in 2,000 | | 589 in 2,000 |
+| oscillation 4 | 179 in 2,000 | | 180 in 2,000 |
+| oscillation 5 | 0 in 2,000 | | 0 in 2,000 |
+
+Not the stand-in's counts to the shot: its surfaces rounded differently from the game's
+(6 to 30 angle units off the normal, where the game's own surface is within about 20), so
+the two searches diverge within a pass; the passes themselves are back. The every-corner
+case of `bitfs-turn --test` (one thread, on the game, the first oscillation's yield within
+2,000 shots at the cap of 1,000) shows the same divergence: master's stand-in gives 1,000,
+680, 1,000 and 1,000 in corners 1 to 4 (a scratch copy of master at that cap, since
+removed), the fixed script 768, 530, 1,000 and 772. The case's bar is a fixed 200 from
+2026-10-12 (the maintainer: 530 is plenty for the ten the next pass carries); whether the
+exact answer wants a margin where the oscillation scripts compare the facing with it to
+the unit is ROADMAP 4.20.
+
+The same stage, same seed, on the game, is the same search to the block (the same
+solutions, blocks and scripts in every pass) and takes 438.6 s to the corner's 84.3 s,
+Release, deterministic (the threads serialised), so about five times faster on the corner
+pass by pass: the first oscillation 80 s to 16 s, the second 101 to 26, the third 102 to
+16, the fourth 78 to 13, the fifth 76 to 13. Frame advances 26,930,316 on the game to
+22,902,281 on the corner, saves 1,620,234 to 3,427,111 (the corner's cheaper save is taken
+more often and replays less), loads 10,082,710 on both. The maintainer's "no faster" of
+the afternoon was a Debug build of the corner (README.md, "Running the pipeline").
+
+The Tier C rows (`^BM_Framework`, both compilers, against this morning's re-saved
+baseline below): `PyramidOscillation` 2.90 s to 2.88 s, its frame advances 188,621 to
+188,078, loads 5,259 to 5,246, allocations 140,403 to 140,221 (the fixed look-ahead
+answers differently in the stale cases, so the old oscillation script takes a slightly
+different path); `DownhillAngle` and `MetricsSweep` unchanged in time and counts. The
+family's baseline was re-saved for the new counts; its time gate against the 09-15
+reference binaries (+326%) is the stand-in's removal, recorded below, until a whole-suite
+save refreshes the reference.
+
+## 2026-10-12: the PyramidUpdate stand-in and tasfw-core/src/decomp are gone (ROADMAP 4.13)
+
+The maintainer's word: the stand-in is deprecated, since what it was made for the corner
+resource now does, and the calculation belongs in the same script hierarchy. The downhill
+look-ahead (`GetMinimumDownhillWalkingAngle`) is one script on `Sm64Resource`: a frame of
+its own, reverted with it, after which it reads the pyramid's normal at the surface Mario
+stood on. Its 14 callers run it as a child, `Test<GetMinimumDownhillWalkingAngle>`, where
+each used to build a `PyramidUpdate` from every pyramid surface and run a top-level script
+on it. The three files of `tasfw-core/src/decomp`, the stand-in's three, its drift test and
+the `DownhillAngle_PyramidUpdate` row were removed; the frozen Tier C copies had the same edit.
+
+What the pipeline's stage does with it, Release, MSVC, deterministic, seed 6, the dr stage's
+first pass from the fixer's solutions, 150 shots, 1,000 solutions, before and after:
+
+| | Frame advances | Saves | Loads | Stage time |
+|---|---|---|---|---|
+| dr on the corner, before | 139,675 | 277 | 9,424 | 2.3 s |
+| dr on the corner, after | 139,696 | 282 | 9,424 | 2.3 s |
+| dr on the game, before | 89,747 | 247 | 8,423 | 1.2 s |
+| dr on the game, after | 89,659 | 247 | 8,423 | 1.1 s |
+
+The same 3,385 blocks, 20,981 scripts and 1,000 solutions (speed 17.50 to 18.96, tilt
+0.532) on both resources before and after: the stage asks for the look-ahead rarely, and
+its frame now counts on the resource where the stand-in's did not.
+
+The Tier C rows (`^BM_Framework`, MSVC, against the 2026-09-15 baseline), where the
+workload changed by design and the family's baseline was re-saved:
+
+| Row | Baseline | Now | What changed |
+|---|---|---|---|
+| `PyramidOscillation` | 680 ms, 42,923 frame advances, 1,389 loads, 229,042 allocations | 2.90 s, 188,621 frame advances, 5,259 loads, 140,403 allocations | the old oscillation script asks for the look-ahead every frame, and each is a game frame and a load now where it was a stand-in frame and a construction; ROADMAP 4.19 puts the row on the corner |
+| `DownhillAngle` (was `DownhillAngle_PyramidUpdate`) | 2.13 ms per 1,000 calls | 21.2 ms per 1,000 calls, 1,000 frame advances and loads, 9,012 allocations (42,006 before) | a child frame on the game and its revert, where the stand-in's frame was a few hundred floating-point operations |
+| `MetricsSweep` | 6.9 ms | 6.9 ms | unchanged |
+
+On the corner the same look-ahead is about 2 us. Tier A, Tier B and Tier D do not run the
+look-ahead and are untouched.
+
+## 2026-10-12: the corner runs the camera's C-up mode (ROADMAP 4.13)
+
+`BitfsCorner` now runs the camera's C-up mode from the game's own text (`decomp/camera.inc`),
+so the ending stage, whose leave presses C-up, runs on the corner. Per frame the corner's
+camera step is a few branches: in the 8-direction mode, `radial_camera_input` looks at the
+C-button presses; in the C-up mode, `mode_c_up_camera` runs whole. The mode's four statics
+join the state, 112 bytes: `stateBytes` 41,784 to 41,896, which the count gate flags by
+design and the corner family's baseline was re-saved for (`perf.ps1 -Filter '^BM_BitfsCorner_'
+-SaveBaseline`, additive). Release, MSVC on tyler-desktop, pinned, three processes, against
+the 2026-10-11 baseline:
+
+| Row | Baseline | Now | Delta |
+|---|---|---|---|
+| `BM_BitfsCorner_SaveErase` | 0.7 us | 0.7 us | -0.8% |
+| `BM_BitfsCorner_SaveFresh/200` | 10.3 us | 10.3 us | -0.4% |
+| `BM_BitfsCorner_Load` | 0.7 us | 0.7 us | +1.9% |
+| `BM_BitfsCorner_Addr` | 7.5 ns | 7.7 ns | +3.6% (below the 1 ns gate) |
+| `BM_BitfsCorner_FrameAdvance` (193-frame window) | 1.7 us | 1.8 us | +1.7% |
+| `BM_BitfsCorner_ResidentPerSlot/1000` | 11.0 ms | 11.0 ms | -0.2%; `stateBytes` 41,784 to 41,896 |
+| `BM_BitfsCornerScaling_FrameAdvance` 1 / 2 / 4 / 8 / 16 threads | 1.8 / 1.8 / 1.8 / 1.8 / 2.2 us | 1.8 / 1.8 / 1.8 / 1.8 / 2.3 us | -2% to +6.5% |
+| `BM_BitfsCornerScaling_SaveErase` 16 threads | 0.7 us | 0.8 us | within noise |
+
+Tier D on the same build, every count the same as the baseline's (frame advances
+17,800,136, saves 608, loads 1,045,094, 52 solutions) and the times within the gate:
+`TierD_Deterministic` 95.2 s against 93.6 (+1.7%, the reference 95.2 in the same
+session), `TierD_Throughput` 63.5 against 57.8 with the reference 62.4 (+1.5%),
+`TierD_DeterministicCorner` 18.1 s (18.4 on 2026-10-12 before the port; the tilt target
+never presses C-up, so its counts are the game's as before). The Tier D baseline was then
+saved from this build (`perf.ps1 -TierDOnly -SaveBaseline`, additive), so the corner row
+and the two viewer rows gate from here on, and the game's two rows gate against this
+build's times rather than the 2026-09-15 commit's; every count in it is the one above.
+The ending stage, deterministic, seed 6, 300 shots from the dr solutions:
+20,253 blocks and 118,508 scripts on the corner and on the game alike, no solution at
+that length on either (the game found 3 in 8,000 on 2026-10-11), the corner's stage 1.3 s
+against the game's 5.8 (frame advances 214,137 against 269,542: the game's threads play
+the movie to the start frame, the corner's import a state; loads 36,526 on both).
+
+A runner pitfall found on the way (fixed in `perf.ps1` the same day): a `-Filter` that
+spans a scaling family and a pinned one (`^BM_BitfsCorner` for both corner families)
+became one family whose name lacks "Scaling", so the runner pinned the whole process to
+one logical CPU; the frame-advance scaling rows then time-shared it (3.1, 7.3 and 13.7 us
+at 4, 8 and 16 threads, 3 repetitions in 3 processes agreeing, twice) while the save
+scaling rows, each thread's whole run shorter than a scheduler quantum, ran one after
+another and showed 0.7 us. The runner now unpins a family whose regex matches a scaling
+row and says so.
+
+## 2026-10-12: a dying Mario fails the trial (the BitFS scripts, ROADMAP 4.13)
+
+Not a framework change: `tasfw-scripts/inc/MarioDeath.hpp` and the scripts that use it.
+The maintainer's rule (2026-10-12): any death action simply fails validation, and the
+level's reload is never reached. `MarioDeath::IsDying` is a lava boost, health below one
+segment, a death action, or no floor; the three searches' `ValidateState` and the ARE
+fixer's trials (its landing watch, its walk and its wait for the rest) fail at the first
+dying frame. Before, a trial that dived into the lava ran on through Mario's death until
+the game reloaded the level, which the game survives and the corner refuses; now no
+trial reaches it on either. Release, MSVC, the committed config's targets:
+
+| Run | Result | Frame advances | Saves | Loads |
+|---|---|---|---|---|
+| are-fixer on the game, before the rule (the 2026-10-06 entry) | hand-over at 3337, ARE (0, 0), 3 landing and 1 turn rounds | 98,549 | 19 | 8,042 |
+| are-fixer on the game, with the rule | the same hand-over, position, normal and way | 72,610 | 23 | 8,042 |
+| are-fixer on the corner, with the rule | the same hand-over, position, normal and way; 1 of 1 reproduced on the game | 72,460 | 39 | 8,042 |
+
+The fixer's lava trials end at the first boost instead of 200 frames later, a quarter of
+its frames. Its result is unchanged. The deterministic Tier D stage on the game and on the
+corner is unchanged in every count (52 solutions, 111,860 blocks, 524,380 scripts; the
+tilt target never meets a dying state there), so CI's Tier D baseline holds. A short dr
+pass on the corner with the rule: 1,000 solutions in 118 shots (120 before it, two
+lineages that touched the lava now rejected at the pellet), all 1,000 reproduced on the
+game, 2.3 s; the fixer on the corner 0.3 s against 1.8 on the game.
+
+## 2026-10-12: the pipeline runs a stage on the game or on the corner (ROADMAP 4.13)
+
+Not a framework change: the pipeline (`PipelineConfig`, `Stages`, `main.cpp`) and two
+additions to the corner resource (a move constructor, so a vector holds one corner per
+thread, and `ReportRefusals`, which writes a refusal to stderr before it is thrown, since
+a search thread cannot report an exception). A stage's `"resource"` is `game` (the DLL,
+as before) or `corner`, with the objects it has and a `lead`: its corners are imported by
+a script from one DLL copy `lead` frames before the start frame (default 16: the tilt
+target rewinds 10 frames and reads metrics 2 earlier), and its solutions are replayed on
+the game and on a corner before they count (README.md, "Configuration").
+
+The deterministic Tier D stage on the corner, `perf/tierd-deterministic-corner.json`, now
+a Tier D row of the suite (`TierD_DeterministicCorner`, the current binary only), against
+the game's own run of the same day:
+
+| | Game (`TierD_Deterministic`) | Corner (`TierD_DeterministicCorner`) |
+|---|---|---|
+| Wall, 8 threads | 94.6 s | 18.4 s (5.1x) |
+| Shots, blocks, scripts, solutions | 600, 111,860, 524,380, 52 | the same |
+| Solutions' inputs and metrics | | identical, all 52; 52 of 52 reproduced on the game by the replay check |
+| CPU time: the resource's advance | 14.5 us a frame | 2.0 us a frame, 32% of the stage's CPU time; 67% outside the resource |
+| Frame advances, saves, loads | 17,800,136 / 608 / 1,045,094 | 17,748,596 / 609 / 1,045,147 (each row's own: the game plays the movie to the start frame, the corner its lead and the replay check) |
+
+A short `dr-oscillations` pass on the corner from the game's ARE-fixer solution: 1,000
+solutions in 120 shots, 1,000 of 1,000 reproduced on the game, 2.1 s. The ending stage
+and the ARE fixer do not run on the corner yet: the ending presses C-up (a leave move
+and a button its random draw weights 0.1), which the corner refuses because its camera
+is held, and a dive trial of the fixer ends in the lava, where the game plays the death
+and reloads the level and the corner refuses the warp, ending the script instead of the
+trial (both in ROADMAP 4.13). The game's Tier D rows are unchanged by the switch, within
+1% of the reference with every count the same (the 02:20 run of the scripts' change
+covers the same binary path).
+
+## 2026-10-12: the scripts on `Sm64Resource` (ROADMAP 4.13)
+
+Not a framework change. Every script in tasfw-scripts and the pipeline's own, and the two
+test scripts on the game, are `Script<Sm64Resource>` now (one line each, bodies untouched);
+`VerifyLayout` keeps the DLL's header for `LibSm64ObjectPoolCapacity`; the frozen perf
+workloads stay `Script<LibSm64>`, still valid since the DLL class is a `Sm64Resource`. The
+scattershot stages hand the builder `static_cast<Sm64Resource*>` pointers into the
+pipeline's `LibSm64` vector until the resource switch replaces that vector. Release, MSVC,
+tyler-desktop, the suite against the previous run (the shared state, below) as the
+baseline: Tier D, the one tier that runs the live stage scripts, `Deterministic` 95.3 s
+against the reference's 95.2 (+0.1%), `Throughput` 63.8 against 63.1 (+1.1%), every count
+unchanged; Tiers A to C by construction unchanged (their scripts are the frozen copies).
+The gate flagged four rows, none of this change: `Script_GetInputs_Uncached_Depth/16`
+(mock resource, untouched code; +10.6% against a reference reading of 158 ns where the
+baseline has 171) and the corner's three fresh-slot rows (`SaveFresh` 9.9 to 10.9 us,
+`ResidentPerSlot` 10.7 to 12.5 ms), whose code did not change in this step and which have
+alternated between those two readings over the last four runs of the day.
+
+## 2026-10-12: one resource type for the game and the corner, `Sm64Resource` over the shared state `Sm64Mem` (ROADMAP 4.13)
+
+Not a framework change: `tasfw-resources` only. For a script to run on the game (`LibSm64`)
+or on the corner (`BitfsCorner`) without being written twice, the two are now kinds of one
+abstract resource, `Sm64Resource : Resource<Sm64Mem>`, and share the state type `Sm64Mem`,
+which holds either's savestate (`LibSm64Mem` inline, `BitfsCornerMem` behind a pointer) or
+nothing until a save fills it, and refuses to hand one resource the other's. A script
+becomes `Script<Sm64Resource>` (the 27 scripts follow in the next change); the operations
+it reaches are `Resource`'s virtuals already, so nothing new is paid per frame. The
+maintainer chose this over templating every script on the resource, which would have put
+`this->template Modify<X<TResource>>(…)` on every child-script call for Clang and GCC.
+
+Release, MSVC, tyler-desktop, the suite against the previous run (the slot manager change
+of 2026-10-11, the same evening) as the baseline and the 2026-09-15 reference binaries:
+0 time regressions, 6 improvements (the slot manager's and `Resource_SaveLoadState`, all
+against the reference, as the previous entry), 0 count regressions, Tier D's counts
+unchanged. The first build held the corner's 41 KB inline in the variant, and every
+game slot's map node grew by it: the rows that allocate fresh slots moved (`SaveFresh`
++6 to +8%, `ResidentPerSlot` +4 to +12%, `Dirty/100` over the gate at +11.8%) while every
+steady-state row stayed put; with the corner's alternative behind a pointer those rows are
+back within 2% of the reference and `rssPerSlot` is within 0.2% of `stateBytes` on every
+game row, as documented.
+
+| Row | Before (previous run) | After |
+|---|---|---|
+| LibSm64Fixed_SaveErase, Load, FrameAdvance | 40.1 / 40.7 / 14.3 us | 39.4 / 40.7 / 15.0 us (the frame's +4.8% is the day's; the reference read the same 15.0) |
+| LibSm64Dirty_SaveErase, Load, FrameAdvance | 7.0 / 6.8 / 14.4 us | 6.9 / 6.9 / 15.0 us |
+| LibSm64Fixed_SaveFresh/200, ResidentPerSlot/1000 | 284 us, 287 ms | 278 us, 288 ms |
+| LibSm64Dirty_SaveFresh/200, ResidentPerSlot/1000 | 90.2 us, 94.4 ms | 88.6 us, 90.9 ms |
+| BitfsCorner_SaveErase, Load, FrameAdvance, Addr | 0.7 us, 0.7 us, 1.7 us, 6.8 ns | 0.7, 0.7, 1.7 us, 7.0 ns |
+| BitfsCorner_SaveFresh/200 | 10.8 us, 3.07 allocations | 9.9 us, 4.07 allocations (the block behind the pointer, once per fresh slot; the pool recycles it) |
+| BitfsCorner_ResidentPerSlot/100, /1000 | 1.0 ms, 12.5 ms | 0.9 ms, 10.7 ms |
+| Framework_PyramidOscillation, DownhillAngle_PyramidUpdate, MetricsSweep | 685 ms, 1.9 ms, 7.0 ms | 691 ms, 1.8 ms, 6.9 ms; allocations identical |
+| TierD_Deterministic, Throughput | 94.6 s, 63.3 s | 94.7 s, 62.8 s; every count unchanged |
+
+The one allocation per fresh corner slot is the designed cost of the pointer; the
+corner's family was re-saved with it (`-Filter '^BM_BitfsCorner_' -SaveBaseline`, both
+compilers), so its `SaveFresh` row reads 4.07 from here. The scaling families' efficiency
+gate fired on four rows (2 and 4 threads of both saves) with the per-thread times within
+2% for the game and 0.7 to 0.8 us for the corner, and the viewer's throughput row read
++11.1% against its plain run (one launch of each, 16 threads unpinned, 1.7 to 2.8% in the
+three sessions before). Run again on their own: the corner's scaling family 0 regressions
+of any kind, its saves 0.7 us at 1, 2, 4 and 8 threads and 0.8 at 16, its frames
+unchanged; Tier D alone 0 regressions, the viewer's throughput row -2.3% against its
+plain run. Both were the gate's noise (ROADMAP 4.16), not this change.
+
+## 2026-10-11: the slot manager pools the map's own nodes; no state is copied inside the framework (ROADMAP 4.13)
+
+A `tasfw-core` change, on the maintainer's decision between two designs (the corner's
+state behind a pointer, or the slot manager never moving a state) and his rule: a state is
+copied when it is saved to or loaded from a resource, never inside the framework.
+`SlotManager` kept its slots in a `std::map<int64_t, TState>` by value and its pool was a
+`std::vector<TState>`: a save moved a pooled state into a fresh map node and an erase
+moved it back, which for a flat state (`BitfsCornerMem`, 41 KB) copied the whole state
+each way and allocated a 41 KB node per save. Now the pool holds the map's own nodes
+(`std::map::extract` on erase, `insert` of the node under its new id on reuse,
+`try_emplace` for a fresh slot), so a recycled slot costs the save's one copy and no
+allocation, for every state type. With that, the slot manager is no longer copyable and
+moves only into its new owner, and `Resource`'s move constructor passes itself; before, a
+`Resource` move (compiled for the resource vectors' growth, never run) copied the manager,
+left its pointer on the old resource and returned the budget twice. Two tests in
+`test_slots.cpp`; public operations and `PerfAccess` unchanged.
+
+Release, MSVC, tyler-desktop; the suite against the 2026-09-15 reference binaries (time)
+and baseline (counts, allocations), the corner families against their baseline of earlier
+the same day (the reference binary has no corner rows): 0 time regressions, 13
+improvements, 0 allocation and 0 count regressions. "Before" is the reference binary's
+reading in the same session, or for the corner rows that baseline.
+
+| Row | Before | After | Allocations per iteration |
+|---|---|---|---|
+| BitfsCorner_SaveErase | 1.9 us | 0.7 us (-65%; the load's 0.7) | 3 -> 2 |
+| BitfsCornerScaling_SaveErase at 1 / 2 / 4 / 8 / 16 threads | 1.9 / 2.4 / 2.4 / 3.9 / 19.6 us (efficiency 81 / 80 / 48 / 10%) | 0.7 us at every count (92 / 97 / 95 / 94%) | |
+| BitfsCorner_SaveFresh/200 | 10.1 us | 10.8 us | 3.07 -> 3.07 |
+| BitfsCorner_Load, FrameAdvance, Addr | 0.7 us, 1.7 us, 7.0 ns | 0.7 us, 1.7 us, 6.8 ns | 1 -> 1, 0 -> 0 |
+| SlotManager_CreateErase/100, /1000, /10000 | 135 / 187 / 265 ns | 119 / 164 / 228 ns (-12 / -12 / -14%) | 3 -> 2 |
+| SlotManager_CreateAtCap/100, /1000, /10000 | 151 / 181 / 209 ns | 123 / 148 / 196 ns (-19 / -18 / -6%) | 3 -> 2 |
+| SlotManager_LoadSlot/100, /1000, /10000 | 67.5 / 206 / 339 ns | 68.4 / 208 / 341 ns | 1 -> 1 |
+| Resource_SaveLoadState | 142 ns | 120 ns (-16%) | 4 -> 3 |
+| LibSm64Fixed_SaveErase, Load | 41.3, 41.7 us | 40.1, 40.7 us | 3 -> 2, 1 -> 1 |
+| LibSm64Dirty_SaveErase, Load | 7.0, 6.9 us | 7.0, 6.8 us | 3 -> 2, 1 -> 1 |
+| LibSm64Full_SaveErase, Load | 173, 172 us | 177, 173 us | 3 -> 2, 1 -> 1 |
+| LibSm64Scaling_SaveErase at 1 / 2 / 4 / 8 / 16 threads | 7.3 / 7.0 / 7.1 / 7.1 / 7.7 us | 6.9 / 6.9 / 7.1 / 7.0 / 7.5 us | |
+| Framework_DownhillAngle_PyramidUpdate/3 | 2.1 ms | 1.9 ms (-10%) | 42,006 -> 32,006 |
+| TierD_Deterministic, Throughput | 95.2 s, 63.0 s | 94.6 s, 63.3 s; every count unchanged | |
+
+One gate fired, on a ratio: `LibSm64Scaling_SaveErase` at 8 threads read 97.5% efficiency
+against the reference's 102.6%, 5.1 points over the 5-point gate, while every per-thread
+time in that family improved; the efficiency is the rate at n threads over the rate at one,
+and the one-thread row improved by 5% where the 8-thread row improved by 1%. Run again on
+its own, the family read 99.7% at 8 threads (2.4 points under the reference, inside the
+gate) and instead tripped on `FrameAdvance` at 2 and 4 threads (104.1 to 97.8, 99.8 to
+94.8), rows that take no save at all, with every per-thread time within 3% of the
+reference. The ratio moves by 5 to 6 points between runs of the same binaries at these
+thread counts, which is the gate's noise, not this change (ROADMAP 4.16).
+
+clang-cl, the corner's rows against their baseline of the same morning: save 1.9 to 0.7 us
+(-65%), the scaling family's save 0.7 us at 1, 2, 4 and 8 threads and 0.8 at 16 (efficiency
+95 / 94 / 92 / 88%, from 92 / 75 / 44 / 9%), load 0.6 us, frame 1.5 us, `addr` 5.4 ns.
+
+## 2026-10-11: the corner resource's Tier B families (ROADMAP 4.13)
+
+Not a framework change: `BitfsCorner` (tasfw-resources) and two Tier B families in
+`tasfw-perf/src/bench_libsm64.cpp`, `^BM_BitfsCorner_` and `^BM_BitfsCornerScaling`, the
+game's rows on a corner imported from the game at the rows' anchor (performance.md, "Tier
+B"); the row bodies became templates the game's and the corner's rows share. The one
+hot-path edit is `BitfsCorner::addr`, which compared through a `std::string` built per
+lookup, an allocation for every behavior name (the scripts ask at the top of every
+`execution()`); a `std::string_view` now. Release, MSVC, tyler-desktop, pinned to one
+performance-core CPU, the fastest of nine repetitions in three processes:
+
+| Row | Game, `fixed` | Corner | Ratio |
+|---|---|---|---|
+| FrameAdvance (3,000 neutral frames; the corner's inside its 193-frame window before Mario's death, the game's through the death and the level's reload) | 14.5 to 15.0 us | 1.82 to 1.86 us | 8x |
+| SaveErase | 42.7 us | 1.87 to 1.91 us | 23x |
+| SaveFresh/200 | 284 us | 10.7 to 11.3 us | 26x |
+| Load | 41.2 us | 0.68 us | 61x |
+| Addr | 12.5 ns | 7.7 ns | 1.6x |
+| ResidentPerSlot `stateBytes` | 1,500,000 | 41,784 | 36x |
+
+Thread scaling, the per-thread time at 1 / 2 / 4 / 8 / 16 threads and the efficiency
+against one thread at 2 / 4 / 8 / 16, from the same run (the game's family in `dirty`
+mode, one DLL copy per thread; the corner's one corner per thread on the shared level):
+
+| Row | Game | Corner |
+|---|---|---|
+| FrameAdvance | 14.2 / 14.3 / 15.1 / 15.0 / 17.9 us (99 / 94 / 95 / 79%) | 1.81 / 1.82 / 1.82 / 1.82 / 2.34 us (99 / 99 / 99 / 77%) |
+| SaveErase | 7.0 / 6.7 / 7.0 / 7.2 / 7.3 us (about 100 / 100 / 97 / 96%) | 1.92 / 2.33 / 2.53 / 4.66 / 23.3 us (82 / 76 / 41 / 8%) |
+
+The corner's frame scales as the search needs; its save does not, and the cause is the
+corner's flat state against the slot manager's move-based pool (ROADMAP 4.13): `SlotManager`
+holds its slots by value in a `std::map` and moves a pooled state into a fresh node per
+save and back per erase, three allocations per save on every resource (the game's rows
+read `allocs=3` too); `LibSm64Mem` keeps its buffers behind pointers, so a move is a swap,
+while for the corner's flat 41 KB state each move is a copy, so a save is three copies and
+a 41 KB allocation where a load is one copy, and sixteen threads meet in the process heap.
+The fix is in the resource, the state's bytes behind a pointer as the game's are, owed
+under 4.13.
+
+The whole suite against the 2026-09-15 baseline and its reference binaries (`e20b01b`):
+0 count, allocation, efficiency and viewer regressions; the Tier D counts unchanged, its
+walls 93.9 s deterministic (reference 94.1), 60.4 s throughput (61.4), the viewer rows
+-0.1% and +1.7% against them; every corner row NEW. Four Tier A rows read +11 to +16%
+against that reference, cycles moving with the time (`Inputs_GetClosestInputByYawHau`,
+`_PartialMag`, `_ByYawExact`, `SlotManager_LoadSlot/100`). Attributed by the procedure in
+performance.md (rebuild without the addition and measure the row): against a build of HEAD
+`5dd4fd8` itself as the reference they read -1.9 / -0.6 / -1.3 / -3.6% and the Tier A
+families 0 regressions over 42 rows, so the shift lies between the 2026-09-15 baseline
+and HEAD, in commits already merged, not in this change.
+
+clang-cl, the same rows: corner frame 1.62 to 1.66 us (game 15.1 to 15.2), save 1.95 (44
+to 46), fresh save 10.5 to 10.9 (281 to 298), load 0.61 to 0.63 (43 to 44), `addr` 6.2 ns
+(11.5); scaling frame 1.64 / 1.63 / 1.64 / 1.71 / 2.15 us (100 / 100 / 96 / 76%), save
+1.94 / 2.10 / 2.53 / 4.48 / 20.6 us (92 / 77 / 43 / 9%).
+
+Baselines: until now `-SaveBaseline` was a whole run (`perf_compare.py baseline` removed
+every family file the run did not have) and replaced the reference binaries, so adding a
+family meant re-measuring the other thirteen and making a dirty tree's build the
+reference. On the maintainer's ask the save is additive when filtered: `perf.ps1 -Filter
+<family> -SaveBaseline` passes `baseline --add`, which writes the run's families, keeps
+the others and the saved context, and leaves `perf\reference\` alone; the added rows gate
+absolute against the baseline ("(vs baseline)") until the next whole save. The two corner
+families were added that way to `perf/baselines/tyler-desktop` and `tyler-desktop-clang`
+from this tree at `5dd4fd8-dirty` (`windowFrames` 193, `stateBytes` 41,784 in both); the
+other families' files and the 2026-09-15 reference binaries are as they were.
+
 ## 2026-10-06: the ARE fixer's regime locked, the dive start's air stick, identical landing rounds end the way (ROADMAP 4.8)
 
 Not a framework change; `BitFsAreFixer` and `bitfs-turn --test`. Measuring the regime for

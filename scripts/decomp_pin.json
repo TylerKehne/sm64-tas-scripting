@@ -13,7 +13,7 @@
       "path": "include/object_fields.h",
       "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
       "note": "Refresh 13. #pragma once and the include; the rest is clang-format's wrapping.",
-      "residual": "47251abb985f0d0c93cd9a2bf83a33e3496625c44c08e7c9d2a579b78716cba9"
+      "residual": "8cbdaac03aff6717ab7d824046f1381ee1b1b32dc1e30ae602b8e6f8400ddb34"
     },
     {
       "file": "tasfw-core/inc/sm64/Sm64.hpp",
@@ -33,8 +33,8 @@
       "file": "tasfw-core/inc/sm64/Camera.hpp",
       "path": "src/game/camera.h",
       "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
-      "note": "Refresh 13. struct Camera only, out of a 600-line header.",
-      "residual": "7e7529cbed4be23f5edc5b0f9271de1737a42d42fba7c2cf1b8b13d423e2c0e3"
+      "note": "Refresh 13. struct Camera, PlayerCameraState and the C-up mode's LinearTransitionPoint, ModeTransitionInfo and CameraStoredInfo (the BitFS corner's state, ROADMAP 4.13), out of a 600-line header.",
+      "residual": "b6a9fad3b3e1c308c8ec6e1682b601fe0c8ea7c400ab89ac6a5a9d52ce9b04ee"
     },
     {
       "file": "tasfw-core/inc/sm64/UltraTypes.hpp",
@@ -54,72 +54,366 @@
       "file": "tasfw-core/inc/sm64/Surface.hpp",
       "path": "include/surface_terrains.h",
       "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
-      "note": "Refresh 13. A selection of the surface types, SURFACE_CLASS_*, and the declarations of the reimplemented surface functions; mostly the framework's own.",
-      "residual": "c7ed4f767467af111e6c050cccfd1bf170bd37b98a1c086ad6d4869584f39efb"
+      "note": "Refresh 13. A selection of the surface types and SURFACE_CLASS_*; mostly the framework's own (the declarations of the reimplemented surface functions went with tasfw-core/src/decomp on 2026-10-12, ROADMAP 4.13).",
+      "residual": "c28e4d01c25789626f3ac34b0659b9bd99e17104ebe485a51421436ecd9e6963"
+    },
+    {
+      "file": "tasfw-core/inc/sm64/SurfaceLoad.hpp",
+      "path": "src/engine/surface_load.h",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13, for the BitFS corner resource (ROADMAP 4.13). SurfaceNode, the partition's enum and SpatialPartitionCell, with NUM_CELLS and, from src/engine/surface_collision.h, the level bounds and limits they rest on; the externs and prototypes dropped; #pragma once.",
+      "residual": "8703e51c0e0078a95e93b26bdff6952dc645633808b504320c6e3db05be33c8c"
+    },
+    {
+      "file": "tasfw-core/inc/sm64/Controller.hpp",
+      "path": "include/types.h",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13, for the BitFS corner resource (ROADMAP 4.13). struct Controller alone, its two OS pointers on forward declarations; #pragma once.",
+      "residual": "97403847dfbca0cbacda97ae8a439b3aab0540e7062475bd38a746fd102e63b9"
+    },
+    {
+      "file": "tasfw-core/inc/sm64/Area.hpp",
+      "path": "src/game/area.h",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13, for the BitFS corner resource (ROADMAP 4.13). struct Area alone, what it points at beside the camera on forward declarations; #pragma once.",
+      "residual": "b6969c479565df9f77c0a898b289bff6b869e09d7cd37ed8792345b12d10d27f"
+    },
+    {
+      "file": "tasfw-resources/src/bitfs-corner/decomp/area.inc",
+      "path": "src/game/area.c",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13, the BitFS corner's frame (ROADMAP 4.13): the functions the corner reaches, as members of BitfsCornerGame (static dropped, register dropped); the residual is what was left out and the edits BitfsCornerGame.hpp's comments name.",
+      "residual": "a8fb254c42d2f185dbcc5d28856c53e09302b155a4ab03cc997a3b0d3803ad1c"
+    },
+    {
+      "file": "tasfw-resources/src/bitfs-corner/decomp/behavior_script.h",
+      "path": "src/engine/behavior_script.h",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13, for the BitFS corner's copies; the includes dropped.",
+      "residual": "28ac449f370477668ee17dc53b807829c9f077f4ecc1f2bdf9c4e76e04fb26b2"
+    },
+    {
+      "file": "tasfw-resources/src/bitfs-corner/decomp/behavior_script.inc",
+      "path": "src/engine/behavior_script.c",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13, the BitFS corner's frame (ROADMAP 4.13): the functions the corner reaches, as members of BitfsCornerGame (static dropped, register dropped); the residual is what was left out and the edits BitfsCornerGame.hpp's comments name.",
+      "residual": "2498f9d75a2bd1f56478e947dfe43dfebd2df1bb546ed5e843c0f599be3b195a"
+    },
+    {
+      "file": "tasfw-resources/src/bitfs-corner/decomp/bully.inc",
+      "path": "src/game/behaviors/bully.inc.c",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13, the BitFS corner's frame (ROADMAP 4.13): the functions the corner reaches, as members of BitfsCornerGame (static dropped, register dropped); the residual is what was left out and the edits BitfsCornerGame.hpp's comments name.",
+      "residual": "a29f86637683607aea157c0ede090d30a4d4e5bc852aaa66c54d07afc614b63c"
+    },
+    {
+      "file": "tasfw-resources/src/bitfs-corner/decomp/camera.h",
+      "path": "src/game/camera.h",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13, for the BitFS corner's copies; the includes dropped, and the structs sm64/Camera.hpp holds (Camera, PlayerCameraState, LinearTransitionPoint, ModeTransitionInfo, CameraStoredInfo) left to it.",
+      "residual": "54b7e9fbd351a6cd3ed6df43fc99fe751ae322a9357e6014e46b6deea143a8b9"
+    },
+    {
+      "file": "tasfw-resources/src/bitfs-corner/decomp/camera.inc",
+      "path": "src/game/camera.c",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13, the BitFS corner's camera (ROADMAP 4.13): the C-up mode and what it reaches (set_mode_c_up, exit_c_up, mode_c_up_camera, set_camera_mode, radial_camera_input and their helpers), as members of BitfsCornerGame (static dropped); the residual is the rest of camera.c (Lakitu's flight and the other modes, which the corner holds) and three edits BitfsCornerGame.hpp and the copy name: the transition table as a switch over the corner's two modes, the JP build's #ifndef resolved, and radial_camera_input's unread return value initialized.",
+      "residual": "f5b9e33286c43fb5a7679a4c88ed3511edd6f4aa9c704be1c1859b5f0623e6d1"
+    },
+    {
+      "file": "tasfw-resources/src/bitfs-corner/decomp/course_defines.h",
+      "path": "levels/course_defines.h",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13, for the BitFS corner's copies; the includes dropped.",
+      "residual": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "file": "tasfw-resources/src/bitfs-corner/decomp/course_table.h",
+      "path": "include/course_table.h",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13, for the BitFS corner's copies; the includes dropped.",
+      "residual": "9eae792b446964a4f3de1ea8ac17b15dcff2d439fe59d92c009f918b3bcfcead"
+    },
+    {
+      "file": "tasfw-resources/src/bitfs-corner/decomp/game_init.inc",
+      "path": "src/game/game_init.c",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13, the BitFS corner's frame (ROADMAP 4.13): the functions the corner reaches, as members of BitfsCornerGame (static dropped, register dropped); the residual is what was left out and the edits BitfsCornerGame.hpp's comments name.",
+      "residual": "33b8a31045dcdd214ffacf80985590013978e8d5282f4b3352f098e4fa270607"
+    },
+    {
+      "file": "tasfw-resources/src/bitfs-corner/decomp/graph_node.inc",
+      "path": "src/engine/graph_node.c",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13, the BitFS corner's frame (ROADMAP 4.13): the functions the corner reaches, as members of BitfsCornerGame (static dropped, register dropped); the residual is what was left out and the edits BitfsCornerGame.hpp's comments name.",
+      "residual": "ce13949b2378c70c6a35ca4ede1044b994ae56f93a9bdad831e710252cbbf90e"
+    },
+    {
+      "file": "tasfw-resources/src/bitfs-corner/decomp/interaction.h",
+      "path": "src/game/interaction.h",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13, for the BitFS corner's copies; the includes dropped.",
+      "residual": "3134b3bd8b790e62a7565e434631613abb9e8a39913436c5864f9e0384465d15"
+    },
+    {
+      "file": "tasfw-resources/src/bitfs-corner/decomp/interaction.inc",
+      "path": "src/game/interaction.c",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13, the BitFS corner's frame (ROADMAP 4.13): the functions the corner reaches, as members of BitfsCornerGame (static dropped, register dropped); the residual is what was left out and the edits BitfsCornerGame.hpp's comments name.",
+      "residual": "49ca3844fa89eb2da0e38c1a506e09498c430199d080ebaef6da79b6beced89c"
+    },
+    {
+      "file": "tasfw-resources/src/bitfs-corner/decomp/level_defines.h",
+      "path": "levels/level_defines.h",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13, for the BitFS corner's copies; the includes dropped.",
+      "residual": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "file": "tasfw-resources/src/bitfs-corner/decomp/level_table.h",
+      "path": "include/level_table.h",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13, for the BitFS corner's copies; the includes dropped.",
+      "residual": "f5227a79781e90a562f0c4e3af23168ff94458c79c31c97e936b47819c8a6d98"
+    },
+    {
+      "file": "tasfw-resources/src/bitfs-corner/decomp/level_update.h",
+      "path": "src/game/level_update.h",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13, for the BitFS corner's copies; the includes dropped.",
+      "residual": "caccbb7703ce1f8352590daf29008ffd5cbd0c9ef70fd1674a127aff603307fb"
+    },
+    {
+      "file": "tasfw-resources/src/bitfs-corner/decomp/mario.h",
+      "path": "src/game/mario.h",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13, for the BitFS corner's copies; the includes dropped.",
+      "residual": "fce9df96954b82189a5fc5a223da80953399a57444cfa30e65e54030e1cfb2cd"
+    },
+    {
+      "file": "tasfw-resources/src/bitfs-corner/decomp/mario.inc",
+      "path": "src/game/mario.c",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13, the BitFS corner's frame (ROADMAP 4.13): the functions the corner reaches, as members of BitfsCornerGame (static dropped, register dropped); the residual is what was left out and the edits BitfsCornerGame.hpp's comments name.",
+      "residual": "8fd050de86eca69e424d2c466691d14be649e665ead4522abe81744b984b85a4"
+    },
+    {
+      "file": "tasfw-resources/src/bitfs-corner/decomp/mario_actions_airborne.inc",
+      "path": "src/game/mario_actions_airborne.c",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13, the BitFS corner's frame (ROADMAP 4.13): the functions the corner reaches, as members of BitfsCornerGame (static dropped, register dropped); the residual is what was left out and the edits BitfsCornerGame.hpp's comments name. Two edits named in the copy: act_freefall's animation and act_crazy_box_bounce's minSpeed start at their first case's value (GCC 14, docs/compilers.md).",
+      "residual": "759840858871411004071a8285016ef582fc87b2059dfa7df79253e175636fb5"
+    },
+    {
+      "file": "tasfw-resources/src/bitfs-corner/decomp/mario_actions_automatic.inc",
+      "path": "src/game/mario_actions_automatic.c",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13, the BitFS corner's frame (ROADMAP 4.13): the functions the corner reaches, as members of BitfsCornerGame (static dropped, register dropped); the residual is what was left out and the edits BitfsCornerGame.hpp's comments name.",
+      "residual": "96b5511aa4d821d93501a4aab574cda9c4b63f31bd008176f32d537411aab2f0"
+    },
+    {
+      "file": "tasfw-resources/src/bitfs-corner/decomp/mario_actions_cutscene.inc",
+      "path": "src/game/mario_actions_cutscene.c",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13, the BitFS corner's frame (ROADMAP 4.13): the functions the corner reaches, as members of BitfsCornerGame (static dropped, register dropped); the residual is what was left out and the edits BitfsCornerGame.hpp's comments name.",
+      "residual": "ee07cbbb7ce7306500da4885734f9067baafcf309500d5fdae55a2864b9efd36"
+    },
+    {
+      "file": "tasfw-resources/src/bitfs-corner/decomp/mario_actions_moving.inc",
+      "path": "src/game/mario_actions_moving.c",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13, the BitFS corner's frame (ROADMAP 4.13): the functions the corner reaches, as members of BitfsCornerGame (static dropped, register dropped); the residual is what was left out and the edits BitfsCornerGame.hpp's comments name.",
+      "residual": "a7321a24a6f157098302d72558b769b3991f070d24971086bcf7a81a2126f19d"
+    },
+    {
+      "file": "tasfw-resources/src/bitfs-corner/decomp/mario_actions_object.inc",
+      "path": "src/game/mario_actions_object.c",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13, the BitFS corner's frame (ROADMAP 4.13): the functions the corner reaches, as members of BitfsCornerGame (static dropped, register dropped); the residual is what was left out and the edits BitfsCornerGame.hpp's comments name.",
+      "residual": "f19790ccefcfcfe6d31f18d90cd2b0d0746680a0716fcda6b644c0f7df18983d"
+    },
+    {
+      "file": "tasfw-resources/src/bitfs-corner/decomp/mario_actions_stationary.inc",
+      "path": "src/game/mario_actions_stationary.c",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13, the BitFS corner's frame (ROADMAP 4.13): the functions the corner reaches, as members of BitfsCornerGame (static dropped, register dropped); the residual is what was left out and the edits BitfsCornerGame.hpp's comments name.",
+      "residual": "2d6cecad96cc0c56ee30e9f98b19fff018f641c243778acaeea35ce1ca077569"
+    },
+    {
+      "file": "tasfw-resources/src/bitfs-corner/decomp/mario_animation_ids.h",
+      "path": "include/mario_animation_ids.h",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13, for the BitFS corner's copies; the includes dropped.",
+      "residual": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "file": "tasfw-resources/src/bitfs-corner/decomp/mario_geo_switch_case_ids.h",
+      "path": "include/mario_geo_switch_case_ids.h",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13, for the BitFS corner's copies; the includes dropped.",
+      "residual": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "file": "tasfw-resources/src/bitfs-corner/decomp/mario_step.h",
+      "path": "src/game/mario_step.h",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13, for the BitFS corner's copies; the includes dropped.",
+      "residual": "6ba184a1858928c7d0fda41010f4b30d30cbe9e236aa3dcff66705bf1c7dddea"
+    },
+    {
+      "file": "tasfw-resources/src/bitfs-corner/decomp/mario_step.inc",
+      "path": "src/game/mario_step.c",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13, the BitFS corner's frame (ROADMAP 4.13): the functions the corner reaches, as members of BitfsCornerGame (static dropped, register dropped); the residual is what was left out and the edits BitfsCornerGame.hpp's comments name.",
+      "residual": "9696e4a14f33da1eb73af1cf0bd0d20d554482af75c26364b22e9e4d9e0a1b71"
+    },
+    {
+      "file": "tasfw-resources/src/bitfs-corner/decomp/math_util.h",
+      "path": "src/engine/math_util.h",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13, for the BitFS corner's copies; the includes dropped.",
+      "residual": "755007e375decd41e7844b0aa429f33e89765f57a6d3551c3f9c3e573bd2dfa5"
+    },
+    {
+      "file": "tasfw-resources/src/bitfs-corner/decomp/math_util.inc",
+      "path": "src/engine/math_util.c",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13, the BitFS corner's frame (ROADMAP 4.13): the functions the corner reaches, as members of BitfsCornerGame (static dropped, register dropped); the residual is what was left out and the edits BitfsCornerGame.hpp's comments name. One edit named in the copy: mtxf_copy's words copied through f32 pointers, not u32 (GCC 14, docs/compilers.md).",
+      "residual": "0ff840b413feb844e1c5aaa78d4b5933bdbca8e50cd8cfa6b73f5e7805a777e6"
+    },
+    {
+      "file": "tasfw-resources/src/bitfs-corner/decomp/model_ids.h",
+      "path": "include/model_ids.h",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13, for the BitFS corner's copies; the includes dropped.",
+      "residual": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "file": "tasfw-resources/src/bitfs-corner/decomp/obj_behaviors.inc",
+      "path": "src/game/obj_behaviors.c",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13, the BitFS corner's frame (ROADMAP 4.13): the functions the corner reaches, as members of BitfsCornerGame (static dropped, register dropped); the residual is what was left out and the edits BitfsCornerGame.hpp's comments name.",
+      "residual": "b1c527fcb06993815e9606c729297fdb23144c162d3d05b487d3fe81e9ec71a1"
+    },
+    {
+      "file": "tasfw-resources/src/bitfs-corner/decomp/object_collision.inc",
+      "path": "src/game/object_collision.c",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13, the BitFS corner's frame (ROADMAP 4.13): the functions the corner reaches, as members of BitfsCornerGame (static dropped, register dropped); the residual is what was left out and the edits BitfsCornerGame.hpp's comments name.",
+      "residual": "308cd4c1f57acec25d26e7e1774f55589905c290977f106358a8d6d68ef6679e"
+    },
+    {
+      "file": "tasfw-resources/src/bitfs-corner/decomp/object_constants.h",
+      "path": "include/object_constants.h",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13, for the BitFS corner's copies; the includes dropped.",
+      "residual": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "file": "tasfw-resources/src/bitfs-corner/decomp/object_helpers.inc",
+      "path": "src/game/object_helpers.c",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13, the BitFS corner's frame (ROADMAP 4.13): the functions the corner reaches, as members of BitfsCornerGame (static dropped, register dropped); the residual is what was left out and the edits BitfsCornerGame.hpp's comments name.",
+      "residual": "c4a0b843e2c68aea5aea7d77938f7beb58f9e0a28d3a9c943a0bc22eae982d47"
+    },
+    {
+      "file": "tasfw-resources/src/bitfs-corner/decomp/object_list_processor.h",
+      "path": "src/game/object_list_processor.h",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13, for the BitFS corner's copies; the includes dropped.",
+      "residual": "698342596bb5dda91b627b4a1688857048c968fc18df59c595fc888311bf8fa2"
+    },
+    {
+      "file": "tasfw-resources/src/bitfs-corner/decomp/object_list_processor.inc",
+      "path": "src/game/object_list_processor.c",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13, the BitFS corner's frame (ROADMAP 4.13): the functions the corner reaches, as members of BitfsCornerGame (static dropped, register dropped); the residual is what was left out and the edits BitfsCornerGame.hpp's comments name.",
+      "residual": "b1d9bee2cd0fb13e69e78526233e129a671295352cc417ca5136e854c795d28d"
+    },
+    {
+      "file": "tasfw-resources/src/bitfs-corner/decomp/platform_displacement.inc",
+      "path": "src/game/platform_displacement.c",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13, the BitFS corner's frame (ROADMAP 4.13): the functions the corner reaches, as members of BitfsCornerGame (static dropped, register dropped); the residual is what was left out and the edits BitfsCornerGame.hpp's comments name.",
+      "residual": "b5ca9c122e3d73d76a3966cac341ec5194e476a1861d0cb0cedbf95b368bdb7d"
+    },
+    {
+      "file": "tasfw-resources/src/bitfs-corner/decomp/rendering_graph_node.inc",
+      "path": "src/game/rendering_graph_node.c",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13, the BitFS corner's frame (ROADMAP 4.13): the functions the corner reaches, as members of BitfsCornerGame (static dropped, register dropped); the residual is what was left out and the edits BitfsCornerGame.hpp's comments name.",
+      "residual": "39f144d0361fc7f479004eda31bdf5b8775d7ae683834d83c540af940a23bded"
+    },
+    {
+      "file": "tasfw-resources/src/bitfs-corner/decomp/sounds.h",
+      "path": "include/sounds.h",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13, for the BitFS corner's copies; the includes dropped.",
+      "residual": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "file": "tasfw-resources/src/bitfs-corner/decomp/spawn_object.inc",
+      "path": "src/game/spawn_object.c",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13, the BitFS corner's frame (ROADMAP 4.13): the functions the corner reaches, as members of BitfsCornerGame (static dropped, register dropped); the residual is what was left out and the edits BitfsCornerGame.hpp's comments name.",
+      "residual": "2b7d65f6ef91168d6b9191a2155a26e3091182f751df2d48206fd99fc0b54026"
+    },
+    {
+      "file": "tasfw-resources/src/bitfs-corner/decomp/surface_collision.h",
+      "path": "src/engine/surface_collision.h",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13, for the BitFS corner's copies; the includes dropped.",
+      "residual": "5f7fe0df8929fed2debdb7ead84b6ff45e4383fe121b5e6671d626e3b2bb10ff"
+    },
+    {
+      "file": "tasfw-resources/src/bitfs-corner/decomp/surface_collision.inc",
+      "path": "src/engine/surface_collision.c",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13, the BitFS corner's frame (ROADMAP 4.13): the functions the corner reaches, as members of BitfsCornerGame (static dropped, register dropped); the residual is what was left out and the edits BitfsCornerGame.hpp's comments name.",
+      "residual": "fc9afe9718a61ef287df62ff793bd78ec3df1b253b9fc66079a9311452564348"
+    },
+    {
+      "file": "tasfw-resources/src/bitfs-corner/decomp/surface_load.inc",
+      "path": "src/engine/surface_load.c",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13, the BitFS corner's frame (ROADMAP 4.13): the functions the corner reaches, as members of BitfsCornerGame (static dropped, register dropped); the residual is what was left out and the edits BitfsCornerGame.hpp's comments name.",
+      "residual": "5e2c7f2711f2cab994aecd400983f64be1d0a7e141d3b7df4d0fb7e29b2e8176"
+    },
+    {
+      "file": "tasfw-resources/src/bitfs-corner/decomp/tilting_inverted_pyramid.inc",
+      "path": "src/game/behaviors/tilting_inverted_pyramid.inc.c",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13, the BitFS corner's frame (ROADMAP 4.13): the functions the corner reaches, as members of BitfsCornerGame (static dropped, register dropped); the residual is what was left out and the edits BitfsCornerGame.hpp's comments name.",
+      "residual": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "file": "tasfw-resources/src/bitfs-corner/decomp/platform_on_track.inc",
+      "path": "src/game/behaviors/platform_on_track.inc.c",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13, the BitFS corner's frame (ROADMAP 4.13): the functions the corner reaches, as members of BitfsCornerGame (static dropped, register dropped); the residual is what was left out and the edits BitfsCornerGame.hpp's comments name.",
+      "residual": "74d05f32dfd3972f2570c5fa878d01c76349d5b585cfad5fb557dbc6de24a642"
+    },
+    {
+      "file": "tasfw-resources/src/bitfs-corner/decomp/obj_behaviors_2.inc",
+      "path": "src/game/obj_behaviors_2.c",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13, the BitFS corner's frame (ROADMAP 4.13): the functions the corner reaches, as members of BitfsCornerGame (static dropped, register dropped); the residual is what was left out and the edits BitfsCornerGame.hpp's comments name.",
+      "residual": "c32759cdf9f252be80a93dd2e8968b363f559d8b1955ad75568bdbe40e91fa82"
+    },
+    {
+      "file": "tasfw-resources/src/bitfs-corner/decomp/ingame_menu.h",
+      "path": "src/game/ingame_menu.h",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13, for the BitFS corner's pause (ROADMAP 4.22): the menu scroll directions and the render modes alone; the residual is the rest of the header.",
+      "residual": "7fce4f62ae608305bc97df5f64f3e3d466a3b4302765b93d49a282355076f6f7"
+    },
+    {
+      "file": "tasfw-resources/src/bitfs-corner/decomp/ingame_menu.inc",
+      "path": "src/game/ingame_menu.c",
+      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
+      "note": "Refresh 13, the BitFS corner's pause menu (ROADMAP 4.22): the DialogBoxState enum, handle_menu_scrolling, set_menu_mode, render_pause_courses_and_castle (the JP build's #ifdef resolved, the EU forms dropped) and render_menus_and_dialogs, as members of BitfsCornerGame, and render_pause_course_options cut to its cursor and its call of the camera options (a refusal in BitfsCornerGame.hpp); the residual is the rest of ingame_menu.c and those edits.",
+      "residual": "332ab0891a764a87c91732319cb2bc4b9921e5e10a6010e941acdfaf4fb23992"
     }
   ],
-  "derived": [
-    {
-      "file": "tasfw-core/src/decomp/Math.cpp",
-      "paths": [
-        "src/engine/math_util.c",
-        "src/game/object_helpers.c"
-      ],
-      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
-      "functions": [
-        "mtxf_align_terrain_normal",
-        "vec3f_cross",
-        "vec3f_normalize",
-        "linear_mtxf_mul_vec3f"
-      ]
-    },
-    {
-      "file": "tasfw-core/src/decomp/Surface.cpp",
-      "paths": [
-        "src/engine/surface_collision.c",
-        "src/engine/surface_load.c",
-        "src/game/mario.c"
-      ],
-      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
-      "functions": [
-        "find_floor",
-        "load_object_surfaces",
-        "read_surface_data",
-        "get_object_vertices",
-        "surface_has_force",
-        "transform_object_vertices (as transform_surfaces)",
-        "mario_floor_is_slope (as floor_is_slope)",
-        "mario_get_floor_class (as get_floor_class)"
-      ]
-    },
-    {
-      "file": "tasfw-core/src/decomp/Pyramid.cpp",
-      "paths": [
-        "src/game/behaviors/tilting_inverted_pyramid.inc.c"
-      ],
-      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
-      "functions": [
-        "bhv_tilting_inverted_pyramid_loop",
-        "create_transform_from_normals",
-        "approach_by_increment"
-      ]
-    },
-    {
-      "file": "tasfw-resources/src/PyramidUpdate.cpp",
-      "paths": [
-        "src/game/behaviors/tilting_inverted_pyramid.inc.c",
-        "src/engine/surface_load.c",
-        "src/engine/surface_collision.c",
-        "src/game/mario.c"
-      ],
-      "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
-      "functions": [
-        "bhv_tilting_inverted_pyramid_loop",
-        "load_object_surfaces",
-        "find_floor",
-        "mario_floor_is_slope",
-        "mario_get_floor_class"
-      ]
-    }
-  ]
+  "derived": []
 }

@@ -56,7 +56,6 @@ public:
     std::vector<Filter> filters;
     std::vector<std::string> categorical;        // the columns the viewer filters by value (a checkbox each); every other by range
     std::optional<View> view;
-    bool sampledOnly = true;                     // rows the sample period chose, not the forced ones
 
     static std::string DefaultInterpreter()
     {
@@ -141,7 +140,6 @@ inline void to_json(nlohmann::json& json, const Visualization& visualization)
         { "binSpeed", visualization.binSpeed },
         { "filters", visualization.filters },
         { "categorical", visualization.categorical },
-        { "sampledOnly", visualization.sampledOnly },
     };
     if (visualization.view)
         json["view"] = *visualization.view;
@@ -165,7 +163,6 @@ inline void from_json(const nlohmann::json& json, Visualization& visualization)
     visualization.categorical = json.value("categorical", visualization.categorical);
     if (json.contains("view"))
         visualization.view = json.at("view").get<Visualization::View>();
-    visualization.sampledOnly = json.value("sampledOnly", visualization.sampledOnly);
 }
 
 inline void Visualization::Write(const std::filesystem::path& file, const std::string& csv, bool finished, int64_t rows) const

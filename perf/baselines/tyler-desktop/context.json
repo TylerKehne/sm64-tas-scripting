@@ -55,6 +55,8 @@
     "LibSm64Dirty",
     "LibSm64Scaling",
     "Framework",
-    "TierD"
+    "TierD",
+    "BitfsCorner",
+    "BitfsCornerScaling"
   ]
 }

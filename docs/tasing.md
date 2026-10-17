@@ -56,11 +56,11 @@ The maintainer's rules for TASing with the framework (2026-09-15):
 |---|---|
 | Try a sequence of inputs and keep it only if it worked | `ModifyAdhoc([&] { ...; return ok; })`, checked through `.executed` |
 | Look at what would happen without keeping it | `ExecuteAdhoc` (the diff comes back in the status), or `TestAdhoc` (it does not) |
-| A move other scripts will reuse, or one with its own validity and result | A script class: `class X : public Script<LibSm64>` with `validation`, `execution`, `assertion` and a `CustomScriptStatus` |
+| A move other scripts will reuse, or one with its own validity and result | A script class: `class X : public Script<Sm64Resource>` with `validation`, `execution`, `assertion` and a `CustomScriptStatus` |
 | Run a child script and keep its frames | `Modify<X>(args...)`; to look first and decide later, `Execute<X>` then `Apply(status.m64Diff)`; for a query that advances nothing, `Test<X>` |
 | Find the best of a parameter sequence | The compare family: `ModifyCompareAdhoc<TStatus, std::tuple<Ts...>>(generator, candidate, comparator[, terminator])`, and `Dynamic...` when the candidates are "one more frame of the same thing" |
 | State about the game at another frame: a raw variable in the past without a rewind, or a derived quantity (phase, oscillation count, distance to a target) | A metric script, read with `GetMetrics(frame)` |
-| What the game would compute, without playing it | A resource that simulates the part of the game that matters (`PyramidUpdate`), reached through `ExportSave<PyramidUpdateMem>(pyramid)` into a `TopLevelScript<PyramidUpdate>`; or `simulate_platform_tilt` from `tasfw-core/src/decomp` (see "Simulating the part of the game that matters") |
+| What the game would compute one frame on, without committing to it | A child script that advances the frame and is reverted with it (`Test<GetMinimumDownhillWalkingAngle>`), on the resource the script runs on; the corner resource makes the frame cheap (see "Simulating the part of the game that matters") |
 | Explore a large input space, or find a near-optimal route | A scattershot search, a proven route finder for SM64 in general: a metric script, a `ScattershotThread` subclass and a solution type, run as a stage of `bitfs-turn` |
 | Put Mario at rest at a float-precise position | `BitFsAreFixer`'s way (ROADMAP 4.8): a dive recover, the rollout's air frames steered and resting where it lands; the last air frames' sticks measured one frame at a time from the game, combined with the forward speed each leaves behind and the fraction of the landing frame's velocity that reaches the floor, and the combination predicted nearest the target played out; a set value is accepted only when its steps round back exactly over the range the oscillations tilt through (`StepsReversibly`), and a target the arithmetic cannot hold is refused by validation before any frame (`LeastError`); the rest sets one axis, and the turn out of a run from it the other, at in turn, since the settle reaches only about one float position in ten |
 | Run a script on the game | A stage type in `Stages.cpp` (run by `bitfs-turn --stage`), a doctest case under `libsm64:`, a tool, or a new folder with its own `main.cpp` (see "Running a script") |
@@ -71,7 +71,8 @@ The maintainer's rules for TASing with the framework (2026-09-15):
 A script is one class. `<tasfw/Script.hpp>` is the framework include (it pulls in the
 root and the builders itself; never include `TopLevelScript.hpp` or
 `TopLevelScriptBuilder.hpp` directly, they refuse), plus the resource's header
-(`<LibSm64.hpp>`) and the decomp headers it dereferences (`<sm64/Sm64.hpp>` for
+(`<Sm64Resource.hpp>`: the SM64 game as a script sees it, run on the DLL or on the BitFS
+corner) and the decomp headers it dereferences (`<sm64/Sm64.hpp>` for
 `MarioState` and the `ACT_*` constants, `<sm64/Camera.hpp>`, `<sm64/ObjectFields.hpp>` for
 the `o*` object fields, `<sm64/Trig.hpp>` for `sins`, `coss`, `atan2s` and the tables).
 
@@ -80,12 +81,12 @@ primitive to copy):
 
 ```cpp
 #include <tasfw/Script.hpp>
-#include <LibSm64.hpp>
+#include <Sm64Resource.hpp>
 #include <sm64/Sm64.hpp>
 #include <sm64/Camera.hpp>
 
 // Walk toward a yaw for a number of frames. Illustrative: the same shape as BrakeToIdle.
-class WalkTowardYaw : public Script<LibSm64>
+class WalkTowardYaw : public Script<Sm64Resource>
 {
 public:
 	class CustomScriptStatus
@@ -175,9 +176,9 @@ that steers by a stick's effect (forward and sideways shares of the air movement
 the stick whose effect is nearest among all distinct sticks, as `BitFsAreFixer::Stick`
 does from a yaw-sorted table of them (2026-10-05).
 When an input must satisfy a constraint on what the game reads, round-trip it: draw, convert
-to a stick, convert back, and keep only if the read-back value satisfies the constraint
-(`Scattershot_BitfsDrRecover::CUpTrick`). `nextafter(0.0f, 1.0f)` is the smallest non-zero
-magnitude (`BrakeToIdle`).
+to a stick, convert back, and keep only if the read-back value satisfies the constraint.
+`nextafter(0.0f, 1.0f)` is the smallest non-zero magnitude (`BrakeToIdle`), which only a
+camera cardinal's ray has (`Scattershot_BitfsScEnding::Quickturn`).
 
 **The cursor.** The state at frame *f* is what inputs 0 to *f - 1* produced, and the cursor
 is the frame whose inputs come next. `AdvanceFrameWrite(inputs)` writes them into the
@@ -288,7 +289,7 @@ Writing one (`BitfsDrMetrics` is the model):
   and a frame whose metric script does not assert stores a default-constructed state that
   is never recomputed, which is what the `initialized` flag detects.
 - It is named once. A root or a scattershot stage names it as the second template argument
-  (`TopLevelScript<LibSm64, BitfsDrMetrics>`, `ScattershotThread<..., LibSm64, BitfsDrMetrics,
+  (`TopLevelScript<Sm64Resource, BitfsDrMetrics>`, `ScattershotThread<..., Sm64Resource, BitfsDrMetrics,
   ...>`) and inherits `MetricScript` from it; a child script that reads metrics declares
   `using MetricScript = BitfsDrMetrics;` once; a metric script names nothing and reads its
   own state. `GetMetrics(frame)` then names nothing at the call; `GetMetrics<T>(frame)` asks
@@ -315,28 +316,25 @@ deriving `Resource<TState>` over its own state type with `save`, `load`, `advanc
 `setInputs`, `addr`, `getStateSize` and `getCurrentFrame` (`MockResource` in tasfw-testing
 is the smallest one; a skeleton generator is a Phase 5 item, ROADMAP.md); a save or a load
 of a small state is cheap where the game's costs microseconds (a frame advance tens of
-them, a rewind generally more; docs/performance.md, "What costs what"). `PyramidUpdate` is
-the example: it reimplements the pyramid's tilt on its own state type, and a script exports
-its state into it and runs a `TopLevelScript<PyramidUpdate>` on that:
+them, a rewind generally more; docs/performance.md, "What costs what"). `BitfsCorner` is
+the example (ROADMAP 4.13): the pyramid corner of BitFS from the decomp's own text, on the
+same structs and symbols as the game, so a script runs on it unchanged and a stage picks it
+in `config.json` (README.md, "Configuration"); the pipeline replays every solution it finds
+on the game before it counts. A script that wants what the game would compute one frame on
+asks the resource it runs on, as a child script reverted with its frame:
 
 ```cpp
-auto m64 = M64(); // must outlive the call; the builder holds a reference
-auto angles = TopLevelScriptBuilder<BitFsPyramidOscillation_GetMinimumDownhillWalkingAngle>::Build(m64)
-	.ImportSave(ExportSave<PyramidUpdateMem>(pyramid))
-	.Run(roughTargetAngle, marioState->faceAngle[1]);
+auto angles = Test<GetMinimumDownhillWalkingAngle>(roughTargetAngle, marioState->faceAngle[1]);
 if (angles.validated) ... angles.angleFacing ...
 ```
 
-`ExportSave<PyramidUpdateMem>(pyramid)` reads every pyramid surface out of the DLL, so it is
-not free either (one per frame in `BitFsPyramidOscillation_RunDownhill`), and the oracle
-script asserts unconditionally: check `validated`. `DetectEdge` (Scattershot_BitfsDrRecover.hpp)
-is a second such script, a geometric query on the same resource. The in-process alternative
-is the decomp reimplementation in `tasfw-core/src/decomp` (`simulate_platform_tilt`, called by
-`GetMinimumDownhillWalkingAngle`), which predicts the next frame's floor angle on the copied
-structs. Both reproduce the game's arithmetic and must keep doing so: `PyramidUpdate` is
-checked bit-for-bit against the DLL by the drift test (ROADMAP 3.3), `src/decomp` is not
-(AGENTS.md, "Known problems"). A new reimplementation needs the same kind of check before a
-search trusts it, and docs/decomp.md records what each came from.
+On the corner that frame costs about 2 us; on the game, a frame and the sandbox's revert.
+Until 2026-10-12 the same question was asked of `PyramidUpdate`, a stand-in resource with the
+pyramid's tilt rewritten on its own state type, imported per call through
+`ExportSave<PyramidUpdateMem>`, with a second rewrite in `tasfw-core/src/decomp`; both are
+gone, the corner being the one home of the game's physics, held exact by the parity
+harness (`test_libsm64_parity.cpp`). A new resource of that kind needs the same kind of
+check before a search trusts it, and docs/decomp.md records what each copied file came from.
 
 **Where the mechanics come from.** The decompilation is the reference for what the game
 does: actions and their transitions, speed thresholds (a turnaround needs 16 speed), the
@@ -376,7 +374,7 @@ is at 3258) is where the pipeline does.
    library in `tasfw-scripts/CMakeLists.txt` (`tasfw-scripts-general` for primitives; a
    scattershot search links `tasfw-scattershot` too). A script only one stage uses can live
    in the stage's header under `tasfw-bruteforcers/bitfs-turnaround/src/`
-   (`TiltTargetShot.hpp`, `BitfsOscFinal.hpp`, `ExportSolutions.hpp`). Match the file's
+   (`TiltTargetShot.hpp`, `ExportSolutions.hpp`). Match the file's
    formatting (AGENTS.md, "Conventions").
 5. **Run it** (below), then **check it** (next section).
 
@@ -407,7 +405,7 @@ There is no general-purpose script runner. The ways to run a new script on the g
   in `config.json` (`name`, `type`, `startFrame`, `input`, `args`, `scattershot` overrides,
   `select`, `export`; README.md, "Configuration"), `scripts\build.ps1 -Config Release`, and
   `bitfs-turn --stage <name>`, which reads its input from the file the input stage wrote
-  last time. `--list` shows the types, `--dry-run` checks the paths, the DLL and the layout
+  last time (`--start <name>` runs from it on instead). `--list` shows the types, `--dry-run` checks the paths, the DLL and the layout
   without searching. A run without arguments runs every stage, for hours.
 - **As a test**, for a script's logic and invariants: on `MockResource` when the game is not
   the point (`script_fixtures.hpp`: `RunRoot(resource, m64, [&](auto& s) { ... })` gives a
@@ -444,7 +442,7 @@ three types and a stage (ARCHITECTURE.md for the vocabulary):
 
 1. **The metric script**, as above, with the fields the bin, validation, fitness and solution
    test read.
-2. **The thread**, `class X : public ScattershotThread<BinaryStateBin<16>, LibSm64, XMetrics,
+2. **The thread**, `class X : public ScattershotThread<BinaryStateBin<16>, Sm64Resource, XMetrics,
    XSolution>`, whose constructor takes the `Scattershot&` first and its own parameters
    after (they arrive from `.Run<X>(args...)`), and which implements:
    - `SelectMovementOptions()`: one weighted draw per decision from a braced list,
@@ -471,7 +469,11 @@ three types and a stage (ARCHITECTURE.md for the vocabulary):
      `GetSolutionState()` say what a solution is and what it carries out (a plain struct of
      the numbers the next stage sorts by). `GetCsvLabels`, `GetCsvRow`, `ForceAddToCsv` feed
      the CSV the viewer plots live (`csvSamplePeriod` in the config enables it, a stage's
-     `visualize` block opens the viewer on it; README.md, "The viewer").
+     `visualize` block opens the viewer on it; README.md, "The viewer"). A categorical
+     column is text where text makes sense (an enumeration's names, `true` or `false`,
+     the action in hex with its name after it, `Sm64ActionName(action)`) and is named in
+     the stage's `categorical` list, the one place the viewer reads a text; counts stay
+     numbers.
 3. **The solution type**, that plain struct, and its `Metrics(...)` overload in `Stages.cpp`.
 4. **The stage function**, in this order:
 
@@ -488,7 +490,7 @@ return ToSet(context, solutions);
 
 `ImportResourcePerThread` before `ConfigureMetricScript`: the bare builder's own
 `ConfigureMetricScript` and `PipeFrom` have never been instantiated and do not compile
-(ROADMAP 3.21); every committed stage uses this order. Solutions cross a stage boundary as
+(ROADMAP 4.15); every committed stage uses this order. Solutions cross a stage boundary as
 diffs only: the next stage's solution data starts default, and its scalar inputs come
 through `"input:<metric>"` from the first solution, which `"select"` makes the best. The
 search prints its status every `shotsPerUpdate` shots and, at the end, the line the perf
@@ -528,9 +530,10 @@ not, once the cost model is off (`"costModel": false` in `config.json` for a dia
   that is not a function of state, a direct memory write, or a framework bug. It is never
   a rate to tolerate (hard rule 1); the failure handler dumps `error.m64` and says whether
   decoding itself is deterministic (ARCHITECTURE.md, "Sharp edges").
-- A solution is only ever a diff, and every export replays it through the game from the
-  stage's start frame (`ExportSolutions`), so an exported movie is by construction what
-  the game does with those inputs.
+- A solution is only ever a diff, and every export replays it from the stage's start frame
+  on the stage's own resource (`ExportSolutions`). On a corner stage, the replay check first
+  keeps only the solutions the game reproduces (`VerifyOnGame`), so an exported movie is,
+  either way, what the game does with those inputs.
 
 **Exports.** Each stage writes `<outputDirectory>/solutions/<stage>.json` (frames as
 `[frame, buttons, stickX, stickY]` plus the named metrics) and, with `"export": true`, one
@@ -634,6 +637,21 @@ The full list is in AGENTS.md; these are the ones a script author meets.
   out of a run from that rest, where Mario's own position sets it, and hands over within 20
   units of the diagonal, since the swings after the first cross at their usual rate from
   there and mostly not from 40.
+- A `Surface*` (Mario's `floor`, `wall` or `ceil`, or any surface of an object) is good
+  for one frame. The game rebuilds its surface pool every frame, and an object's surfaces
+  take other slots whenever another surface object's collision loads or unloads, which
+  happens at 1000 units from Mario: the other pyramid's crosses that distance right where
+  the oscillations turn around. A pointer kept across a frame then points at a slot nothing
+  reloaded, which still holds the old normal and the old object. Read the surface again
+  after every frame (`GetMinimumDownhillWalkingAngle` does); never cache one.
+- The top face is two triangles, and the game rounds their transformed vertices to shorts,
+  so their normals differ by up to about 15 angle units. A facing that is just inside the
+  downhill half by the floor one frame on (the look-ahead's triangle) can be outside it on
+  the triangle under Mario's step, and the stick's rounding moves the facing a few units
+  more; the slope then takes its gain away instead of giving it, 1.8 of speed a frame at
+  the ending's tilts. `GetMinimumDownhillWalkingAngle` keeps the facing it reports
+  `DownhillMargin` (64 units) inside the half for that; at the boundary itself half of the
+  ending's run frames at the minimum angle were uphill (2026-10-13).
 - A `GetMetrics` reference dies at the next write at or before its frame; copy it.
 - `ModifyAdhoc` reverts when the lambda returns false, and reports `executed == false`.
 - Check `asserted`, not `executed`; a metric script that did not assert stores a default
@@ -647,23 +665,32 @@ The full list is in AGENTS.md; these are the ones a script author meets.
   builder call is the committed idiom for the oracle.
 - `BinaryStateBin` throws on an out-of-range value and the pellet is discarded as invalid;
   `MaxBlocks` throws when reached and the run stops.
-- A `PyramidUpdate` built inside a script takes its share of the process's savestate budget
-  (`resources.savestateBudgetMB`); the pipeline leaves room for one per thread.
 - Piped-in solutions are indexed in 16 bits: at most 65534 per stage.
 - `std::sqrt(float)`, not `std::sqrtf`: libstdc++ does not declare the `f` names in `std`
   (docs/compilers.md).
 - A metric script's constructor runs deep inside a search; one that throws on bad
-  arguments (`BitfsDrApproachMetrics` on a quadrant pair) fails there, not at the config.
+  arguments fails there, not at the config, so the stage checks them first (`RunScEnding`
+  asks `BitfsScEndingMetrics::RoughTargetAngle` about the quadrant pair itself).
 - The search runs `ValidateState`, `GetStateBin`, `GetStateFitness` and `IsSolution` in a
-  reverted sandbox, so they may advance frames to look ahead (`Scattershot_BitfsDrApproach::IsSolution`
-  does) and the cursor is unchanged after; but every frame they advance is paid on every
-  candidate, and a metric with the look-ahead is cheaper when more than one decision needs it.
+  reverted sandbox, so they may advance frames to look ahead and the cursor is unchanged
+  after; but every frame they advance is paid on every candidate, and a metric with the
+  look-ahead is cheaper when more than one decision needs it. The ending's squish probe is
+  a metric's for that reason and for another: it writes game memory, which only a metric
+  script's sandbox may, under the discipline of AGENTS.md, hard rule 1 (a save first, then
+  written advances and reads only).
+- A trial that kills Mario ends at the first dying frame, never later (the maintainer,
+  2026-10-12). `MarioDeath::IsDying` (`tasfw-scripts/inc/MarioDeath.hpp`) is a lava boost,
+  health below one segment, a death action, or no floor under him; every search's
+  `ValidateState` and every loop that advances until something happens check it and fail.
+  A trial that plays on through the death wastes the frames (the ARE fixer's lava trials
+  cost it a quarter of its frames before the rule) and, 48 frames later, reaches the
+  level's reload, which the game plays and the corner resource refuses. The refusal is a
+  backstop: a script that reaches it has a missing check, and the fix is in the script.
 
-Known defects in the committed scripts, not to copy (ROADMAP 4.9): `Scattershot_BitfsDrRecover::IsSolution`
-reads its "previous" state from the current frame; `Scattershot_BitfsDrApproach` offers
-`CustomMoves::C_UP_TRICK` and never applies it; `CustomMoves::REWIND` is checked by every
-search and offered by none; the fine angle sweep in
-`BitFsPyramidOscillation_TurnThenRunDownhill` reseeds its uphill half from the coarse midpoint.
+Known defects in the committed scripts, not to copy (ROADMAP 4.9): `CustomMoves::REWIND` is
+checked by `Scattershot_BitfsDr::ApplyMovement` and offered by nothing; the fine angle sweep in
+`BitFsPyramidOscillation_TurnThenRunDownhill` reseeds its uphill half from the coarse midpoint
+(two more went with the dive-recover chain's searches on 2026-10-05, ROADMAP 4.11).
 The `TurnAround` lambda's missing return in `Scattershot_BitfsDr.cpp` (C4715) is in
 AGENTS.md, "Known problems".
 - A scattershot count from one seed is not a measurement: the `dr` stage's first crossing
