@@ -136,8 +136,8 @@ void *vec3f_normalize(Vec3f dest) {
 /// Copy matrix 'src' to 'dest'
 void mtxf_copy(Mat4 dest, Mat4 src) {
     s32 i;
-    u32 *d = (u32 *) dest;
-    u32 *s = (u32 *) src;
+    f32 *d = (f32 *) dest; // the corner's edit: copied as floats, not as u32 words: reading a float through an integer pointer is undefined in C++, and GCC 14 took mtxf_mul's temp as never written (docs/compilers.md)
+    f32 *s = (f32 *) src;
 
     for (i = 0; i < 16; i++) {
         *d++ = *s++;

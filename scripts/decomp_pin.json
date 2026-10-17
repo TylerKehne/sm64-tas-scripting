@@ -201,8 +201,8 @@
       "file": "tasfw-resources/src/bitfs-corner/decomp/mario_actions_airborne.inc",
       "path": "src/game/mario_actions_airborne.c",
       "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
-      "note": "Refresh 13, the BitFS corner's frame (ROADMAP 4.13): the functions the corner reaches, as members of BitfsCornerGame (static dropped, register dropped); the residual is what was left out and the edits BitfsCornerGame.hpp's comments name.",
-      "residual": "d7d63b3fab72f380f30c074628cb69c6cd3951845b501151f95feaa1f13f8564"
+      "note": "Refresh 13, the BitFS corner's frame (ROADMAP 4.13): the functions the corner reaches, as members of BitfsCornerGame (static dropped, register dropped); the residual is what was left out and the edits BitfsCornerGame.hpp's comments name. Two edits named in the copy: act_freefall's animation and act_crazy_box_bounce's minSpeed start at their first case's value (GCC 14, docs/compilers.md).",
+      "residual": "759840858871411004071a8285016ef582fc87b2059dfa7df79253e175636fb5"
     },
     {
       "file": "tasfw-resources/src/bitfs-corner/decomp/mario_actions_automatic.inc",
@@ -278,8 +278,8 @@
       "file": "tasfw-resources/src/bitfs-corner/decomp/math_util.inc",
       "path": "src/engine/math_util.c",
       "commit": "6d87c424b87fe8c1baaf8dcf09412adf7116b30f",
-      "note": "Refresh 13, the BitFS corner's frame (ROADMAP 4.13): the functions the corner reaches, as members of BitfsCornerGame (static dropped, register dropped); the residual is what was left out and the edits BitfsCornerGame.hpp's comments name.",
-      "residual": "37e5057f0a08b4e0ab83599b1b571ffca2dce070c8be15c76a20d176fee8f7a2"
+      "note": "Refresh 13, the BitFS corner's frame (ROADMAP 4.13): the functions the corner reaches, as members of BitfsCornerGame (static dropped, register dropped); the residual is what was left out and the edits BitfsCornerGame.hpp's comments name. One edit named in the copy: mtxf_copy's words copied through f32 pointers, not u32 (GCC 14, docs/compilers.md).",
+      "residual": "0ff840b413feb844e1c5aaa78d4b5933bdbca8e50cd8cfa6b73f5e7805a777e6"
     },
     {
       "file": "tasfw-resources/src/bitfs-corner/decomp/model_ids.h",

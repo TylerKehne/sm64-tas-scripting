@@ -4,6 +4,33 @@ Every hot-path change records its delta table here, newest first; the policy, th
 how to run it are in [performance.md](performance.md). The first measurements (2026-09-07),
 which everything since is compared against, are at the bottom.
 
+## 2026-10-17: the corner's decomp copies build on GCC 14 (docs/compilers.md)
+
+Not a change of what the corner does: three edits in its copies of the decomp, for GCC
+14's `-Wmaybe-uninitialized` on the first pull request to build them with it
+(docs/compilers.md, docs/decomp.md). `mtxf_copy` copies the matrix through `f32` pointers
+instead of `u32` ones, the same 64-byte copy; `act_freefall`'s `animation` and
+`act_crazy_box_bounce`'s `minSpeed` start at their first case's value, one store each.
+The corner's state and every count are unchanged. Release, MSVC, tyler-desktop: the
+binaries from before the edit kept aside and run alternately with the new ones in one
+session, two rounds each, the corner family plain (`tasfw-perf
+--benchmark_filter='^BM_BitfsCorner_'`, the DLL and the movie given through the
+environment) and the one-off cost `test_bitfs_corner.cpp` prints:
+
+| Row | Before (rounds 1, 2) | After (rounds 1, 2) |
+|---|---|---|
+| `BM_BitfsCorner_FrameAdvance` | 1.83, 1.78 us | 1.81, 1.87 us |
+| `BM_BitfsCorner_SaveErase` | 0.714, 0.675 us | 0.677, 0.693 us |
+| `BM_BitfsCorner_Load` | 0.681, 0.681 us | 0.678, 0.689 us |
+| `BM_BitfsCorner_SaveFresh/200` | 11.6, 10.8 us | 11.1, 10.8 us; allocations 4.07 in both |
+| `BM_BitfsCorner_Addr` | 7.04, 8.03 ns | 7.79, 7.71 ns |
+| The test's one-off frame, save, load | 1.46, 0.71, 0.68 us; 1.43, 0.67, 0.63 us | 1.41, 0.70, 0.66 us; 1.42, 0.71, 0.69 us |
+
+Every difference is inside the spread between one binary's own two rounds. Not run: the
+perf suite (its committed corner baseline still records the state size from before the
+pause, so its count gate flags that row whatever the change), and GCC locally (no
+container; CI's ubuntu-24.04-gcc job is the check).
+
 ## 2026-10-13: the viewer's counts follow the filter (ROADMAP 4.4)
 
 Not a framework change; the viewer only (`analysis/visualizer.py`, README.md "The viewer").

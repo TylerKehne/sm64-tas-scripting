@@ -502,7 +502,7 @@ s32 act_backflip(struct MarioState *m) {
 }
 
 s32 act_freefall(struct MarioState *m) {
-    s32 animation;
+    s32 animation = MARIO_ANIM_GENERAL_FALL; // the corner's edit: the decomp sets it only for actionArg 0 to 2, all the game passes; GCC 14 asks about the other values (docs/compilers.md)
 
     if (m->input & INPUT_B_PRESSED) {
         return set_mario_action(m, ACT_DIVE, 0);
@@ -1010,7 +1010,7 @@ s32 act_burning_fall(struct MarioState *m) {
 }
 
 s32 act_crazy_box_bounce(struct MarioState *m) {
-    f32 minSpeed;
+    f32 minSpeed = 32.0f; // the corner's edit: the decomp sets it only for actionArg 0 to 2, all the game passes; GCC 14 asks about the other values (docs/compilers.md)
 
     if (m->actionTimer == 0) {
         switch (m->actionArg) {

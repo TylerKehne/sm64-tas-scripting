@@ -82,7 +82,12 @@ of `bhv_mario_update` and the handler table of `mario_process_interactions` redu
 corner's one case; in `camera.inc` (the C-up mode and what it reaches, the rest of
 `camera.c` held), `set_camera_mode`'s table of mode transitions replaced by a switch over
 the corner's two modes, the JP build's `#ifndef` resolved, and `radial_camera_input`'s
-unread, uninitialized return value initialized; in `ingame_menu.inc` (the pause menu,
+unread, uninitialized return value initialized; in `math_util.inc`, `mtxf_copy`'s words
+copied through `f32` pointers rather than `u32` (a float read through an integer pointer is
+undefined in C++, and GCC 14 took `mtxf_mul`'s result as never written); in
+`mario_actions_airborne.inc`, two locals the decomp sets only for the action arguments the
+game passes (`act_freefall`'s animation, `act_crazy_box_bounce`'s least speed) started at
+their first case's value (docs/compilers.md); in `ingame_menu.inc` (the pause menu,
 ROADMAP 4.22) the JP build's `#ifdef` resolved, the EU forms dropped, and
 `render_pause_course_options` cut to its cursor and its call of the camera options. The three structs the C-up mode's state
 is made of (`LinearTransitionPoint`, `ModeTransitionInfo`, `CameraStoredInfo`) live in

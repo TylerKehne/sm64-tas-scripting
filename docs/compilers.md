@@ -444,6 +444,24 @@ found (2026-09-13). The fix stays, and GCC 14 and 15 still fire on the same shap
 `bitfs-turn`'s `Tests.cpp` got the warning on a `const std::string&` type name looked up
 in the config (2026-09-21) and takes a `std::string_view` now too.
 
+### GCC 14: `-Wmaybe-uninitialized` in the corner's decomp copies
+
+The corner's copies of the decomp (`tasfw-resources/src/bitfs-corner/decomp`) come in
+through a system include path, so their warnings normally do not count (docs/decomp.md).
+GCC 14.2 at `-O3` reported three of them anyway, as errors under `-Werror`, on the first
+pull request that built them (2026-10-17); GCC 15 with LTO, Clang 18 and 21, MSVC and
+clang-cl were silent. Two are the decomp's own: `act_freefall`'s `animation` and
+`act_crazy_box_bounce`'s `minSpeed` are set in a `switch` over `actionArg` for the values
+0 to 2, which are all the game ever passes, and for nothing else. Each now starts at its
+first case's value. The third is `mtxf_mul`'s `temp`: every one of its 16 entries is
+written, but `mtxf_copy` then copies the matrix as `u32` words through a cast. Reading a
+float's bytes through an integer pointer is undefined in C++ (strict aliasing), and GCC 14
+took those reads as reads of memory never written. The copy now goes through `f32`
+pointers: the same 64-byte copy, without the undefined read. Each edit is marked
+`the corner's edit` in the copy and recorded in the pin (docs/decomp.md). The `animation`
+locals of `act_hold_freefall` and `act_long_jump` are set on every path and were not
+reported.
+
 ### `static` function declarations in a header
 
 `sm64/Surface.hpp` declared the decomp's file-local helpers (`get_floor_class`, ...) as
