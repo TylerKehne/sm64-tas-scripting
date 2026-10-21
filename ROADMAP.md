@@ -898,9 +898,11 @@ Goal: finish the thing the framework was built for.
       (`Phase in SWING AIR`); CI pins it on a second sample (`scattershot_text_sample.csv`),
       and `--once --csv` takes `--categorical`. Since 2026-10-13 (the maintainer's ask) a
       value's count follows the filter on every other column, as a shop's facets do, and a
-      value stays listed at 0 when that filter passes none of its rows; the ranges still
-      cover every row. CI pins the counts on the text sample; what the change costs is in
-      docs/performance-changelog.md.
+      value stays listed at 0 when that filter passes none of its rows. Since 2026-10-17
+      (the maintainer's ask) a range column's least and greatest, the "seen" under its
+      boxes, follow the same rule, so a column's own bounds leave its range alone; the
+      ranges covered every row before. CI pins the counts on the text sample; what the
+      change costs is in docs/performance-changelog.md.
 
 - [x] **4.5 Base-block validation failures.** Done 2026-09-08. `ValidateBaseBlock` found
       state-bin mismatches on about 2% of shots (5 to 9 per 400-shot deterministic
@@ -3251,6 +3253,84 @@ goals are (status as stated by the maintainer, 2026-09-08):
       `(T_new - T_old) . dist` (bhv_tilting_inverted_pyramid_loop). Over |nx| 0.02 to 0.7, ny
       0.5 to 1 and |nz| up to 0.85 it is at most 13.2 a frame across the edge, and there the
       top reaches 532 across and 434 along from the home.
+      The NUT spot measured (2026-10-17), on the maintainer's northeast example at its
+      landing stop (frame 4442, 4 units inside the -z edge, speed 0), with the carry
+      modelled from the game's own matrix and checked against it to a hundredth of a unit a
+      frame. A standing Mario is carried with the platform, but the squish edge sweeps
+      outward faster: where he stood he drifted inward 0.6 to 1.1 a frame over 28 neutral
+      frames and never left. Which way he drifts depends on where he is along the edge. On
+      our +x edge at the setup's normal the carry takes him outward, up to 0.9 a frame, on
+      the half away from corner 1; about nowhere at the middle; and inward 0.3 to 0.9 a
+      frame on the corner's half, where the catch window is. So the carry alone cannot take
+      a stopped Mario off the edge where a squish cancel is possible. The game's floor test
+      runs on his position and the face's vertices truncated to shorts, exactly (the
+      maintainer): by the face's float model he stood 0.45 outside the edge and was on it,
+      and a NUT spot is a position inside the edge whose truncated point is outside the
+      truncated triangle, a band under a unit wide that acts on the frame right after he
+      stops in it, since the next frame carries him inward, and that some tilts do not have
+      (the maintainer). A leave slower than about 4.5 a frame is caught by the sweep on the
+      next frame while he is a few units under the top: he lands, the landing zeroes his
+      vertical speed and keeps his forward speed, and that speed steps him off again after
+      one to three landing frames. At 3 he touched down twice and was left inside when the
+      landing stop zeroed his speed; at 8 he touched down twice, escaped on the third
+      cycle, fell seven frames to 113 under the top and landed on the lava 11 outside the
+      edge, too far out for the squish. Each frame of a touch steps the run's axis toward
+      him instead of toward flat (the x axis alternated between 0.4178 and 0.4278 over the
+      touches), which is what the scenario list calls "for more tilt", and each touch
+      restarts the fall from the top; a frame over the top within the band of 4 above it
+      does the same without a landing, at a low vertical speed only (the maintainer; the
+      metrics' strain-back frame). What makes a NUT fall usable is the stick on its first
+      air frame: a full stick across Mario's facing moves him 10 sideways in that frame
+      (update_air_without_turn), where one along it adds 1.5 (the maintainer: a NUT spot
+      needs significant straining on the next frame). The run of 2026-10-17 has no touch
+      and no strain-back frame among its 379 solutions, since from the hand-over's tilt the
+      fall alone takes six of the nine frames the squish axis allows. Two moves aim at
+      these (the maintainer's choice, 2026-10-17): `NUT_STOP`, from a stop within 40 of the
+      squish edge, bisects the magnitude of a one-frame stick toward the edge between a stop
+      that stays and a walk that steps off, tries the stops just short of the edge a fifth
+      of a unit apart, keeps the first whose next neutral frame, played and reverted, is a
+      fall, and plays that frame with `StrainBack`'s stick; `NUT_LAND`, in the air with the
+      top within `FloorReach` above him and the edge within a sideways stick's reach, takes
+      the gentlest of the strain's seven sticks that gives a platform frame, a hover first,
+      else a touch down that steps off again on its first landing frame. Both are weighted
+      in the config's `moves` (`nutStop`, `nutLand`), and `bitfs-turn --test` pins the
+      measured mechanics on the example movie. A move that fails ends its pellet, so
+      `NUT_STOP`, which fails wherever the tilt has no NUT spot, is drawn at the random
+      frame's weight, and `NUT_LAND` is offered only where the next face covers Mario or
+      nearly does. Measured on the corner, one deterministic seed, 20,000 shots from the
+      saved hand-overs: with the moves 7 squish cancels in 236,837 blocks and 405 seconds,
+      without them 23 in 236,239 blocks and 545 seconds (with `NUT_STOP` at twice the
+      weight and `NUT_LAND` offered within a sideways stick of the edge, 15 in 194,044
+      blocks: the failed draws cut the pellets short). No solution of any of these runs has
+      a touch or a hover, and no stop fell with no step in 20,000 shots, where the
+      maintainer's 323,000-row run had one. One seed says nothing about the yield
+      (docs/tasing.md, "Pitfalls"): the seven-seed comparison against the search without
+      the moves is still to run.
+      The fine bin after the departure (the maintainer, 2026-10-17). A squish cancel is
+      kept once per block, and a block is one per state bin. Until now a frame the probe
+      succeeded from was binned like any air frame, the position to the unit and the
+      facing in 32 regions, so two squish cancels a fraction of a unit or a few angle
+      units apart were one solution. Every departed frame now has a finer bin in
+      `GetStateBin`: the position across to the quarter unit and up to the unit, the speed
+      to the unit, the facing to the HAU, and the pyramid's normal as the tilt |nX| + |nZ|
+      and the axes' difference |nX| - |nZ|, each rounded to the hundredth (the step the
+      components move by), and its y rounded to the ten-thousandth; 121 of the bin's 128
+      bits at most. Speed is in the bin after the departure only; on the run it stays the
+      fitness, as above. Measured on the committed settings (500,000 shots, 16 threads,
+      not deterministic, one run each, 2026-10-17): the maintainer's run with the old bin
+      wrote 57 squish cancels to its CSV and kept 54 (a squish cancel whose bin already
+      held a faster one never reached the CSV, so how many it found is unknown). A first
+      version, the fine bin on the squish-cancel frames alone, found 166 and kept 166 in
+      160 seconds and 1,939,368 blocks, from 39 distinct input sequences up to the
+      departure; by their positions and facings the old bin would have merged up to 45 of
+      them. The fine bin on every departed frame found and kept 337 in 297 seconds and
+      3,549,495 blocks, from 31 such sequences, so the extra solutions are falls from the
+      same leaves that the finer bin keeps apart; the maintainer took the growth in blocks
+      as reasonable. Every solution of both runs replayed exact on the game. On the
+      deterministic seed 6 at 20,000 shots the old bin and the first version find the
+      same single squish cancel in the same 229,471 blocks, and the fine bin on every
+      departed frame finds 3 in 255,990 blocks, 12% more, in 470 seconds against 428
+      with builds running beside it.
 
 - [ ] **4.12 The hand-over's lag: speed against a normal further back.** Opened 2026-10-07
       on the maintainer's word: the oscillation stage selects first of all for speed at the
@@ -3469,6 +3549,312 @@ goals are (status as stated by the maintainer, 2026-09-08):
       edge 0 to 8 above the lava and peaks at 34; the movie's hand-over, with less tilt
       across and more along, keeps that run 7 to 14 above the lava and reaches 35.4
       before its turn.
+      A ceiling on the hand-overs' tilt, `maxExitXzSum` in `normalSpecs` (the maintainer,
+      2026-10-17, so that the ending starts from hand-overs alike in tilt): the last pass's
+      solutions must have at least `minXzSum` and at most this (2, none, in the committed
+      config), in the script's solution test and in the stage's exit rules, which the
+      hand-over and the rewind apply. `maxXzSum` is the other ceiling, on the roots a pass
+      carries into a next pass, and exempts the last pass. The `dr-final` hand-overs of
+      that day were 82 at 0.69 and 18 at 0.71.
+      The hand-over frame (the maintainer's report of 2026-10-17: the final oscillation's
+      solutions in both directions). A pass's solution was any block of a lineage from its
+      target oscillation on. The final pass's tilt window lay above the tilt the lineages
+      crossed at (0.69), and the first frame inside it came some 25 frames after the
+      crossing: Mario past the chord's end and the turnaround, ten frames into the swing
+      back at 24 to 25 of speed, facing the other way. A solution's `roughTargetAngle`
+      describes the last counted crossing, and the pass parity (`settleLastPass`), the
+      rewind and the ending's config check (which reads the first solution only) take it
+      for his heading at the hand-over. Replayed through the game (`dllcheck --trace 1`
+      at each exported movie's last frame): the day's second run handed over 100 whose
+      `roughTargetAngle` said near, 99 of them facing +x+z, the far way, and the ending
+      refused the set; the first run 96 saying far, all facing -x-z, the near way, and 4
+      saying near facing far, and the ending searched from them. Fixed as the maintainer
+      chose (of three: the crossing itself; a recorded facing per solution, checked by the
+      stage and the ending; both): a pass's solution is the crossing that reached its
+      oscillation, the frame on which the count rose to the target (`IsSolution`; the
+      leg's rule is its own), so the final pass's window applies to the crossing's tilt
+      and `roughTargetAngle` gives the heading (widened to the crossing's run-out after
+      the fourth report below). The `--test` first-oscillation case
+      replays every solution of the pass's pool and checks it: on the last frame the
+      normal takes its first full step on both axes toward the end Mario faces, and he
+      faces within a quarter turn of the opposite of `roughTargetAngle`. Measured from
+      the same 1,221 `dr` roots (16 threads, not deterministic, 20,000 shots, 33 s either
+      way): 1,554 solutions before, 12 after, all 12 saying near and facing near. Those
+      12 had reversed again within `minOscillationFrames` of a crossing, a crossing the
+      oscillation count skips but which flips the direction, so they are not the far
+      crossing the pass is for. The pipeline from the fixer: the first stage's passes
+      found 1,000, 784, 1,000, 76 and 0 (its passes no longer stop at `maxSolutions`,
+      since only crossings count: 77 s against 25 s), the rewind handed on 874 from the
+      second, and the final oscillation found none at 0.72 to 0.74 in 20,000 shots.
+      Open: the stage must find a far crossing inside the window, and no lineage of the
+      day's roots crossed there; the window, the climb rule and the roots' tilt are the
+      levers.
+      Then the maintainer's second report of the day: blocks heading both ways at every
+      oscillation. Two causes. The first crossing comes about eleven frames after the leg's
+      end, under `minOscillationFrames`, and crossingData[0], the leg's end, gated it like a
+      crossing: lineages whose first crossing counted had the far crossing at oscillation 1
+      and the others the near one, and the stage chose between them after the pass by the
+      majority of its fastest ten, which the next pass's roots then disagreed with one run
+      in two. And a crossing the count skipped, within `minOscillationFrames` of the one
+      before, turned every crossing after it the other way (the 12 above). His rule: the
+      direction is stated at the start and every pass holds to it, exploring neither way
+      but its own. Built the same day: the first crossing counts whatever its distance
+      from the leg's end (BitfsDrMetrics); the first crossing's direction is the leg's
+      reversed, which the rest's normal sets (`Scattershot_BitfsDr::FirstCrossingAngle`:
+      the leg runs along the rest's steeper axis, away from the lower edge; the committed
+      rest is steeper on z, so the leg runs to the -x -z end and the first crossing heads
+      far), the crossings alternate from it (`CrossingAngle`), and the stage settles the
+      last pass's direction from that at its start, where it printed the choice of the
+      majority before; `firstCrossingDirection` states it in the config, refused when the
+      leg cannot give it. The script's validation ends a lineage at a crossing the count
+      skipped, at a counted crossing heading the other way, and at any frame past the
+      crossing that reached the pass's oscillation, so a pass explores one swing up to its
+      crossing and the swing back is the next pass's; the leg's pass runs its first swing
+      to the first crossing. Checked in `tasfw-tests` game-free (the two helpers in every
+      corner) and in the `--test` every-corner case (every pool solution at its crossing,
+      heading the opposite of its `roughTargetAngle`, all one direction: 80,095 assertions,
+      the first oscillation 291, 264, 424 and 321 of the 200 asked within 2,000 shots in
+      corners 1 to 4, 57 minutes on one thread; corner 1's leg finds 2 solutions in 3
+      blocks in its 20,000 shots under the committed config, on the binary before this
+      change too, which is 4.6's to look at). The pipeline from
+      the fixer (16 threads, not deterministic, 20,000 shots a pass): the first stage's
+      passes found 1,000, 1,000 (in 15,472 shots), 1,000 (452), 99 and 0, the rewind handed
+      on 866 from the second, in 31 s and 75 million frame advances against 80 s and 188
+      million without the end at the crossing (the pellets ran the swing back for nothing);
+      each pass's CSV has its crossings one way (far at 1 and 3, near at 2) and its roots'
+      swing the other way before the turn; the final oscillation found no far crossing at
+      0.72 to 0.74 in 20,000 shots, 15 s. The window, the climb rule and the roots' tilt
+      remain the levers. `minOscillations` (the maintainer, 2026-10-17): the oscillation
+      the tilt regime begins at; the oscillations before it are outside the regime whatever
+      the tilt, so the regime's floor, the speed rule's comparisons (never across the
+      regime's edge) and the regime's bins begin there, and the climb rule and the
+      sub-regime bins hold before it (0 in the committed config, none; counted like
+      `maxOscillations` in a continuing stage). The metric script sets the regime after
+      the frame's oscillation count, so the crossing that reaches that oscillation begins
+      it. Not pinned by a test yet: the metric's regime flag is read through its specs,
+      which only the stage builds from the config; a test needs that parse exposed.
+      Why the passes before `minOscillations` still failed (the maintainer's question of
+      2026-10-18): the speed rule compared crossings below the regime too, and the root
+      rule (`minEndClearance`) refuses the fast ones, which cross most tilted toward the
+      sinking end. Same config, 16 threads, 20,000 shots a pass: with the regime from the
+      rest the passes found 1,000, 1,000, 99 and 0; from oscillation 3 (osc 3 and 4 spared,
+      compared with pre-regime crossings) 1,000, 1,000, 1,000, 930 and 0; from oscillation
+      7 (nothing spared) 1,000, 1,000, 27 and 0, the osc-3 crossings in that run all at 26.0
+      or more, the top of the osc-1 crossings they had to beat, about 1,260 of them valid
+      blocks and 27 roots. His rule: the speed rule in the regime only (both crossings in
+      it; `ValidateCrossingData`, and the downhill peak is played out only when the rule
+      compares the crossing), so the oscillations before `minOscillations` run at any speed
+      and the regime's first is free as before. The game-free speed-rule test pins the
+      form. Under it, with the maintainer's `minOscillations` 6 in the committed `dr`
+      stage, the stage ran all its passes for the first time: 1,000 at oscillations 1 to
+      5, 268 at 6, 181 at 7 and 4 at 8, the crossing speeds falling from 26 at the first
+      to 19.5 at the seventh, 35 s. A regime that begins past a stage's last pass is said
+      at the stage's start, not refused: a first stage may run wholly outside it, and the
+      leg and every-corner `--test` cases, which derive their stages from the config's,
+      run that way under that value. The every-corner case drops the config's
+      `firstCrossingDirection` from the stages it derives, since the config's states the
+      committed corner's and the corners it mirrors the setup into cross near first in 1
+      and 3, far in 2 and 4. Under the committed config of 2026-10-18 (the regime from
+      oscillation 6, so none of its passes in it, the speed rule off) it passed with the
+      first oscillation 659, 320, 575 and 598 of the 200 asked in corners 1 to 4, every
+      solution at its crossing and one direction, 18,520 assertions in 48 minutes.
+      The maintainer's third report (2026-10-18, "the both sides bug is still present"):
+      his `dr-final` tab had blocks over the whole chord. Its roots were the rewind's
+      hand-over of three pools, 13 at oscillation 6, 811 at 4 and 144 at 2, and the one
+      pass continued them all, so lineages from the old roots swung through oscillations
+      3 to 7 inside it, each oscillation one way (the CSV: far at 3, 5 and 7, near at 2,
+      4 and 6) but the tab both ways. A continuing stage now takes the input's solutions
+      at its latest oscillation only and says what it leaves (`RunDrOscillations`); the
+      rewind still hands on every eligible pool, which the ending can use as it is.
+      With that, from his hand-over of the day (6 at oscillation 6, 512 at 4, 245 at 2),
+      the stage's six roots died at their first frame, 6 blocks in 200,000 shots: his
+      `dr-final` asked `minCrossingAxisDiff` 0.2 where `dr` had made the roots' crossing
+      under 0.1, and the rule is read on every frame from the last crossing, the roots'
+      own. At 0.05 the same six roots gave 396 far crossings at oscillation 7 in 20,000
+      shots, 100 carried, 13 s. The maintainer's intent (2026-10-18): the main
+      oscillations' axis difference is low to build speed, the final one's high so that
+      the lag gives Mario the time to cross the platform. So a stage's crossing rules, the
+      speed rule and the axis difference, judge the crossings it makes, from its first
+      oscillation on (`NormalSpecsDto::firstOscillation`, the stage's start oscillation),
+      and an input's crossings stand as their own stage judged them.
+      The maintainer's fourth report (2026-10-18): since the crossing rule the lineages
+      could not build the speed to reach the squish spot in time. The build from before
+      the day's changes against the day's, same config: its roots 25 to 27 at oscillation
+      1, 28 to 30 at 2, 27 to 30 at 3, passes alive to 5, and 21 squish cancels from its
+      hand-over in 500,000 shots; the day's 23 to 26, 25 to 29, 24 to 28, dead at 4, and
+      none. The hand-over frame itself is not what matters to the ending: the same roots handed
+      over at the crossing and at the run-out's peak both gave it none. The roots between
+      the passes are what mattered: the speed peaks three or four frames after the
+      crossing, the old rule's pools held those frames and its roots were them, and the
+      crossing rule's roots were the crossing, two units slower, compounding. A first form
+      of the run-out ended at the first dip of speed and restored nothing: the peak
+      often follows a dip of a tenth from a stick variant, and the end-of-run-out rule then
+      ended those lineages before their peak. The run-out is now from the crossing while
+      Mario walks facing its way, within a quarter turn, until his turnaround. With it:
+      roots 25 to 28, 27 to 30 and 28 to 29 at oscillations 1 to 3, passes alive to 5,
+      `dr-final` 466 at oscillation 5 handing over 25 to 28, and the ending 490 squish
+      cancels in 500,000 shots. One cost stays: a lineage that ends after its run-out
+      leaves blocks with no continuation, and a shot from one fails ten pellets and ends,
+      so pass 4 ran 144 scripts a shot against the old build's 165 (and 264 with the end
+      rule off); the search has no notion of a finished block, a known cost left as is.
+      The every-corner `--test` case under the run-out rule: the first oscillation 566,
+      625, 529 and 678 of the 200 asked in corners 1 to 4, every pool solution a run-out
+      frame facing its crossing's way, 29,003 assertions in 32 minutes.
+      The spread between runs (the maintainer's doubt of 2026-10-18 after a run of his
+      gave one squish cancel): the same config and build, five runs of the run-out rule
+      and three of the build before the day's changes, 500,000 ending shots each. The
+      run-out rule: 490, 499, 80, 4 and 1 squish cancels; the old build: 21, 47 and 0. The
+      count follows the `dr-final` hand-over: at oscillation 5 with a median speed of 24
+      or more it gave hundreds (26.7: 490; 24.2: 499, and 133 on a re-run of the ending
+      from the same hand-over), at 22.5 it gave one, twice, with the same cells of the
+      normal, tilt and steps to the target; at oscillation 3, after `dr`'s fourth pass
+      found nothing, it gave 4. What decides the hand-over's speed is how many fast roots
+      survive `dr`'s fourth and fifth passes (101, 934, 0, 181 and 42 at the fourth in the
+      five runs), the speed rule's comparisons from the regime on; the old build's two
+      better runs handed over cells of both directions again. The levers are the config's;
+      a root selection by lineage rather than by frame (`keepTop` takes the fastest
+      frames, several of one run-out) would widen the next pass's roots and is not built.
+      The maintainer's fifth report (2026-10-19): the `dr-final` tab still showed blocks
+      past the crossing, out to the chord's far end. The run-out as first defined by the
+      facing ended only at the turnaround, and Mario keeps walking the crossing's way to
+      the end, uphill and slowing: of his tab's blocks at oscillation 3, 17,205 were that
+      walk, in the uphill-turn phase at speeds down to 16, against 3,700 of crossing and
+      run-out. A speed margin tried first (the run-out ending half a unit under its peak)
+      left 2,178 such blocks: slow lineages whose speed never falls that far. The run-out
+      now ends when `RunOutFramesPastPeak`, three, frames pass without a new speed peak,
+      or at the turnaround; a dip of a tenth before the peak is outlived by the new peak
+      after it. Then the maintainer's own design, which had been there all along (2026-10-19):
+      at a crossing the metric script probes the minimum-downhill run in a sandbox and rolls
+      it back, and the crossing itself is persisted as the solution. So the run-out's frames
+      are no longer persisted or explored: a pass's solution is the crossing frame, the
+      lineage ends there, the probe runs at every crossing (it ran only where the speed rule
+      compared since 2026-10-18), its peak is the solution's `downhillPeak`, and `keepTop`
+      and `lastKeepTop` rank by that peak (or the crossing's speed where none was probed),
+      which is the quantity the run-out's frames were standing in for. Under it alone the
+      oscillation stage ran every pass for the first time (1,000 at oscillations 1 to 4,
+      then 60, 829, 7 and 1,305 at 8; `dr-final` 472 at 9) but the hand-over's crossings
+      ran 16 to 26 and the ending found 41 and 0: the probe's run, 32 to 33, is not the
+      run the search makes. So, as the maintainer foresaw, the probe's own run is a move
+      after a crossing (`ProbeRun_1f`, one frame downhill at the minimum angle from the
+      facing, drawn 4 times against the lead run's 9, a first setting). With it, two runs
+      of the whole pipeline: the stage's passes 1,000 through oscillation 6, then 150 and
+      828 (469 and 597), `dr-final` 610 and 577 at oscillation 9 handing over crossings of
+      19 to 28.6, and the ending 1,000 squish cancels, its cap, and 907 in 500,000 shots,
+      against 490 at best from any day's run before. No block past a crossing is
+      explored: the oscillation-3 tab under this design holds crossing frames only. The
+      every-corner `--test` case under it: the first oscillation 352, 250, 352 and 436 of
+      the 200 asked in corners 1 to 4, every pool solution at its crossing and one
+      direction, 13,201 assertions in 38 minutes.
+      The move weights (the maintainer's ask of 2026-10-19: which give the most squish
+      cancels in the least time), now the stage's `moves` in the config: the whole
+      pipeline on the committed config, two runs a setting, the weights of the lead run,
+      the probe's run, the uphill turn and the turnaround after a crossing. Without the
+      probe's run (9, 0, 1, 1): 0 and 0 squish cancels, the stage in 61 and 76 s. Probe run
+      2: 366 and 1,000, in 74 and 80 s. Probe run 4, the committed setting: 1,000 and 1,000
+      (and 1,000 and 907 in the two runs before the study), in 87 and 90 s. Probe run 9:
+      1,000 and 333. Probe run 18: 1,000 and one run whose ending died on the movie's junk
+      frames below, in 97 to 104 s. The lead run cut to 4 with the probe run at 9: 402 and
+      395. The turnaround raised to 3 at the committed setting: 481 and 268. So the
+      committed weights stay: the most and the steadiest, at about 15 s more on the
+      oscillation stage than without the probe's run, and the ending's 200 s or so is the
+      same for all. In one run the ending died at frame 3648: both committed movies carry
+      eight junk frames after their content (`bitfs-pyramid-jp.m64` 3648 to 3655,
+      `bitfs-pyramid-us.m64` 3715 to 3722: A, B, START and C buttons at once, sticks
+      centered), and `GetMinimumDownhillWalkingAngle` advanced its one frame with the
+      movie's input, which the corner resource refuses for the C buttons; a lineage that
+      reaches 3647 ended the stage, which the hand-over at oscillation 9 now lets happen.
+      The maintainer's choice (2026-10-19): the script, not the movies. Its frame now takes
+      a neutral input of its own and never reads the movie, so it runs on whatever a movie
+      holds; the movies keep their junk frames. The downhill test runs it on the corner
+      with a movie whose every frame presses those buttons and checks the answer is the
+      empty movie's. A run of the whole pipeline on it: every `dr` pass alive, `dr-final`
+      660 at oscillation 9, the ending 764 squish cancels; its cost is in
+      docs/performance-changelog.md (2026-10-19).
+      The speed rule's wider scope, the maintainer's original form, tried again at his ask
+      (2026-10-19; the exported movie's third and fourth oscillations looked slower than
+      its first two): a crossing must be faster than the one two before it, and the run
+      the probe measures from it must beat the peak that earlier swing reached, below the
+      regime and in it alike, never across the regime's edge. Since 2026-10-18 the rule
+      has compared crossings in the regime only, and the oscillations before the regime
+      run at any speed. Three runs of the whole pipeline on the committed config under
+      the wider form, against the regime-only form's 1,000, 907, 1,000 and 1,000 squish
+      cancels (and 407 in a run made after the trial, so a run of either form can give
+      about 500): 508, 472 and 0. The first two ran every pass (`dr` 1,000 through
+      oscillation 5, then 924, 569, 101 and 732, and 1,000 through 6, then 229 and 713;
+      `dr-final` 511 and 472 at oscillation 9, handing over crossings of 17.5 to 28.5
+      with medians of 24.3 and 24.2, against the regime-only runs' 19 to 28.6 with
+      medians of 24.3 to 25.2); the third found nothing at `dr`'s fourth pass, the
+      failure the wider form showed on 2026-10-18, and `dr-final` handed over
+      oscillation 3 at 15 to 27. The fastest crossing of each pass is the same under both
+      forms, and so is the slowest root carried (13 to 21 at oscillations 2 to 6 in both):
+      the wider rule does not make a pass's crossings faster, it only ends more lineages,
+      and in one run of three that ended the stage at its fourth pass, which no run of the
+      regime-only form has done in the seventeen made that day. So the regime-only form
+      stays, and the scope is the stage's `speedRule` since the maintainer asked for a
+      setting (2026-10-19): `"regime"`, `"everywhere"` (the wider form) or `"off"`, read
+      by the rule and by the metric script's probe alike (`SpeedRuleCompares`), and which
+      of its two comparisons apply is `speedGates`: `"both"`, `"run"` (the probed downhill
+      run's peak only) or `"crossing"` (the crossing's speed only), the probe never skipped
+      under `"run"` since nothing fails before it; the game-free test checks every
+      setting. What the maintainer saw is a difference by
+      direction, not by order: under
+      both forms the oscillations that head far (the odd ones) cross slower than those
+      that head near (the even ones), about 26 against 27 to 30 for a pass's fastest
+      crossing and 35 against 37.5 for its fastest probed run.
+      The oscillation stages' settings against the hand-over (the maintainer's ask of
+      2026-10-20: which of shots, maxSolutions, keepTop, the speed rule and
+      maxOscillations give the ending the best roots, most steadily and most cheaply,
+      where an oscillation is a cost in itself). The base is the config of the
+      1,000-cancel runs (20,000 shots a pass, 1,000 solutions a pass, keepTop 100, nine
+      oscillations, the regime-only rule with both gates, the final window 0.70 to 0.72),
+      one setting changed at a time, three runs each, the stage's time and the 100 roots
+      dr-final hands the ending: their crossing speed (the median, the slowest), the
+      probed run and the cells of the normal. The base: every run through, 66 to 77 s,
+      medians 24.3, 24.3 and 25.2, slowest 16 to 17.5, runs 33.3 to 34.1, four cells.
+      Shots 10,000: two runs of three died at the fourth pass (hand-overs from
+      oscillation 3 at 20 to 22). Shots 50,000: the same hand-over as the base (24.7 to
+      25.2) in 76 to 131 s. maxSolutions 10,000: every run died at the eighth pass,
+      hand-overs from oscillation 7 at 23.5 to 23.9 with weaker runs (30 to 33), 124 to
+      131 s. keepTop 10: two of three died by the sixth pass. keepTop 1,000: the base's
+      hand-over (24.1 to 24.3) in 68 to 109 s. The speed rule off: every pass full, 52 to
+      62 s, the hand-over half a unit slower (23.6 to 24.3); everywhere: 91 to 97 s for
+      the base's hand-over; the run gate alone: as off (23.9 to 24.3, 61 to 69 s); the
+      crossing gate alone: the base's (24.4 to 24.8, 69 to 95 s). Six oscillations at the
+      same window: the base's hand-over to the unit (24.4, 24.3, 25.2) from oscillation 7
+      in 43 to 53 s; four oscillations: 23.8 to 25.1 with slower stragglers (14 to 19)
+      from oscillation 5 in 37 to 54 s, six runs; twelve: no run past the eleventh pass.
+      Under the rule a surviving lineage's crossings only get faster, so more oscillations
+      cannot worsen the roots; what thins is the passes, and a run that dies hands on a
+      thin pool. The ending on the six-oscillation hand-overs: 165, 578 and 408 squish
+      cancels against the base's 1,000, 907, 1,000, 1,000, 407 and 764, so the hand-over's
+      speed and tilt are not all the ending reads; where it crosses at oscillation 7
+      against 9 is a difference these numbers do not show, left open. So among the
+      settings asked about: 20,000 shots, 1,000 solutions a pass and keepTop 100 stay;
+      the speed rule and its gates cost time and thin passes for a hand-over at most half
+      a unit faster; six oscillations hand over what nine do and the ending has not yet
+      been shown to agree. (A six-oscillation run with the window moved to 0.68 to 0.70
+      handed over medians of 26.7 with no root under 22, which compares nothing: a
+      window is not a setting to vary against the others.)
+      A continuing stage's roots (the maintainer's design, 2026-10-20, after the
+      twelve-oscillation runs: dr-final had started from the one solution at oscillation 8
+      a rewind handed on and left 1,456 at 6, 4 and 2): every input solution at the
+      input's latest oscillation and, when those are fewer than the stage's `keepTop`, the
+      fastest of the pool two oscillations before, then four before, until `keepTop` is
+      reached; and a root from an earlier pool makes one crossing in the pass like the
+      rest, to its own next oscillation, never the extra crossings that swung lineages
+      both ways on 2026-10-18. The mechanism needs no root bookkeeping: a lineage ends at
+      its first crossing, so no block holds a crossing beyond its root's, and the roots
+      all have the parity before the target's, so a count of the target's parity at or
+      under the target is always a crossing this pass made
+      (`Scattershot_BitfsDr::PassCrossing`: the solution rule, the end-of-lineage rule and
+      the scope of the crossing rules, which replaced `firstOscillation`). The stage
+      refuses an input pool of the other parity, prints what it took from each pool and
+      what it left, and its hand-over then holds solutions at more than one oscillation,
+      all heading one way. Checked on the twelve-oscillation run's output with a
+      `keepTop` of 10: the stage took the 1 solution at oscillation 8 and the 9 fastest of
+      209 at 6, left 843 at 4 and 404 at 2, and its pass found 549 crossings, every one at
+      oscillation 7 and heading far. A `--test` case that hands a continuing stage such a
+      thin latest pool and checks the fill is not written.
 - [x] **4.13 A BitFS resource: the pyramid corner of the game reimplemented from the decomp.**
       Opened 2026-10-11 on the maintainer's word: a resource that runs only what the
       squish-cancel search needs of the game (Mario's physics, the lava, the two tilting

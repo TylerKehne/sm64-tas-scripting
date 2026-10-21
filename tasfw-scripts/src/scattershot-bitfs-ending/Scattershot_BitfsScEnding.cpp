@@ -122,18 +122,35 @@ void Scattershot_BitfsScEnding::SelectMovementOptions()
                 {CustomMoves::QUICKTURN, stopped ? 3 * _args.weightQuickturn : 0},
                 {CustomMoves::CUP_DECEL, 2 * _args.weightCUp},
                 {CustomMoves::WAIT, 2 * _args.weightWait},
-                {CustomMoves::WAIT_FOR_TILT, stopped ? 3 * _args.weightWait : 0}
+                {CustomMoves::WAIT_FOR_TILT, stopped ? 3 * _args.weightWait : 0},
+                // NutStop fails wherever the tilt has no NUT spot, and a failed move ends the
+                // pellet, so it is drawn about as often as the random frame.
+                {CustomMoves::NUT_STOP, (stopped || action == ACT_IDLE) && edgeDistance <= NutStopReach ? _args.weightNutStop : 0}
             });
         break;
 
     case BitfsScEndingMetrics::Phase::AIR:
+    {
+        // The platform frames NutLand seeks are to be had while Mario is shallower than the
+        // catch (the top within FloorReach above him: deeper, the sweep squishes him instead)
+        // and the edge, as it will stand a frame on, is about to cover him or within a
+        // sideways stick's reach of it (SidewaysStrain, across the facing; along it a stick
+        // moves him 1.5, so the reach is taken as the smaller).
+        const auto face = BitfsScEndingMetrics::Face::Of(pyramid);
+        const auto next = BitfsScEndingMetrics::NextFace(pyramid);
+        const float outside = face.Out(_args.squishEdgeX, _args.squishEdgeZ, marioState->pos[0], marioState->pos[2])
+            - next.EdgeOut(_args.squishEdgeX, _args.squishEdgeZ, marioState->pos[0], marioState->pos[2]);
+        const float topAbove = face.TopHeight(marioState->pos[0], marioState->pos[2]) - marioState->pos[1];
+        const bool platformInReach = !state.onPlatform && topAbove < BitfsScEndingMetrics::FloorReach && outside <= 2.0f;
         AddRandomMovementOption(
             {
                 {CustomMoves::NO_SCRIPT, 1},
                 {CustomMoves::WAIT, 1},
-                {CustomMoves::STRAIN_BACK, 6 * _args.weightStrainBack}
+                {CustomMoves::STRAIN_BACK, 6 * _args.weightStrainBack},
+                {CustomMoves::NUT_LAND, platformInReach ? 2 * _args.weightNutLand : 0}
             });
         break;
+    }
     }
 }
 
@@ -180,6 +197,10 @@ bool Scattershot_BitfsScEnding::ApplyMovement()
             return CUpDecel();
         if (CheckMovementOptions(CustomMoves::STRAIN_BACK))
             return StrainBack();
+        if (CheckMovementOptions(CustomMoves::NUT_STOP))
+            return NutStop();
+        if (CheckMovementOptions(CustomMoves::NUT_LAND))
+            return NutLand();
     }
 
     // The random frame. No A (the setup is for an A-button-challenge run), no B (the dive
@@ -257,9 +278,40 @@ BinaryStateBin<16> Scattershot_BitfsScEnding::GetStateBin()
     state.AddValueBits(bitCursor, 3, int(metrics.phase));
     state.AddValueBits(bitCursor, 2, int(metrics.approach));
     state.AddValueBits(bitCursor, 1, metrics.quickturn ? 1 : 0);
-    state.AddRegionBitsByRegionSize(bitCursor, 10, xPosValue, xMin, xMax, fine ? 1.0f : 5.0f);
-    state.AddRegionBitsByRegionSize(bitCursor, 10, zPosValue, zMin, zMax, fine ? 1.0f : 5.0f);
-    state.AddRegionBitsByNRegions(bitCursor, 5, int(marioState->faceAngle[1]), -32768, 32767, 32);
+    if (metrics.departed)
+    {
+        // After the departure the bin is fine (the maintainer, 2026-10-17): the position to
+        // the quarter unit across and the unit up, the speed to the unit, the facing to the
+        // HAU, and the pyramid's normal as the tilt |nX| + |nZ| and the axes' difference
+        // |nX| - |nZ| to the hundredth (the components step by 0.01, so rounding reads the
+        // step they are on) and its y to the ten-thousandth. A squish cancel is kept once
+        // per block, so this keeps squish cancels a fraction of a unit apart as distinct
+        // solutions, and the falling states on the way to them apart as well; what it
+        // costs in blocks and time is measured in ROADMAP 4.11.
+        const float yMin = BitfsScEndingMetrics::LavaHeight - 128.0f;
+        const float yMax = pyramid->oPosY + 512.0f;
+        const float normalX = std::fabs(pyramid->oTiltingPyramidNormalX);
+        const float normalZ = std::fabs(pyramid->oTiltingPyramidNormalZ);
+        const long tiltHundredths = std::clamp(std::lround((normalX + normalZ) / 0.01f), 0L, 255L);
+        const long axisDiffHundredths = std::clamp(std::lround((normalX - normalZ) / 0.01f), -200L, 200L) + 200L;
+        const long normalYTenThousandths = std::clamp(std::lround(pyramid->oTiltingPyramidNormalY / 0.0001f), 0L, 16383L);
+        state.AddValueBits(bitCursor, 1, 1);
+        state.AddRegionBitsByRegionSize(bitCursor, 12, xPosValue, xMin, xMax, 0.25f);
+        state.AddRegionBitsByRegionSize(bitCursor, 12, zPosValue, zMin, zMax, 0.25f);
+        state.AddRegionBitsByRegionSize(bitCursor, 10, std::clamp(marioState->pos[1], yMin, yMax), yMin, yMax, 1.0f);
+        state.AddRegionBitsByRegionSize(bitCursor, 9, std::clamp(marioState->forwardVel, -256.0f, 256.0f), -256.0f, 256.0f, 1.0f);
+        state.AddValueBits(bitCursor, 12, uint16_t(marioState->faceAngle[1]) >> 4);
+        state.AddValueBits(bitCursor, 8, uint64_t(tiltHundredths));
+        state.AddValueBits(bitCursor, 9, uint64_t(axisDiffHundredths));
+        state.AddValueBits(bitCursor, 14, uint64_t(normalYTenThousandths));
+    }
+    else
+    {
+        state.AddValueBits(bitCursor, 1, 0);
+        state.AddRegionBitsByRegionSize(bitCursor, 10, xPosValue, xMin, xMax, fine ? 1.0f : 5.0f);
+        state.AddRegionBitsByRegionSize(bitCursor, 10, zPosValue, zMin, zMax, fine ? 1.0f : 5.0f);
+        state.AddRegionBitsByNRegions(bitCursor, 5, int(marioState->faceAngle[1]), -32768, 32767, 32);
+    }
 
     // The normal as what matters of it: the steps to the target on each axis, and their side.
     state.AddValueBits(bitCursor, 6, std::clamp(std::abs(metrics.incrementFrames[0]), 0, 63));
@@ -1446,6 +1498,144 @@ bool Scattershot_BitfsScEnding::StrainBack()
             return error(challenger) < error(incumbent) ? challenger : incumbent;
         },
         [&](auto) { return false; } //terminator
+    );
+    return step.executed;
+}
+
+bool Scattershot_BitfsScEnding::NutStop()
+{
+    MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
+    Camera* camera = *(Camera**)(ReadState("gCamera"));
+    Object* pyramid = Pyramid();
+    if (marioState->action != ACT_FREEFALL_LAND_STOP && marioState->action != ACT_BRAKING_STOP && marioState->action != ACT_IDLE)
+        return false;
+
+    // A NUT spot (the glossary): a spot at the edge from which the next frame's carry leaves
+    // Mario off the platform, by the game's floor test on his position and the face's
+    // vertices truncated to shorts, so that an action which cancels to freefall falls with no
+    // step of his own. Measured 2026-10-17 (ROADMAP 4.11): on corner 1's half of the edge the
+    // carry takes a stopped Mario inward, so the spot is a band under a unit wide at the edge
+    // that acts on the frame right after he stops in it, and some tilts have none. The search
+    // for one is played in the game: a one-frame stick toward the edge, neutral frames to the
+    // stop (the walk starts at the stick's magnitude and the deceleration takes a unit a
+    // frame, so where he stops moves continuously with the magnitude), and one frame more,
+    // reverted, to see whether the carry takes him off. The magnitude is bisected between a
+    // stop that stays and a walk that steps off, then the stops just short of the edge are
+    // tried, about a fifth of a unit apart. The first stop that falls is kept, and its fall's
+    // first frame is StrainBack's stick: a NUT spot is only worth taking with the strain on
+    // that frame (the maintainer, 2026-10-17). False, nothing written, when no stop falls.
+    const int16_t yaw = int16_t(SquishEdgeYaw() + int(GetTempRng() % 21846) - 10923); // within 60 degrees of straight off
+    float stays = 0.0f;  // the largest magnitude whose stop stayed on the platform
+    float leaves = 8.0f; // the smallest whose walk stepped off
+    struct Stop
+    {
+        float outside = 0; // past the edge at the stop, by the face
+    };
+    auto stop = ModifyCompareAdhoc<Stop, std::tuple<float>>(
+        [&](auto iteration, auto& params) //paramsGenerator
+        {
+            static constexpr int Bisections = 6;
+            static constexpr int Probes = 5;
+            if (iteration >= Bisections + Probes)
+                return false;
+            const float magnitude = iteration < Bisections ? 0.5f * (stays + leaves)
+                : stays - float(iteration - Bisections + 1) * 0.2f / std::ceil(std::max(stays, 1.0f));
+            if (magnitude <= 0.0f)
+                return false;
+            params = std::tuple(magnitude);
+            return true;
+        },
+        [&](auto status, float magnitude) //script
+        {
+            auto stick = Inputs::GetClosestInputByYawHau(yaw, magnitude, camera->yaw);
+            AdvanceFrameWrite(Inputs(0, stick.first, stick.second));
+            for (int frame = 0; frame < 10 && marioState->action != ACT_IDLE; frame++)
+            {
+                if ((marioState->action & ACT_FLAG_AIR) || marioState->marioObj->platform != pyramid || MarioDeath::IsDying(*marioState))
+                {
+                    leaves = std::min(leaves, magnitude);
+                    return false;
+                }
+                AdvanceFrameWrite(Inputs(0, 0, 0));
+            }
+            if (marioState->action != ACT_IDLE || marioState->marioObj->platform != pyramid)
+                return false;
+            stays = std::max(stays, magnitude);
+            status->outside = -SquishEdgeDistance(marioState, pyramid);
+            // The frame after the stop, reverted: the carry alone.
+            return ExecuteAdhoc([&]()
+                {
+                    AdvanceFrameWrite(Inputs(0, 0, 0));
+                    return (marioState->action & ACT_FLAG_AIR) != 0 && !MarioDeath::IsDying(*marioState);
+                }).executed;
+        },
+        [&](auto incumbent, auto) { return incumbent; }, //comparator
+        [&](auto) { return true; } //terminator: the first stop that falls
+    );
+    if (!stop.executed)
+        return false;
+    return StrainBack();
+}
+
+bool Scattershot_BitfsScEnding::NutLand()
+{
+    MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
+    Camera* camera = *(Camera**)(ReadState("gCamera"));
+    Object* pyramid = Pyramid();
+    if (!(marioState->action & ACT_FLAG_AIR) || marioState->marioObj->platform == pyramid)
+        return false;
+    float outX, outZ, alongX, alongZ;
+    SquishDirections(outX, outZ, alongX, alongZ);
+
+    // A frame with the pyramid Mario's platform while he is in the air beside the edge (the
+    // maintainer, 2026-10-17): over the top within the band of 4 above it the game makes the
+    // pyramid his platform for the frame without a landing, and it tilts toward him on the
+    // next (the strain-back frame of the metrics), which works only at a low vertical speed;
+    // or a touch down on the top, from which his forward speed, which the landing keeps,
+    // steps him off again on the first landing frame when it beats the edge's sweep (about
+    // 4.5 a frame; measured at 8, and at 3 the touch held him three frames and the landing
+    // stop then left him inside). Either steps the run's axis toward him instead of toward
+    // flat for its frames. Among the sticks on the line in and out of the platform, from none
+    // to full, the gentlest that gives one: a hover first, a touch second; the frames are the
+    // stick's and, for a touch, the neutral one that steps him off.
+    const int16_t inYaw = atan2s(-outZ, -outX);
+    const int16_t outYaw = atan2s(outZ, outX);
+    static constexpr float Magnitudes[7] = { 0.0f, -8.0f, 8.0f, -16.0f, 16.0f, -32.0f, 32.0f }; // negative: back in
+    struct Platform
+    {
+        int frames = 0; // 1 a hover, 2 a touch and the step off it
+    };
+    auto step = ModifyCompareAdhoc<Platform, std::tuple<int8_t, int8_t>>(
+        [&](auto iteration, auto& params) //paramsGenerator
+        {
+            if (iteration >= 7)
+                return false;
+            const float magnitude = Magnitudes[iteration];
+            params = magnitude == 0.0f ? std::tuple<int8_t, int8_t>(0, 0)
+                : std::tuple(Inputs::GetClosestInputByYawHau(magnitude < 0.0f ? inYaw : outYaw, std::fabs(magnitude), camera->yaw));
+            return true;
+        },
+        [&](auto status, int8_t stickX, int8_t stickY) //script
+        {
+            AdvanceFrameWrite(Inputs(0, stickX, stickY));
+            if (MarioDeath::IsDying(*marioState) || marioState->marioObj->platform != pyramid)
+                return false;
+            if (marioState->action & ACT_FLAG_AIR)
+            {
+                status->frames = 1;
+                return true;
+            }
+            AdvanceFrameWrite(Inputs(0, 0, 0));
+            if (MarioDeath::IsDying(*marioState) || !(marioState->action & ACT_FLAG_AIR) || marioState->marioObj->platform == pyramid)
+                return false;
+            status->frames = 2;
+            return true;
+        },
+        [&](auto incumbent, auto challenger) //comparator
+        {
+            return challenger->frames < incumbent->frames ? challenger : incumbent;
+        },
+        [&](auto status) { return status->frames == 1; } //terminator: a hover is the best there is
     );
     return step.executed;
 }

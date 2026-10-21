@@ -99,6 +99,8 @@ public:
     double weightCUp = 1;        // C-up with a small stick: a deceleration under one unit of speed
     double weightWait = 1;       // a neutral frame standing: the displacement alone (a NUT spot)
     double weightStrainBack = 1; // in the air after the departure, the stick back over the platform
+    double weightNutStop = 1;    // from a stop at the squish edge: a stop searched onto a NUT spot, where the next frame's carry takes him off with no step of his own, and the strain on the fall's first frame
+    double weightNutLand = 1;    // in the air beside the squish edge: a frame over the platform within the band, or a touch down that his speed steps off again at once, for the tilt those frames give
 };
 
 class BitfsScEndingMetrics : public Script<Sm64Resource>
@@ -382,7 +384,9 @@ public:
         CUP_DECEL,        // C-up with a small stick or none
         WAIT,             // a neutral frame
         WAIT_FOR_TILT,    // stopped on the platform: neutral frames until the tilt across the squish edge has just the steps the leave and the fall need; up to sixteen
-        STRAIN_BACK       // in the air: the stick in or out on the platform's line, at the magnitude that holds Mario where the sweeping edge catches him
+        STRAIN_BACK,      // in the air: the stick in or out on the platform's line, at the magnitude that holds Mario where the sweeping edge catches him
+        NUT_STOP,         // from a stop: a walk and stop onto a NUT spot, the next frame's carry taking him off with no step of his own, then StrainBack's stick on that frame; two to twelve frames
+        NUT_LAND          // in the air: the stick that gives a platform frame, a hover within the band over the top or a touch down his speed steps off again at once; one or two frames
     };
 
     // How far from the pyramid's home the search lets Mario be, on each axis.
@@ -453,6 +457,13 @@ public:
     // The shortest fall a leave can have: a step leaves the ground only over a drop of more
     // than 100 units, and a fall from rest covers 84 in six frames and 112 in seven.
     static constexpr int MinFallFrames = 7;
+    // How far inside the squish edge a stop may be for NutStop to be offered: one frame of a
+    // walk at up to 8 and the deceleration after it cover 36 units at most.
+    static constexpr float NutStopReach = 40.0f;
+    // What a full stick across Mario's facing moves him sideways in a frame of air
+    // (update_air_without_turn: 10 times the stick's magnitude), the strain that gets a fall
+    // clear of the sweep or back over the platform; along the facing a full stick is 1.5.
+    static constexpr float SidewaysStrain = 10.0f;
 
     Scattershot_BitfsScEnding(Alias_Scattershot_BitfsScEnding& scattershot, const BitfsScEndingArgs& args)
         : Alias_ScattershotThread_BitfsScEnding(scattershot), _args(args),
@@ -591,4 +602,16 @@ private:
     // sampled draws never strung the waiting frames together. False, the frames written,
     // when Mario is not stopped, leaves the platform, or was already at the budget.
     bool WaitForTilt();
+    // From a stop near the squish edge: a one-frame stick toward the edge and the neutral
+    // frames to the stop after it, the magnitude searched in the game for a stop the next
+    // frame's carry takes off the platform with no step of Mario's own (a NUT spot: the
+    // glossary; measured 2026-10-17, ROADMAP 4.11), then StrainBack's stick on that frame.
+    // False, nothing written, when no stop within reach falls.
+    bool NutStop();
+    // In the air beside the squish edge: among the sticks on the line in and out of the
+    // platform, the gentlest that gives a frame with the pyramid Mario's platform, a hover
+    // within the band of 4 over the top first, else a touch down on it that his speed steps
+    // off again on its first landing frame; the pyramid tilts toward him on those frames
+    // (the maintainer, 2026-10-17). False, nothing written, when none does.
+    bool NutLand();
 };

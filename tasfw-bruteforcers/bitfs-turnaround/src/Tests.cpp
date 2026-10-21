@@ -25,6 +25,7 @@
 
 #include <BitFsAreFixer.hpp>
 #include <BitFsObjects.hpp>
+#include <MarioDeath.hpp>
 #include <Sm64ActionNames.hpp>
 #include <Scattershot_BitfsDr.hpp>
 #include <Scattershot_BitfsScEnding.hpp>
@@ -147,6 +148,50 @@ namespace
 	private:
 		int64_t _startFrame;
 		BitFsAreFixer::Args _args;
+	};
+
+	// A pass's solution replayed to its last frame (Apply), for the crossing check: Mario's
+	// facing there, and the pyramid's normal there and on the two frames before it.
+	class SolutionEnd : public TopLevelScript<Sm64Resource>
+	{
+	public:
+		class CustomScriptStatus
+		{
+		public:
+			int64_t frame = -1;
+			int16_t faceYaw = 0;
+			float normalX[3] = {}; // at the last frame, the frame before, the one before that
+			float normalZ[3] = {};
+		};
+		CustomScriptStatus CustomStatus = CustomScriptStatus();
+
+		SolutionEnd(int64_t startFrame, const M64Diff& diff, int platform) : _startFrame(startFrame), _diff(diff), _platform(platform) {}
+
+		bool validation() override { return true; }
+		bool execution() override
+		{
+			MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
+			Object* objectPool = (Object*)(ReadState("gObjectPool"));
+			Object* pyramid = &objectPool[_platform];
+			LongLoad(_startFrame);
+			Apply(_diff);
+			CustomStatus.frame = int64_t(GetCurrentFrame());
+			CustomStatus.faceYaw = marioState->faceAngle[1];
+			for (int k = 0; k < 3; k++)
+			{
+				if (k > 0)
+					Load(CustomStatus.frame - k);
+				CustomStatus.normalX[k] = pyramid->oTiltingPyramidNormalX;
+				CustomStatus.normalZ[k] = pyramid->oTiltingPyramidNormalZ;
+			}
+			return true;
+		}
+		bool assertion() override { return true; }
+
+	private:
+		int64_t _startFrame;
+		const M64Diff& _diff;
+		int _platform;
 	};
 }
 
@@ -291,6 +336,7 @@ TEST_CASE("dr-oscillations: the first pass runs the swing's first leg from the c
 	resumed.SetStart(stage.name + ":1");
 	StageConfig second = stage;
 	second.args["maxOscillations"] = 2;
+	second.args["lastCrossingDirection"] = "far"; // the way the one oscillation from this rest crosses (the leg runs to the -x -z end): asked "near", the stage would add an oscillation at its start (2026-10-17) and run two passes
 	second.args["lastShots"] = 50; // the first oscillation's pass, as short as it goes: the start is what is checked, not a find
 	StageContext resumedContext { resumed, second, pointers, resources[0], &rest };
 	SolutionSet again = RunStage(resumedContext);
@@ -371,6 +417,7 @@ TEST_CASE("dr-oscillations: the first oscillation comes from the fixer's hand-ov
 		stage.args["quadrant"] = quadrant;
 		stage.args["targetNx"] = nx;
 		stage.args["targetNz"] = nz;
+		stage.args.erase("firstCrossingDirection"); // the config's states the committed corner's; each corner's leg decides its own (corners 1 and 3 cross near first)
 		stage.args["maxOscillations"] = 3; // the leg, the first oscillation, then a last pass of one shot
 		stage.args["shots"] = budget;
 		stage.args["lastShots"] = 1;
@@ -394,6 +441,50 @@ TEST_CASE("dr-oscillations: the first oscillation comes from the fixer's hand-ov
 			{
 				CHECK_MESSAGE((entry.second.buttons & Buttons::A) == 0, "A pressed at frame ", entry.first);
 			}
+		}
+
+		// A pass's solution is the crossing that reached its oscillation (the maintainer,
+		// 2026-10-17, and his original design, 2026-10-19; ROADMAP 4.12): every solution of
+		// the first oscillation's pool, replayed, ends on the frame the pyramid's normal first
+		// steps a full 0.01 on both axes toward the chord end Mario runs to (the frame before
+		// it did not on both), and he faces that end, the opposite of the solution's
+		// roughTargetAngle, within a quarter turn: the direction the stage's pass parity and
+		// the ending read from a solution is his heading at it. Before that day any later
+		// block of the lineage was a solution too, and a final pass whose tilt window opened
+		// after the next turnaround handed over states running the other way.
+		fs::path poolFile = pipeline.PassFile(stage.name, 1);
+		poolFile.replace_extension(".pool.json");
+		REQUIRE(fs::exists(poolFile));
+		SolutionSet pool = SolutionSet::Load(poolFile);
+		CHECK(pool.solutions.size() == size_t(output.passSolutions[1]));
+		Configuration config = pipeline.ScattershotConfiguration(stage);
+		M64 m64(config.M64Path);
+		REQUIRE(m64.load());
+		const int platform = stage.args.contains("platform") ? stage.args["platform"].get<int>() : 84;
+		// And every solution of the pass crosses the one way the leg fixed (the maintainer,
+		// 2026-10-17: one direction per oscillation, no pass exploring the other).
+		const int16_t expectedAngle = Scattershot_BitfsDr::CrossingAngle(
+			Scattershot_BitfsDr::FirstCrossingAngle(float(Metric(rest.solutions[0], "pyraNormX")), float(Metric(rest.solutions[0], "pyraNormZ")), quadrant), 1, quadrant);
+		int index = 0;
+		for (const SolutionRecord& solution : pool.solutions)
+		{
+			CAPTURE(index);
+			CHECK(Metric(solution, "currentOscillation") == 1);
+			CHECK(int16_t(Metric(solution, "roughTargetAngle")) == expectedAngle);
+			auto end = TopLevelScriptBuilder<SolutionEnd>::Build(m64).ImportResource(&resources[0]).Run(int64_t(stage.startFrame), solution.m64Diff, platform);
+			const int16_t heading = int16_t(int16_t(Metric(solution, "roughTargetAngle")) + 0x8000);
+			const float towardX = gSineTable[uint16_t(heading) >> 4];
+			const float towardZ = gCosineTable[uint16_t(heading) >> 4];
+			auto stepsToward = [&](int k) // from frame - k - 1 to frame - k, a full step on both axes toward the heading
+			{
+				const float dx = end.normalX[k] - end.normalX[k + 1];
+				const float dz = end.normalZ[k] - end.normalZ[k + 1];
+				return dx * towardX > 0.0f && dz * towardZ > 0.0f && std::fabs(dx) >= 0.0099999f && std::fabs(dz) >= 0.0099999f;
+			};
+			CHECK_MESSAGE(stepsToward(0), "the normal does not step toward Mario's heading ", heading, " on both axes at frame ", end.frame);
+			CHECK_MESSAGE(!stepsToward(1), "the normal already stepped toward Mario's heading ", heading, " on both axes the frame before ", end.frame);
+			CHECK_MESSAGE(std::abs(int(int16_t(end.faceYaw - heading))) < 0x4000, "Mario faces ", end.faceYaw, " at frame ", end.frame, " where the solution's direction says ", heading);
+			index++;
 		}
 	}
 }
@@ -820,4 +911,163 @@ TEST_CASE("sc-ending: without a target the error is measured against the hand-ov
 	CHECK(missed.probedFrames == 0);
 	CHECK(missed.squishCancels == 0);
 	CHECK(missed.forward == plain.forward);
+}
+
+namespace
+{
+	// Mario at the squish edge, a frame at a time: what the ending's leave and the moves after
+	// it rest on (NutStop, NutLand, StrainBack).
+	struct EdgeFrame
+	{
+		int64_t frame = 0;
+		uint32_t action = 0;
+		float y = 0;
+		float fSpd = 0;
+		bool onPlatform = false; // the pyramid is his platform at the frame's end
+		float outside = 0;       // past the squish edge by the frame's own face (negative: inside)
+		float nX = 0;
+	};
+
+	// From the frame of a stop at the squish edge: one frame of a stick straight off the edge at
+	// `magnitude` (none when 0), then neutral frames, each recorded.
+	class EdgeTrace : public TopLevelScript<Sm64Resource>
+	{
+	public:
+		class CustomScriptStatus
+		{
+		public:
+			std::vector<EdgeFrame> frames;
+		};
+		CustomScriptStatus CustomStatus = CustomScriptStatus();
+
+		EdgeTrace(int64_t stopFrame, int frames, float magnitude, int outX, int outZ)
+			: _stopFrame(stopFrame), _frames(frames), _magnitude(magnitude), _outX(outX), _outZ(outZ) {}
+
+		bool validation() override { return true; }
+		bool execution() override
+		{
+			LongLoad(_stopFrame);
+			MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
+			Object* objectPool = (Object*)(ReadState("gObjectPool"));
+			Object* pyramid = &objectPool[84];
+			Camera* camera = *(Camera**)(ReadState("gCamera"));
+			Record(marioState, pyramid);
+			for (int k = 0; k < _frames; k++)
+			{
+				Inputs inputs(0, 0, 0);
+				if (k == 0 && _magnitude > 0.0f)
+				{
+					auto stick = Inputs::GetClosestInputByYawHau(atan2s(float(_outZ), float(_outX)), _magnitude, camera->yaw);
+					inputs = Inputs(0, stick.first, stick.second);
+				}
+				AdvanceFrameWrite(inputs);
+				Record(marioState, pyramid);
+				if (MarioDeath::IsDying(*marioState))
+					break;
+			}
+			return true;
+		}
+		bool assertion() override { return true; }
+
+	private:
+		int64_t _stopFrame;
+		int _frames;
+		float _magnitude;
+		int _outX;
+		int _outZ;
+
+		void Record(MarioState* marioState, Object* pyramid)
+		{
+			const auto face = BitfsScEndingMetrics::Face::Of(pyramid);
+			EdgeFrame f;
+			f.frame = int64_t(GetCurrentFrame());
+			f.action = marioState->action;
+			f.y = marioState->pos[1];
+			f.fSpd = marioState->forwardVel;
+			f.onPlatform = marioState->marioObj->platform == pyramid;
+			f.outside = face.Out(_outX, _outZ, marioState->pos[0], marioState->pos[2]) - face.EdgeOut(_outX, _outZ, marioState->pos[0], marioState->pos[2]);
+			f.nX = pyramid->oTiltingPyramidNormalX;
+			CustomStatus.frames.push_back(f);
+		}
+	};
+
+	const EdgeFrame& FrameAt(const std::vector<EdgeFrame>& frames, int64_t frame)
+	{
+		for (const EdgeFrame& f : frames)
+		{
+			if (f.frame == frame)
+				return f;
+		}
+		throw std::runtime_error("no frame " + std::to_string(frame) + " in the trace");
+	}
+}
+
+// What the game does at the squish edge (ROADMAP 4.11, 2026-10-17), on the maintainer's
+// northeast example from its landing stop at 4442, 4 units inside the -z edge with no speed.
+// Standing still, the platform's carry moves Mario with it but the edge sweeps outward
+// faster, so he drifts inward every frame and never leaves: a wait for the displacement is
+// no leave here. A one-frame stick off the edge at 4 steps him off, the sweep covers him on
+// the next frame while he is just under the top and he lands, his forward speed steps him
+// off again on the third landing frame, he lands once more, and the landing stop then zeroes
+// his speed with him inside: two touches, no leave. At 8 he lands on his first two air
+// frames and steps off again at once each time, escapes the sweep on the third, falls seven
+// frames and reaches the lava 11 units outside the edge, not squished. Each frame on the
+// platform steps the normal's x toward him, each frame off it toward flat.
+TEST_CASE("sc-ending: at the squish edge a stopped Mario is carried inward, a slow leave touches down and a fast one escapes")
+{
+	PipelineConfig pipeline = PipelineConfig::Load(g_config);
+	std::vector<LibSm64> resources;
+	OneResource(pipeline, resources);
+	Configuration config = pipeline.ScattershotConfiguration(pipeline.stages.at(0));
+	M64 m64(ExampleMovie(config));
+	REQUIRE_MESSAGE(m64.load(), "the example movie is not beside the config's movie");
+	const int64_t stop = 4442;
+
+	auto still = TopLevelScriptBuilder<EdgeTrace>::Build(m64).ImportResource(&resources[0]).Run(stop, 28, 0.0f, 0, -1);
+	REQUIRE(still.frames.size() == 29u);
+	CHECK(still.frames.front().action == ACT_FREEFALL_LAND_STOP);
+	CHECK(still.frames.front().fSpd == 0.0f);
+	CHECK(still.frames.front().outside < -3.0f);
+	CHECK(still.frames.front().outside > -5.0f);
+	for (size_t i = 1; i < still.frames.size(); i++)
+	{
+		CHECK(still.frames[i].onPlatform);
+		CHECK(still.frames[i].outside < still.frames[i - 1].outside - 0.5f); // the carry: inward, over half a unit a frame
+		CHECK(still.frames[i].outside > still.frames[i - 1].outside - 1.2f);
+	}
+	CHECK(still.frames.back().action == ACT_IDLE);
+
+	auto slow = TopLevelScriptBuilder<EdgeTrace>::Build(m64).ImportResource(&resources[0]).Run(stop, 28, 4.0f, 0, -1);
+	REQUIRE(slow.frames.size() == 29u);
+	CHECK(FrameAt(slow.frames, 4443).action == ACT_WALKING);
+	CHECK(FrameAt(slow.frames, 4444).action == ACT_FREEFALL);
+	CHECK(FrameAt(slow.frames, 4445).action == ACT_FREEFALL_LAND);
+	CHECK(FrameAt(slow.frames, 4447).action == ACT_FREEFALL_LAND);
+	CHECK(FrameAt(slow.frames, 4448).action == ACT_FREEFALL);
+	CHECK(FrameAt(slow.frames, 4449).action == ACT_FREEFALL_LAND);
+	CHECK(FrameAt(slow.frames, 4453).action == ACT_FREEFALL_LAND_STOP);
+	CHECK(FrameAt(slow.frames, 4453).fSpd == 0.0f);
+	for (int64_t frame = 4453; frame <= 4470; frame++)
+		CHECK(FrameAt(slow.frames, frame).onPlatform);
+
+	auto fast = TopLevelScriptBuilder<EdgeTrace>::Build(m64).ImportResource(&resources[0]).Run(stop, 28, 8.0f, 0, -1);
+	REQUIRE(FrameAt(fast.frames, 4457).frame == 4457);
+	CHECK(FrameAt(fast.frames, 4443).action == ACT_FREEFALL);
+	CHECK(FrameAt(fast.frames, 4444).action == ACT_FREEFALL_LAND);
+	CHECK(FrameAt(fast.frames, 4445).action == ACT_FREEFALL);
+	CHECK(FrameAt(fast.frames, 4446).action == ACT_FREEFALL_LAND);
+	for (int64_t frame = 4447; frame <= 4455; frame++)
+	{
+		CHECK(FrameAt(fast.frames, frame).action == ACT_FREEFALL);
+		CHECK(!FrameAt(fast.frames, frame).onPlatform);
+	}
+	CHECK(FrameAt(fast.frames, 4456).y == BitfsScEndingMetrics::LavaHeight);
+	CHECK(FrameAt(fast.frames, 4456).action != ACT_SQUISHED);
+	CHECK(FrameAt(fast.frames, 4456).outside > 10.0f);
+	// The normal's x steps toward Mario after a frame on the platform and toward flat after one off it.
+	for (int64_t frame = 4443; frame <= 4449; frame++)
+	{
+		const float step = FrameAt(fast.frames, frame).nX - FrameAt(fast.frames, frame - 1).nX;
+		CHECK(std::fabs(step - (FrameAt(fast.frames, frame - 1).onPlatform ? 0.01f : -0.01f)) < 0.0005f);
+	}
 }

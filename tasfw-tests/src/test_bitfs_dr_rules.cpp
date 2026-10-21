@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 
 #include <Scattershot_BitfsDr.hpp>
+#include <ScriptMath.hpp>
 
 // The oscillation stage's root rule (ROADMAP 4.6): a solution of a pass with a pass after it
 // is a root the next pass can continue from only if a turnaround begun from its frame would
@@ -40,11 +41,13 @@ TEST_CASE("dr-oscillations: the turnaround clearance refuses the roots whose end
 	CHECK(BitfsDrMetrics::TurnaroundClearance(-0.389f, 0.839f, 0.323f, px - 282.0f, pz + 166.0f, -25530, 0.0f, px, py, pz) == doctest::Approx(10.3f).epsilon(0.3));
 }
 
-// The speed rule (the maintainer's form of 2026-10-10, ROADMAP 4.6 and 4.12): a crossing must
-// beat the one two before it, in speed and in its downhill peak, whatever the tilt did
-// between, below the regime and in it alike; never when the earlier one was below the regime
-// and this one in it. The third crossing here is slower than the first on both counts.
-TEST_CASE("dr-oscillations: the speed rule compares crossings below the regime and in it, never across")
+// The speed rule (the maintainer's form of 2026-10-10, held to the regime on 2026-10-18, the
+// scope a setting since 2026-10-19; ROADMAP 4.6 and 4.12): a crossing must beat the one two
+// before it, in speed and in its probed downhill peak, whatever the tilt did between, where
+// the setting compares the two: both in the regime ("regime"), or both below it or both in
+// it ("everywhere"); never across the regime's edge, never when "off". The third crossing
+// here is slower than the first on both counts.
+TEST_CASE("dr-oscillations: the speed rule compares crossings where its setting says, never across the regime's edge")
 {
 	auto status = [](float firstSum, bool firstInRegime, float thirdSum, bool thirdInRegime)
 	{
@@ -56,34 +59,125 @@ TEST_CASE("dr-oscillations: the speed rule compares crossings below the regime a
 		return state;
 	};
 	const float threshold = 0.1f;
+	const SpeedRule regime = SpeedRule::REGIME;
+	const SpeedRule everywhere = SpeedRule::EVERYWHERE;
+	const SpeedRule off = SpeedRule::OFF;
 
-	// Both below the regime: compared, at the same tilt or a grown one.
-	CHECK(!BitfsDrMetrics::ValidateCrossingData(status(0.632f, false, 0.632f, false), threshold, 0.0f));
-	CHECK(!BitfsDrMetrics::ValidateCrossingData(status(0.632f, false, 0.652f, false), threshold, 0.0f));
+	// Both below the regime, at the same tilt or a grown one: compared everywhere, not in the
+	// regime-only setting.
+	CHECK(BitfsDrMetrics::ValidateCrossingData(status(0.632f, false, 0.632f, false), threshold, 0.0f, regime));
+	CHECK(BitfsDrMetrics::ValidateCrossingData(status(0.632f, false, 0.652f, false), threshold, 0.0f, regime));
+	CHECK(!BitfsDrMetrics::ValidateCrossingData(status(0.632f, false, 0.632f, false), threshold, 0.0f, everywhere));
+	CHECK(!BitfsDrMetrics::ValidateCrossingData(status(0.632f, false, 0.652f, false), threshold, 0.0f, everywhere));
 
-	// Both in the regime: compared, whatever the tilt did.
-	CHECK(!BitfsDrMetrics::ValidateCrossingData(status(0.672f, true, 0.712f, true), threshold, 0.0f));
-	CHECK(!BitfsDrMetrics::ValidateCrossingData(status(0.672f, true, 0.672f, true), threshold, 0.0f));
+	// Both in the regime: compared under both settings, whatever the tilt did.
+	CHECK(!BitfsDrMetrics::ValidateCrossingData(status(0.672f, true, 0.712f, true), threshold, 0.0f, regime));
+	CHECK(!BitfsDrMetrics::ValidateCrossingData(status(0.672f, true, 0.672f, true), threshold, 0.0f, regime));
+	CHECK(!BitfsDrMetrics::ValidateCrossingData(status(0.672f, true, 0.712f, true), threshold, 0.0f, everywhere));
 
 	// The earlier crossing below the regime, this one in it: never compared.
-	CHECK(BitfsDrMetrics::ValidateCrossingData(status(0.652f, false, 0.672f, true), threshold, 0.0f));
+	CHECK(BitfsDrMetrics::ValidateCrossingData(status(0.652f, false, 0.672f, true), threshold, 0.0f, regime));
+	CHECK(BitfsDrMetrics::ValidateCrossingData(status(0.652f, false, 0.672f, true), threshold, 0.0f, everywhere));
+
+	// Off: nothing is compared.
+	CHECK(BitfsDrMetrics::ValidateCrossingData(status(0.672f, true, 0.712f, true), threshold, 0.0f, off));
+	CHECK(BitfsDrMetrics::ValidateCrossingData(status(0.632f, false, 0.632f, false), threshold, 0.0f, off));
+
+	// The same answers from the question the metric script asks before it probes.
+	CHECK(BitfsDrMetrics::SpeedRuleCompares(regime, true, true));
+	CHECK(!BitfsDrMetrics::SpeedRuleCompares(regime, false, false));
+	CHECK(!BitfsDrMetrics::SpeedRuleCompares(regime, true, false));
+	CHECK(BitfsDrMetrics::SpeedRuleCompares(everywhere, false, false));
+	CHECK(BitfsDrMetrics::SpeedRuleCompares(everywhere, true, true));
+	CHECK(!BitfsDrMetrics::SpeedRuleCompares(everywhere, true, false));
+	CHECK(!BitfsDrMetrics::SpeedRuleCompares(off, true, true));
 
 	// A faster crossing passes in the regime.
 	BitfsDrMetrics::CustomScriptStatus faster = status(0.672f, true, 0.712f, true);
 	faster.crossingData.back().speed = 31.f;
 	faster.crossingData.back().maxDownhillSpeed = 31.f;
-	CHECK(BitfsDrMetrics::ValidateCrossingData(faster, threshold, 0.0f));
+	CHECK(BitfsDrMetrics::ValidateCrossingData(faster, threshold, 0.0f, regime));
+
+	// Which comparisons apply (speedGates, the maintainer, 2026-10-19). The earlier crossing
+	// here has a speed of 0 and a swing's peak of 30; a crossing no faster at the crossing
+	// but with a faster probed run (31) passes the run-only setting and no other, and one
+	// faster at the crossing (31) with a slower run (20) passes the crossing-only setting
+	// and no other.
+	BitfsDrMetrics::CustomScriptStatus runOnly = status(0.672f, true, 0.712f, true);
+	runOnly.crossingData.back().maxDownhillSpeed = 31.f;
+	CHECK(BitfsDrMetrics::ValidateCrossingData(runOnly, threshold, 0.0f, regime, SpeedGates::RUN));
+	CHECK(!BitfsDrMetrics::ValidateCrossingData(runOnly, threshold, 0.0f, regime, SpeedGates::BOTH));
+	CHECK(!BitfsDrMetrics::ValidateCrossingData(runOnly, threshold, 0.0f, regime, SpeedGates::CROSSING));
+	BitfsDrMetrics::CustomScriptStatus crossingOnly = status(0.672f, true, 0.712f, true);
+	crossingOnly.crossingData.back().speed = 31.f;
+	CHECK(BitfsDrMetrics::ValidateCrossingData(crossingOnly, threshold, 0.0f, regime, SpeedGates::CROSSING));
+	CHECK(!BitfsDrMetrics::ValidateCrossingData(crossingOnly, threshold, 0.0f, regime, SpeedGates::BOTH));
+	CHECK(!BitfsDrMetrics::ValidateCrossingData(crossingOnly, threshold, 0.0f, regime, SpeedGates::RUN));
+	// Where the rule does not compare, the gates do not matter.
+	CHECK(BitfsDrMetrics::ValidateCrossingData(status(0.672f, true, 0.712f, true), threshold, 0.0f, off, SpeedGates::RUN));
 
 	// The crossing's axes at least minCrossingAxisDiff apart (the maintainer, 2026-10-10): the
 	// crossings here are (0.3, 0.3), apart by nothing, so 0.1 refuses the third and 0 lets it
-	// be; at (0.5, 0.2) it passes the example's 0.26. (A faster third crossing, so the speed
+	// be; at (0.5, 0.2) it passes the example's 0.26. (In the regime and faster, so the speed
 	// rule lets it be.)
-	BitfsDrMetrics::CustomScriptStatus apart = status(0.632f, false, 0.652f, false);
+	BitfsDrMetrics::CustomScriptStatus apart = status(0.672f, true, 0.712f, true);
 	apart.crossingData.back().speed = 31.f;
 	apart.crossingData.back().maxDownhillSpeed = 31.f;
-	CHECK(BitfsDrMetrics::ValidateCrossingData(apart, threshold, 0.0f));
-	CHECK(!BitfsDrMetrics::ValidateCrossingData(apart, threshold, 0.1f));
+	CHECK(BitfsDrMetrics::ValidateCrossingData(apart, threshold, 0.0f, regime));
+	CHECK(!BitfsDrMetrics::ValidateCrossingData(apart, threshold, 0.1f, regime));
 	apart.crossingData.back().nX = 0.5f;
 	apart.crossingData.back().nZ = 0.2f;
-	CHECK(BitfsDrMetrics::ValidateCrossingData(apart, threshold, 0.26f));
+	CHECK(BitfsDrMetrics::ValidateCrossingData(apart, threshold, 0.26f, regime));
+}
+
+// A pass's crossings (the maintainer's root mixture, 2026-10-20): a count of the target's
+// parity at or under the target. The target itself, from a root at the oscillation before;
+// two or four under it, from a root filled in from an earlier aligned pool; never a count
+// over the target or of the other parity (the roots' own crossings), and nothing without a
+// target.
+TEST_CASE("dr-oscillations: a pass's crossings are those of its target's parity at or under it")
+{
+	CHECK(Scattershot_BitfsDr::PassCrossing(9, 9));
+	CHECK(Scattershot_BitfsDr::PassCrossing(7, 9));
+	CHECK(Scattershot_BitfsDr::PassCrossing(5, 9));
+	CHECK(!Scattershot_BitfsDr::PassCrossing(8, 9));
+	CHECK(!Scattershot_BitfsDr::PassCrossing(10, 9));
+	CHECK(!Scattershot_BitfsDr::PassCrossing(11, 9));
+	CHECK(Scattershot_BitfsDr::PassCrossing(0, 0));
+	CHECK(Scattershot_BitfsDr::PassCrossing(1, 1));
+	CHECK(!Scattershot_BitfsDr::PassCrossing(0, 1));
+	CHECK(!Scattershot_BitfsDr::PassCrossing(0, -1));
+}
+
+// One direction per oscillation (the maintainer, 2026-10-17): the first crossing's
+// roughTargetAngle is the chord end the leg runs to, the far side of the corner on the rest's
+// steeper axis, and the crossings alternate from it. The committed rest (-0.179, 0.393) in
+// corner 4 is steeper on z, so the leg runs to the -x -z end (-24576, the corner's A) and the
+// first crossing has Mario running toward +x +z, the squish edge's corner, the second back.
+TEST_CASE("dr-oscillations: the first crossing's direction follows from the rest's normal and the crossings alternate")
+{
+	const int16_t a = BitfsDrMetrics::RoughTargetAngleA(4);
+	const int16_t b = BitfsDrMetrics::RoughTargetAngleB(4);
+	CHECK(Scattershot_BitfsDr::FirstCrossingAngle(-0.1792f, 0.393f, 4) == a);
+	CHECK(Scattershot_BitfsDr::FirstCrossingAngle(-0.393f, 0.1792f, 4) == b); // x the steeper axis: the leg runs the other way
+	CHECK(Scattershot_BitfsDr::CrossingAngle(a, 1, 4) == a);
+	CHECK(Scattershot_BitfsDr::CrossingAngle(a, 2, 4) == b);
+	CHECK(Scattershot_BitfsDr::CrossingAngle(a, 3, 4) == a);
+	CHECK(Scattershot_BitfsDr::CrossingAngle(b, 1, 4) == b);
+	CHECK(Scattershot_BitfsDr::CrossingAngle(b, 4, 4) == a);
+
+	// In every corner, with z the steeper axis: the leg's end lies on the corner's side of x
+	// and the other side of z, and is one of the corner's two chord ends.
+	for (int quadrant = 1; quadrant <= 4; quadrant++)
+	{
+		CAPTURE(quadrant);
+		const float nx = 0.2f * float(BitfsDrMetrics::CornerSignX(quadrant));
+		const float nz = 0.4f * float(BitfsDrMetrics::CornerSignZ(quadrant));
+		const int16_t first = Scattershot_BitfsDr::FirstCrossingAngle(nx, nz, quadrant);
+		CHECK((first == BitfsDrMetrics::RoughTargetAngleA(quadrant) || first == BitfsDrMetrics::RoughTargetAngleB(quadrant)));
+		CHECK(ScriptMath::Sign(gSineTable[uint16_t(first) >> 4]) == BitfsDrMetrics::CornerSignX(quadrant));
+		CHECK(ScriptMath::Sign(gCosineTable[uint16_t(first) >> 4]) == -BitfsDrMetrics::CornerSignZ(quadrant));
+		CHECK(Scattershot_BitfsDr::CrossingAngle(first, 2, quadrant) != first);
+		CHECK(Scattershot_BitfsDr::CrossingAngle(first, 3, quadrant) == first);
+	}
 }

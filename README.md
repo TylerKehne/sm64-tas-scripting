@@ -247,7 +247,10 @@ One JSON file. Relative paths resolve against the file's own directory, unless t
   about 40 shots, and the oscillation follows it under a 0.67 floor when the stage's
   `maxSolutions` lets the lineup pass keep hundreds of lineups rather than the first
   hundred, whose roots are alike; ROADMAP 4.6), the tilt the last pass's
-  solutions must have, `minXzSum`, and how far
+  solutions must have at their crossing, `minXzSum`, the tilt they may not exceed there,
+  `maxExitXzSum` (2 in the
+  committed config, none; it bounds the final-oscillation stage's hand-overs, so that the
+  ending starts from hand-overs alike in tilt), and how far
   into the corner's
   quadrant each axis of the normal must stay, `minAxis` (0.05 in the committed config: the
   fixer's lattice steps reversibly down to its `farNormal` past the origin, and a floor at
@@ -261,7 +264,8 @@ One JSON file. Relative paths resolve against the file's own directory, unless t
   0.753 gave the next pass nothing where 0.71 gave 100 to 583, but a ceiling of 0.733
   starved the fourth and fifth passes instead, since the sum climbs about 0.02 an
   oscillation, 1 run in 3 through against about 17 in 20 without; the last pass's
-  solutions are exempt either way, being the next stage's to judge); the least height
+  solutions are exempt either way, being the next stage's to judge, and have their own
+  ceiling, `maxExitXzSum`); the least height
   above the lava a turnaround begun from a solution's frame would end at,
   `minEndClearance` (20 in the committed config: the ceiling's precise form, since what
   fails at a sinking end is the floor under the turnaround, not the sum; the run of
@@ -310,17 +314,36 @@ One JSON file. Relative paths resolve against the file's own directory, unless t
   16 the swing cannot reverse for the next oscillation, and of 58 logged runs every
   hand-over whose fastest root was under 16.1 died and every one over 17.5 continued; the
   later hand-overs part on the tilt sum instead, with a ceiling near 0.73 (ROADMAP 4.6).
-  The speed rule compares a crossing with the one two before it, in speed and in its
-  downhill peak, whatever the tilt did between, below the regime and in it alike (the
-  maintainer, 2026-10-10); only a crossing in the regime is never compared with one before
-  it, so the regime's first oscillation is free of the rule; ROADMAP 4.6 and 4.12 have the
-  measurements behind the form.
+  The speed rule compares a crossing with the one two before it, the same direction's
+  last: it must be faster, and the run the probe measures from it must beat the peak that
+  earlier swing actually reached, whatever the tilt did between. Where it compares is the
+  stage's `speedRule` (the maintainer, 2026-10-19): `"regime"`, the committed setting,
+  compares two crossings both in the regime (the maintainer, 2026-10-18), so the
+  oscillations before the regime run at any speed and the regime's first is free of the
+  rule; `"everywhere"`, the rule's first form (2026-10-10), compares two crossings both
+  below the regime as well, and gave fewer squish cancels when tried again on 2026-10-19;
+  `"off"` compares none. Neither setting compares a crossing in the regime with one below
+  it. Which of the two comparisons apply is the stage's `speedGates` (the maintainer,
+  2026-10-19): `"both"`, the committed setting; `"run"`, the downhill run's peak only; or
+  `"crossing"`, the crossing's speed only. ROADMAP 4.6 and 4.12 have the measurements
+  behind the form. The
+  speed rule and the axis difference judge the crossings a stage makes, from its first
+  oscillation on: an input's crossings passed their own stage's rules, which may differ
+  (the maintainer, 2026-10-18: the main oscillations' axis difference is low to build
+  speed, the final one's high so that the lag gives Mario the time to cross the platform).
   Every swing, until its turnaround, is steered by the leads rather than
   the downhill angle (`LeadRun_1f`: of a fan of sticks around the face yaw, a quarter turn
   either side, the one that leaves the thinner lead largest among those that keep both
   axes stepping; the first swing is free to reverse at any speed, without the turnaround
   action's 16), since the downhill-angle moves run the axis a swing steps outward dry and
-  the swing dies at its turn, from the rest and in every oscillation after (ROADMAP 4.6).
+  the swing dies at its turn, from the rest and in every oscillation after (ROADMAP 4.6);
+  after a crossing the probe's own run is a move beside it (`ProbeRun_1f`: one frame
+  downhill at the minimum angle from the facing; the maintainer, 2026-10-19), so that the
+  search can make the run the roots are ranked by. The weights of the four moves of a swing
+  after its crossing, while the run is downhill, are the stage's `moves` (`leadRun`,
+  `probeRun`, `turnUphill`, `turnAround`; 9, 4, 1 and 1 in the committed config); the
+  first swing from the leg and the uphill-turn phase keep their own, measured in ROADMAP
+  4.6.
   The stage conserves the
   fixer's adjusted remainder error exactly from the hand-over frame on, which needs set
   values whose 0.01 steps round back exactly across the tilts the oscillations use: the
@@ -412,8 +435,39 @@ One JSON file. Relative paths resolve against the file's own directory, unless t
   2026-10-06): `uscz` is much more lenient, where `uscx` generally needs the movement to the
   squish spot optimized, Mario having to reach it before the normal's y gets too low; the
   committed setup is the lenient kind, so an `uscx` corner is where the ending stage's moves
-  will be judged (ROADMAP 4.11). Each pass runs to the scattershot's `maxSolutions`
-  (1,000). The leg hands its whole pool to the first oscillation (the maintainer's choice,
+  will be judged (ROADMAP 4.11). A pass's solution is the crossing that reached its
+  oscillation, the frame on which the oscillation count rose to the pass's target,
+  persisted as it is (the maintainer's design, 2026-10-17 and 19; the leg's rule is its
+  own). Its `roughTargetAngle` is the chord end the normal steps toward after that
+  crossing, and Mario runs toward the other end; the pass parity below and the ending's
+  check read it as his heading at the hand-over, which the crossing frame has (a later
+  frame of the lineage can be past the next turnaround, running the other way; ROADMAP
+  4.12 has the day that showed it). The speed peaks three or four frames after the
+  crossing, so the run the crossing can make is probed there: the metric script plays
+  the minimum-downhill run from it in a sandbox and rolls it back, and that run's peak
+  (`downhillPeak` in the solutions file) is the speed the roots and hand-overs are ranked
+  by, where the crossing's own speed ranked them before; persisting the run-out's frames
+  instead was tried for a day and showed in the viewer as blocks past the crossing
+  (ROADMAP 4.12).
+  The tilt regime begins at the oscillation `minOscillations` names (0 in the committed
+  config, none: from the rest on; in a stage that continues another's it counts the
+  oscillations this stage adds, as `maxOscillations` does): the oscillations before it
+  are outside the regime whatever the tilt, under the climb rule and the sub-regime bins
+  and free of the speed rule under its `"regime"` setting, and from it the tilt over
+  `startXzSum` is the regime, with its floor and the speed rule (the maintainer,
+  2026-10-17).
+  The direction is fixed at the stage's start (the maintainer, 2026-10-17): the first
+  crossing's is the leg's reversed, which the rest's normal decides (the leg runs along
+  the rest's steeper axis, away from the lower edge; `Scattershot_BitfsDr::FirstCrossingAngle`),
+  the crossings alternate from it, and the stage prints it and settles the last pass's
+  from it. `firstCrossingDirection` (`"far"` or `"near"`, optional) states it in the
+  config and is refused when the leg cannot give it. Every pass holds to its direction:
+  the script ends a lineage at a crossing the other way, at a crossing within
+  `minOscillationFrames` of the one before (which would turn every crossing after it),
+  and at any frame past the crossing that reached the pass's oscillation, so a pass
+  explores one swing up to its crossing and the swing back is the next pass's. The first
+  crossing counts whatever its distance from the leg's end, which is not a crossing.
+  A pass ends when it has `maxSolutions` (1,000) solutions or has fired its shots. The leg hands its whole pool to the first oscillation (the maintainer's choice,
   2026-10-12: held to its ten fastest, which are all at one end of the chord, it gives the
   first oscillation nothing, on master's code as on this branch;
   docs/performance-changelog.md); from the first oscillation on, each pass carries its
@@ -421,12 +475,7 @@ One JSON file. Relative paths resolve against the file's own directory, unless t
   solutions, or its `lastKeepTop` fastest when that is set (the committed `dr-final`
   hands the ending its 100 fastest; the rewind's hand-over is trimmed the same way; the
   fastest of each 0.01 cell of the normal was tried on 2026-10-06 and carried
-  every tilt without a faster crossing, ROADMAP 4.6); after the first oscillation the stage commits
-  to the direction most of those took, dropping the other direction's solutions (which
-  would need one oscillation more); a run's solutions arrive in block order, so the first
-  of them says nothing, and committing to its direction was what made runs fail one time in
-  two (2026-10-03: one to three slow solutions of the minority direction carried, the next
-  pass dead on them). A pass that yields fewer than `keepTop` solutions (the last pass,
+  every tilt without a faster crossing, ROADMAP 4.6). A pass that yields fewer than `keepTop` solutions (the last pass,
   none) runs again from the same roots under a seed derived from the run's, up to
   `passRetries` times (0 in the committed config, none), its solutions pooled: with 3,
   the first oscillation, which comes about one run in two, ended no run in 16 (13 through
@@ -453,8 +502,15 @@ One JSON file. Relative paths resolve against the file's own directory, unless t
   (the maintainer's two-stage lineup, 2026-10-13, ROADMAP 4.12: the committed `dr` stage
   oscillates at a lower tilt, where the swings keep their speed, and ends near; `dr-final`
   adds one oscillation that raises the tilt to the ending's and ends far): it begins at
-  the oscillation after the input's, the input's solutions the roots the pass before
-  carried, and its `maxOscillations` counts the oscillations it adds. After each pass the stage prints what it found and the
+  the oscillation after the input's latest, and its roots are every input solution at that
+  oscillation and, when those are fewer than its `keepTop`, the fastest of the input's pool
+  two oscillations before, then four before, until `keepTop` is reached (the maintainer,
+  2026-10-20; a rewind hands on several pools of one parity). A root from an earlier pool
+  crosses once in the pass like the rest, to its own next oscillation, so no lineage
+  swings through the oscillations between (the maintainer, 2026-10-18: a pass that let
+  them did, both ways), and the stage's hand-over then holds solutions at more than one
+  oscillation, all heading the same way. Its `maxOscillations` counts the oscillations it
+  adds. After each pass the stage prints what it found and the
   roots it carries, their speed, tilt and oscillation, and each retry, which is what to
   read when a run stalls.
 
@@ -496,8 +552,10 @@ holding it: checked values pass, and none checked passes every row. A count foll
 filter on every other column, as a shop's facets do (the maintainer, 2026-10-13). With
 `Phase == SWING` checked, every other column counts only the SWING rows. Phase's own
 values keep their counts, so each still shows how many of its rows the rest of the filter
-passes. A value stays listed at 0 when the rest of the filter passes none of its rows. The
-ranges are over every row of the run, whatever the filter. Counts and ranges grow as the
+passes. A value stays listed at 0 when the rest of the filter passes none of its rows. A
+range column's "seen" follows the same rule: the least and greatest value among the rows
+the filter on every other column passes, so a column's own bounds leave it alone (the
+maintainer, 2026-10-17). Counts and ranges grow as the
 run does; a
 categorical column that passes 256 distinct values becomes a range, and its section says
 so. The filters in force are listed at the top of the panel, as the grammar reads them (a

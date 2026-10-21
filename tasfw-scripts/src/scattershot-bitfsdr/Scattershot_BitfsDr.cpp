@@ -76,12 +76,18 @@ void Scattershot_BitfsDr::SelectMovementOptions()
                 // (three times in four against the run was measured no better: 16 plain runs
                 // 7 full first oscillations against 9).
                 bool firstSwing = state.currentCrossing == 1;
+                // After a crossing the run the metric's probe measured, downhill at the
+                // minimum angle from the facing, is a move beside the lead run (the
+                // maintainer, 2026-10-19: the roots are ranked by that probed run, so the
+                // search should be able to make it). The later swings' weights are the
+                // config's (BitfsDrMoveWeights); the first swing keeps its measured own.
                 if (state.currentCrossing > 1 || !Handover())
                     AddRandomMovementOption(
                         {
-                            {CustomMoves::LEAD_RUN, firstSwing ? 4 : 9},
-                            {CustomMoves::TURN_UPHILL, marioState->forwardVel <= 16.0f ? 0 : (firstSwing ? 4 : 1)},
-                            {CustomMoves::TURN_AROUND, canTurnAround ? (firstSwing ? 4 : 1) : 0}
+                            {CustomMoves::LEAD_RUN, firstSwing ? 4 : _moves.leadRun},
+                            {CustomMoves::PROBE_RUN, firstSwing ? 0 : _moves.probeRun},
+                            {CustomMoves::TURN_UPHILL, marioState->forwardVel <= 16.0f ? 0 : (firstSwing ? 4 : _moves.turnUphill)},
+                            {CustomMoves::TURN_AROUND, canTurnAround ? (firstSwing ? 4 : _moves.turnAround) : 0}
                         });
                 else
                     AddRandomMovementOption(
@@ -189,6 +195,8 @@ bool Scattershot_BitfsDr::ApplyMovement()
             return true;
         else if (CheckMovementOptions(CustomMoves::FIRST_LEG))
             return FirstLeg_1f(); // no random frame when no stick leads: the pellet ends
+        else if (CheckMovementOptions(CustomMoves::PROBE_RUN))
+            return ProbeRun_1f();
         else if (CheckMovementOptions(CustomMoves::LEAD_RUN))
             return LeadRun_1f(state.phase == BitfsDrMetrics::Phase::INITIAL);
     }
@@ -427,6 +435,36 @@ bool Scattershot_BitfsDr::ValidateState()
         && fabs(xNorm) + fabs(zNorm) < fabs(rest.pyraNormX) + fabs(rest.pyraNormZ) - 0.05f)
         return false;
 
+    // One direction per oscillation (the maintainer, 2026-10-17): the first crossing's is
+    // the leg's, which the rest's normal fixes (FirstCrossingAngle), and the crossings
+    // alternate from it. A crossing the count skipped, within minOscillationFrames of the
+    // one before, would turn every crossing after it the other way, so it ends the lineage;
+    // and a counted crossing must head its oscillation's way. So no pass explores the other
+    // direction: the stage settles the last pass's direction at its start and the rewind's
+    // parity holds. (The leg's end raises the crossing count from the initial phase and is
+    // not a crossing.)
+    if (state.phase != BitfsDrMetrics::Phase::INITIAL && lastFrameState.phase != BitfsDrMetrics::Phase::INITIAL
+        && state.currentCrossing > lastFrameState.currentCrossing)
+    {
+        if (state.currentOscillation == lastFrameState.currentOscillation)
+            return false;
+        const int16_t first = FirstCrossingAngle(rest.pyraNormX, rest.pyraNormZ, _quadrant);
+        if (state.roughTargetAngle != CrossingAngle(first, state.currentOscillation, _quadrant))
+            return false;
+    }
+
+    // A pass explores up to the crossing that reaches its oscillation, its solution; the
+    // frames after it are the next pass's: the run to the chord's end, the turnaround and
+    // the swing back, which heads the other way (the maintainer, 2026-10-17: no pass explores
+    // both directions). The leg's pass runs its first swing up to the first crossing. A
+    // root filled in from an earlier aligned pool crosses once too, to its own next
+    // oscillation (PassCrossing).
+    if (_targetOscillation >= 0 && state.phase != BitfsDrMetrics::Phase::INITIAL
+        && (state.currentOscillation > _targetOscillation
+            || (_targetOscillation > 0 && PassCrossing(state.currentOscillation, _targetOscillation)
+                && lastFrameState.currentOscillation == state.currentOscillation)))
+        return false;
+
     // The tilt stays in the corner's quadrant, each axis at least minAxis (the fixer
     // guarantees the rest's lattice steps reversibly from its minNormal on, and short of it
     // the search roams the platform instead of swinging across the corner)
@@ -489,10 +527,14 @@ bool Scattershot_BitfsDr::ValidateState()
     if (state.phase == BitfsDrMetrics::Phase::TURN_UPHILL && marioState->forwardVel <= 16.0f && state.currentCrossing > 1)
         return false;
 
-    // Gain speed each crossing, below the regime and in it, and the crossing's normal at least
-    // minCrossingAxisDiff further along one axis than the other (the maintainer, 2026-10-10;
-    // ROADMAP 4.12).
-    if (!BitfsDrMetrics::ValidateCrossingData(state, _normalSpecsDto.minMajor, _normalSpecsDto.minCrossingAxisDiff))
+    // Gain speed each crossing where speedRule compares (in the regime, in the committed
+    // config), and the crossing's normal at least minCrossingAxisDiff further along one axis
+    // than the other (the maintainer, 2026-10-10; ROADMAP 4.12): on the crossings this pass
+    // makes (PassCrossing); an input's crossings passed their own stage's rules (the
+    // maintainer, 2026-10-18). A lineage's last crossing is its oscillation's, the count
+    // rising once a crossing.
+    if (PassCrossing(state.currentOscillation, _targetOscillation)
+        && !BitfsDrMetrics::ValidateCrossingData(state, _normalSpecsDto.minMajor, _normalSpecsDto.minCrossingAxisDiff, _normalSpecsDto.speedRule, _normalSpecsDto.speedGates))
         return false;
 
     // The first crossing at least the speed asked for (the leg's end is crossingData[0], the
@@ -611,7 +653,24 @@ bool Scattershot_BitfsDr::IsSolution()
         return state.phase > BitfsDrMetrics::Phase::INITIAL && state.legEndY - LavaHeight >= _normalSpecsDto.legMinClearance;
     }
 
-    if (_targetOscillation < 0 || state.currentOscillation < _targetOscillation)
+    if (!PassCrossing(state.currentOscillation, _targetOscillation))
+        return false;
+
+    // A pass's solution is the crossing that reached its oscillation: the frame on which the
+    // count rose to the target (or, for a root filled in from an earlier aligned pool, to
+    // that root's next oscillation; PassCrossing), persisted as it is, the run it can make
+    // from there probed in a sandbox and rolled back (BitfsDrMetrics, maxDownhillSpeed, the
+    // solution's downhillPeak: the maintainer's original design, restored 2026-10-19 after
+    // a day of persisting the run-out's frames, which the viewer showed as blocks past the
+    // crossing). The solution's direction (roughTargetAngle: the chord end the normal steps
+    // toward after the crossing, Mario running toward the other) is what the stage's pass
+    // parity and the ending read as his heading at the hand-over, and the crossing frame
+    // has it (before 2026-10-17 every later block of the lineage was a solution, and the
+    // final pass's tilt window, first met some 25 frames after a crossing below it, handed
+    // the ending states past the next turnaround, running the other way; ROADMAP 4.12). A
+    // crossing comes on a one-frame move (the turnaround is over before the normal
+    // reverses), so the block's frame is the crossing's.
+    if (GetMetrics(GetCurrentFrame() - 1).currentOscillation >= state.currentOscillation)
         return false;
 
     // A solution of a pass with a pass after it is a root that pass can continue from: not
@@ -639,9 +698,10 @@ bool Scattershot_BitfsDr::IsSolution()
             return false;
     }
 
-    // The last pass hands its solutions on: they must have the regime's tilt, which the
-    // swings build up from the tilt the oscillation started at.
-    return !_finalPass || state.xzSum >= _normalSpecsDto.minXzSum;
+    // The last pass hands its solutions on: the crossing must have the regime's tilt, which
+    // the swings build up from the tilt the oscillation started at, and no more than the
+    // hand-over's ceiling (maxExitXzSum; 2 asks none).
+    return !_finalPass || (state.xzSum >= _normalSpecsDto.minXzSum && state.xzSum <= _normalSpecsDto.maxExitXzSum);
 }
 
 Scattershot_BitfsDr_Solution Scattershot_BitfsDr::GetSolutionState()
@@ -657,6 +717,7 @@ Scattershot_BitfsDr_Solution Scattershot_BitfsDr::GetSolutionState()
     solution.currentOscillation = state.currentOscillation;
     solution.roughTargetAngle = state.roughTargetAngle;
     solution.incrementFrames = state.incrementFrames;
+    solution.downhillPeak = state.crossingData.empty() ? 0.0f : state.crossingData.back().maxDownhillSpeed;
 
     return solution;
 }
@@ -1004,9 +1065,8 @@ bool Scattershot_BitfsDr::FirstLeg_1f()
     if (!GetMetrics(GetCurrentFrame()).initialized)
         return false;
     auto rest = GetMetrics(GetMetrics(GetCurrentFrame()).initialFrame);
-    const bool reverseZ = std::fabs(rest.pyraNormZ) >= std::fabs(rest.pyraNormX);
-    const int legSignX = reverseZ ? _cornerSignX : -_cornerSignX;
-    const int legSignZ = reverseZ ? -_cornerSignZ : _cornerSignZ;
+    int legSignX, legSignZ;
+    LegDirection(rest.pyraNormX, rest.pyraNormZ, _cornerSignX, _cornerSignZ, legSignX, legSignZ);
 
     auto leads = [&]()
     {
@@ -1023,7 +1083,7 @@ bool Scattershot_BitfsDr::FirstLeg_1f()
             }).executed;
     };
 
-    int16_t chord = atan2s(float(legSignZ), float(legSignX));
+    const int16_t chord = FirstCrossingAngle(rest.pyraNormX, rest.pyraNormZ, _quadrant); // the chord's end the leg runs to, exactly the diagonal
     int deviation = int(GetTempRng() % 17) - 8; // steps of 1024 (5.6 degrees) to either side
     int16_t preferred = int16_t(chord + deviation * 1024);
     for (int n = 0; n < 9; n++)
@@ -1117,6 +1177,20 @@ bool Scattershot_BitfsDr::LeadRun_1f(bool toCorner)
     return ModifyAdhoc([&]() { return play(chosen, thinner); }).executed;
 }
 
+bool Scattershot_BitfsDr::ProbeRun_1f()
+{
+    // The frame the metric's probe plays from a crossing (BitfsDrMetrics::CalculateOscillations):
+    // downhill at the minimum angle from the facing, the facing kept as far as the slope
+    // allows, through StepFrame so the pyramid keeps stepping.
+    MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
+    if (marioState->action != ACT_WALKING && marioState->action != ACT_FINISH_TURNING_AROUND)
+        return false;
+    auto status = Test<GetMinimumDownhillWalkingAngle>(marioState->faceAngle[1]);
+    if (!status.asserted)
+        return false;
+    return StepFrame(int16_t(status.angleFacing), 32, 0, status.downhillRotation);
+}
+
 void Scattershot_BitfsDr::Leads(const MarioState* marioState, const Object* pyramid, int dirX, int dirZ, float& leadX, float& leadZ)
 {
     // The goal past the normal on each axis, in the direction given (0: the direction the
@@ -1127,4 +1201,38 @@ void Scattershot_BitfsDr::Leads(const MarioState* marioState, const Object* pyra
     const float dz = goalZ - pyramid->oTiltingPyramidNormalZ;
     leadX = dirX != 0 ? dx * float(dirX) : std::fabs(dx);
     leadZ = dirZ != 0 ? dz * float(dirZ) : std::fabs(dz);
+}
+
+void Scattershot_BitfsDr::LegDirection(float restNormalX, float restNormalZ, int cornerSignX, int cornerSignZ, int& signX, int& signZ)
+{
+    // Toward the chord's end on the far side of the corner on the tilt's steeper axis, away
+    // from the lower edge (FirstLeg_1f): that axis steps away from the corner and the other
+    // toward it.
+    const bool reverseZ = std::fabs(restNormalZ) >= std::fabs(restNormalX);
+    signX = reverseZ ? cornerSignX : -cornerSignX;
+    signZ = reverseZ ? -cornerSignZ : cornerSignZ;
+}
+
+bool Scattershot_BitfsDr::PassCrossing(int oscillation, int targetOscillation)
+{
+    return targetOscillation >= 0 && oscillation <= targetOscillation && (targetOscillation - oscillation) % 2 == 0;
+}
+
+int16_t Scattershot_BitfsDr::FirstCrossingAngle(float restNormalX, float restNormalZ, int quadrant)
+{
+    // The leg runs to one end of the chord, A or B of the quadrant; the first crossing's
+    // roughTargetAngle is that end, the one Mario came from.
+    int signX, signZ;
+    LegDirection(restNormalX, restNormalZ, BitfsDrMetrics::CornerSignX(quadrant), BitfsDrMetrics::CornerSignZ(quadrant), signX, signZ);
+    const int16_t a = BitfsDrMetrics::RoughTargetAngleA(quadrant);
+    const bool legToA = ScriptMath::Sign(gSineTable[uint16_t(a) >> 4]) == signX && ScriptMath::Sign(gCosineTable[uint16_t(a) >> 4]) == signZ;
+    return legToA ? a : BitfsDrMetrics::RoughTargetAngleB(quadrant);
+}
+
+int16_t Scattershot_BitfsDr::CrossingAngle(int16_t firstCrossingAngle, int oscillation, int quadrant)
+{
+    const int16_t a = BitfsDrMetrics::RoughTargetAngleA(quadrant);
+    const int16_t b = BitfsDrMetrics::RoughTargetAngleB(quadrant);
+    const int16_t other = firstCrossingAngle == a ? b : a;
+    return oscillation % 2 == 1 ? firstCrossingAngle : other;
 }

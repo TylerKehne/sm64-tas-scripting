@@ -46,7 +46,7 @@
 			"export": true
 		},
 		{
-			"_comment": "Build up oscillations one at a time from the equilibrium frame the ARE fixer found, conserving its adjusted remainder error exactly. platform is the pyramid's object slot (84 or 83), quadrant the corner; the initial phase is the swing's first leg from the rest (a scripted run toward the chord's end; from the rest one stick in three keeps the pyramid stepping) until Mario can turn around, the tilt starting at the rest's own and building over the swings up to startXzSum, from which the regime holds (once there, the tilt may not fall below it; minXzSum by default); minXzSum is the tilt the last pass's solutions must have, minAxis how far into the corner's quadrant each axis of the normal must stay (the fixer's minNormal). The first pass solves in a few shots; its cap is there for a rest the leg cannot work from. maxOscillations 5 puts the last pass at the fifth oscillation (the stage adds one when the first crossing went toward the far end, which from the rest it always does), a crossing toward the far end as the ending stage needs; the 'gain speed each crossing' rule compares crossings at the same tilt only. startXzSum 0.6 is the highest floor the swings allow from a rest near it (their tilt moves about 0.05 either side of its mean; 0.65 rejects every swing once reached) and it costs the first oscillation, the slow pass, about four times its shots against no floor; a lineup from a low rest (the fixer's minXzSum 0.3, handoverXzSum 0.6, maxSolutions 1000: the leg hands that whole pool to the first oscillation, and from there each pass hands on its keepTop fastest) holds a 0.67 floor with the last pass at 0.69 on seeds 6 to 8 (ROADMAP 4.6).",
+			"_comment": "Build up oscillations one at a time from the equilibrium frame the ARE fixer found, conserving its adjusted remainder error exactly. platform is the pyramid's object slot (84 or 83), quadrant the corner; the initial phase is the swing's first leg from the rest (a scripted run toward the chord's end; from the rest one stick in three keeps the pyramid stepping) until Mario can turn around, the tilt starting at the rest's own and building over the swings up to startXzSum, from which the regime holds (once there, the tilt may not fall below it; minXzSum by default); minXzSum is the tilt the last pass's solutions must have, minAxis how far into the corner's quadrant each axis of the normal must stay (the fixer's minNormal). The first pass solves in a few shots; its cap is there for a rest the leg cannot work from. maxOscillations 5 puts the last pass at the fifth oscillation (the stage adds one when the first crossing went toward the far end, which from the rest it always does), a crossing toward the far end as the ending stage needs; the 'gain speed each crossing' rule compares crossings in the regime only (2026-10-18; the wider form was tried again on 2026-10-19 and gave fewer squish cancels). startXzSum 0.6 is the highest floor the swings allow from a rest near it (their tilt moves about 0.05 either side of its mean; 0.65 rejects every swing once reached) and it costs the first oscillation, the slow pass, about four times its shots against no floor; a lineup from a low rest (the fixer's minXzSum 0.3, handoverXzSum 0.6, maxSolutions 1000: the leg hands that whole pool to the first oscillation, and from there each pass hands on its keepTop fastest) holds a 0.67 floor with the last pass at 0.69 on seeds 6 to 8 (ROADMAP 4.6).",
 			"name": "dr",
 			"type": "dr-oscillations",
 			"resource": "corner", "objects": ["pyramid", "otherPyramid", "trackPlatform", "bully"], // the stage on the corner resource (README.md, "Configuration"); its solutions are replayed on the game before they count
@@ -57,28 +57,34 @@
 				"equilibriumFrame": "input:handoverFrame", // the fixer's hand-over frame, read from its solution: Mario running with both axes stepping
 				"quadrant": 4, // the oscillation corner as the signs of nX, nZ: 1 +x+z, 2 +x-z, 3 -x-z, 4 -x+z
 				"platform": 84, // the tilting pyramid's object slot, 84 (the movie's) or 83
-				"minOscillationFrames": 15, // least frames between two crossings for them to count as an oscillation
-				"minFirstCrossingSpeed": 17, // Mario's forward speed at the first crossing at least this (the 'gain speed each crossing' rule ratchets up from it; 0 asks none): under the turnaround's 16 the swing cannot reverse for the next oscillation, and of 58 logged runs every hand-over whose fastest root was under 16.1 died and every one over 17.5 continued (2026-10-03)
+				"minOscillationFrames": 15, // a crossing within this many frames of the one before ends the lineage (it would turn every crossing after it the other way); the first crossing counts whatever its distance from the leg's end, which is not a crossing
+				"moves": { "leadRun": 9, "probeRun": 4, "turnUphill": 1, "turnAround": 1 }, // the swing's moves after a crossing, by weight (the first swing from the leg keeps its own): the lead run, the probe's run (one frame downhill at the minimum angle from the facing, the run the roots are ranked by), the uphill turn and the turnaround; which weights give the most squish cancels in the least time is measured in ROADMAP 4.12 (the maintainer, 2026-10-19)
+				"minFirstCrossingSpeed": 17, // Mario's forward speed at the first crossing at least this (0 asks none; the 'gain speed each crossing' rule compares crossings in the regime only, 2026-10-18): under the turnaround's 16 the swing cannot reverse for the next oscillation, and of 58 logged runs every hand-over whose fastest root was under 16.1 died and every one over 17.5 continued (2026-10-03)
 				"targetNx": -0.1792, "targetNz": 0.3929998875, // the setup's normal, the fixer's targets: the adjusted remainder error conserved is measured against it
-				"maxOscillations": 9, // the last pass is at this oscillation (+1 when the first crossing went toward the far end)
+				"maxOscillations": 6, // the last pass is at this oscillation (+1 when the first crossing went toward the far end)
+				"minOscillations": 0, // the oscillation the tilt regime begins at (the maintainer, 2026-10-17): the oscillations before it are outside the regime whatever the tilt, under the climb rule (the tilt may not fall more than 0.02 under its highest once it has begun to rise) and the sub-regime bins, free of the speed rule under its 'regime' setting; from it the tilt over startXzSum is the regime, with its floor and the speed rule. 0 asks none, the regime from the rest on
 				"firstShots": 20000, // shots of the first pass, the leg from the rest
 				"shots": 20000, // shots of each oscillation pass
 				"lastShots": 20000, // shots of the last pass
-				"lastMaxSolutions": 1000000, // solution cap of the last pass (the other passes stop at scattershot maxSolutions)
-				"keepTop": 10, // the fastest solutions carried from an oscillation pass into the next; the leg hands on its whole pool (its ten fastest give the first oscillation nothing), and the last pass hands on all of its solutions
+				"lastMaxSolutions": 1000, // solution cap of the last pass (the other passes stop at scattershot maxSolutions)
+				"keepTop": 100, // the fastest solutions carried from an oscillation pass into the next; the leg hands on its whole pool (its ten fastest give the first oscillation nothing), and the last pass hands on all of its solutions
 				"passRetries": 0, // a pass that yields fewer than keepTop solutions (the last pass: none) runs again from the same roots under a seed derived from the run's, up to this many times, its solutions pooled. 0, none: a retry re-rolls the first oscillation's one-in-two rather than removing it (with 3, 16 sequential runs went 13 through against 11, the first oscillation ending none), and the maintainer wants the cause fixed, not masked (2026-10-04); the knob is a diagnostic
+				"firstCrossingDirection": "far", // the way Mario runs at the first crossing, "far" (toward the squish edge's corner) or "near": the leg's direction reversed, which the rest's normal sets (the leg runs along the rest's steeper axis, away from the lower edge), so a value the leg cannot give is refused and the stage prints the direction at its start either way; optional. Every pass holds to its direction (the maintainer, 2026-10-17): a crossing the other way ends the lineage, and so does any frame past the crossing that reached the pass's oscillation
 				"lastCrossingDirection": "near", // which way the last pass's solutions leave their crossing: "far" (Mario running toward the squish edge's corner, what the ending needs) or "near" (the other way, for the final oscillation stage below to continue with one more, which then ends far)
 				"handOverFallback": true, // a pass that yields nothing hands the next stage every earlier solution at the exit tilt (minXzSum, with the step parity) from the passes whose crossing heads toward the squish-cancel quadrant (the final pass's parity, the passes alternating), each pass's whole pool, oscillations 5, 3 and 1 when 7 fails (the maintainer, 2026-10-06; widened to the whole pools on 2026-10-12, ROADMAP 4.21); false ends the stage with nothing
 				"requireIncrementParity": false, // the step parity is the ending's hand-over's need, the final oscillation stage's to meet, not this stage's
 				"normalSpecs": {
 					"onlyMinMajor": true, // true: no window check on the last crossing's axes (minMajor still gates a crossing: one axis at least it)
-					"startXzSum": 0.61, // the regime's tilt floor: once the tilt has been there it may not fall below it (default minXzSum; the tilt may also never fall 0.05 below the rest's own)
-					"minXzSum": 0.63, // the tilt the last pass's solutions must have
+					"startXzSum": 0.57, // the regime's tilt floor: once the tilt has been there it may not fall below it (default minXzSum; the tilt may also never fall 0.05 below the rest's own)
+					"minXzSum": 0.59, // the tilt the last pass's solutions must have at their crossing or its run-out (a pass's solution is the crossing that reached its oscillation, the run it can make from there probed and rolled back; the maintainer, 2026-10-17 and 19)
+					"maxExitXzSum": 2, // the tilt the last pass's solutions may not exceed (2: none); maxXzSum below exempts the last pass
 					"legExitSpeed": 17.5, // the forward speed at which the leg from the rest ends and the first swing begins (16, the game's turnaround threshold, by default): the swing crosses only if it reverses within a frame or two of the leg's end, an uphill frame that costs about a unit of speed and then the turnaround, which the game refuses under 16, so a leg handed over at 16 cannot (the census of 2026-10-04, ROADMAP 4.6)
 					"legMinClearance": 0, // the least height of Mario over the lava at the leg's end for the leg to count as a solution (0: none). Measured 2026-10-04 at 60 on deterministic seeds: three of four found no first oscillation at all (seed 8 found it in 50 shots), where without it all four do, so the leg's height is the wrong lever; the knob is a diagnostic
 					"maxXzSum": 2, // the tilt a solution carried into a next pass may not exceed (2: none; the last pass's solutions are the next stage's to judge). Roots at 0.753 gave the next pass nothing, at 0.733 12 to 142, at 0.71 100 to 583, but a ceiling of 0.733 starved the fourth and fifth passes instead (the sum climbs about 0.02 an oscillation): 1 run in 3 through against about 17 in 20 without it (2026-10-03)
 					"minEndClearance": 20, // the least height above the lava a turnaround begun from a solution's frame would end at (Mario running on to a stop at the game's 4.8 a frame, the normal stepping toward him meanwhile), for a pass's solution to be a root the next pass can continue from (0: none): the precise form of maxXzSum, since what fails at a sinking end is the floor under the turnaround, not the sum. The run of 2026-10-06 lost its third pass to roots at -20 to +3 here, every lineage ending at the end 0 to 10 above the lava, where the pass that succeeded turned 23 to 75 above; the ten carried are the fastest at the crossing, which are the most tilted toward the end, so without this the pass dies whenever all ten are low
-					"minCrossingAxisDiff": 0.05, // the least difference between |nX| and |nZ| at a crossing, from the second crossing on (0: none): the normal lagging Mario by that much, as at the example movies' crossings, 0.27 to 0.31, where ours had 0.13 to 0.19 after the +z end's turn (the maintainer, 2026-10-10; ROADMAP 4.12)
+					"minCrossingAxisDiff": 0.2, // the least difference between |nX| and |nZ| at a crossing, from the second crossing on (0: none): the normal lagging Mario by that much, as at the example movies' crossings, 0.27 to 0.31, where ours had 0.13 to 0.19 after the +z end's turn (the maintainer, 2026-10-10; ROADMAP 4.12)
+					"speedRule": "regime", // where the 'gain speed each crossing' rule compares a crossing with the one two before it (the same direction's last): "regime", both in the regime (from 2026-10-18); "everywhere", both below the regime or both in it, never across its edge (the rule's first form, 2026-10-10: 508, 472 and 0 squish cancels in three runs of 2026-10-19 against this setting's 1000, 907, 1000, 1000 and 407); "off", no comparison
+					"speedGates": "run", // which of the rule's two comparisons apply: "both"; "run", the probed downhill run's peak against the peak the earlier swing reached, only; "crossing", the crossing's speed against the earlier crossing's, only (the maintainer, 2026-10-19)
 					"minAxis": 0.05, // each axis of the normal stays at least this far into the corner's quadrant
 					// maxRetreat (absent here: no limit): how far the first swing may fall back from the leg's end along the way to its target before the state is refused. Measured 2026-10-04 on 16 sequential runs a setting, it does not move the first oscillation (8 full and 3 thin of 16 without, 8 and 1 at 90; 60 cuts the turnaround's own overshoot, 3 of 16); a table taken while series overlapped on the machine had said 14 of 16 and was wrong
 					"minLavaClearance": 0, // the least height of Mario over the lava a state may have (0: none): lower, on the sinking +z end, the surface is under him before the swing can leave it, the first swing's trap; measured at 20 the first oscillation came 7 runs in 14, no more often than without (2026-10-03), so the rule prunes drowning states but does not steer the search to the lineage that leaves the end
@@ -91,7 +97,7 @@
 			"export": true
 		},
 		{
-			"_comment": "The final oscillation (the maintainer's two-stage lineup, 2026-10-13; ROADMAP 4.12): one more oscillation from the dr stage's hand-overs, which cross the near way at the lower tilt where the swings keep their speed, to raise the tilt to the ending's and cross the far way, toward the squish edge's corner. An input that is an oscillation stage's output continues its lineages: this stage begins at the oscillation after the input's, and maxOscillations counts the oscillations it adds. Below the regime the tilt may not fall more than 0.02 under its highest once it has begun to rise, which is what drives the climb; the last pass's solutions must reach minXzSum.",
+			"_comment": "The final oscillation (the maintainer's two-stage lineup, 2026-10-13; ROADMAP 4.12): one more oscillation from the dr stage's hand-overs, which cross the near way at the lower tilt where the swings keep their speed, to raise the tilt to the ending's and cross the far way, toward the squish edge's corner. An input that is an oscillation stage's output continues its lineages: this stage begins at the oscillation after the input's latest, from the input's solutions at that oscillation only (a rewind's earlier pools are not its roots), and maxOscillations counts the oscillations it adds. Below the regime the tilt may not fall more than 0.02 under its highest once it has begun to rise, which is what drives the climb; the last pass's solutions must reach minXzSum.",
 			"name": "dr-final",
 			"type": "dr-oscillations",
 			"resource": "corner", "objects": ["pyramid", "otherPyramid", "trackPlatform", "bully"],
@@ -105,22 +111,31 @@
 				"minOscillationFrames": 15,
 				"targetNx": -0.1792, "targetNz": 0.3929998875,
 				"maxOscillations": 1, // the oscillations this stage adds to the input's
+				"minOscillations": 0, // the oscillation the regime begins at, counted like maxOscillations from the input's (0: from the roots on; the roots are below startXzSum here anyway, so the climb rule holds until the tilt reaches it)
 				"lastShots": 20000, // its one pass is the last pass
-				"lastMaxSolutions": 10000,
-				"keepTop": 100,
+				"lastMaxSolutions": 1000,
+				"keepTop": 100, // also the roots this stage starts from: every input solution at the input's latest oscillation, filled up to this many with the fastest of the input's earlier aligned pools when a rewind handed several on (the maintainer, 2026-10-20)
 				"lastKeepTop": 100, // the fastest hand-overs the ending starts from (0: all the last pass found, the default)
 				"handOverFallback": true,
+				"moves": { "leadRun": 9, "probeRun": 4, "turnUphill": 1, "turnAround": 1 }, // as the dr stage's
 				"requireIncrementParity": true, // the ending's hand-over needs the step parity
 				"normalSpecs": {
 					"onlyMinMajor": true,
-					"startXzSum": 0.68, // the regime's floor is the exit tilt: from roots below it the tilt must climb, under the sub-regime rule
-					"minXzSum": 0.68, // the tilt the hand-over must have
+					"startXzSum": 0.71, // the regime's floor is the exit tilt: from roots below it the tilt must climb, under the sub-regime rule
+					"minXzSum": 0.71, // the tilt the hand-over's crossing must have (a hand-over is the crossing that reached the oscillation; the maintainer, 2026-10-17 and 19: a later frame of the lineage can be past the next turnaround, running the other way, and that is what this window used to pick; ROADMAP 4.12)
+					"maxExitXzSum": 0.73, // the tilt the hand-over may not exceed (2: none), so that the ending starts from hand-overs alike in tilt (the maintainer, 2026-10-17); the hand-overs of that day were 82 at 0.69 and 18 at 0.71, and from roots crossing at 0.69 no crossing inside this window was found in 20,000 shots once a solution had to be a crossing
 					"maxXzSum": 2,
 					"minEndClearance": 0, // the last pass hands on, no pass continues from it
-					"minCrossingAxisDiff": 0.25,
+					"minCrossingAxisDiff": 0.2, // higher than the main oscillations' (the maintainer, 2026-10-18): theirs is low to build speed, this one high so that the lag gives Mario the time to cross the platform; a stage judges the crossings it makes, so the input's stand as dr judged them
+					"speedRule": "regime", // as the main oscillations' (its one crossing against the input's two before it, in the regime)
+					"speedGates": "run",
 					"minAxis": 0.05,
-					"minMajor": 0.3, "maxMajor": 0.601, "regionsMajor": 10000,
-					"minMinor": 0.19, "maxMinor": 0.2, "regionsMinor": 10000
+					"minMajor": 0.3,
+					"maxMajor": 0.601,
+					"regionsMajor": 10000,
+					"minMinor": 0.19,
+					"maxMinor": 0.2,
+					"regionsMinor": 10000
 				}
 			},
 			"visualize": { "categorical": ["MarioAction", "Oscillation", "Crossing", "Phase"] },
@@ -148,7 +163,7 @@
 				"probeWindow": 10, // frames after the departure the probe runs in; a state past it is refused
 				"squishMinSpeed": 50, "squishMinClearance": 100, // the squish cancel: Mario idle, at least this forward speed, this far above the lava
 				"pauseBuffer": true, // the dive recover's pause between the dive and its rollout (PBDR): a dive that lands on its own frame needs it, the rollout's B being a press and the dive's B still down
-				"moves": { "dive": 1, "brake": 1, "walkOff": 1, "parallel": 1, "quickturn": 1, "cUp": 1, "wait": 1, "strainBack": 1 } // the options' weights in the draw; 0 leaves one out
+				"moves": { "dive": 1, "brake": 1, "walkOff": 1, "parallel": 1, "quickturn": 1, "cUp": 1, "wait": 1, "strainBack": 1, "nutStop": 1, "nutLand": 1 } // the options' weights in the draw; 0 leaves one out. nutStop: from a stop near the squish edge, a walk and stop searched onto a NUT spot (the next frame's carry takes him off with no step of his own), then the strain on the fall's first frame; nutLand: in the air, a frame with the pyramid his platform, a hover within the band over the top or a touch down his speed steps off again at once (ROADMAP 4.11, 2026-10-17)
 			},
 			"visualize": { "categorical": ["MarioAction", "Phase", "Approach", "Departed", "SquishCancel", "ProbeAction", "Catch"] }, // the panel's checkboxes; StepsX and StepsZ, the 0.01 steps to the target on each axis, and the probe's speed and height are ranges.
 			"export": true

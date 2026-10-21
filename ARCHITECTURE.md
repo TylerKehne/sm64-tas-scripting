@@ -443,8 +443,13 @@ Stage types, in the order the committed config uses them:
    first found, then a normal box), which remain a stage type for the Tier D workloads
    (`perf/tierd-*.json`, from frame 3330).
 2. **dr-oscillations** (`Scattershot_BitfsDr`) once per target oscillation from the
-   equilibrium frame, piping solutions forward, committing to the direction the first
-   oscillation took, keeping the fastest few between oscillations, asking a speed of the
+   equilibrium frame, a pass's solutions the crossings that reached its oscillation (the
+   frame the count rose on, the run it can make from there probed in a sandbox and
+   ranking the roots; the leg's rule is its own), piping solutions forward, its
+   direction set at the start by the leg's (the first crossing is the leg's reversed,
+   the crossings alternate, and a pass ends a lineage at a crossing the other way, at one
+   within `minOscillationFrames` of the one before, or at any frame past its own
+   crossing), keeping the fastest few between oscillations, asking a speed of the
    first crossing when the config names one (`minFirstCrossingSpeed`), and requiring
    increment-frame parity at the end. Its first pass is the swing's first leg from the rest
    (ROADMAP 4.6): the pyramid keeps the adjusted remainder error only through frames whose
@@ -454,7 +459,9 @@ Stage types, in the order the committed config uses them:
    the frame steps (`FirstLeg_1f`; `platform` and `quadrant` name the pyramid and the
    corner) until Mario is fast enough to turn around, then every swing steered by the
    leads until its turnaround (`LeadRun_1f`: the stick of a fan around the face yaw that
-   leaves the thinner lead largest among those keeping both axes stepping), the tilt kept
+   leaves the thinner lead largest among those keeping both axes stepping; after a
+   crossing the probe's own run beside it, `ProbeRun_1f`, one frame downhill at the
+   minimum angle from the facing), the tilt kept
    in the corner's
    quadrant (`minAxis`), never a swing's amplitude below the rest's own, below the regime's
    tilt climbing with at most one shift of 0.02 outstanding against its highest yet, and,
@@ -473,14 +480,17 @@ Stage types, in the order the committed config uses them:
    holds the error exactly to the equilibrium frame's, which the full steps do only from a
    rest whose normal steps reversibly across the tilts the oscillations use (half of the
    float values do; the fixer accepts only such a rest, `BitFsAreFixer::StepsReversibly`);
-   the last pass's solutions must reach `minXzSum`.
+   the last pass's solutions must reach `minXzSum` and not exceed `maxExitXzSum`.
 3. **sc-ending** (`Scattershot_BitfsScEnding`), piped from the oscillation solutions, its
    metrics from the fixer's hand-over frame: the final run along the edge into the target
    corner, the approach (a dive recover kept inside the band where the pyramid is still
    Mario's platform, or a brake to a stop), the leave over the squish edge, the far edge
    of that corner (`targetEdge`; a slow walk off, a run off parallel to the edge, a
-   quickturn to idle, a C-up deceleration onto a NUT spot, a wait for the displacement)
-   and the air after it. Every option is a weighted move and a solution
+   quickturn to idle, a C-up deceleration onto a NUT spot, a wait for the displacement, a
+   stop searched onto a NUT spot with the strain on its fall's first frame) and the air
+   after it (the strain in and out, and a frame with the pyramid his platform again, a
+   hover within the band over the top or a touch down that steps off again at once, for
+   the tilt those frames give). Every option is a weighted move and a solution
    records which it took. The error is conserved exactly throughout, through the
    departure, the first frame at whose end the pyramid is not Mario's platform; the
    solution is a frame within the window after it from which the metric script's squish

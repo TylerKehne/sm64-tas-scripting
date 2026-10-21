@@ -75,7 +75,7 @@ namespace
 	std::map<std::string, double> Metrics(const Scattershot_BitfsDr_Solution& data)
 	{
 		std::map<std::string, double> metrics {
-			{ "fSpd", data.fSpd }, { "pyraNormX", data.pyraNormX }, { "pyraNormY", data.pyraNormY }, { "pyraNormZ", data.pyraNormZ },
+			{ "fSpd", data.fSpd }, { "downhillPeak", data.downhillPeak }, { "pyraNormX", data.pyraNormX }, { "pyraNormY", data.pyraNormY }, { "pyraNormZ", data.pyraNormZ },
 			{ "xzSum", data.xzSum }, { "currentOscillation", double(data.currentOscillation) },
 			{ "roughTargetAngle", double(data.roughTargetAngle) }
 		};
@@ -325,8 +325,8 @@ namespace
 		const std::string where = ArgsWhere(context);
 		const json& a = context.stage.args;
 		RejectUnknownKeys(a,
-			{ "equilibriumFrame", "quadrant", "platform", "minOscillationFrames", "targetNx", "targetNz", "maxOscillations",
-				"firstShots", "shots", "lastShots", "lastMaxSolutions", "keepTop", "lastKeepTop", "passRetries", "handOverFallback", "requireIncrementParity", "minFirstCrossingSpeed", "lastCrossingDirection", "normalSpecs" },
+			{ "equilibriumFrame", "quadrant", "platform", "minOscillationFrames", "targetNx", "targetNz", "maxOscillations", "minOscillations",
+				"firstShots", "shots", "lastShots", "lastMaxSolutions", "keepTop", "lastKeepTop", "passRetries", "handOverFallback", "requireIncrementParity", "minFirstCrossingSpeed", "firstCrossingDirection", "lastCrossingDirection", "normalSpecs", "moves" },
 			where);
 
 		int64_t equilibriumFrame = int64_t(ArgNumber(a, "equilibriumFrame", context.input, where));
@@ -338,6 +338,14 @@ namespace
 		float targetNx = float(ArgNumber(a, "targetNx", context.input, where));
 		float targetNz = float(ArgNumber(a, "targetNz", context.input, where));
 		int maxOscillations = int(ArgNumber(a, "maxOscillations", context.input, 5, where));
+		// The oscillation the tilt regime begins at (the maintainer, 2026-10-17): the
+		// oscillations before it are outside the regime whatever the tilt, so the regime's
+		// floor, its speed comparisons and its bins begin there (NormalSpecsDto::minOscillations).
+		// 0 asks none. In a stage that continues another's it counts the oscillations this
+		// stage adds, as maxOscillations does.
+		int minOscillations = int(ArgNumber(a, "minOscillations", context.input, 0, where));
+		if (minOscillations < 0)
+			ConfigError("\"minOscillations\" in " + where + " must be at least 0");
 		long long firstShots = (long long)ArgNumber(a, "firstShots", context.input, 50000, where);
 		long long shots = (long long)ArgNumber(a, "shots", context.input, 30000, where);
 		long long lastShots = (long long)ArgNumber(a, "lastShots", context.input, 30000, where);
@@ -360,6 +368,14 @@ namespace
 		if (lastCrossingDirection != "far" && lastCrossingDirection != "near")
 			ConfigError("\"lastCrossingDirection\" in " + where + " must be \"far\" or \"near\", not \"" + lastCrossingDirection + "\"");
 		const bool wantFinalA = lastCrossingDirection == "far";
+		// The first crossing's direction, which the leg's own fixes from the rest's normal
+		// (Scattershot_BitfsDr::FirstCrossingAngle; the maintainer, 2026-10-17: one direction
+		// per oscillation, settled at the stage's start, every pass holding to it, the script
+		// refusing a crossing the other way). The config may state it, "far" or "near" as
+		// above, and is refused when the leg cannot give it; the stage prints it either way.
+		std::string firstCrossingDirection = ArgString(a, "firstCrossingDirection", "", where);
+		if (!firstCrossingDirection.empty() && firstCrossingDirection != "far" && firstCrossingDirection != "near")
+			ConfigError("\"firstCrossingDirection\" in " + where + " must be \"far\" or \"near\", not \"" + firstCrossingDirection + "\"");
 		// Whether the last pass crosses at the angle A, given the angle a pass crosses at and
 		// which pass it is: the passes alternate. One oscillation more where the last would
 		// cross the other way.
@@ -371,11 +387,26 @@ namespace
 				maxOscillations++;
 		};
 		float minFirstCrossingSpeed = float(ArgNumber(a, "minFirstCrossingSpeed", context.input, 0.0, where)); // 0: no floor
+		// The swing's moves after a crossing, by weight (BitfsDrMoveWeights; the maintainer,
+		// 2026-10-19): the lead run, the probe's run, the uphill turn and the turnaround.
+		BitfsDrMoveWeights moves;
+		if (a.contains("moves"))
+		{
+			const json& movesJson = RequireObject(a, "moves", where);
+			const std::string movesWhere = where + ".moves";
+			RejectUnknownKeys(movesJson, { "leadRun", "probeRun", "turnUphill", "turnAround" }, movesWhere);
+			moves.leadRun = int(ArgNumber(movesJson, "leadRun", context.input, moves.leadRun, movesWhere));
+			moves.probeRun = int(ArgNumber(movesJson, "probeRun", context.input, moves.probeRun, movesWhere));
+			moves.turnUphill = int(ArgNumber(movesJson, "turnUphill", context.input, moves.turnUphill, movesWhere));
+			moves.turnAround = int(ArgNumber(movesJson, "turnAround", context.input, moves.turnAround, movesWhere));
+			if (moves.leadRun < 0 || moves.probeRun < 0 || moves.turnUphill < 0 || moves.turnAround < 0)
+				ConfigError("\"moves\" in " + where + " must not be negative");
+		}
 
 		const json& specsJson = RequireObject(a, "normalSpecs", where);
 		const std::string specsWhere = where + ".normalSpecs";
 		RejectUnknownKeys(specsJson,
-			{ "onlyMinMajor", "startXzSum", "minXzSum", "legExitSpeed", "legMinClearance", "maxXzSum", "minEndClearance", "minCrossingAxisDiff", "minAxis", "minLavaClearance", "maxRetreat", "handoverXzSum", "minMajor", "maxMajor", "regionsMajor", "minMinor", "maxMinor", "regionsMinor" }, specsWhere);
+			{ "onlyMinMajor", "startXzSum", "minXzSum", "legExitSpeed", "legMinClearance", "maxXzSum", "maxExitXzSum", "minEndClearance", "minCrossingAxisDiff", "speedRule", "speedGates", "minAxis", "minLavaClearance", "maxRetreat", "handoverXzSum", "minMajor", "maxMajor", "regionsMajor", "minMinor", "maxMinor", "regionsMinor" }, specsWhere);
 		NormalSpecsDto specs;
 		specs.onlyMinMajor = ArgBool(specsJson, "onlyMinMajor", true, specsWhere);
 		specs.minXzSum = float(ArgNumber(specsJson, "minXzSum", context.input, specsWhere));
@@ -393,8 +424,34 @@ namespace
 		specs.maxXzSum = float(ArgNumber(specsJson, "maxXzSum", context.input, 2.0, specsWhere));
 		if (specs.maxXzSum < specs.minXzSum)
 			ConfigError("\"maxXzSum\" in " + specsWhere + " must not be below \"minXzSum\"");
+		specs.maxExitXzSum = float(ArgNumber(specsJson, "maxExitXzSum", context.input, 2.0, specsWhere));
+		if (specs.maxExitXzSum < specs.minXzSum)
+			ConfigError("\"maxExitXzSum\" in " + specsWhere + " must not be below \"minXzSum\"");
 		specs.minEndClearance = float(ArgNumber(specsJson, "minEndClearance", context.input, 0.0, specsWhere));
 		specs.minCrossingAxisDiff = float(ArgNumber(specsJson, "minCrossingAxisDiff", context.input, 0.0, specsWhere));
+		// Where the "gain speed each crossing" rule compares a crossing with the one two before
+		// it (the maintainer, 2026-10-19): "regime" (both in the regime), "everywhere" (both
+		// below it or both in it, never across its edge) or "off".
+		const std::string speedRule = ArgString(specsJson, "speedRule", "regime", specsWhere);
+		if (speedRule == "regime")
+			specs.speedRule = SpeedRule::REGIME;
+		else if (speedRule == "everywhere")
+			specs.speedRule = SpeedRule::EVERYWHERE;
+		else if (speedRule == "off")
+			specs.speedRule = SpeedRule::OFF;
+		else
+			ConfigError("\"speedRule\" in " + specsWhere + " must be \"regime\", \"everywhere\" or \"off\", not \"" + speedRule + "\"");
+		// Which of the rule's two comparisons apply (the maintainer, 2026-10-19): "both", "run"
+		// (the probed downhill run's peak only) or "crossing" (the crossing's speed only).
+		const std::string speedGates = ArgString(specsJson, "speedGates", "both", specsWhere);
+		if (speedGates == "both")
+			specs.speedGates = SpeedGates::BOTH;
+		else if (speedGates == "run")
+			specs.speedGates = SpeedGates::RUN;
+		else if (speedGates == "crossing")
+			specs.speedGates = SpeedGates::CROSSING;
+		else
+			ConfigError("\"speedGates\" in " + specsWhere + " must be \"both\", \"run\" or \"crossing\", not \"" + speedGates + "\"");
 		specs.minAxis = float(ArgNumber(specsJson, "minAxis", context.input, 0.0, specsWhere));
 		specs.minLavaClearance = float(ArgNumber(specsJson, "minLavaClearance", context.input, 0.0, specsWhere));
 		specs.maxRetreat = float(ArgNumber(specsJson, "maxRetreat", context.input, double(INFINITY), specsWhere));
@@ -418,7 +475,7 @@ namespace
 				.PipeFrom(input)
 				.ConfigureMetricScript(equilibriumFrame, quadrant, specs, minOscillationFrames, targetNx, targetNz, platform)
 				.Visualize(visualize)
-				.Run<Scattershot_BitfsDr>(targetOscillation, specs, quadrant, platform, finalPass, minFirstCrossingSpeed);
+				.Run<Scattershot_BitfsDr>(targetOscillation, specs, quadrant, platform, finalPass, minFirstCrossingSpeed, moves);
 		};
 
 		// The first pass is the swing's first leg from the rest, until Mario can turn around,
@@ -468,7 +525,8 @@ namespace
 			carriedSets[targetOscillation] = std::move(set);
 		};
 		// The last pass's exit rules, which a solution must meet to leave the stage: the regime's
-		// tilt (minXzSum) and the step parity. The rewind below hands on only such solutions.
+		// tilt (minXzSum, and no more than maxExitXzSum) and the step parity. The rewind below
+		// hands on only such solutions.
 		auto meetsExitRules = [&](const SolutionRecord& record)
 		{
 			auto metric = [&](const char* name)
@@ -477,6 +535,7 @@ namespace
 				return found == record.metrics.end() ? 0.0 : found->second;
 			};
 			return metric("xzSum") >= double(specs.minXzSum)
+				&& metric("xzSum") <= double(specs.maxExitXzSum)
 				&& (!requireIncrementParity || std::fmod(std::fabs(metric("incrementFrames0")), 2.0) == std::fmod(std::fabs(metric("incrementFrames2")), 2.0));
 		};
 		// Each pass's whole pool, before the hand-over trims it, kept by pass and written beside
@@ -520,24 +579,33 @@ namespace
 		auto cell = [](const Solution& s) { return std::pair<int, int>(int(std::lround(s.data.pyraNormX * 100.0f)), int(std::lround(s.data.pyraNormZ * 100.0f))); };
 		auto logHandOver = [&](int targetOscillation, std::size_t found, const std::vector<Solution>& carried)
 		{
-			std::map<std::pair<int, int>, std::vector<float>> cells;
+			std::map<std::pair<int, int>, std::vector<std::pair<float, float>>> cells; // the crossing's speed and its probed run, per solution
 			for (const Solution& s : carried)
-				cells[cell(s)].push_back(s.data.fSpd);
+				cells[cell(s)].push_back({ s.data.fSpd, s.data.downhillPeak });
 			std::printf("dr-oscillations: oscillation %d found %llu solution(s), carrying %llu in %llu cell(s) of the normal (direction %d):",
 				targetOscillation, (unsigned long long)found, (unsigned long long)carried.size(), (unsigned long long)cells.size(),
 				carried.empty() ? 0 : int(carried[0].data.roughTargetAngle));
 			for (const auto& [key, speeds] : cells)
-				std::printf(" [n (%.2f, %.2f) x%llu spd %.2f..%.2f]", key.first / 100.0, key.second / 100.0, (unsigned long long)speeds.size(),
-					*std::max_element(speeds.begin(), speeds.end()), *std::min_element(speeds.begin(), speeds.end()));
+			{
+				auto bySpeed = [](const std::pair<float, float>& x, const std::pair<float, float>& y) { return x.first < y.first; };
+				auto byRun = [](const std::pair<float, float>& x, const std::pair<float, float>& y) { return x.second < y.second; };
+				std::printf(" [n (%.2f, %.2f) x%llu spd %.2f..%.2f run %.2f..%.2f]", key.first / 100.0, key.second / 100.0, (unsigned long long)speeds.size(),
+					std::max_element(speeds.begin(), speeds.end(), bySpeed)->first, std::min_element(speeds.begin(), speeds.end(), bySpeed)->first,
+					std::max_element(speeds.begin(), speeds.end(), byRun)->second, std::min_element(speeds.begin(), speeds.end(), byRun)->second);
+			}
 			std::printf("\n");
 		};
 
 		// The roots a pass hands to the next: the keepTop fastest of its solutions (the
 		// maintainer, 2026-10-07; the fastest of each 0.01 cell of the normal was tried on
-		// 2026-10-06 and carried the pass's every tilt without a faster crossing, ROADMAP 4.6).
+		// 2026-10-06 and carried the pass's every tilt without a faster crossing, ROADMAP 4.6),
+		// fastest by the run the crossing can make, probed there (downhillPeak; the crossing's
+		// own speed where no run was probed): the speed peaks a few frames after the crossing,
+		// and the crossing is what is persisted (the maintainer's design, 2026-10-19).
+		auto rank = [](const Solution& s) { return std::max(s.data.downhillPeak, s.data.fSpd); };
 		auto keepFastest = [&](std::vector<Solution>& found, std::size_t count)
 		{
-			std::stable_sort(found.begin(), found.end(), [](const Solution& x, const Solution& y) { return x.data.fSpd > y.data.fSpd; });
+			std::stable_sort(found.begin(), found.end(), [&](const Solution& x, const Solution& y) { return rank(x) > rank(y); });
 			if (found.size() > count)
 				found.resize(count);
 		};
@@ -545,8 +613,12 @@ namespace
 		{
 			auto speed = [](const SolutionRecord& record)
 			{
-				auto found = record.metrics.find("fSpd");
-				return found == record.metrics.end() ? 0.0 : found->second;
+				auto metric = [&](const char* name)
+				{
+					auto found = record.metrics.find(name);
+					return found == record.metrics.end() ? 0.0 : found->second;
+				};
+				return std::max(metric("downhillPeak"), metric("fSpd"));
 			};
 			std::stable_sort(set.solutions.begin(), set.solutions.end(), [&](const SolutionRecord& x, const SolutionRecord& y) { return speed(x) > speed(y); });
 			if (set.solutions.size() > count)
@@ -561,17 +633,47 @@ namespace
 		// tilt to the ending's).
 		const bool continuesInput = context.input != nullptr && context.input->type == "dr-oscillations" && context.pipeline.startStage != context.stage.name;
 		int startOscillation = context.pipeline.startStage == context.stage.name ? context.pipeline.startPass : 0;
+		int inputOscillation = -1; // the input's latest oscillation, whose solutions are this stage's roots
 		if (continuesInput)
 		{
-			std::optional<double> inputOscillation = context.input->Metric("currentOscillation");
-			if (!inputOscillation)
+			// The input's latest oscillation: a rewind hands on several passes' pools (6, 4 and
+			// 2 when 7 fails), and this stage continues one oscillation at a time from the
+			// latest; the earlier pools are not its roots (the maintainer, 2026-10-18: a pass
+			// that took them swung their lineages through every oscillation between, both ways).
+			for (const SolutionRecord& record : context.input->solutions)
+			{
+				auto found = record.metrics.find("currentOscillation");
+				if (found != record.metrics.end())
+					inputOscillation = std::max(inputOscillation, int(found->second));
+			}
+			if (inputOscillation < 0)
 				ConfigError("stage \"" + context.stage.name + "\": its input is an oscillation stage's output without a currentOscillation metric");
-			startOscillation = int(*inputOscillation) + 1;
-			maxOscillations += int(*inputOscillation) + 1;
+			startOscillation = inputOscillation + 1;
+			maxOscillations += inputOscillation + 1;
+			minOscillations += inputOscillation;
 		}
+		specs.minOscillations = minOscillations; // counted from the rest, as the metric script counts
+		// The first crossing's direction from the rest's normal, for a run from the leg or from
+		// the first oscillation's roots (a later start reads the direction its roots crossed in).
+		auto settleFromRest = [&]()
+		{
+			if (!restNx || !restNz)
+				ConfigError("stage \"" + context.stage.name + "\": its input's solution has no pyraNormX and pyraNormZ, the rest's normal the first crossing's direction is read from");
+			const int16_t firstAngle = Scattershot_BitfsDr::FirstCrossingAngle(float(*restNx), float(*restNz), quadrant);
+			const bool firstA = firstAngle == BitfsDrMetrics::RoughTargetAngleA(quadrant);
+			char normal[64];
+			std::snprintf(normal, sizeof normal, "(%.4f, %.4f)", *restNx, *restNz);
+			if (!firstCrossingDirection.empty() && (firstCrossingDirection == "far") != firstA)
+				ConfigError("\"firstCrossingDirection\" in " + where + " asks \"" + firstCrossingDirection + "\" but the leg from the rest's normal " + normal
+					+ " crosses " + (firstA ? "far" : "near") + " first (it runs along the rest's steeper axis, away from the lower edge)");
+			settleLastPass(1, firstA);
+			std::printf("dr-oscillations: the first crossing heads %s (roughTargetAngle %d after it; the leg from the rest's normal %s), the last pass at %d\n",
+				firstA ? "far" : "near", int(firstAngle), normal, maxOscillations - 1);
+		};
 		std::vector<Solution> solutions;
 		if (startOscillation == 0)
 		{
+			settleFromRest();
 			config.MaxShots = firstShots;
 			auto initial = PipeIn<Scattershot_BitfsDr_Solution>(context.input);
 			solutions = runWithRetries(0, initial, maxOscillations <= 1);
@@ -602,7 +704,46 @@ namespace
 			std::string source;
 			if (continuesInput)
 			{
+				// The roots (the maintainer, 2026-10-20): every solution at the input's latest
+				// oscillation, and when those are fewer than keepTop, the fastest of the pool
+				// two oscillations before, then four before, until keepTop is reached. A rewind
+				// hands on several pools of one parity (8, 6, 4 and 2 when 9 fails); a root from
+				// an earlier pool crosses once in the pass like the rest, to its own next
+				// oscillation (Scattershot_BitfsDr::PassCrossing), so no lineage swings through
+				// the oscillations between (the maintainer, 2026-10-18). A pool of the other
+				// parity would be taken for lineages that had crossed already; none is handed
+				// on, and one is refused.
 				cached = *context.input;
+				std::map<int, SolutionSet> pools; // the input's solutions by oscillation
+				for (SolutionRecord& record : cached.solutions)
+				{
+					auto found = record.metrics.find("currentOscillation");
+					const int oscillation = found == record.metrics.end() ? -1 : int(found->second);
+					if (oscillation < 0 || (inputOscillation - oscillation) % 2 != 0)
+						ConfigError("stage \"" + context.stage.name + "\": its input holds a solution at oscillation " + std::to_string(oscillation)
+							+ ", not aligned with its latest, " + std::to_string(inputOscillation));
+					pools[oscillation].solutions.push_back(std::move(record));
+				}
+				cached.solutions.clear();
+				std::string taken, left;
+				for (auto it = pools.rbegin(); it != pools.rend(); ++it)
+				{
+					const std::size_t have = cached.solutions.size();
+					const std::size_t all = it->second.solutions.size();
+					if (it->first != inputOscillation && have >= keepTop)
+					{
+						left += (left.empty() ? "" : ", ") + std::to_string(it->first) + " (" + std::to_string(all) + ")";
+						continue;
+					}
+					if (it->first != inputOscillation)
+						keepFastestRecords(it->second, keepTop - have);
+					const std::size_t took = it->second.solutions.size();
+					taken += (taken.empty() ? "" : ", ") + std::to_string(took) + (took < all ? " of " + std::to_string(all) : "") + " at " + std::to_string(it->first);
+					cached.solutions.insert(cached.solutions.end(), std::make_move_iterator(it->second.solutions.begin()), std::make_move_iterator(it->second.solutions.end()));
+				}
+				if (pools.size() > 1)
+					std::printf("dr-oscillations: roots from the input's aligned oscillations, every solution at the latest and the fastest of the earlier up to keepTop %llu: %s%s%s\n",
+						(unsigned long long)keepTop, taken.c_str(), left.empty() ? "" : "; left: ", left.c_str());
 				source = "stage \"" + cached.stage + "\"";
 			}
 			else
@@ -625,12 +766,21 @@ namespace
 				if (direction)
 					settleLastPass(startOscillation - 1, int16_t(*direction) == BitfsDrMetrics::RoughTargetAngleA(quadrant));
 			}
+			else
+				settleFromRest();
 			if (startOscillation >= maxOscillations)
 				ConfigError("\"start\" asks stage \"" + context.stage.name + "\" to begin at oscillation " + std::to_string(startOscillation)
 					+ ", past its last pass (maxOscillations " + std::to_string(maxOscillations) + ", the first oscillation's direction counted)");
 			std::printf("dr-oscillations: starting at oscillation %d from the %llu root(s) in %s, the last pass at %d\n",
 				startOscillation, (unsigned long long)solutions.size(), source.c_str(), maxOscillations - 1);
 		}
+
+		// A regime that begins past the last pass never begins in this stage: its passes run
+		// outside the regime throughout, a choice the config may make for a first stage, so it
+		// is said rather than refused.
+		if (minOscillations > maxOscillations - 1)
+			std::printf("dr-oscillations: the regime begins at oscillation %d, past this stage's last pass at %d, so no pass of this stage is in it\n",
+				minOscillations, maxOscillations - 1);
 
 		config.MaxShots = shots;
 		for (int targetOscillation = std::max(1, startOscillation); targetOscillation < maxOscillations; targetOscillation++)
@@ -692,25 +842,6 @@ namespace
 				return fallback;
 			}
 			std::size_t found = solutions.size();
-
-			// After the first oscillation the search commits to one direction, the one most of the
-			// keepTop fastest solutions took; the other direction needs one oscillation more. (The
-			// solutions arrive in block order, an arbitrary one first: committing to that one's
-			// direction kept 1 to 3 slow solutions of the minority direction one run in two and
-			// the next pass died on them; the maintainer's inconsistent runs, 2026-10-03.)
-			if (targetOscillation == 1)
-			{
-				const int16_t angleA = BitfsDrMetrics::RoughTargetAngleA(quadrant);
-				const int16_t angleB = BitfsDrMetrics::RoughTargetAngleB(quadrant);
-				std::stable_sort(solutions.begin(), solutions.end(), [](const Solution& x, const Solution& y) { return x.data.fSpd > y.data.fSpd; });
-				std::size_t fastest = std::min(solutions.size(), std::size_t(keepTop));
-				std::size_t towardA = std::size_t(std::count_if(solutions.begin(), solutions.begin() + fastest,
-					[angleA](const Solution& s) { return s.data.roughTargetAngle == angleA; }));
-				bool chooseA = towardA * 2 > fastest || (towardA * 2 == fastest && solutions[0].data.roughTargetAngle == angleA);
-				const int16_t other = chooseA ? angleB : angleA;
-				std::erase_if(solutions, [other](const Solution& s) { return s.data.roughTargetAngle == other; });
-				settleLastPass(1, chooseA);
-			}
 
 			recordPool(targetOscillation, solutions);
 
@@ -809,7 +940,7 @@ namespace
 		{
 			const json& moves = RequireObject(a, "moves", where);
 			const std::string movesWhere = where + ".moves";
-			RejectUnknownKeys(moves, { "dive", "brake", "walkOff", "parallel", "quickturn", "cUp", "wait", "strainBack" }, movesWhere);
+			RejectUnknownKeys(moves, { "dive", "brake", "walkOff", "parallel", "quickturn", "cUp", "wait", "strainBack", "nutStop", "nutLand" }, movesWhere);
 			args.weightDive = ArgNumber(moves, "dive", context.input, args.weightDive, movesWhere);
 			args.weightBrake = ArgNumber(moves, "brake", context.input, args.weightBrake, movesWhere);
 			args.weightWalkOff = ArgNumber(moves, "walkOff", context.input, args.weightWalkOff, movesWhere);
@@ -818,6 +949,8 @@ namespace
 			args.weightCUp = ArgNumber(moves, "cUp", context.input, args.weightCUp, movesWhere);
 			args.weightWait = ArgNumber(moves, "wait", context.input, args.weightWait, movesWhere);
 			args.weightStrainBack = ArgNumber(moves, "strainBack", context.input, args.weightStrainBack, movesWhere);
+			args.weightNutStop = ArgNumber(moves, "nutStop", context.input, args.weightNutStop, movesWhere);
+			args.weightNutLand = ArgNumber(moves, "nutLand", context.input, args.weightNutLand, movesWhere);
 		}
 		if (args.probeFrames < 1 || args.probeWindow < 0)
 			ConfigError("\"probeFrames\" in " + where + " must be at least 1 and \"probeWindow\" at least 0");
