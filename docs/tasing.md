@@ -652,6 +652,14 @@ The full list is in AGENTS.md; these are the ones a script author meets.
   the ending's tilts. `GetMinimumDownhillWalkingAngle` keeps the facing it reports
   `DownhillMargin` (64 units) inside the half for that; at the boundary itself half of the
   ending's run frames at the minimum angle were uphill (2026-10-13).
+- The floor test runs on Mario's position and the triangles' vertices truncated to shorts,
+  exactly. Against the face's float model (`BitfsScEndingMetrics::Face`) he can stand 0.45
+  outside the edge and be on it, or inside it and be off: a NUT spot (the glossary), present
+  at some tilts and not at others. And the pyramid's carry of a stopped Mario is not toward
+  the edge everywhere: at the setup's normal it takes him outward on the far half of the +x
+  edge and inward, 0.3 to 0.9 a frame, on corner 1's half, where the catch window is, so a
+  wait for the displacement never takes him off there (ROADMAP 4.11, 2026-10-17). In the
+  air a full stick across the facing moves him 10 a frame sideways at once; along it 1.5.
 - A `GetMetrics` reference dies at the next write at or before its frame; copy it.
 - `ModifyAdhoc` reverts when the lambda returns false, and reports `executed == false`.
 - Check `asserted`, not `executed`; a metric script that did not assert stores a default

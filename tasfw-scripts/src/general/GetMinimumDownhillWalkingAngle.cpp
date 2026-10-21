@@ -34,7 +34,11 @@ bool GetMinimumDownhillWalkingAngle::execution()
 	// The pyramid tilts toward where Mario stands before he steps (the surface objects
 	// update before the player in a frame), so one frame on, the floor under him carries
 	// the normal his next step will walk on, whatever that step's inputs. The frame is
-	// this script's own and is reverted with it.
+	// this script's own, with a neutral input, and is reverted with it. It never reads the
+	// movie (the maintainer, 2026-10-19): a movie may hold anything at the frame, and the
+	// committed ones carry junk inputs after their content that the corner resource
+	// refuses for the C buttons; which of the top's two triangles the neutral step leaves
+	// Mario on is within the margin below.
 	//
 	// The floor is read again after the frame, never kept across it. The game rebuilds its
 	// surface pool every frame, and an object's surfaces take other slots when another
@@ -43,7 +47,7 @@ bool GetMinimumDownhillWalkingAngle::execution()
 	// across a frame can point at a slot nothing reloaded, still holding the old normal
 	// (docs/tasing.md, "Pitfalls").
 	Object* pyramid = marioState->floor->object;
-	AdvanceFrameRead();
+	AdvanceFrameWrite(Inputs(0, 0, 0));
 	Surface* floor = marioState->floor;
 	if (!floor || floor->object != pyramid)
 		return false; // the frame took Mario off the pyramid: nothing to read

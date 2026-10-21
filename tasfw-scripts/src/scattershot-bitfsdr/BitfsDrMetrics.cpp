@@ -41,21 +41,40 @@ float BitfsDrMetrics::StepToward(float goal, float value, float increment)
     return value - goal >= increment ? value - increment : goal;
 }
 
-bool BitfsDrMetrics::ValidateCrossingData(const BitfsDrMetrics::CustomScriptStatus& state, float componentThreshold, float minCrossingAxisDiff)
+bool BitfsDrMetrics::SpeedRuleCompares(SpeedRule speedRule, bool inRegime, bool earlierInRegime)
+{
+    switch (speedRule)
+    {
+    case SpeedRule::OFF: return false;
+    case SpeedRule::REGIME: return inRegime && earlierInRegime;
+    case SpeedRule::EVERYWHERE: return inRegime == earlierInRegime;
+    }
+    return false;
+}
+
+bool BitfsDrMetrics::ValidateCrossingData(const BitfsDrMetrics::CustomScriptStatus& state, float componentThreshold, float minCrossingAxisDiff, SpeedRule speedRule,
+    SpeedGates speedGates)
 {
     int crossings = int(state.crossingData.size());
     if (crossings > 2)
     {
         auto lastCrossing0 = state.crossingData.rbegin();
         auto lastCrossing2 = ++(++state.crossingData.rbegin());
-        // Gain speed each crossing (the maintainer's rule): this crossing faster than the one
-        // two before it, and its downhill run faster than that one's peak, whatever the tilt
-        // did between, below the regime and in it alike (the maintainer, 2026-10-10); only a
-        // crossing in the regime is never compared with one before it, so the regime's first
-        // oscillation is free of the rule (ROADMAP 4.6, 4.12).
-        const bool comparable = lastCrossing0->inRegime == lastCrossing2->inRegime;
+        // Gain speed each crossing (the maintainer, 2026-10-10): this crossing faster than
+        // the one two before it, the same direction's last, and the run the probe measures
+        // from it faster than the peak that earlier swing reached, whatever the tilt did
+        // between, where speedRule compares the two: in the regime only in the committed
+        // config (from 2026-10-18), so the oscillations before the regime run at any speed
+        // and the regime's first is free of the rule; everywhere, the first form, compares
+        // the crossings below the regime among themselves too and gave fewer squish cancels
+        // when tried again on 2026-10-19; never across the regime's edge (ROADMAP 4.6, 4.12).
+        // speedGates picks the comparisons: both, the run's peak only, or the crossing's
+        // speed only (the maintainer, 2026-10-19).
+        const bool comparable = SpeedRuleCompares(speedRule, lastCrossing0->inRegime, lastCrossing2->inRegime);
+        const bool crossingGate = speedGates != SpeedGates::RUN;
+        const bool runGate = speedGates != SpeedGates::CROSSING;
         if (comparable
-            && (lastCrossing0->speed <= lastCrossing2->speed || lastCrossing0->maxDownhillSpeed <= lastCrossing2->maxSpeed))
+            && ((crossingGate && lastCrossing0->speed <= lastCrossing2->speed) || (runGate && lastCrossing0->maxDownhillSpeed <= lastCrossing2->maxSpeed)))
             return false;
 
         // The crossing's normal at least minCrossingAxisDiff further along one axis than the
@@ -110,8 +129,6 @@ bool BitfsDrMetrics::execution()
         return true;
 
     CustomStatus.reachedNormRegime = lastFrameState.reachedNormRegime;
-    if (CustomStatus.xzSum > normalSpecsDto.startXzSum)
-        CustomStatus.reachedNormRegime |= true;
 
     CustomStatus.xzSumStartedIncreasing = lastFrameState.xzSumStartedIncreasing;
     if (CustomStatus.xzSum > lastFrameState.xzSum + 0.001f)
@@ -124,6 +141,14 @@ bool BitfsDrMetrics::execution()
     CustomStatus.legEndY = lastFrameState.legEndY;
     CustomStatus.phase = lastFrameState.phase;
     CalculateOscillations(lastFrameState, marioState);
+
+    // The regime: the tilt over startXzSum, from the oscillation minOscillations on (the
+    // maintainer, 2026-10-17: the oscillations before it are outside the regime whatever
+    // the tilt, so its floor, its speed comparisons and its bins begin there). The count is
+    // this frame's, a crossing on it included; CalculateOscillations gives a crossing the
+    // regime by the same test.
+    if (RegimeAt(CustomStatus.xzSum, CustomStatus.currentOscillation))
+        CustomStatus.reachedNormRegime = true;
 
     CalculatePhase(lastFrameState, marioState, pyramid);
 
@@ -183,52 +208,64 @@ void BitfsDrMetrics::CalculateOscillations(CustomScriptStatus lastFrameState, Ma
                 CustomStatus.roughTargetAngle = roughTargetAngleA;
         }
 
-        // Calulate max downhill speed (slow but new crossings are relatively rare)
+        // The count: the first crossing counts whatever its distance from the leg's end, which
+        // is crossingData[0] and not a crossing (it comes about eleven frames after the leg's
+        // end, under minOscillationFrames, and a count that skipped it put the oscillations'
+        // directions a crossing apart between lineages; the maintainer, 2026-10-17). A later
+        // crossing within minOscillationFrames of the one before is not counted, and the
+        // search refuses it (Scattershot_BitfsDr::ValidateState).
+        if (CustomStatus.crossingData.size() <= 1 || int64_t(GetCurrentFrame() - CustomStatus.crossingData.back().frame) >= minOscillationFrames)
+            CustomStatus.currentOscillation++;
+
+        // The regime this crossing is in, with the count it makes (execution() sets the
+        // frame's flag by the same test), and whether the speed rule compares it with the
+        // crossing two before it (speedRule; ValidateCrossingData).
+        const bool inRegime = lastFrameState.reachedNormRegime || RegimeAt(CustomStatus.xzSum, CustomStatus.currentOscillation);
+        const bool compared = CustomStatus.currentCrossing > 1
+            && SpeedRuleCompares(normalSpecsDto.speedRule, inRegime, CustomStatus.crossingData[CustomStatus.currentCrossing - 2].inRegime);
+
+        // The peak of the minimum-downhill run from here, played out in a sandbox and rolled
+        // back (the maintainer's original design): the speed rule's second condition when the
+        // rule compares this crossing, and the speed the roots and hand-overs are ranked by
+        // (Scattershot_BitfsDr_Solution::downhillPeak), since the speed peaks three or four
+        // frames after the crossing and the crossing itself is what a pass persists (restored
+        // 2026-10-19 after a day of persisting the run-out's frames). Skipped only when the
+        // rule compares the crossing, its crossing-speed comparison is on (speedGates), and
+        // the crossing is already slower than the one two before it, which fails on that
+        // alone (until 2026-10-06 the comparison was with the one before, the opposite
+        // direction's, ROADMAP 4.6).
         float maxDownhillSpeed = 0;
-        Camera* camera = *(Camera**)(ReadState("gCamera"));
-        ExecuteAdhoc([&]()
-            {
-                // No point in doing all this if it cannot validate anyway: the speed rule compares
-                // the crossing with the one two before it, the same direction's last (until
-                // 2026-10-06 this compared with the one before, the opposite direction's, so a
-                // crossing slower than that one had no peak and failed the rule's second
-                // condition for that alone whenever the rule applied; ROADMAP 4.6).
-                if (CustomStatus.currentCrossing > 1 && CustomStatus.crossingData[CustomStatus.currentCrossing - 2].speed >= marioState->forwardVel)
-                    return false;
-
-                for (int i = 0; i < 50; i++)
+        if (!compared || normalSpecsDto.speedGates == SpeedGates::RUN
+            || CustomStatus.crossingData[CustomStatus.currentCrossing - 2].speed < marioState->forwardVel)
+        {
+            Camera* camera = *(Camera**)(ReadState("gCamera"));
+            ExecuteAdhoc([&]()
                 {
-                    maxDownhillSpeed = marioState->forwardVel;
+                    for (int i = 0; i < 50; i++)
+                    {
+                        maxDownhillSpeed = marioState->forwardVel;
 
-                    auto status = Test<GetMinimumDownhillWalkingAngle>(marioState->faceAngle[1]);
-                    if (!status.asserted)
-                        return true;
+                        auto status = Test<GetMinimumDownhillWalkingAngle>(marioState->faceAngle[1]);
+                        if (!status.asserted)
+                            return true;
 
-                    // Attempt to run downhill with minimum angle
-                    int16_t intendedYaw = status.angleFacing;
-                    auto stick = Inputs::GetClosestInputByYawExact(
-                        intendedYaw, 32, camera->yaw, status.downhillRotation);
-                    AdvanceFrameWrite(Inputs(0, stick.first, stick.second));
+                        // Attempt to run downhill with minimum angle
+                        int16_t intendedYaw = status.angleFacing;
+                        auto stick = Inputs::GetClosestInputByYawExact(
+                            intendedYaw, 32, camera->yaw, status.downhillRotation);
+                        AdvanceFrameWrite(Inputs(0, stick.first, stick.second));
 
-                    if ((marioState->action != ACT_FINISH_TURNING_AROUND && marioState->action != ACT_WALKING) || marioState->forwardVel <= maxDownhillSpeed)
-                        return true;
-                }
+                        if ((marioState->action != ACT_FINISH_TURNING_AROUND && marioState->action != ACT_WALKING) || marioState->forwardVel <= maxDownhillSpeed)
+                            return true;
+                    }
 
-                return true;
-            });
+                    return true;
+                });
+        }
 
         CustomStatus.crossingData.emplace_back(
-            GetCurrentFrame(), CustomStatus.fSpd, CustomStatus.xzSum, CustomStatus.pyraNormX, CustomStatus.pyraNormZ, marioState->forwardVel, maxDownhillSpeed, CustomStatus.reachedNormRegime);
+            GetCurrentFrame(), CustomStatus.fSpd, CustomStatus.xzSum, CustomStatus.pyraNormX, CustomStatus.pyraNormZ, marioState->forwardVel, maxDownhillSpeed, inRegime);
         CustomStatus.currentCrossing++;
-
-        if (!lastFrameState.crossingData.empty())
-        {
-            // Get number of frames since last crossing
-            int64_t lastCrossing = lastFrameState.crossingData.rbegin()->frame;
-
-            if (int64_t(GetCurrentFrame() - lastCrossing) >= minOscillationFrames)
-                CustomStatus.currentOscillation++;
-        }
     }
     else if (!CustomStatus.crossingData.empty() && marioState->forwardVel > CustomStatus.crossingData.rbegin()->maxSpeed)
         CustomStatus.crossingData.rbegin()->maxSpeed = marioState->forwardVel;

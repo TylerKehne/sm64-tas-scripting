@@ -19,7 +19,10 @@
 // child's frame is reverted with it; the angle it reports is the floor under Mario one frame
 // on, read then (a Surface pointer is good for one frame: docs/tasing.md, "Pitfalls"), which
 // is the pyramid's normal after that frame's tilt up to the rounding of the surface's s16
-// vertices; and the game and the corner answer alike.
+// vertices; and the game and the corner answer alike. The child's frame takes a neutral
+// input of its own, never the movie's (the maintainer, 2026-10-19): the committed movies
+// carry junk inputs after their content, which the corner refuses for the C buttons, and a
+// script a search runs must work on whatever a movie holds.
 
 using namespace tasfw::tests;
 
@@ -96,12 +99,17 @@ namespace
 		DownhillResult& _result;
 	};
 
+	DownhillResult Probe(Sm64Resource& resource, int16_t target, int16_t face, M64& movie)
+	{
+		DownhillResult result;
+		TopLevelScriptBuilder<DownhillProbe>::Build(movie).ImportResource(&resource).Run(target, face, result);
+		return result;
+	}
+
 	DownhillResult Probe(Sm64Resource& resource, int16_t target, int16_t face)
 	{
 		M64 empty;
-		DownhillResult result;
-		TopLevelScriptBuilder<DownhillProbe>::Build(empty).ImportResource(&resource).Run(target, face, result);
-		return result;
+		return Probe(resource, target, face, empty);
 	}
 
 	int AngleGap(int16_t a, int16_t b) { return std::abs(int(int16_t(a - b))); }
@@ -148,4 +156,21 @@ TEST_CASE("libsm64: the downhill angle one tilt on is Mario's floor one frame on
 	MESSAGE("floor angle one tilt on " << onGame.floorAngle << " (the normal " << onGame.normalAngleBefore << " then "
 		<< onGame.normalAngleOneFrameOn << "), facing " << onGame.angleFacing << " / " << onGame.angleNotFacing
 		<< ", steepness " << onGame.steepness << ", slope " << onGame.isSlope);
+
+	// The movie's own frames are not the child's: on a movie whose every frame presses the
+	// buttons the committed movies' junk frames do (A, B, START and the C buttons at once),
+	// the corner answers as on an empty one, where reading the movie's frame would have it
+	// refuse the C buttons.
+	M64 junk;
+	for (uint64_t frame = 0; frame < 64; frame++)
+		junk.frames[frame] = Inputs(uint16_t(0xDC2C), 0, 0);
+	DownhillResult onJunk = Probe(corner, target, face, junk);
+	CHECK(onJunk.validated);
+	CHECK(onJunk.executed);
+	CHECK(onJunk.asserted);
+	CHECK(onJunk.floorAngle == onCorner.floorAngle);
+	CHECK(onJunk.angleFacing == onCorner.angleFacing);
+	CHECK(onJunk.angleNotFacing == onCorner.angleNotFacing);
+	CHECK(onJunk.rotation == onCorner.rotation);
+	CHECK(onJunk.steepness == onCorner.steepness);
 }

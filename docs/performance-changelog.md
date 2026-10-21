@@ -4,6 +4,56 @@ Every hot-path change records its delta table here, newest first; the policy, th
 how to run it are in [performance.md](performance.md). The first measurements (2026-09-07),
 which everything since is compared against, are at the bottom.
 
+## 2026-10-19: the downhill look-ahead's frame takes a neutral written input, never the movie's (ROADMAP 4.12)
+
+Not a framework change; the script only (`GetMinimumDownhillWalkingAngle`, the one-frame
+look-ahead `RunDownhill` makes once a frame and the metric scripts once a crossing). Its
+frame used to be advanced with the movie's input at that frame (`AdvanceFrameRead`). Both
+committed movies carry eight junk frames after their content (A, B, START and the C buttons
+at once), and the corner resource refuses the C buttons that turn or zoom the camera, so a
+lineage that reached them ended the stage. The maintainer's choice: the script must work on
+whatever a movie holds, so its frame is now its own, a neutral written input
+(`AdvanceFrameWrite(Inputs(0, 0, 0))`), reverted with the child as before. A written frame
+does more than a read: it records the input in the child's diff and clears the per-level
+caches past the frame, then the same frame advance (no new allocation: the `DownhillAngle`
+row's count is unchanged). It costs about 3% a call on the game's row and about 3% a frame
+of the ending stage on the corner, both within the suite's gate.
+
+The ending stage, Release, MSVC, 16 threads on the corner, the committed config from one
+`dr-final` hand-over (the pipeline run under this change: `dr-final` 660 at oscillation 9),
+500,000 shots, the executable before the change kept aside and the two run alternately,
+three rounds (the search is not deterministic at 16 threads, so the work differs a little
+between runs; the time per frame advance is the comparison):
+
+| Round | Before: wall, frame advances, us a frame | After: wall, frame advances, us a frame |
+|---|---|---|
+| 1 | 249 s, 716.1 M, 0.348 | 262 s, 735.8 M, 0.356 |
+| 2 | 246 s, 720.9 M, 0.341 | 255 s, 716.8 M, 0.356 |
+| 3 | 251 s, 722.1 M, 0.348 | 252 s, 713.6 M, 0.353 |
+
+About 3% a frame (2.4, 4.3 and 1.6), the price of a script that reads nothing it was not
+given. The stage's counts are the search's own either way (297, 555 and 702 squish cancels
+before; 228, 389 and 628 after; the whole run's 764). The perf suite's `DownhillAngle` row
+(`scripts\perf.ps1 -Filter DownhillAngle`, 1,000 calls on the game, 3 iterations), the
+reference binaries run in the same session: 21.2 ms to 21.8 ms (+3.0%; +2.6% against the
+saved baseline), allocations 9,012 to 9,012, no gate tripped.
+
+## 2026-10-17: the viewer's ranges follow the filter (ROADMAP 4.4)
+
+Not a framework change; the viewer only (`analysis/visualizer.py`, README.md "The viewer").
+The maintainer asked for a range column's "seen" to follow the filter. The least and
+greatest value shown under a column's boxes are now over the rows that pass the filter on
+every other column, the rule the counts use, where before they were over every row. The
+parse loop updates every column's range from a row that passes every filter, as before,
+and one column's from a row that fails that column's filter alone; a row that fails two
+filters updates none. Measured as the headless render (`--once`) of the maintainer's
+293,723-row ending CSV (25 columns, 8 of them counted), wall seconds, two rounds:
+
+| Filter | Before | After |
+|---|---|---|
+| None | 4.02, 4.03 | 4.03, 4.03 |
+| `MarioFSpd >= 10` | 3.37, 3.38 | 3.25, 3.22 |
+
 ## 2026-10-17: the corner's decomp copies build on GCC 14 (docs/compilers.md)
 
 Not a change of what the corner does: three edits in its copies of the decomp, for GCC
