@@ -81,13 +81,21 @@ void Scattershot_BitfsDr::SelectMovementOptions()
                 // maintainer, 2026-10-19: the roots are ranked by that probed run, so the
                 // search should be able to make it). The later swings' weights are the
                 // config's (BitfsDrMoveWeights); the first swing keeps its measured own.
+                // The targeted swing (TargetCrossing) from any walking frame over the
+                // turnaround's 16, the later swings only.
+                bool canTarget = !firstSwing && marioState->action == ACT_WALKING && marioState->forwardVel > 16.0f;
+                // The run out up the axis (RunUpAxis_1f; the maintainer, 2026-11-21): from
+                // the crossing's own frame on, as the example movies turn uphill at once.
+                // Its first frame takes speed, which moves the phase on to the uphill one.
                 if (state.currentCrossing > 1 || !Handover())
                     AddRandomMovementOption(
                         {
                             {CustomMoves::LEAD_RUN, firstSwing ? 4 : _moves.leadRun},
                             {CustomMoves::PROBE_RUN, firstSwing ? 0 : _moves.probeRun},
                             {CustomMoves::TURN_UPHILL, marioState->forwardVel <= 16.0f ? 0 : (firstSwing ? 4 : _moves.turnUphill)},
-                            {CustomMoves::TURN_AROUND, canTurnAround ? (firstSwing ? 4 : _moves.turnAround) : 0}
+                            {CustomMoves::TURN_AROUND, canTurnAround ? (firstSwing ? 4 : _moves.turnAround) : 0},
+                            {CustomMoves::TARGET_CROSSING, canTarget ? _moves.targetCrossing : 0},
+                            {CustomMoves::RUN_UP_AXIS, firstSwing ? 0 : _moves.runUpAxis}
                         });
                 else
                     AddRandomMovementOption(
@@ -101,12 +109,23 @@ void Scattershot_BitfsDr::SelectMovementOptions()
             break;
 
         case BitfsDrMetrics::Phase::RUN_DOWNHILL_PRE_CROSSING:
+        {
+            // The way back. The frame the turnaround stops on may face Mario down the slope
+            // (FaceDownSlope_1f), and a frame after it may keep his facing (KeepFacing_1f),
+            // beside the two runs toward the chord's far end; the later swings only (the
+            // maintainer, 2026-11-21). At weight 0 neither is in the draw.
+            bool laterSwing = state.currentCrossing > 1;
+            bool stopping = marioState->action == ACT_TURNING_AROUND;
+            bool running = marioState->action == ACT_FINISH_TURNING_AROUND || marioState->action == ACT_WALKING;
             AddRandomMovementOption(
                 {
                     {CustomMoves::RUN_DOWNHILL_MIN, 1},
-                    {CustomMoves::RUN_DOWNHILL, 1}
+                    {CustomMoves::RUN_DOWNHILL, 1},
+                    {CustomMoves::FACE_DOWN_SLOPE, laterSwing && stopping ? _moves.faceDownSlope : 0.0},
+                    {CustomMoves::KEEP_FACING, laterSwing && running ? _moves.keepFacing : 0.0}
                 });
             break;
+        }
 
         case BitfsDrMetrics::Phase::TURN_UPHILL:
         {
@@ -114,11 +133,33 @@ void Scattershot_BitfsDr::SelectMovementOptions()
             bool avoidDoubleTurnaround = prevState.marioAction == ACT_FINISH_TURNING_AROUND && state.marioAction == ACT_WALKING;
             bool firstSwing = state.currentCrossing == 1; // the first swing's turnaround as often as the run (see RUN_DOWNHILL)
 
+            // With the run up the axis on, the later swings draw the uphill-turn phase by the
+            // config's weights, as the run phase does: the lead run, the frame up the axis,
+            // the turnaround and the targeted move. The run out is then as long as the search
+            // makes it, a state saved after every frame and the turnaround drawn from any of
+            // them. The turnaround only after a frame that ran uphill, so that it takes speed
+            // at the game's full 4.9 a frame from its first frame (the maintainer,
+            // 2026-11-21); after a frame that gained speed it takes 3.1.
+            if (!firstSwing && _moves.runUpAxis > 0)
+            {
+                bool canTurnAround = state.marioAction == ACT_WALKING && !avoidDoubleTurnaround && marioState->forwardVel > 16.0f && state.ranUphill;
+                bool canTarget = state.marioAction == ACT_WALKING && !avoidDoubleTurnaround && marioState->forwardVel > 16.0f;
+                AddRandomMovementOption(
+                    {
+                        {CustomMoves::LEAD_RUN, _moves.leadRun},
+                        {CustomMoves::TURN_AROUND, canTurnAround ? _moves.turnAround : 0},
+                        {CustomMoves::TARGET_CROSSING, canTarget ? _moves.targetCrossing : 0},
+                        {CustomMoves::RUN_UP_AXIS, _moves.runUpAxis}
+                    });
+                break;
+            }
+
             if (state.currentCrossing > 1 || !Handover())
                 AddRandomMovementOption(
                     {
                         {CustomMoves::LEAD_RUN, firstSwing ? 5 : 10},
-                        {CustomMoves::TURN_AROUND, state.marioAction != ACT_WALKING || avoidDoubleTurnaround ? 0 : (firstSwing ? 5 : 1)}
+                        {CustomMoves::TURN_AROUND, state.marioAction != ACT_WALKING || avoidDoubleTurnaround ? 0 : (firstSwing ? 5 : 1)},
+                        {CustomMoves::TARGET_CROSSING, !firstSwing && state.marioAction == ACT_WALKING && marioState->forwardVel > 16.0f && !avoidDoubleTurnaround ? _moves.targetCrossing : 0}
                     });
             else
                 AddRandomMovementOption(
@@ -184,6 +225,8 @@ bool Scattershot_BitfsDr::ApplyMovement()
         }
         else if (CheckMovementOptions(CustomMoves::RUN_FORWARD) && RunForwardThenTurnAround())
             return true;
+        else if (CheckMovementOptions(CustomMoves::TARGET_CROSSING))
+            return TargetCrossing();
         else if (CheckMovementOptions(CustomMoves::TURN_AROUND))
         {
             TurnAround();
@@ -199,6 +242,12 @@ bool Scattershot_BitfsDr::ApplyMovement()
             return ProbeRun_1f();
         else if (CheckMovementOptions(CustomMoves::LEAD_RUN))
             return LeadRun_1f(state.phase == BitfsDrMetrics::Phase::INITIAL);
+        else if (CheckMovementOptions(CustomMoves::RUN_UP_AXIS))
+            return RunUpAxis_1f();
+        else if (CheckMovementOptions(CustomMoves::FACE_DOWN_SLOPE))
+            return FaceDownSlope_1f();
+        else if (CheckMovementOptions(CustomMoves::KEEP_FACING))
+            return KeepFacing_1f();
     }
 
     /*
@@ -860,6 +909,183 @@ bool Scattershot_BitfsDr::TurnAround()
         }).executed;
 }
 
+bool Scattershot_BitfsDr::CrossingTarget(int16_t roughTargetAngle, const Object* pyramid, float& targetX, float& targetZ, int16_t& uphillYaw, bool& majorX) const
+{
+    const NormalSpecsDto& specs = _normalSpecsDto;
+    if (specs.minXzSum <= 0.0f)
+        return false;
+    float tilt = specs.minXzSum + TargetTiltAbove;
+    if (specs.maxExitXzSum < 2.0f)
+        tilt = std::min(tilt, specs.maxExitXzSum - 0.005f);
+    const float diff = std::max(specs.minCrossingAxisDiff, 0.0f) + TargetDiffAbove;
+    const float major = (tilt + diff) / 2.0f;
+    const float minor = (tilt - diff) / 2.0f;
+    if (minor <= 0.0f)
+        return false;
+
+    if (!RunOutYaw(roughTargetAngle, _quadrant, uphillYaw, majorX))
+        return false;
+    const int cornerX = BitfsDrMetrics::CornerSignX(_quadrant);
+    const int cornerZ = BitfsDrMetrics::CornerSignZ(_quadrant);
+    const float nx = float(cornerX) * (majorX ? major : minor);
+    const float nz = float(cornerZ) * (majorX ? minor : major);
+    const float ny = std::sqrt(std::max(1.0f - nx * nx - nz * nz, 0.01f));
+    targetX = pyramid->oPosX + 500.0f * nx / ny;
+    targetZ = pyramid->oPosZ + 500.0f * nz / ny;
+    return true;
+}
+
+bool Scattershot_BitfsDr::RunOutYaw(int16_t roughTargetAngle, int quadrant, int16_t& yaw, bool& majorX)
+{
+    // The crossing's steps head to the chord end roughTargetAngle names; the axis they reduce,
+    // where the step's sign is against the corner's, is the major one, the normal's larger
+    // component at the crossing (the hand-over of 2026-10-21: -0.49 on x, 0.22 on z, the
+    // crossing stepping +x +z in the -x +z corner).
+    const int stepX = ScriptMath::Sign(gSineTable[uint16_t(roughTargetAngle) >> 4]);
+    const int stepZ = ScriptMath::Sign(gCosineTable[uint16_t(roughTargetAngle) >> 4]);
+    const int cornerX = BitfsDrMetrics::CornerSignX(quadrant);
+    const int cornerZ = BitfsDrMetrics::CornerSignZ(quadrant);
+    majorX = stepX != cornerX;
+    if (majorX == (stepZ != cornerZ))
+        return false;
+    // Uphill along the minor axis: toward the center, against the corner's sign there.
+    if (majorX)
+        yaw = cornerZ > 0 ? int16_t(-0x8000) : int16_t(0);
+    else
+        yaw = cornerX > 0 ? int16_t(-0x4000) : int16_t(0x4000);
+    return true;
+}
+
+bool Scattershot_BitfsDr::TargetCrossing()
+{
+    MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
+    Object* pyramid = Pyramid();
+    if (marioState->action != ACT_WALKING || marioState->forwardVel <= 16.0f)
+        return false;
+    auto state = GetMetrics(GetCurrentFrame());
+    float targetX, targetZ;
+    int16_t uphillYaw;
+    bool majorX;
+    if (!CrossingTarget(state.roughTargetAngle, pyramid, targetX, targetZ, uphillYaw, majorX))
+        return false;
+    const int crossing = state.currentCrossing;
+    const int16_t chordEnd = state.roughTargetAngle;
+    const int cornerX = BitfsDrMetrics::CornerSignX(_quadrant);
+    const int cornerZ = BitfsDrMetrics::CornerSignZ(_quadrant);
+    // The tilt-raising run (the maintainer, 2026-10-21): the sum rises only on frames Mario
+    // is beyond the equilibrium point on both axes at once, toward the corner, and an
+    // oscillation that keeps him beyond on one axis and inside on the other holds its sum,
+    // so from a hand-over under the window no aim reaches it. The run heads toward the
+    // corner with raiseMajorShare of the speed on the major axis, the steeper one (half, so
+    // that the equilibrium point's six a frame does not overtake him on it while he is still
+    // slow after the turnaround), and the rest on the minor, while the sum is under the target tilt and the top under Mario is
+    // raiseClearance above the lava (the corner's quadrant dips under it; the equilibrium
+    // point stands about 40 above the lava at a sum of 0.67 and 5 at 0.717), raiseFrames at
+    // most. The target tilt is CrossingTarget's. (These belong in the header beside the
+    // other Target constants; the editor held it when they were written.)
+    constexpr float raiseMajorShare = 0.5f;
+    constexpr float raiseClearance = 35.0f;
+    constexpr int raiseFrames = 8;
+    float targetTilt = _normalSpecsDto.minXzSum + TargetTiltAbove;
+    if (_normalSpecsDto.maxExitXzSum < 2.0f)
+        targetTilt = std::min(targetTilt, _normalSpecsDto.maxExitXzSum - 0.005f);
+    const int16_t raiseYaw = atan2s(float(cornerZ) * (majorX ? 1.0f : raiseMajorShare), float(cornerX) * (majorX ? raiseMajorShare : 1.0f));
+    auto sum = [&]() { return std::fabs(pyramid->oTiltingPyramidNormalX) + std::fabs(pyramid->oTiltingPyramidNormalZ); };
+    // Mario's coordinate along the minor axis from the pyramid's position, positive toward
+    // the corner's side; and whether he is past the equilibrium point on that axis,
+    // toward the chord end (the crossing's step there is against the corner's sign).
+    auto minorCoordinate = [&]()
+    {
+        return majorX ? float(BitfsDrMetrics::CornerSignZ(_quadrant)) * (marioState->pos[2] - pyramid->oPosZ)
+            : float(BitfsDrMetrics::CornerSignX(_quadrant)) * (marioState->pos[0] - pyramid->oPosX);
+    };
+    auto pastNormalOnMinor = [&]()
+    {
+        const float normalMinor = majorX ? float(BitfsDrMetrics::CornerSignZ(_quadrant)) * 500.0f * pyramid->oTiltingPyramidNormalZ / pyramid->oTiltingPyramidNormalY
+            : float(BitfsDrMetrics::CornerSignX(_quadrant)) * 500.0f * pyramid->oTiltingPyramidNormalX / pyramid->oTiltingPyramidNormalY;
+        return minorCoordinate() > normalMinor + 6.0f;
+    };
+
+    return ModifyAdhoc([&]()
+        {
+            // The equilibrium point as it will stand when Mario arrives: the point now, moved
+            // toward him on each axis by six units a frame for the frames the distance takes
+            // (the window's fixed point, aimed at to the end, had him arrive before the normal
+            // did, where the point stands 4 above the lava, and 65% of such runs died there on
+            // frames 10 to 14; the census of 2026-10-21).
+            auto aimYaw = [&]()
+            {
+                const float ny = pyramid->oTiltingPyramidNormalY;
+                float px = pyramid->oPosX + 500.0f * pyramid->oTiltingPyramidNormalX / ny;
+                float pz = pyramid->oPosZ + 500.0f * pyramid->oTiltingPyramidNormalZ / ny;
+                const float dx = marioState->pos[0] - px;
+                const float dz = marioState->pos[2] - pz;
+                const float frames = std::sqrt(dx * dx + dz * dz) / std::max(marioState->forwardVel, 8.0f);
+                px += (dx > 0.0f ? 6.0f : -6.0f) * frames;
+                pz += (dz > 0.0f ? 6.0f : -6.0f) * frames;
+                return atan2s(pz - marioState->pos[2], px - marioState->pos[0]);
+            };
+
+            // Uphill along the minor axis toward the center, the normal falling behind on it.
+            for (int i = 0; i < TargetUphillFrames; i++)
+            {
+                if (marioState->action != ACT_WALKING || MarioDeath::IsDying(*marioState))
+                    return true;
+                if (minorCoordinate() <= TargetCenterBand || marioState->forwardVel < TargetTurnSpeed)
+                    break;
+                if (!StepFrame(uphillYaw, 32))
+                    return true;
+            }
+            if (marioState->action != ACT_WALKING || marioState->forwardVel < 16.0f || MarioDeath::IsDying(*marioState))
+                return true;
+
+            // The turnaround with the stick at the point: it takes only while the stick is held
+            // back from the facing (analog_stick_held_back), and ends at the stop, which faces
+            // the stick (begin_walking_action).
+            for (int i = 0; i < 12; i++)
+            {
+                if (!StepFrame(aimYaw(), 32))
+                    return true;
+                if (MarioDeath::IsDying(*marioState) || marioState->action == ACT_FINISH_TURNING_AROUND)
+                    break;
+                if (marioState->action != ACT_TURNING_AROUND)
+                    return true;
+            }
+            if (marioState->action != ACT_FINISH_TURNING_AROUND || MarioDeath::IsDying(*marioState))
+                return true;
+
+            // The tilt-raising run toward the corner, at the start of the run back, where Mario
+            // already heads the corner's way: while the sum is under the target and the top under
+            // him is above the lava by the clearance. (In front of the uphill run, at a drawn
+            // frame of the run toward the chord's far end, it turned him around or had no room:
+            // 58% and 32% of 61,109 draws, and no frame raised the sum; the census of 2026-10-21.)
+            for (int i = 0; i < raiseFrames; i++)
+            {
+                if ((marioState->action != ACT_FINISH_TURNING_AROUND && marioState->action != ACT_WALKING) || MarioDeath::IsDying(*marioState))
+                    return true;
+                if (sum() >= targetTilt - 0.005f || marioState->pos[1] - LavaHeight < raiseClearance)
+                    break;
+                if (!StepFrame(raiseYaw, 32))
+                    return true;
+            }
+
+            // The run back, to the crossing: at the point, then at the chord end once Mario is
+            // past the equilibrium point on the minor axis.
+            bool toEnd = false;
+            for (int i = 0; i < TargetRunFrames; i++)
+            {
+                if ((marioState->action != ACT_FINISH_TURNING_AROUND && marioState->action != ACT_WALKING) || MarioDeath::IsDying(*marioState))
+                    return true;
+                toEnd = toEnd || pastNormalOnMinor();
+                if (!StepFrame(toEnd ? chordEnd : aimYaw(), 32))
+                    return true;
+                if (GetMetrics(GetCurrentFrame()).currentCrossing > crossing)
+                    return true;
+            }
+            return true;
+        }).executed;
+}
+
 bool Scattershot_BitfsDr::RunDownhill_1f(bool min)
 {
     MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
@@ -1189,6 +1415,50 @@ bool Scattershot_BitfsDr::ProbeRun_1f()
     if (!status.asserted)
         return false;
     return StepFrame(int16_t(status.angleFacing), 32, 0, status.downhillRotation);
+}
+
+bool Scattershot_BitfsDr::RunUpAxis_1f()
+{
+    // One frame of the run out up the slope: the stick along the axis whose tilt this
+    // oscillation flattens, toward the pyramid's center line. Mario's facing follows the
+    // stick by 2048 a frame, so from a crossing the first frames turn him onto the axis.
+    // A frame StepFrame could only play by releasing the stick, which brakes, is refused.
+    MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
+    if (marioState->action != ACT_WALKING && marioState->action != ACT_FINISH_TURNING_AROUND)
+        return false;
+    int16_t yaw;
+    bool majorX;
+    if (!RunOutYaw(GetMetrics(GetCurrentFrame()).roughTargetAngle, _quadrant, yaw, majorX))
+        return false;
+    return StepFrame(yaw, 32) && (marioState->action == ACT_WALKING || marioState->action == ACT_FINISH_TURNING_AROUND);
+}
+
+bool Scattershot_BitfsDr::FaceDownSlope_1f()
+{
+    // The frame a turnaround stops on, with the stick past the held-back angle on the side
+    // of the facing the floor's downhill is on. The side is read from the floor angle the
+    // game keeps for Mario, a frame old, which is enough for a side. A frame on which the
+    // turnaround does not stop (Mario still slowing, or the stick not taken as held back,
+    // which cancels the turnaround into a walk) is refused, and the search's own revert
+    // takes it back.
+    MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
+    if (marioState->action != ACT_TURNING_AROUND)
+        return false;
+    const int toDownhill = ScriptMath::Sign(int16_t(marioState->floorAngle - marioState->faceAngle[1]));
+    if (toDownhill == 0)
+        return false;
+    const int past = FaceDownSlopeMargin + int(GetTempRng() % uint64_t(FaceDownSlopeSpread));
+    const int16_t yaw = int16_t(marioState->faceAngle[1] + toDownhill * (HeldBackAngle + past));
+    return StepFrame(yaw, 32) && marioState->action == ACT_FINISH_TURNING_AROUND;
+}
+
+bool Scattershot_BitfsDr::KeepFacing_1f()
+{
+    // One frame of the way back with the stick at the facing.
+    MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
+    if (marioState->action != ACT_FINISH_TURNING_AROUND && marioState->action != ACT_WALKING)
+        return false;
+    return StepFrame(marioState->faceAngle[1], 32) && (marioState->action == ACT_FINISH_TURNING_AROUND || marioState->action == ACT_WALKING);
 }
 
 void Scattershot_BitfsDr::Leads(const MarioState* marioState, const Object* pyramid, int dirX, int dirZ, float& leadX, float& leadZ)

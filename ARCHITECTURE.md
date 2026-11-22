@@ -461,13 +461,22 @@ Stage types, in the order the committed config uses them:
    leads until its turnaround (`LeadRun_1f`: the stick of a fan around the face yaw that
    leaves the thinner lead largest among those keeping both axes stepping; after a
    crossing the probe's own run beside it, `ProbeRun_1f`, one frame downhill at the
-   minimum angle from the facing), the tilt kept
+   minimum angle from the facing; and, where the config gives them a weight, three
+   one-frame moves for what the example movies do, ROADMAP 4.12: `RunUpAxis_1f`, a frame of
+   the run out, from the crossing to the turnaround, up the axis whose tilt has to flatten;
+   `FaceDownSlope_1f`, the frame a turnaround stops on, with the stick just past the angle
+   the game counts as held back, on the downhill side, so that the way back, from the
+   turnaround to the next crossing, begins down the slope; and `KeepFacing_1f`, a frame of
+   the way back that does not turn), the tilt kept
    in the corner's
    quadrant (`minAxis`), never a swing's amplitude below the rest's own, below the regime's
    tilt climbing with at most one shift of 0.02 outstanding against its highest yet, and,
    once it has reached the regime's (`startXzSum`), never below that again; a turnaround
    begins only from a frame Mario ran uphill, the metric's `ranUphill`, the slope having
-   taken speed, which the chord's ends are for every swing that starts at a crossing; the
+   taken speed, which the chord's ends are for every swing that starts at a crossing (the
+   rule is checked on the last frame of a move, so it does not see a turnaround that the
+   turnaround's move plays whole, and the uphill-turn phase offers that move without the
+   check unless the run up the axis is on; found 2026-11-21, open in ROADMAP 4.12); the
    first swing, from the rest's equilibrium, where the normal has no lag and the chord
    ahead is downhill, may turn from any frame (a `handoverXzSum` above
    the rest's tilt makes the first pass the old lineup instead, running the tilt up to it
@@ -483,14 +492,17 @@ Stage types, in the order the committed config uses them:
    the last pass's solutions must reach `minXzSum` and not exceed `maxExitXzSum`.
 3. **sc-ending** (`Scattershot_BitfsScEnding`), piped from the oscillation solutions, its
    metrics from the fixer's hand-over frame: the final run along the edge into the target
-   corner, the approach (a dive recover kept inside the band where the pyramid is still
-   Mario's platform, or a brake to a stop), the leave over the squish edge, the far edge
-   of that corner (`targetEdge`; a slow walk off, a run off parallel to the edge, a
-   quickturn to idle, a C-up deceleration onto a NUT spot, a wait for the displacement, a
-   stop searched onto a NUT spot with the strain on its fall's first frame) and the air
-   after it (the strain in and out, and a frame with the pyramid his platform again, a
+   corner, the approach (a dive recover whose rollout is steered in the air by a model of
+   the game's own arithmetic to a landing within a zone inside the squish edge, half its
+   moves taking only flights that keep within 4 units of the top, or a brake to a stop), the leave over the squish edge, the far edge of that corner
+   (`targetEdge`; a slow walk off, a run off parallel to the edge, a quickturn to idle, a
+   punch cancel out of a landing stop, a C-up deceleration onto a NUT spot, a wait for
+   the displacement, a stop searched onto a NUT spot with the strain on its fall's first
+   frame) and the air
+   after it (the strain in and out, a dive pressed in the air, a frame with the pyramid his platform again, a
    hover within the band over the top or a touch down that steps off again at once, for
-   the tilt those frames give). Every option is a weighted move and a solution
+   the tilt those frames give, and the whole fall as one move, strained up the rising
+   edge so that the top is far enough above him for the squish a frame sooner). Every option is a weighted move and a solution
    records which it took. The error is conserved exactly throughout, through the
    departure, the first frame at whose end the pyramid is not Mario's platform; the
    solution is a frame within the window after it from which the metric script's squish

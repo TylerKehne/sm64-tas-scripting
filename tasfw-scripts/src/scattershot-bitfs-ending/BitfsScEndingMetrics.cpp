@@ -310,6 +310,9 @@ BitfsScEndingMetrics::Face BitfsScEndingMetrics::Face::Of(float normalX, float n
     face.uy = normalY / length;
     face.uz = normalZ / length;
     face.s = std::sqrt(face.ux * face.ux + face.uy * face.uy);
+    face.nx = normalX;
+    face.ny = normalY;
+    face.nz = normalZ;
     face.homeX = homeX;
     face.homeY = homeY;
     face.homeZ = homeZ;
@@ -319,6 +322,333 @@ BitfsScEndingMetrics::Face BitfsScEndingMetrics::Face::Of(float normalX, float n
 BitfsScEndingMetrics::Face BitfsScEndingMetrics::Face::Of(const Object* pyramid)
 {
     return Of(pyramid->oTiltingPyramidNormalX, pyramid->oTiltingPyramidNormalY, pyramid->oTiltingPyramidNormalZ, pyramid->oPosX, pyramid->oPosY, pyramid->oPosZ);
+}
+
+// The air model (AirStep): the decomp copies' arithmetic, float by float in their order
+// (tilting_inverted_pyramid.inc, math_util.inc, object_helpers.inc, surface_load.inc,
+// surface_collision.inc, mario_actions_airborne.inc, mario_step.inc,
+// platform_displacement.inc). A double appears only where the decomp writes one.
+
+// The inverted pyramid's collision: the top's square and its two triangles.
+static constexpr int16_t TopVertices[4][3] = { { 307, 307, -306 }, { -306, 307, 307 }, { 307, 307, 307 }, { -306, 307, -306 } };
+static constexpr int TopTriangles[2][3] = { { 0, 1, 2 }, { 0, 3, 1 } };
+
+float BitfsScEndingMetrics::AirStep::ApproachByIncrement(float goal, float src, float inc)
+{
+    float newVal;
+    if (src <= goal)
+    {
+        if (goal - src < inc)
+            newVal = goal;
+        else
+            newVal = src + inc;
+    }
+    else if (goal - src > -inc)
+        newVal = goal;
+    else
+        newVal = src - inc;
+    return newVal;
+}
+
+float BitfsScEndingMetrics::AirStep::ApproachF32(float current, float target, float inc, float dec)
+{
+    if (current < target)
+    {
+        current += inc;
+        if (current > target)
+            current = target;
+    }
+    else
+    {
+        current -= dec;
+        if (current < target)
+            current = target;
+    }
+    return current;
+}
+
+void BitfsScEndingMetrics::AirStep::Normalize(float v[3])
+{
+    const float invsqrt = 1.0f / std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+    v[0] *= invsqrt;
+    v[1] *= invsqrt;
+    v[2] *= invsqrt;
+}
+
+void BitfsScEndingMetrics::AirStep::Cross(float dest[3], const float a[3], const float b[3])
+{
+    dest[0] = a[1] * b[2] - b[1] * a[2];
+    dest[1] = a[2] * b[0] - b[2] * a[0];
+    dest[2] = a[0] * b[1] - b[0] * a[1];
+}
+
+void BitfsScEndingMetrics::AirStep::LinearMul(const float rows[3][3], float dest[3], const float v[3])
+{
+    for (int i = 0; i < 3; i++)
+        dest[i] = rows[0][i] * v[0] + rows[1][i] * v[1] + rows[2][i] * v[2];
+}
+
+BitfsScEndingMetrics::AirStep::Pyramid BitfsScEndingMetrics::AirStep::Pyramid::Of(const Object* pyramid)
+{
+    return Of(pyramid->oTiltingPyramidNormalX, pyramid->oTiltingPyramidNormalY, pyramid->oTiltingPyramidNormalZ, pyramid->oPosX, pyramid->oPosY, pyramid->oPosZ);
+}
+
+BitfsScEndingMetrics::AirStep::Pyramid BitfsScEndingMetrics::AirStep::Pyramid::Of(float nx, float ny, float nz, float homeX, float homeY, float homeZ)
+{
+    Pyramid pyramid;
+    pyramid.homeX = homeX;
+    pyramid.homeY = homeY;
+    pyramid.homeZ = homeZ;
+    pyramid.nx = nx;
+    pyramid.ny = ny;
+    pyramid.nz = nz;
+    pyramid.Place();
+    return pyramid;
+}
+
+void BitfsScEndingMetrics::AirStep::Pyramid::Place()
+{
+    // mtxf_align_terrain_normal with yaw 0, then transform_object_vertices (the scale 1) and
+    // read_surface_data for each of the top's triangles.
+    const float lateral[3] = { gSineTable[0], 0.0f, gCosineTable[0] };
+    float up[3] = { nx, ny, nz };
+    Normalize(up);
+    float left[3];
+    Cross(left, up, lateral);
+    Normalize(left);
+    float forward[3];
+    Cross(forward, left, up);
+    Normalize(forward);
+    for (int i = 0; i < 3; i++)
+    {
+        rows[0][i] = left[i];
+        rows[1][i] = up[i];
+        rows[2][i] = forward[i];
+    }
+    const float home[3] = { homeX, homeY, homeZ };
+    int16_t world[4][3];
+    for (int v = 0; v < 4; v++)
+    {
+        const float vx = float(TopVertices[v][0]);
+        const float vy = float(TopVertices[v][1]);
+        const float vz = float(TopVertices[v][2]);
+        for (int i = 0; i < 3; i++)
+            world[v][i] = int16_t(vx * rows[0][i] + vy * rows[1][i] + vz * rows[2][i] + home[i]);
+    }
+    for (int t = 0; t < 2; t++)
+    {
+        Triangle& triangle = top[t];
+        for (int k = 0; k < 3; k++)
+        {
+            for (int i = 0; i < 3; i++)
+                triangle.v[k][i] = world[TopTriangles[t][k]][i];
+        }
+        const int32_t x1 = triangle.v[0][0], y1 = triangle.v[0][1], z1 = triangle.v[0][2];
+        const int32_t x2 = triangle.v[1][0], y2 = triangle.v[1][1], z2 = triangle.v[1][2];
+        const int32_t x3 = triangle.v[2][0], y3 = triangle.v[2][1], z3 = triangle.v[2][2];
+        float tx = float((y2 - y1) * (z3 - z2) - (z2 - z1) * (y3 - y2));
+        float ty = float((z2 - z1) * (x3 - x2) - (x2 - x1) * (z3 - z2));
+        float tz = float((x2 - x1) * (y3 - y2) - (y2 - y1) * (x3 - x2));
+        float mag = std::sqrt(tx * tx + ty * ty + tz * tz);
+        mag = float(1.0 / mag);
+        tx *= mag;
+        ty *= mag;
+        tz *= mag;
+        triangle.nx = tx;
+        triangle.ny = ty;
+        triangle.nz = tz;
+        triangle.originOffset = -(tx * float(x1) + ty * float(y1) + tz * float(z1));
+    }
+}
+
+void BitfsScEndingMetrics::AirStep::Pyramid::Tilt(float& marioX, float& marioY, float& marioZ, bool onPlatform)
+{
+    float dx, dy, dz;
+    float dist[3] = { 0.0f, 0.0f, 0.0f };
+    float before[3] = { 0.0f, 0.0f, 0.0f };
+    if (onPlatform)
+    {
+        dist[0] = marioX - homeX;
+        dist[1] = marioY - homeY;
+        dist[2] = marioZ - homeZ;
+        LinearMul(rows, before, dist);
+        dx = marioX - homeX;
+        dy = 500.0f;
+        dz = marioZ - homeZ;
+        float d = std::sqrt(dx * dx + dy * dy + dz * dz);
+        d = float(1.0 / d);
+        dx *= d;
+        dy *= d;
+        dz *= d;
+    }
+    else
+    {
+        dx = 0.0f;
+        dy = 1.0f;
+        dz = 0.0f;
+    }
+    nx = ApproachByIncrement(dx, nx, 0.01f);
+    ny = ApproachByIncrement(dy, ny, 0.01f);
+    nz = ApproachByIncrement(dz, nz, 0.01f);
+    Place();
+    if (onPlatform)
+    {
+        float after[3];
+        LinearMul(rows, after, dist);
+        marioX += after[0] - before[0];
+        marioY += after[1] - before[1];
+        marioZ += after[2] - before[2];
+    }
+}
+
+float BitfsScEndingMetrics::AirStep::Pyramid::FindFloor(float x, float y, float z, bool& isTop) const
+{
+    // find_floor and find_floor_from_list on the top's triangles, the lava the static floor.
+    const int32_t xi = int16_t(x);
+    const int32_t yi = int16_t(y);
+    const int32_t zi = int16_t(z);
+    float height = LavaHeight;
+    isTop = false;
+    for (const Triangle& triangle : top)
+    {
+        const int32_t x1 = triangle.v[0][0], z1 = triangle.v[0][2];
+        const int32_t x2 = triangle.v[1][0], z2 = triangle.v[1][2];
+        if ((z1 - zi) * (x2 - x1) - (x1 - xi) * (z2 - z1) < 0)
+            continue;
+        const int32_t x3 = triangle.v[2][0], z3 = triangle.v[2][2];
+        if ((z2 - zi) * (x3 - x2) - (x2 - xi) * (z3 - z2) < 0)
+            continue;
+        if ((z3 - zi) * (x1 - x3) - (x3 - xi) * (z1 - z3) < 0)
+            continue;
+        if (triangle.ny == 0.0f)
+            continue;
+        const float topHeight = -(float(xi) * triangle.nx + triangle.nz * float(zi) + triangle.originOffset) / triangle.ny;
+        if (float(yi) - (topHeight + -78.0f) < 0.0f)
+            continue;
+        if (topHeight > height)
+        {
+            height = topHeight;
+            isTop = true;
+        }
+        break;
+    }
+    return height;
+}
+
+BitfsScEndingMetrics::AirStep::Mario BitfsScEndingMetrics::AirStep::Mario::Of(const MarioState* marioState, const Object* pyramid)
+{
+    Mario mario;
+    mario.x = marioState->pos[0];
+    mario.y = marioState->pos[1];
+    mario.z = marioState->pos[2];
+    mario.vx = marioState->vel[0];
+    mario.vy = marioState->vel[1];
+    mario.vz = marioState->vel[2];
+    mario.forwardVel = marioState->forwardVel;
+    mario.yaw = marioState->faceAngle[1];
+    mario.action = marioState->action;
+    mario.onPlatform = marioState->marioObj->platform == pyramid;
+    mario.floorHeight = marioState->floorHeight;
+    mario.floorIsTop = marioState->floor != nullptr && marioState->floor->object == pyramid;
+    return mario;
+}
+
+void BitfsScEndingMetrics::AirStep::UpdateAirWithoutTurn(Mario& mario, int16_t intendedYaw, float intendedMag)
+{
+    float sidewaysSpeed = 0.0f;
+    const float dragThreshold = 32.0f;
+    mario.forwardVel = ApproachF32(mario.forwardVel, 0.0f, 0.35f, 0.35f);
+    if (intendedMag > 0.0f)
+    {
+        const int16_t intendedDYaw = int16_t(intendedYaw - mario.yaw);
+        const float magnitude = intendedMag / 32.0f;
+        mario.forwardVel += magnitude * gCosineTable[uint16_t(intendedDYaw) >> 4] * 1.5f;
+        sidewaysSpeed = magnitude * gSineTable[uint16_t(intendedDYaw) >> 4] * 10.0f;
+    }
+    if (mario.forwardVel > dragThreshold)
+        mario.forwardVel -= 1.0f;
+    if (mario.forwardVel < -16.0f)
+        mario.forwardVel += 2.0f;
+    float slideVelX = mario.forwardVel * gSineTable[uint16_t(mario.yaw) >> 4];
+    float slideVelZ = mario.forwardVel * gCosineTable[uint16_t(mario.yaw) >> 4];
+    slideVelX += sidewaysSpeed * gSineTable[uint16_t(int16_t(mario.yaw + 0x4000)) >> 4];
+    slideVelZ += sidewaysSpeed * gCosineTable[uint16_t(int16_t(mario.yaw + 0x4000)) >> 4];
+    mario.vx = slideVelX;
+    mario.vz = slideVelZ;
+}
+
+bool BitfsScEndingMetrics::AirStep::PerformAirStep(Mario& mario, const Pyramid& pyramid)
+{
+    // The four quarter steps (perform_air_quarter_step: no walls, no ceiling over the top),
+    // then gravity.
+    bool landed = false;
+    for (int i = 0; i < 4; i++)
+    {
+        const float nextX = mario.x + mario.vx / 4.0f;
+        const float nextY = mario.y + mario.vy / 4.0f;
+        const float nextZ = mario.z + mario.vz / 4.0f;
+        bool isTop;
+        const float floorHeight = pyramid.FindFloor(nextX, nextY, nextZ, isTop);
+        if (nextY <= floorHeight)
+        {
+            mario.x = nextX;
+            mario.z = nextZ;
+            mario.floorHeight = floorHeight;
+            mario.floorIsTop = isTop;
+            mario.y = floorHeight;
+            landed = true;
+            break;
+        }
+        mario.x = nextX;
+        mario.y = nextY;
+        mario.z = nextZ;
+        mario.floorHeight = floorHeight;
+        mario.floorIsTop = isTop;
+    }
+    mario.vy -= 4.0f;
+    if (mario.vy < -75.0f)
+        mario.vy = -75.0f;
+    return landed;
+}
+
+bool BitfsScEndingMetrics::AirStep::Frame(Mario& mario, Pyramid& pyramid, int16_t intendedYaw, float intendedMag, bool bPressed)
+{
+    uint32_t action = mario.action;
+    if (action == ACT_WALKING)
+    {
+        // check_ground_dive_or_punch: the dive needs B, 29 of speed and a stick over 48 raw,
+        // which is an intended magnitude over 18; set_mario_action_airborne adds 15 of speed.
+        if (!bPressed || mario.forwardVel < 29.0f || intendedMag <= 18.0f)
+            return false;
+        float forwardVel = mario.forwardVel + 15.0f;
+        if (forwardVel > 48.0f)
+            forwardVel = 48.0f;
+        pyramid.Tilt(mario.x, mario.y, mario.z, mario.onPlatform);
+        mario.vy = 20.0f;
+        mario.forwardVel = forwardVel;
+        action = ACT_DIVE;
+    }
+    else if (action == ACT_DIVE_SLIDE)
+    {
+        // act_dive_slide: B is the rollout's press; act_forward_rollout's first frame.
+        if (!bPressed)
+            return false;
+        pyramid.Tilt(mario.x, mario.y, mario.z, mario.onPlatform);
+        mario.vy = 30.0f;
+        action = ACT_FORWARD_ROLLOUT;
+    }
+    else if (action == ACT_DIVE || action == ACT_FORWARD_ROLLOUT)
+        pyramid.Tilt(mario.x, mario.y, mario.z, mario.onPlatform);
+    else
+        return false;
+    UpdateAirWithoutTurn(mario, intendedYaw, intendedMag);
+    mario.landed = PerformAirStep(mario, pyramid);
+    mario.action = mario.landed ? (action == ACT_DIVE ? ACT_DIVE_SLIDE : ACT_FREEFALL_LAND_STOP) : action;
+    // update_mario_platform, at the end of the frame.
+    bool isTop;
+    const float floorHeight = pyramid.FindFloor(mario.x, mario.y, mario.z, isTop);
+    mario.onPlatform = isTop && std::fabs(mario.y - floorHeight) < 4.0f;
+    return true;
 }
 
 // The collision data's square is (307, 307, -306) to (-306, 307, 307): the edges on the

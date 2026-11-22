@@ -106,7 +106,7 @@ its place with numbers, and "it is cleaner" is not a number.
 | `perf/` | Committed benchmark baselines, one directory per machine and compiler (`tyler-desktop\`, `tyler-desktop-clang\`): a JSON file per benchmark family plus `context.json`, written by `scripts\perf.ps1 -SaveBaseline` (a whole run; with `-Filter`, just that family's file is added or replaced and the reference binaries stay) and read through `perf_compare.py compare`, not by hand (the one hand edit is a renamed benchmark's row key, numbers untouched, as when the metric-script rows were renamed); `tierd-ci.json` is CI's Tier D baseline. `perf/results/` is gitignored. |
 | `analysis/` | `visualizer.py`, the scattershot viewer (a live plot of a run's CSV, one tab per run; the search launches it, README.md "The viewer") with `requirements.txt`, which it installs into its own `analysis/.venv` on first start; also the pipeline's default output directory (CSVs, their `*.visualizer.json`, `solutions/*.json`, `m64/`), all gitignored. |
 | `res/` | Gitignored runtime inputs: 24 copies of the libsm64 DLL (made by `scripts/unlock_libsm64.py`), other source .m64 files, and thousands of exported solution .m64 files. |
-| `movies/` | The committed source movies: `bitfs-pyramid-jp.m64` (JP, 3,804 frames; the tests, the perf suite, CI and `config.json` use it), `bitfs-osc-final-jp.m64` (JP, 3,726 frames; the oscillations done by hand to frame 3604, once the source of a final-oscillation experiment, unreferenced now), `1keyU.m64` (US, 7,628 frames; a whole 1-key run, the source of the US way into BitFS) and `bitfs-pyramid-us.m64` (US, 3,871 frames; `1keyU.m64` to its BitFS entry, then the JP movie from its own: its frame 3397 is the JP movie's 3330, the libsm64 tests run on it when `res\` has the US DLL). |
+| `movies/` | The committed source movies: `bitfs-pyramid-jp.m64` (JP, 3,804 frames; the tests, the perf suite, CI and `config.json` use it), `bitfs-osc-final-jp.m64` (JP, 3,726 frames; the oscillations done by hand to frame 3604, once the source of a final-oscillation experiment, unreferenced now), `1keyU.m64` (US, 7,628 frames; a whole 1-key run, the source of the US way into BitFS) and `bitfs-pyramid-us.m64` (US, 3,871 frames; `1keyU.m64` to its BitFS entry, then the JP movie from its own: its frame 3397 is the JP movie's 3330, the libsm64 tests run on it when `res\` has the US DLL). Also the maintainer's example movies the ending's tests replay (`bitfs-turn --test`): `pyramid_<home x>_<corner>.m64`, eight corners of the two pyramids, `uscx_5.m64`, `uscz_pyramid_-1945_southeast_-p15259_p82917_p41379.m64.m64` (the uscz example), `SingleBullyBlueprint2024.m64` (the third example, its squish cancel by a bully hacked at the level's first frame; ROADMAP 4.11) and `pyramid_-1945_southwest_-p35726_p87575_-p20781.m64` (the fourth example: the uscx example turned half a turn, oscillations in corner 3 and the squish off the +z edge, with a fall that moves sideways up the edge; the ending stage's own search is run on it, ROADMAP 4.11, and the dr stage's from its fifth crossing, ROADMAP 4.12). |
 | `scripts/` | `build.ps1` (the supported build entry point on Windows), `test.ps1`, `perf.ps1` and its compare script, `unlock_libsm64.py` (the game from a ROM or the CI key), `perf_scaling_hang.ps1`, `dll_symbols.py`, `dll_layout.py` (the layout table from a DLL's DWARF), `dll_game_bytes.py` (a build's `LibSm64KnownGameBytes` entry from its COFF symbols: where the game's bytes of `.data` and `.bss` end and the C runtime's begin), `decomp_diff.py` with `decomp_pin.json` (the copied decomp files against their pinned upstream revision; docs/decomp.md), `action_names.py` (`tasfw-scripts/inc/Sm64ActionNames.hpp`, the Mario actions' names from the copied `Sm64.hpp`, which the stages' CSV rows carry beside the action's hex; `--check` in CI), `decode_cache_model.py` (a model of a scattershot run's block tree and what a per-thread savestate cache would save of its decoding; ROADMAP 4.3), `are_cell_model.py` (where Mario must rest on the pyramid for a wanted adjusted remainder error, in the game's float32 arithmetic: the width and spacing of the position bands per axis; ROADMAP 4.8), `fetch_deps.py` (the dependency tarballs into `build/downloads` with retries, from the CMake files' own names, URLs and hashes; CI runs it after restoring that directory from its cache). |
 | `cmake/` | `AddOptimizationFlags` (arch flag, FP determinism, LTO unless `TASFW_LTO=OFF`, OpenMP; applied to every first-party target), `Warnings` (`/W3`, `/W4`, `-Wall -Wextra` on every first-party target, and `TASFW_WARNINGS_AS_ERRORS`) and `SystemIncludes` (fetched dependencies as system headers, so their warnings never count). |
 | `docs/` | Provenance of the DLL (libsm64.md), what was copied from the decomp and at which revision (decomp.md), compiler pitfalls, performance, and how to TAS with the framework (tasing.md). |
@@ -412,6 +412,10 @@ Agents without hooks follow the same procedure by hand at the end of every chang
   each unless told to ignore access violations; run with `"saveMode": "full"` when
   debugging, and expect test harnesses that install their own `SIGSEGV` handler to need
   the re-arming `LibSm64` already does (docs/libsm64.md, "Linux").
+- `bitfs-turn --test` has one failing check since #110: the case "the first oscillation
+  comes from the fixer's hand-over in every corner" finds 142 first-oscillation solutions in
+  corner 2 where it asks for 200 (271, 289 and 329 in the other corners). The case takes
+  about 50 minutes; ROADMAP 4.20 has what is known.
 - The DLL's `.data` and `.bss` are not all game: their edges hold the mingw-w64 runtime's
   own state, and the Windows loader runs the DLL's TLS callback on **every** thread of the
   process at its exit (a Windows thread-pool worker retiring counts), which takes a
@@ -428,8 +432,14 @@ Agents without hooks follow the same procedure by hand at the end of every chang
 - **Pyramid normal / xzSum**: the tilting platform's surface normal; `|nX| + |nZ|` measures tilt.
 - **Crossing / oscillation**: the tilt direction reversing past equilibrium; the oscillation
   count rises once a crossing, and the crossings alternate direction from the first, which
-  the leg's direction sets, so an oscillation number names a direction. A crossing within
-  `minOscillationFrames` of the one before is not counted and ends the lineage.
+  the leg's direction sets, so an oscillation number names a direction. An oscillation is
+  what Mario does between two crossings: the run on toward the chord's end, the turnaround
+  and the run back until the tilt reverses again; a dr pass is one oscillation. A crossing
+  within `minOscillationFrames` of the one before is not counted and ends the lineage.
+- **Run out / way back**: the two halves of an oscillation. The run out is what Mario does
+  from a crossing to his turnaround; the way back is from the turnaround's end to the next
+  crossing. The turnaround takes all the speed he had, so the speed at a crossing comes
+  only from the way back, about 1.5 for each frame he faces downhill (ROADMAP 4.12).
 - **Leg**: the dr stage's first pass, before any oscillation: Mario runs from the fixer's
   resting spot along the pyramid until he can turn around. Its solutions, all of them up to
   the pass's `maxSolutions`, are the states the first oscillation's pass starts from.
@@ -437,6 +447,15 @@ Agents without hooks follow the same procedure by hand at the end of every chang
   components; two states are in the same cell when both components round to the same
   hundredths. The dr stage's hand-over log groups the solutions it carries by cell.
 - **HAU**: hexadecimal angle unit, an SM64 angle divided by 16.
+- **Equilibrium point**: the spot on the platform where the pyramid has caught up with
+  Mario: if he stood there, the tilt would stop (the maintainer's name, 2026-10-21). It is
+  500 times the normal's x and z over its y, from the home. The pyramid tilts toward
+  Mario, so the point moves toward him about six units a frame on each axis; on an axis
+  where he is further out than the point the normal's part grows, where he is closer in it
+  shrinks. A crossing is the frame he is past the point on both axes toward the chord end
+  the oscillation heads for, so the crossing's normal is the point's position. The dr
+  stage's `targetCrossing` move aims its run at the equilibrium point the window's normal
+  would have (ROADMAP 4.12).
 - **ARE**: adjusted remainder error, distance in float ULPs from a target normal after
   stepping in 0.01 increments (see `CalculateARE`).
 - **Departure**: the first frame at whose end the pyramid is not Mario's platform (he is
@@ -456,10 +475,18 @@ Agents without hooks follow the same procedure by hand at the end of every chang
   the dive's. The pause buffer is the one place a BitFS script presses START (the
   maintainer, 2026-10-13): no move draws it, and the ending refuses a frame that pressed
   it with Mario not on the dive slide.
+- **Punch cancel**: a leave from a landing stop that keeps its facing (the maintainer,
+  2026-10-21). B on the stop, its first frame included, is the standing punch, which steps
+  10 in the facing on its first frame, then 7, 5 and 3; a stick on the punch's next frame
+  cancels the punch into a walk that keeps the 10 and gains about 0.9 a frame, and the
+  walk steps off the edge. The punch alone never falls off a sweeping edge: it moves one
+  quarter step past it a frame and the edge is under him again by the next. The ending's
+  `PUNCH_CANCEL` move.
 - **uscx / uscz**: the squish cancel off the x-aligned or the z-aligned edge of the pyramid's
   top, the edge running along that axis (the maintainer's naming, 2026-10-06); the edge's
   height above the lava is set by the other axis's tilt component. The committed setup
-  squishes off the z-aligned +x edge: uscz.
+  squishes off the x-aligned +z edge: uscx (oscillations in corner 3, the final run
+  along the -x edge into corner 4; the maintainer's southwest example's setup).
 - **Sweep**: the outward movement of the pyramid's top edge as its tilt flattens, about 3.3
   units a frame on the squish edge; a Mario falling beside the edge is overtaken by it.
 - **Catch**: the frame on which the sweep first covers a falling Mario's position at the
@@ -471,8 +498,10 @@ Agents without hooks follow the same procedure by hand at the end of every chang
 - **Pancake**: a squish that no bully push cancels; Mario stays squished on the lava.
 - **Band**: the 4 units above the pyramid's top within which the game keeps the pyramid as
   Mario's platform; the normal steps toward flat on both axes while he is out of it. A
-  dive recover's rollout may fly out of it over the platform and still be the approach
-  (see Departure).
+  dive recover's rollout that flies out of it over the platform is still the approach by
+  the metric script's reading (see Departure); half the ending's dive recover moves take
+  only flights that keep the band (the maintainer, 2026-10-21): a flight above it
+  flattens the run's axis, which the squish cancel's side face needs steep.
 - **Aim**: the point on the squish edge the run and the dive recover head for, where the
   edge will stand at a chosen height within the catch window.
 - **Steep side**: the side face under the squish edge with its normal's y above -0.5,

@@ -388,18 +388,27 @@ namespace
 		};
 		float minFirstCrossingSpeed = float(ArgNumber(a, "minFirstCrossingSpeed", context.input, 0.0, where)); // 0: no floor
 		// The swing's moves after a crossing, by weight (BitfsDrMoveWeights; the maintainer,
-		// 2026-10-19): the lead run, the probe's run, the uphill turn and the turnaround.
+		// 2026-10-19): the lead run, the probe's run, the uphill turn and the turnaround; the
+		// oscillation aimed at the window's crossing point (2026-10-21); and the example
+		// movies' three choices as one-frame moves (2026-11-21): the run out up the axis, the
+		// turnaround that ends facing down the slope, and the way back's frame that keeps the
+		// facing, the last two weighed against the way back's two moves at 1 each.
 		BitfsDrMoveWeights moves;
 		if (a.contains("moves"))
 		{
 			const json& movesJson = RequireObject(a, "moves", where);
 			const std::string movesWhere = where + ".moves";
-			RejectUnknownKeys(movesJson, { "leadRun", "probeRun", "turnUphill", "turnAround" }, movesWhere);
+			RejectUnknownKeys(movesJson, { "leadRun", "probeRun", "turnUphill", "turnAround", "targetCrossing", "runUpAxis", "faceDownSlope", "keepFacing" }, movesWhere);
 			moves.leadRun = int(ArgNumber(movesJson, "leadRun", context.input, moves.leadRun, movesWhere));
 			moves.probeRun = int(ArgNumber(movesJson, "probeRun", context.input, moves.probeRun, movesWhere));
 			moves.turnUphill = int(ArgNumber(movesJson, "turnUphill", context.input, moves.turnUphill, movesWhere));
 			moves.turnAround = int(ArgNumber(movesJson, "turnAround", context.input, moves.turnAround, movesWhere));
-			if (moves.leadRun < 0 || moves.probeRun < 0 || moves.turnUphill < 0 || moves.turnAround < 0)
+			moves.targetCrossing = int(ArgNumber(movesJson, "targetCrossing", context.input, moves.targetCrossing, movesWhere));
+			moves.runUpAxis = int(ArgNumber(movesJson, "runUpAxis", context.input, moves.runUpAxis, movesWhere));
+			moves.faceDownSlope = ArgNumber(movesJson, "faceDownSlope", context.input, moves.faceDownSlope, movesWhere);
+			moves.keepFacing = ArgNumber(movesJson, "keepFacing", context.input, moves.keepFacing, movesWhere);
+			if (moves.leadRun < 0 || moves.probeRun < 0 || moves.turnUphill < 0 || moves.turnAround < 0 || moves.targetCrossing < 0
+				|| moves.runUpAxis < 0 || moves.faceDownSlope < 0 || moves.keepFacing < 0)
 				ConfigError("\"moves\" in " + where + " must not be negative");
 		}
 
@@ -876,7 +885,7 @@ namespace
 		const std::string where = ArgsWhere(context);
 		const json& a = context.stage.args;
 		RejectUnknownKeys(a, { "initialFrame", "targetQuadrant", "targetEdge", "platform", "targetNx", "targetNz", "edgeSide", "maxLeaveSpeed",
-			"bully", "bullySpeed", "probeFrames", "probeWindow", "squishMinSpeed", "squishMinClearance", "pauseBuffer", "moves" }, where);
+			"bully", "bullySpeed", "probeFrames", "probeWindow", "squishMinSpeed", "squishMinClearance", "pauseBuffer", "landingTargeted", "landingBand", "moves" }, where);
 
 		BitfsScEndingArgs args;
 		args.initialFrame = int64_t(ArgNumber(a, "initialFrame", context.input, double(context.stage.startFrame), where));
@@ -936,11 +945,17 @@ namespace
 		args.squishMinSpeed = float(ArgNumber(a, "squishMinSpeed", context.input, args.squishMinSpeed, where));
 		args.squishMinClearance = float(ArgNumber(a, "squishMinClearance", context.input, args.squishMinClearance, where));
 		args.pauseBuffer = ArgBool(a, "pauseBuffer", args.pauseBuffer, where);
+		args.landingTargeted = ArgNumber(a, "landingTargeted", context.input, args.landingTargeted, where);
+		if (args.landingTargeted < 0.0 || args.landingTargeted > 1.0)
+			ConfigError("\"landingTargeted\" in " + where + " must be between 0 and 1, the share of dive recovers steered to a drawn landing spot");
+		args.landingBand = ArgNumber(a, "landingBand", context.input, args.landingBand, where);
+		if (args.landingBand < 0.0 || args.landingBand > 1.0)
+			ConfigError("\"landingBand\" in " + where + " must be between 0 and 1, the share of dive recover moves that take only sticks keeping the band");
 		if (a.contains("moves"))
 		{
 			const json& moves = RequireObject(a, "moves", where);
 			const std::string movesWhere = where + ".moves";
-			RejectUnknownKeys(moves, { "dive", "brake", "walkOff", "parallel", "quickturn", "cUp", "wait", "strainBack", "nutStop", "nutLand" }, movesWhere);
+			RejectUnknownKeys(moves, { "dive", "brake", "walkOff", "parallel", "quickturn", "cUp", "wait", "strainBack", "nutStop", "nutLand", "punchCancel", "airDive", "fallToCatch" }, movesWhere);
 			args.weightDive = ArgNumber(moves, "dive", context.input, args.weightDive, movesWhere);
 			args.weightBrake = ArgNumber(moves, "brake", context.input, args.weightBrake, movesWhere);
 			args.weightWalkOff = ArgNumber(moves, "walkOff", context.input, args.weightWalkOff, movesWhere);
@@ -951,6 +966,9 @@ namespace
 			args.weightStrainBack = ArgNumber(moves, "strainBack", context.input, args.weightStrainBack, movesWhere);
 			args.weightNutStop = ArgNumber(moves, "nutStop", context.input, args.weightNutStop, movesWhere);
 			args.weightNutLand = ArgNumber(moves, "nutLand", context.input, args.weightNutLand, movesWhere);
+			args.weightPunchCancel = ArgNumber(moves, "punchCancel", context.input, args.weightPunchCancel, movesWhere);
+			args.weightAirDive = ArgNumber(moves, "airDive", context.input, args.weightAirDive, movesWhere);
+			args.weightFallToCatch = ArgNumber(moves, "fallToCatch", context.input, args.weightFallToCatch, movesWhere);
 		}
 		if (args.probeFrames < 1 || args.probeWindow < 0)
 			ConfigError("\"probeFrames\" in " + where + " must be at least 1 and \"probeWindow\" at least 0");

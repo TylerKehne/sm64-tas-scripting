@@ -62,6 +62,7 @@ The maintainer's rules for TASing with the framework (2026-09-15):
 | State about the game at another frame: a raw variable in the past without a rewind, or a derived quantity (phase, oscillation count, distance to a target) | A metric script, read with `GetMetrics(frame)` |
 | What the game would compute one frame on, without committing to it | A child script that advances the frame and is reverted with it (`Test<GetMinimumDownhillWalkingAngle>`), on the resource the script runs on; the corner resource makes the frame cheap (see "Simulating the part of the game that matters") |
 | Explore a large input space, or find a near-optimal route | A scattershot search, a proven route finder for SM64 in general: a metric script, a `ScattershotThread` subclass and a solution type, run as a stage of `bitfs-turn` |
+| What a stick does on a frame of Mario's air over the tilting pyramid, for many sticks at once, with no frame played | `BitfsScEndingMetrics::AirStep`: the game's own arithmetic for the dive from a walk, the slide's press into the rollout and their air frames, with the pyramid's tilt, its carry and its top as the game loads it, exact to the float (`bitfs-turn --test` plays 321 sticks at ten frames of the example movies against it). The ending's `RecoverFrame` holds each of 33 sticks to the end of the flight in it and writes one; a move that needs a walk, a wall or a ceiling still plays the frame |
 | Put Mario at rest at a float-precise position | `BitFsAreFixer`'s way (ROADMAP 4.8): a dive recover, the rollout's air frames steered and resting where it lands; the last air frames' sticks measured one frame at a time from the game, combined with the forward speed each leaves behind and the fraction of the landing frame's velocity that reaches the floor, and the combination predicted nearest the target played out; a set value is accepted only when its steps round back exactly over the range the oscillations tilt through (`StepsReversibly`), and a target the arithmetic cannot hold is refused by validation before any frame (`LeastError`); the rest sets one axis, and the turn out of a run from it the other, at in turn, since the settle reaches only about one float position in ten |
 | Run a script on the game | A stage type in `Stages.cpp` (run by `bitfs-turn --stage`), a doctest case under `libsm64:`, a tool, or a new folder with its own `main.cpp` (see "Running a script") |
 | Look at the game rather than play it | `VerifyLayout`, `LevelTransitions`, `MarioTrace` through `dllcheck`; `--objects`, `--trace`, `--levels` (docs/libsm64.md) |
@@ -660,6 +661,18 @@ The full list is in AGENTS.md; these are the ones a script author meets.
   edge and inward, 0.3 to 0.9 a frame, on corner 1's half, where the catch window is, so a
   wait for the displacement never takes him off there (ROADMAP 4.11, 2026-10-17). In the
   air a full stick across the facing moves him 10 a frame sideways at once; along it 1.5.
+- A fall beside the squish edge is squished once the top is more than 78 above Mario. From
+  the edge that is the seventh air frame (60 down after six, 84 after seven), and the tilt
+  flattens a step on every one of them. Moving up the rising edge as he falls raises the
+  top over him and gets him there a frame sooner, with the side a step steeper: the
+  ending's `FALL_TO_CATCH` move, and the fourth example movie's fall (ROADMAP 4.11,
+  2026-11-20). A rule that predicts where a fall ends has to count the stick's reach, 10
+  a frame across the facing, not only the velocity it has at the step off.
+- The face model's edge (`BitfsScEndingMetrics::Face`) is good to a unit, so a catch it
+  reports within a unit of the edge may not be one. Where it matters, ask the game: play
+  the next frame in a sandbox (`ExecuteAdhoc`) and see whether Mario is squished. The
+  squish is set from his position at the frame's start, so a neutral frame tells what the
+  probe's frame will do (ROADMAP 4.11, 2026-11-20).
 - A `GetMetrics` reference dies at the next write at or before its frame; copy it.
 - `ModifyAdhoc` reverts when the lambda returns false, and reports `executed == false`.
 - Check `asserted`, not `executed`; a metric script that did not assert stores a default
@@ -707,3 +720,18 @@ AGENTS.md, "Known problems".
   against the unchanged search on seven or more seeds (a copy of the previous binary in the
   scratch directory runs them side by side), deterministic on, and read the death counts
   or the exported blocks, not only the solutions.
+- A landing stop's first frame still carries the landing's speed: the game reads the stick
+  before the stop zeroes the speed (check_common_landing_cancels, then stationary_ground_step),
+  so a stick on that frame cancels the stop into a walk at that speed, in the landing's
+  facing. A quickturn from a landing stop waits that frame and takes the stop's second
+  (`Scattershot_BitfsScEnding::Quickturn`; a braking stop is at zero from its first). The
+  ending's dive recover left its landings facing outward because of this frame (ROADMAP
+  4.11, 2026-10-21); `bitfs-turn --test` pins it on the northeast movie's landing.
+- A ground action that ignores leaving the ground does not fall off an edge the tilt is
+  sweeping outward: a ground step past an edge more than 100 above the lava takes one quarter
+  step past it and stops, and the edge, sweeping about 3.5 a frame, is under Mario again by
+  the next frame. The standing punch is one: from a landing stop it moves 2 to 4 a frame
+  beside the squish edge at the platform's height and never falls. Walking handles the
+  leaving of the ground and falls at once, which is why the punch cancel, the punch's first
+  frame and then a stick, leaves (`Scattershot_BitfsScEnding::PunchCancel`; ROADMAP 4.11,
+  2026-10-21; `bitfs-turn --test` pins both on the northeast movie's landing).

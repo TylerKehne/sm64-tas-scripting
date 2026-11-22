@@ -162,3 +162,95 @@ TEST_CASE("sc-ending: the catch's pushes are the ones the game cancels with")
 		CHECK(BitfsScEndingMetrics::CatchPlacements(next, 1, 0, HomeX + 240.0f, Lava + 100.0f, HomeZ + 309.2f, pushOut, placements) == -1);
 	}
 }
+
+// The air model (BitfsScEndingMetrics::AirStep) against frames the game played (ROADMAP 4.11,
+// 2026-10-21): the uscz movie's rollout at 3470 and the northeast movie's landing at 4440,
+// the states read from the game before the frame and the results after it, exact to the
+// float. The floor triangle is the one the game found under Mario, its vertices as it
+// truncated them. A frame on the game itself, 321 sticks at every dive recover frame of both
+// movies, is bitfs-turn --test's.
+TEST_CASE("sc-ending: the air model's top and frames are the game's")
+{
+	using AirStep = BitfsScEndingMetrics::AirStep;
+
+	// uscz 3470: the rollout's second air frame, Mario within the band.
+	{
+		auto pyramid = AirStep::Pyramid::Of(-0.282596439f, 0.788267434f, 0.403786302f, HomeX, HomeY, HomeZ);
+		const AirStep::Pyramid::Triangle& t = pyramid.top[0];
+		CHECK(t.v[0][0] == -1794); CHECK(t.v[0][1] == -2735); CHECK(t.v[0][2] == -857);
+		CHECK(t.v[1][0] == -2281); CHECK(t.v[1][1] == -3193); CHECK(t.v[1][2] == -305);
+		CHECK(t.v[2][0] == -1704); CHECK(t.v[2][1] == -2986); CHECK(t.v[2][2] == -305);
+		CHECK(t.nx == -0.304062217f);
+		CHECK(t.ny == 0.847555101f);
+		CHECK(t.nz == 0.43496725f);
+		CHECK(t.originOffset == 2145.34253f);
+		bool isTop = false;
+		CHECK(pyramid.FindFloor(-1839.73254f, -3006.49585f, -353.76535f, isTop) == -3009.79785f);
+		CHECK(isTop);
+		// 78 under the top the floor is the lava's.
+		CHECK(pyramid.FindFloor(-1839.73254f, -3100.0f, -353.76535f, isTop) == BitfsScEndingMetrics::LavaHeight);
+		CHECK(!isTop);
+
+		AirStep::Mario mario;
+		mario.x = -1839.73254f; mario.y = -3006.49585f; mario.z = -353.76535f;
+		mario.vx = 39.2854691f; mario.vy = 26.0f; mario.vz = -23.883255f;
+		mario.forwardVel = 44.9774094f;
+		mario.yaw = 19910;
+		mario.action = ACT_FORWARD_ROLLOUT;
+		mario.onPlatform = true;
+		// The stick (52, -52) with the camera at -8192: intended yaw 0, magnitude 32.
+		REQUIRE(AirStep::Frame(mario, pyramid, 0, 32.0f, false));
+		CHECK(mario.x == -1793.89856f);
+		CHECK(mario.y == -2984.48804f);
+		CHECK(mario.z == -358.886658f);
+		CHECK(mario.vx == 43.8184586f);
+		CHECK(mario.vy == 22.0f);
+		CHECK(mario.vz == -5.38126278f);
+		CHECK(mario.forwardVel == 43.128582f);
+		CHECK(mario.action == ACT_FORWARD_ROLLOUT);
+		CHECK(!mario.landed);
+		CHECK(mario.floorHeight == -2996.25073f);
+		CHECK(mario.floorIsTop);
+		CHECK(!mario.onPlatform);
+		CHECK(pyramid.nx == -0.272596449f);
+		CHECK(pyramid.ny == 0.798267424f);
+		CHECK(pyramid.nz == 0.413786292f);
+	}
+
+	// northeast 4440: the rollout's last frame, landing on the top with a neutral stick.
+	{
+		auto pyramid = AirStep::Pyramid::Of(0.397753477f, 0.824108064f, 0.307154357f, HomeX, HomeY, HomeZ);
+		AirStep::Mario mario;
+		mario.x = -1647.33081f; mario.y = -2940.73901f; mario.z = -894.193176f;
+		mario.vx = -19.6207047f; mario.vy = 18.0f; mario.vz = -41.75243f;
+		mario.forwardVel = 46.1080132f;
+		mario.yaw = -28518;
+		mario.action = ACT_FORWARD_ROLLOUT;
+		mario.onPlatform = true;
+		REQUIRE(AirStep::Frame(mario, pyramid, -28518, 0.0f, false));
+		CHECK(mario.landed);
+		CHECK(mario.action == ACT_FREEFALL_LAND_STOP);
+		CHECK(mario.x == -1650.3125f);
+		CHECK(mario.y == -2940.86816f);
+		CHECK(mario.z == -907.870483f);
+		CHECK(mario.forwardVel == 44.7580147f);
+		CHECK(mario.vy == 14.0f);
+		CHECK(mario.floorHeight == -2940.86816f);
+		CHECK(mario.onPlatform);
+		CHECK(pyramid.nx == 0.407753468f);
+		CHECK(pyramid.ny == 0.821199536f);
+		CHECK(pyramid.nz == 0.297154367f);
+	}
+
+	// What the model refuses: a walk without the dive's B, a slide without B.
+	{
+		auto pyramid = AirStep::Pyramid::Of(-0.3f, 0.8f, 0.4f, HomeX, HomeY, HomeZ);
+		AirStep::Mario mario;
+		mario.action = ACT_WALKING;
+		mario.forwardVel = 30.0f;
+		CHECK(!AirStep::Frame(mario, pyramid, 0, 32.0f, false));
+		CHECK(!AirStep::Frame(mario, pyramid, 0, 16.0f, true)); // a stick at or under 48 raw is a punch
+		mario.action = ACT_DIVE_SLIDE;
+		CHECK(!AirStep::Frame(mario, pyramid, 0, 32.0f, false));
+	}
+}
