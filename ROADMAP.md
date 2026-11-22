@@ -4560,7 +4560,8 @@ goals are (status as stated by the maintainer, 2026-09-08):
       first oscillation finds 17 to 29 in 20,000. The leg's case now asks for the leg alone
       whichever way the first crossing heads (on corner 3: 20 solutions in 20 shots, 9
       s), and the first oscillation's case runs on the uscz setup (the note on the
-      fixer's regime above).
+      fixer's regime above). There it gives what master gives, with corner 2 under its
+      bar (4.20).
       The moves against the other example movies (2026-11-21, the maintainer's question:
       parity or better?). The examples hold three oscillations, not twelve. The eight
       corner movies and the fourth example are one oscillation, mirrored into each corner
@@ -5158,6 +5159,16 @@ goals are (status as stated by the maintainer, 2026-09-08):
       1,000, 478, 749 and 804 in corners 1 to 4, against the exact edge's 768, 530, 1,000
       and 772, a difference within one run's spread. Still to measure: the seed-6 dr stage
       with the margin, and the pyramid's own normal after the frame.
+      Found 2026-11-21: the every-corner case fails one check, and has since #110
+      (065470c). It finds 271, 142, 289 and 329 first-oscillation solutions in corners 1
+      to 4, so corner 2 is under the case's bar of 200; every other check passes (61,514
+      assertions, about 50 minutes). The code and config of 065470c give these four
+      numbers, and so does #111's code on the same uscz setup, on MSVC and on clang-cl,
+      so #111 did not change them. The last yields recorded before were 352, 250, 352 and
+      436 on 2026-10-19 (4.12). A change made between that measurement and #110's merge
+      lowered them; which one is not established. Still to do: find it (the case is
+      deterministic, so a build on each side of a change settles it), then either restore
+      the yield or set the bar from what the first oscillation has to hand on.
 - [x] **4.21 The dr stage's rewind under mixed tilts.** Done 2026-10-12, the maintainer's
       decision ("not a bad idea, and it should be minXzSum"): eligibility is the
       solution's (the exit tilt `minXzSum` and the step parity), the direction the pass's;

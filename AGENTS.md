@@ -412,6 +412,10 @@ Agents without hooks follow the same procedure by hand at the end of every chang
   each unless told to ignore access violations; run with `"saveMode": "full"` when
   debugging, and expect test harnesses that install their own `SIGSEGV` handler to need
   the re-arming `LibSm64` already does (docs/libsm64.md, "Linux").
+- `bitfs-turn --test` has one failing check since #110: the case "the first oscillation
+  comes from the fixer's hand-over in every corner" finds 142 first-oscillation solutions in
+  corner 2 where it asks for 200 (271, 289 and 329 in the other corners). The case takes
+  about 50 minutes; ROADMAP 4.20 has what is known.
 - The DLL's `.data` and `.bss` are not all game: their edges hold the mingw-w64 runtime's
   own state, and the Windows loader runs the DLL's TLS callback on **every** thread of the
   process at its exit (a Windows thread-pool worker retiring counts), which takes a
