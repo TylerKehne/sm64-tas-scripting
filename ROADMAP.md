@@ -4556,8 +4556,8 @@ goals are (status as stated by the maintainer, 2026-09-08):
       not the moves: both read their setup from the config. With a first crossing that
       heads near, as corner 3's does, the stage adds a pass, so the leg's case ran the
       first oscillation's 20,000 shots on one thread. And the first oscillation's bar,
-      200 solutions in 2,000 shots, is the uscz setup's; corner 3's first oscillation
-      finds 17 to 29 in 20,000 by its settings. The leg's case now asks for the leg alone
+      200 solutions in 2,000 shots, is the uscz setup's; with corner 3's settings the
+      first oscillation finds 17 to 29 in 20,000. The leg's case now asks for the leg alone
       whichever way the first crossing heads (on corner 3: 20 solutions in 20 shots, 9
       s), and the first oscillation's case runs on the uscz setup (the note on the
       fixer's regime above).
@@ -4670,9 +4670,9 @@ goals are (status as stated by the maintainer, 2026-09-08):
       So no example's oscillation is beyond the moves. The corner movies' is beyond the
       stage only while the stage keeps full steps, and full steps are what an exact
       target normal costs. The maintainer keeps the full steps (2026-11-21), so the
-      switch stays a measurement: it covered `Steps` alone, in a search that kept only
-      the death rule, and the pipeline's conservation check, the fixer's rest and the
-      ending's lattice all go on assuming full steps.
+      switch was a measurement only and is not in the code. It covered `Steps` alone, in
+      a search that kept only the death rule; the pipeline's conservation check, the
+      fixer's rest and the ending's lattice all still assume full steps.
       Not built, for the maintainer's decision. First, a turnaround that is uphill
       throughout. The new draw of the uphill-turn phase asks for an uphill frame before it.
       The phase's older draw does not, and the validation's rule still does not see the
@@ -4693,8 +4693,8 @@ goals are (status as stated by the maintainer, 2026-09-08):
       again against such oscillations. Fifth, a rest at the example's tilt. Sixth,
       steps short of 0.01: decided against (the maintainer, 2026-11-21: the full steps
       stay). Measured above on one oscillation at a time, they are the whole gap to the
-      corner movies, about 1 of speed at a tilt of 0.71, which the stage therefore
-      keeps. Seventh, an oscillation
+      corner movies, so the stage stays about 1 of speed behind them at a tilt of 0.71.
+      Seventh, an oscillation
       that holds its tilt: at 0.71 the new moves are mostly 1 to 3 behind the corner
       movies and make a tenth of the crossings, since each of their oscillations gives
       up tilt for speed and no rule or ranking asks otherwise. Eighth, fewer

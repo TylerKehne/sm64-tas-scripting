@@ -97,9 +97,14 @@ within its tolerance without an A press, twice and the same, with the fixer's fl
 reproducing the game's resting normal; the regime the fixer works in, every corner, the
 tolerances, the tilt floors and the start frames, each case a line of the output, about
 twenty minutes, `-tce="*regime*"` skips it; what the fixer refuses before any frame; the
-least errors a target admits, no game needed; the `dr` stage's leg from its hand-over, and
-the first oscillation coming full from the fixer's hand-over in every corner, the config's
-target normal mirrored into each, one thread, deterministic) and hands everything after it
+least errors a target admits, no game needed; the `dr` stage's leg from its hand-over; the
+first oscillation coming full from the fixer's hand-over in every corner, one thread,
+deterministic; the three oscillation moves of 2026-11-21 from the southwest example's
+fifth crossing; and the ending's cases: the squish probe, the mechanics at the edge and on
+a landing stop, the air model against the game, and the southwest example through the
+stage's rules. The regime, the refusals and the first oscillation in every corner run on
+the uscz setup they were measured on, its target normal mirrored into each corner,
+whatever setup the config carries) and hands everything after it
 to doctest; neither CI nor the framework's suite runs them. A full
 run is not a smoke test: 16 threads, hours, thousands of exported `.m64` files, and the
 viewer's window with a tab per stage and per `dr` pass ("The viewer").
