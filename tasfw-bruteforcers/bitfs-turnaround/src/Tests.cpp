@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <limits>
 #include <map>
 #include <string>
 #include <string_view>
@@ -77,6 +78,38 @@ namespace
 		auto it = record.metrics.find(name);
 		REQUIRE_MESSAGE(it != record.metrics.end(), "metric ", name);
 		return it->second;
+	}
+
+	// The uscz setup the fixer's regime and the first oscillation were measured on (ROADMAP
+	// 4.6 and 4.8; config.json at git 065470c): the target normal in corner 4, exact, and the
+	// oscillation stage's values that a config for another corner sets differently. The
+	// cases that hold those measurements put these over the config's, so that they hold
+	// whichever setup the config carries (corner 3's since 2026-11-21, whose target holds
+	// only within 2 ULPs and whose first oscillation is scarcer by design).
+	constexpr double MeasuredTargetNx = -0.1792;
+	constexpr double MeasuredTargetNz = 0.3929998875;
+	constexpr int MeasuredQuadrant = 4;
+
+	void MeasuredFixerSetup(StageConfig& stage)
+	{
+		stage.args["targetNx"] = MeasuredTargetNx;
+		stage.args["targetNz"] = MeasuredTargetNz;
+		stage.args["quadrant"] = MeasuredQuadrant;
+		stage.args["tolerance"] = 0;
+	}
+
+	void MeasuredOscillationSetup(StageConfig& stage)
+	{
+		stage.args["targetNx"] = MeasuredTargetNx;
+		stage.args["targetNz"] = MeasuredTargetNz;
+		stage.args["quadrant"] = MeasuredQuadrant;
+		stage.args["firstCrossingDirection"] = "far";
+		stage.args["moves"] = { { "leadRun", 9 }, { "probeRun", 4 }, { "turnUphill", 1 }, { "turnAround", 1 } };
+		stage.args["normalSpecs"]["startXzSum"] = 0.57;
+		stage.args["normalSpecs"]["minXzSum"] = 0.59;
+		stage.args["normalSpecs"]["maxExitXzSum"] = 2;
+		stage.args["normalSpecs"]["legExitSpeed"] = 17.5;
+		stage.args["normalSpecs"]["speedGates"] = "run";
 	}
 
 	// A fixer solution's invariants: both errors within the tolerance with the step parities
@@ -273,6 +306,12 @@ TEST_CASE("dr-oscillations: the first pass runs the swing's first leg from the c
 	const StageConfig& fixerStage = StageOfType(pipeline, "are-fixer");
 	StageConfig stage = StageOfType(pipeline, "dr-oscillations");
 	stage.args["maxOscillations"] = 1; // the lineup alone
+	// The leg is the last pass only when it counts as the way lastCrossingDirection asks, the
+	// opposite of the first crossing's. Asked the other way, the stage adds the first
+	// oscillation with its whole budget of shots (2026-10-17), which a config whose first
+	// crossing heads near does (corner 3's: over an hour on one thread).
+	if (stage.args.contains("firstCrossingDirection"))
+		stage.args["lastCrossingDirection"] = stage.args["firstCrossingDirection"].get<std::string>() == "far" ? "near" : "far";
 	stage.args["normalSpecs"]["startXzSum"] = 0.0; // the leg from the rest, whatever handover the config asks (a handover above the rest's tilt is the old lineup, a lottery measured in ROADMAP 4.6)
 	stage.args["firstShots"] = 200;    // 16 shots on 16 threads; a cap for one
 	stage.scattershot["deterministic"] = true;
@@ -336,7 +375,10 @@ TEST_CASE("dr-oscillations: the first pass runs the swing's first leg from the c
 	resumed.SetStart(stage.name + ":1");
 	StageConfig second = stage;
 	second.args["maxOscillations"] = 2;
-	second.args["lastCrossingDirection"] = "far"; // the way the one oscillation from this rest crosses (the leg runs to the -x -z end): asked "near", the stage would add an oscillation at its start (2026-10-17) and run two passes
+	// The way the one oscillation from this rest crosses, the first crossing's (the config
+	// states it; "far" from the uscz rest, whose leg runs to the -x -z end): asked the other
+	// way, the stage would add an oscillation at its start (2026-10-17) and run two passes.
+	second.args["lastCrossingDirection"] = stage.args.contains("firstCrossingDirection") ? stage.args["firstCrossingDirection"].get<std::string>() : std::string("far");
 	second.args["lastShots"] = 50; // the first oscillation's pass, as short as it goes: the start is what is checked, not a find
 	StageContext resumedContext { resumed, second, pointers, resources[0], &rest };
 	SolutionSet again = RunStage(resumedContext);
@@ -376,17 +418,19 @@ TEST_CASE("dr-oscillations: the first pass runs the swing's first leg from the c
 // was downhill), so the first swing may begin its turnaround
 // from any frame where the later swings turn only from one the slope took speed on; with
 // that it crosses like them (2026-10-04: 16 plain runs of 16 full against 6 before). Each
-// corner's setup is the config's target normal mirrored into it. One thread, deterministic,
-// so a failure replays.
+// corner's setup is the measured uscz setup with its target normal mirrored into the corner,
+// whatever setup the config carries. One thread, deterministic, so a failure replays.
 TEST_CASE("dr-oscillations: the first oscillation comes from the fixer's hand-over in every corner")
 {
 	PipelineConfig pipeline = PipelineConfig::Load(g_config);
 	pipeline.threads = 1;
 	pipeline.outputDirectory = TestOutputDirectory();
-	const StageConfig& fixerTemplate = StageOfType(pipeline, "are-fixer");
-	const StageConfig& drTemplate = StageOfType(pipeline, "dr-oscillations");
-	const float targetNx = std::fabs(fixerTemplate.args["targetNx"].get<float>()); // the setup's normal, which every stage of the config carries
-	const float targetNz = std::fabs(fixerTemplate.args["targetNz"].get<float>());
+	StageConfig fixerTemplate = StageOfType(pipeline, "are-fixer");
+	StageConfig drTemplate = StageOfType(pipeline, "dr-oscillations");
+	MeasuredFixerSetup(fixerTemplate);
+	MeasuredOscillationSetup(drTemplate);
+	const float targetNx = std::fabs(float(MeasuredTargetNx)); // the measured setup's normal, mirrored into each corner below
+	const float targetNz = std::fabs(float(MeasuredTargetNz));
 	const int budget = 2000; // shots of the first oscillation's pass
 	// The least first-oscillation solutions the pass must find within the budget, a fixed
 	// number rather than the pass's own cap (the maintainer, 2026-10-12: at the config's cap of
@@ -417,7 +461,7 @@ TEST_CASE("dr-oscillations: the first oscillation comes from the fixer's hand-ov
 		stage.args["quadrant"] = quadrant;
 		stage.args["targetNx"] = nx;
 		stage.args["targetNz"] = nz;
-		stage.args.erase("firstCrossingDirection"); // the config's states the committed corner's; each corner's leg decides its own (corners 1 and 3 cross near first)
+		stage.args.erase("firstCrossingDirection"); // the setup's states corner 4's; each corner's leg decides its own (corners 1 and 3 cross near first)
 		stage.args["maxOscillations"] = 3; // the leg, the first oscillation, then a last pass of one shot
 		stage.args["shots"] = budget;
 		stage.args["lastShots"] = 1;
@@ -490,7 +534,8 @@ TEST_CASE("dr-oscillations: the first oscillation comes from the fixer's hand-ov
 }
 
 // ROADMAP 4.8: the regime the fixer works in, locked down (measured 2026-10-06; README, the
-// are-fixer bullet, states it): every corner (the config's target normal mirrored into each) at the tilt floor
+// are-fixer bullet, states it): every corner (the measured uscz target normal mirrored into
+// each, whatever target the config carries) at the tilt floor
 // 0.5, exact and within 100 ULPs; within 100 at the floors 0.4 and 0.6 in every corner, and
 // exact there in the corners the movie's dive flies toward (0.4 in corners 3 and 4, 0.6 in
 // corners 1, 3 and 4: the far corners' rests at the floors' ends lie beyond the fine frames'
@@ -505,9 +550,10 @@ TEST_CASE("dr-oscillations: the first oscillation comes from the fixer's hand-ov
 TEST_CASE("are-fixer: the regime: every corner, the tolerances, the tilt floors and the start frames")
 {
 	PipelineConfig pipeline = PipelineConfig::Load(g_config);
-	const StageConfig& fixerTemplate = StageOfType(pipeline, "are-fixer");
-	const float targetNx = std::fabs(fixerTemplate.args["targetNx"].get<float>());
-	const float targetNz = std::fabs(fixerTemplate.args["targetNz"].get<float>());
+	StageConfig fixerTemplate = StageOfType(pipeline, "are-fixer");
+	MeasuredFixerSetup(fixerTemplate);
+	const float targetNx = std::fabs(float(MeasuredTargetNx));
+	const float targetNz = std::fabs(float(MeasuredTargetNz));
 	std::vector<LibSm64> resources;
 	OneResource(pipeline, resources);
 	std::vector<Sm64Resource*> pointers { &resources[0] };
@@ -606,11 +652,13 @@ TEST_CASE("are-fixer: the refusals, before any frame")
 	M64 m64(config.M64Path);
 	REQUIRE(m64.load());
 
+	// The measured uscz target in its own corner, exact: a config's target may hold only within
+	// a tolerance (corner 3's does), and then that refusal comes before the two looked for below.
 	BitFsAreFixer::Args args;
-	args.targetNx = stage.args["targetNx"].get<float>();
-	args.targetNz = stage.args["targetNz"].get<float>();
+	args.targetNx = float(MeasuredTargetNx);
+	args.targetNz = float(MeasuredTargetNz);
 	args.tolerance = 0;
-	args.quadrant = stage.args.contains("quadrant") ? stage.args["quadrant"].get<int>() : 0;
+	args.quadrant = MeasuredQuadrant;
 	args.minXzSum = stage.args.contains("minXzSum") ? stage.args["minXzSum"].get<float>() : 0.0f;
 
 	BitFsAreFixer::Args former = args;
@@ -1070,4 +1118,595 @@ TEST_CASE("sc-ending: at the squish edge a stopped Mario is carried inward, a sl
 		const float step = FrameAt(fast.frames, frame).nX - FrameAt(fast.frames, frame - 1).nX;
 		CHECK(std::fabs(step - (FrameAt(fast.frames, frame - 1).onPlatform ? 0.01f : -0.01f)) < 0.0005f);
 	}
+}
+
+namespace
+{
+	// A stick played at a frame of a movie: the game's result against the model's.
+	struct AirCheck
+	{
+		int8_t sx = 0, sy = 0;
+		bool modelPlays = false; // the model plays the frame (a walk's dive needs B and a stick over 48 raw)
+		bool same = true;
+		uint32_t gameAction = 0, modelAction = 0;
+		float gameX = 0, modelX = 0, gameY = 0, modelY = 0, gameZ = 0, modelZ = 0;
+		float gameSpeed = 0, modelSpeed = 0, gameVy = 0, modelVy = 0;
+		bool gamePlatform = false, modelPlatform = false;
+	};
+
+	// From a frame of a movie: a grid of sticks (64 yaws at 5 magnitudes, and neutral), each
+	// played in the game for one frame with the buttons asked for, against the model's frame
+	// from the same state (BitfsScEndingMetrics::AirStep).
+	class AirGrid : public TopLevelScript<Sm64Resource>
+	{
+	public:
+		class CustomScriptStatus
+		{
+		public:
+			std::vector<AirCheck> checks;
+		};
+		CustomScriptStatus CustomStatus = CustomScriptStatus();
+
+		AirGrid(int64_t frame, uint16_t buttons) : _frame(frame), _buttons(buttons) {}
+
+		bool validation() override { return true; }
+		bool execution() override
+		{
+			using AirStep = BitfsScEndingMetrics::AirStep;
+			LongLoad(_frame);
+			MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
+			Object* objectPool = (Object*)(ReadState("gObjectPool"));
+			Object* pyramid = &objectPool[84];
+			Camera* camera = *(Camera**)(ReadState("gCamera"));
+			const auto mario = AirStep::Mario::Of(marioState, pyramid);
+			const auto model = AirStep::Pyramid::Of(pyramid);
+			std::vector<std::pair<int8_t, int8_t>> sticks { { 0, 0 } };
+			for (int yaw = 0; yaw < 65536; yaw += 1024)
+			{
+				for (float magnitude : { 4.0f, 8.0f, 16.0f, 24.0f, 32.0f })
+					sticks.push_back(Inputs::GetClosestInputByYawHau(int16_t(yaw), magnitude, camera->yaw));
+			}
+			for (auto stick : sticks)
+			{
+				AirCheck check;
+				check.sx = stick.first;
+				check.sy = stick.second;
+				auto predicted = mario;
+				auto predictedPyramid = model;
+				const auto intended = stick == std::pair<int8_t, int8_t>(0, 0)
+					? std::pair<int16_t, float>(marioState->faceAngle[1], 0.0f)
+					: Inputs::GetIntendedYawMagFromInput(stick.first, stick.second, camera->yaw);
+				check.modelPlays = AirStep::Frame(predicted, predictedPyramid, intended.first, intended.second, (_buttons & Buttons::B) != 0);
+				ExecuteAdhoc([&]()
+					{
+						AdvanceFrameWrite(Inputs(_buttons, stick.first, stick.second));
+						check.gameAction = marioState->action;
+						check.gameX = marioState->pos[0];
+						check.gameY = marioState->pos[1];
+						check.gameZ = marioState->pos[2];
+						check.gameSpeed = marioState->forwardVel;
+						check.gameVy = marioState->vel[1];
+						check.gamePlatform = marioState->marioObj->platform == pyramid;
+						return true;
+					});
+				if (check.modelPlays)
+				{
+					check.modelAction = predicted.action;
+					check.modelX = predicted.x;
+					check.modelY = predicted.y;
+					check.modelZ = predicted.z;
+					check.modelSpeed = predicted.forwardVel;
+					check.modelVy = predicted.vy;
+					check.modelPlatform = predicted.onPlatform;
+					check.same = check.gameAction == check.modelAction && check.gameX == check.modelX && check.gameY == check.modelY && check.gameZ == check.modelZ
+						&& check.gameSpeed == check.modelSpeed && check.gameVy == check.modelVy && check.gamePlatform == check.modelPlatform;
+				}
+				else
+					check.same = check.gameAction == ACT_MOVE_PUNCHING; // the game punched: a stick too small for the dive
+				CustomStatus.checks.push_back(check);
+			}
+			return true;
+		}
+		bool assertion() override { return true; }
+
+	private:
+		int64_t _frame;
+		uint16_t _buttons;
+	};
+}
+
+// The air model is the game, bit for bit (ROADMAP 4.11, 2026-10-21): at every frame of both
+// example movies' dive recovers, the dive's frame (B on the walk), the rollout's press on the
+// slide after the pause, the rollout's air frames and the landing, each of 321 sticks played
+// in the game gives the model's position, speed, vertical speed, action and platform exactly,
+// and the sticks too small for a dive punch, which the model refuses.
+TEST_CASE("sc-ending: the air model is the game's at every dive recover frame of the example movies")
+{
+	PipelineConfig pipeline = PipelineConfig::Load(g_config);
+	std::vector<LibSm64> resources;
+	OneResource(pipeline, resources);
+	Configuration config = pipeline.ScattershotConfiguration(pipeline.stages.at(0));
+	const fs::path movies = fs::path(config.M64Path).parent_path();
+	const std::string uscz = (movies / "uscz_pyramid_-1945_southeast_-p15259_p82917_p41379.m64.m64").string();
+	const std::string northeast = ExampleMovie(config);
+	struct Case
+	{
+		std::string movie;
+		int64_t frame;
+		uint16_t buttons;
+	};
+	const Case cases[] = {
+		{ uscz, 3465, Buttons::B }, { uscz, 3469, Buttons::B }, { uscz, 3470, 0 }, { uscz, 3471, 0 }, { uscz, 3472, 0 },
+		{ northeast, 4433, Buttons::B }, { northeast, 4437, Buttons::B }, { northeast, 4438, 0 }, { northeast, 4439, 0 }, { northeast, 4440, 0 },
+	};
+	for (const Case& c : cases)
+	{
+		M64 m64(c.movie);
+		REQUIRE_MESSAGE(m64.load(), "the example movie is not beside the config's movie: ", c.movie);
+		auto status = TopLevelScriptBuilder<AirGrid>::Build(m64).ImportResource(&resources[0]).Run(c.frame, c.buttons);
+		REQUIRE(status.checks.size() == 321u);
+		int played = 0;
+		int mismatches = 0;
+		const AirCheck* first = nullptr;
+		for (const AirCheck& check : status.checks)
+		{
+			played += check.modelPlays ? 1 : 0;
+			if (!check.same)
+			{
+				mismatches++;
+				if (first == nullptr)
+					first = &check;
+			}
+		}
+		CHECK_MESSAGE(mismatches == 0, "frame ", c.frame, " of ", c.movie, ": ", mismatches, " sticks differ from the model; the first, (", int(first->sx), ", ", int(first->sy), "): game action ",
+			first->gameAction, " at (", first->gameX, ", ", first->gameY, ", ", first->gameZ, ") speed ", first->gameSpeed, " vy ", first->gameVy, " platform ", first->gamePlatform,
+			"; model action ", first->modelAction, " at (", first->modelX, ", ", first->modelY, ", ", first->modelZ, ") speed ", first->modelSpeed, " vy ", first->modelVy, " platform ", first->modelPlatform);
+		// The dive's frame: about half the grid's sticks are too small for a dive and punch.
+		if (c.buttons == Buttons::B && (c.frame == 3465 || c.frame == 4433))
+			CHECK(played == 164);
+		else
+			CHECK(played == 321);
+	}
+}
+
+namespace
+{
+	// From a frame of a movie: the inputs given, one a frame, each frame's action and speed
+	// recorded.
+	class StopTrace : public TopLevelScript<Sm64Resource>
+	{
+	public:
+		class CustomScriptStatus
+		{
+		public:
+			std::vector<std::pair<uint32_t, float>> frames; // action, forward speed after each input
+			std::vector<std::array<float, 4>> positions;     // x, y, z and whether the pyramid is his platform, after each input
+		};
+		CustomScriptStatus CustomStatus = CustomScriptStatus();
+
+		StopTrace(int64_t frame, std::vector<Inputs> inputs) : _frame(frame), _inputs(std::move(inputs)) {}
+
+		bool validation() override { return true; }
+		bool execution() override
+		{
+			LongLoad(_frame);
+			MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
+			for (const Inputs& inputs : _inputs)
+			{
+				AdvanceFrameWrite(inputs);
+				CustomStatus.frames.emplace_back(marioState->action, marioState->forwardVel);
+				Object* objectPool = (Object*)(ReadState("gObjectPool"));
+				CustomStatus.positions.push_back({ marioState->pos[0] + 1945.0f, marioState->pos[1] + 3071.0f, marioState->pos[2] + 715.0f, marioState->marioObj->platform == &objectPool[84] ? 1.0f : 0.0f });
+			}
+			return true;
+		}
+		bool assertion() override { return true; }
+
+	private:
+		int64_t _frame;
+		std::vector<Inputs> _inputs;
+	};
+}
+
+// A landing stop's first frame still carries the landing's speed (ROADMAP 4.11, 2026-10-21):
+// the game reads the stick before the stop zeroes the speed, so a stick on that frame cancels
+// the stop into a walk at the landing's speed, and the quickturn, the smallest stick into a
+// walk under a unit of speed and then idle, is from the stop's second frame. The northeast
+// movie's landing at 4441, 46 of speed, 4 units inside the -z edge: the walk at 46 runs off
+// it in the same frame.
+TEST_CASE("sc-ending: a stick on a landing stop's first frame keeps the landing's speed; the quickturn is from its second")
+{
+	PipelineConfig pipeline = PipelineConfig::Load(g_config);
+	std::vector<LibSm64> resources;
+	OneResource(pipeline, resources);
+	Configuration config = pipeline.ScattershotConfiguration(pipeline.stages.at(0));
+	M64 m64(ExampleMovie(config));
+	REQUIRE_MESSAGE(m64.load(), "the example movie is not beside the config's movie");
+	const int16_t cameraYaw = -24576; // the movie's camera at the landing
+	auto least = Inputs::GetClosestInputByYawHau(cameraYaw, std::nextafter(0.0f, 1.0f), cameraYaw);
+	const Inputs stick(0, least.first, least.second);
+	const Inputs neutral(0, 0, 0);
+
+	auto first = TopLevelScriptBuilder<StopTrace>::Build(m64).ImportResource(&resources[0]).Run(4441, std::vector<Inputs> { stick, neutral });
+	REQUIRE(first.frames.size() == 2u);
+	CHECK(first.frames[0].first != ACT_FREEFALL_LAND_STOP); // the walk at the landing's speed, which runs off the -z edge in the same frame
+	CHECK(first.frames[0].second > 40.0f);
+	CHECK(first.frames[1].first != ACT_IDLE);
+
+	auto second = TopLevelScriptBuilder<StopTrace>::Build(m64).ImportResource(&resources[0]).Run(4441, std::vector<Inputs> { neutral, stick, neutral });
+	REQUIRE(second.frames.size() == 3u);
+	CHECK(second.frames[0].first == ACT_FREEFALL_LAND_STOP);
+	CHECK(second.frames[0].second == 0.0f);
+	CHECK(second.frames[1].first == ACT_WALKING);
+	CHECK(second.frames[1].second < 1.0f); // the walk's first frame at the smallest stick: under a unit of speed
+	CHECK(second.frames[2].first == ACT_IDLE);
+}
+
+// The punch from a landing stop (ROADMAP 4.11, 2026-10-21): B on the stop's first frame, the
+// landing's speed still there, cancels the stop into the standing punch, whose frames step
+// the punch's own 10, 7, 5 and 3 in the facing. The northeast movie's landing at 4441 faces
+// -z about 7 units inside the -z edge. The punch alone never falls: a ground step past an
+// edge more than 100 above the lava takes one quarter step and stops, the punch ignores
+// that it left the ground, and the edge sweeps outward about 3.5 a frame, so by the next
+// frame it is under him again; he moves 2 to 4 a frame beside it at the platform's height,
+// still punching, the pyramid his platform again on the third frame. The punch cancel, a
+// full stick at the facing on the punch's second frame, is a walk that keeps the punch's
+// speed, and the walk's step off the edge is the fall.
+TEST_CASE("sc-ending: a punch from a landing stop steps 10, then 7, and never falls off the sweeping edge; the punch cancel's walk does")
+{
+	PipelineConfig pipeline = PipelineConfig::Load(g_config);
+	std::vector<LibSm64> resources;
+	OneResource(pipeline, resources);
+	Configuration config = pipeline.ScattershotConfiguration(pipeline.stages.at(0));
+	M64 m64(ExampleMovie(config));
+	REQUIRE_MESSAGE(m64.load(), "the example movie is not beside the config's movie");
+	const int16_t cameraYaw = -24576;
+	const Inputs punch(Buttons::B, 0, 0);
+	const Inputs neutral(0, 0, 0);
+	auto facing = Inputs::GetClosestInputByYawHau(-28518, 32, cameraYaw); // the landing's facing
+	const Inputs stick(0, facing.first, facing.second);
+
+	// The punch held through: 10, 7, 5, 3, all on the ground beside the edge, none a fall.
+	auto held = TopLevelScriptBuilder<StopTrace>::Build(m64).ImportResource(&resources[0]).Run(4441, std::vector<Inputs> { punch, neutral, neutral, neutral });
+	REQUIRE(held.frames.size() == 4u);
+	const float speeds[4] = { 10.0f, 7.0f, 5.0f, 3.0f };
+	for (size_t i = 0; i < 4; i++)
+	{
+		CHECK(held.frames[i].first == ACT_PUNCHING);
+		CHECK(held.frames[i].second == speeds[i]);
+		CHECK(held.positions[i][1] > 120.0f); // the platform's height above the lava, never the fall
+		CHECK(held.positions[i][2] < -200.0f); // past the -z edge's line of the landing frame
+	}
+	CHECK(held.positions[0][3] == 0.0f); // past the edge: not his platform on the first frame
+	CHECK(held.positions[2][3] == 1.0f); // the edge swept under him: his platform again
+
+	// The punch cancel: the punch's frame, then the stick held, a walk at the punch's speed or
+	// more that steps off, and the fall, which the sweeping edge may catch once or twice on
+	// its way (a touch down that his speed steps off again, as the walk-off at 8 above has)
+	// before he is clear of it and falling.
+	auto cancel = TopLevelScriptBuilder<StopTrace>::Build(m64).ImportResource(&resources[0]).Run(4441, std::vector<Inputs> { punch, stick, stick, stick, stick, stick, stick, stick });
+	REQUIRE(cancel.frames.size() == 8u);
+	CHECK(cancel.frames[0].first == ACT_PUNCHING);
+	CHECK(cancel.frames[0].second == 10.0f);
+	const bool walkingOrAir = cancel.frames[1].first == ACT_WALKING || (cancel.frames[1].first & ACT_FLAG_AIR) != 0;
+	CHECK(walkingOrAir);
+	CHECK(cancel.frames[1].second > 9.0f);
+	CHECK(cancel.frames[1].second < 13.0f);
+	std::string trace;
+	for (size_t i = 0; i < cancel.frames.size(); i++)
+		trace += std::string(Sm64ActionName(cancel.frames[i].first)) + " " + std::to_string(cancel.frames[i].second) + " at " + std::to_string(cancel.positions[i][1]) + "; ";
+	INFO("the frames after B and the stick held: ", trace);
+	CHECK(cancel.frames.back().first == ACT_FREEFALL);
+	CHECK(cancel.positions.back()[1] < 110.0f); // clear of the edge and falling
+}
+
+// The dive in the air (ROADMAP 4.11, 2026-10-21): B on a fall is a dive that adds 15 to the
+// speed along the facing, 48 at most, and keeps the fall's vertical speed and the facing. The
+// maintainer's third example, SingleBullyBlueprint2024.m64, leaves a landing stop at 8 and
+// dives in the air on its second fall frame, 3584 to 3585, at 21.7, falling at 8.
+TEST_CASE("sc-ending: B on a fall is a dive at the fall's speed plus 15, the vertical speed kept")
+{
+	PipelineConfig pipeline = PipelineConfig::Load(g_config);
+	std::vector<LibSm64> resources;
+	OneResource(pipeline, resources);
+	Configuration config = pipeline.ScattershotConfiguration(pipeline.stages.at(0));
+	M64 m64((fs::path(config.M64Path).parent_path() / "SingleBullyBlueprint2024.m64").string());
+	REQUIRE_MESSAGE(m64.load(), "the third example movie is not beside the config's movie");
+	const Inputs dive(Buttons::B, 0, 0);
+	const Inputs neutral(0, 0, 0);
+	auto trace = TopLevelScriptBuilder<StopTrace>::Build(m64).ImportResource(&resources[0]).Run(3584, std::vector<Inputs> { dive, neutral });
+	REQUIRE(trace.frames.size() == 2u);
+	CHECK(trace.frames[0].first == ACT_DIVE);
+	CHECK(trace.frames[0].second > 20.0f); // 6.44 at the fall, plus 15, less the air's drag
+	CHECK(trace.frames[0].second < 22.0f);
+	CHECK(trace.positions[0][1] < 103.0f); // the fall went on: 8 down from 110.6 above the lava, no rise
+	CHECK(trace.frames[1].first == ACT_DIVE);
+}
+
+namespace
+{
+	// The maintainer's fourth example (pyramid_-1945_southwest_-p35726_p87575_-p20781.m64,
+	// beside the config's movie; 2026-11-19): the uscx example turned half a turn. The
+	// oscillations in corner 3, their last crossing at 4418 with the normal (-0.207, -0.498),
+	// the final run along the -x edge into corner 4, the dive recover's landing at 4441, the
+	// leave over the +z edge at 4443 where the edge stands 116 above the lava, a fall that
+	// moves 54 units sideways up the edge, and the squish at 4450 with the normal the file's name
+	// carries, the side's normal y at -0.499; no bully in the movie.
+	fs::path SouthwestMovie(const PipelineConfig& pipeline)
+	{
+		return pipeline.m64.parent_path() / "pyramid_-1945_southwest_-p35726_p87575_-p20781.m64";
+	}
+	constexpr int64_t SouthwestCrossing = 4418;
+	constexpr int64_t SouthwestLeave = 4443;
+	constexpr int64_t SouthwestCatch = 4449;
+
+	BitfsScEndingArgs SouthwestArgs()
+	{
+		BitfsScEndingArgs args;
+		args.initialFrame = SouthwestCrossing;
+		args.oscQuadrant = 3;
+		args.targetQuadrant = 4;
+		args.platform = 84;
+		args.targetGiven = false;
+		args.squishEdgeX = 0;
+		args.squishEdgeZ = 1;
+		args.bully = 27;
+		args.probeWindow = 10;
+		return args;
+	}
+
+	// The ending's search with the source movie's own inputs for its moves up to a frame, and
+	// its own moves from that frame on: every frame is judged by the stage's validation, its
+	// metric script and its probe, as a pellet's frames are.
+	class ReplayedEnding : public Scattershot_BitfsScEnding
+	{
+	public:
+		ReplayedEnding(Alias_Scattershot_BitfsScEnding& scattershot, const BitfsScEndingArgs& args, int64_t replayBefore)
+			: Scattershot_BitfsScEnding(scattershot, args), _replayBefore(replayBefore) {}
+
+		bool ApplyMovement() override
+		{
+			if (int64_t(GetCurrentFrame()) >= _replayBefore)
+				return Scattershot_BitfsScEnding::ApplyMovement();
+			AdvanceFrameWrite(GetInputs(int64_t(GetCurrentFrame())));
+			return true;
+		}
+
+	private:
+		int64_t _replayBefore;
+	};
+
+	// The search from the fourth example's last crossing on the game, one thread, deterministic:
+	// the movie's inputs before `replayBefore`, the stage's moves after.
+	std::vector<ScattershotSolution<BitfsScEndingSolution>> RunSouthwest(LibSm64& resource, const BitfsScEndingArgs& args, int64_t replayBefore, int maxShots)
+	{
+		PipelineConfig pipeline = PipelineConfig::Load(g_config);
+		pipeline.threads = 1;
+		pipeline.outputDirectory = TestOutputDirectory();
+		StageConfig stage = StageOfType(pipeline, "sc-ending");
+		stage.m64 = SouthwestMovie(pipeline);
+		stage.startFrame = SouthwestCrossing;
+		stage.scattershot["deterministic"] = true;
+		stage.scattershot["csvSamplePeriod"] = 1000000; // a CSV of the rows the ending forces, in the test directory: with none, each forced row prints a write error (ROADMAP 4.24)
+		stage.scattershot["seed"] = 6;
+		stage.scattershot["pelletsPerShot"] = 200;
+		stage.scattershot["pelletMaxScripts"] = 40; // the crossing to the catch is 31 frames: one pellet replays them all
+		stage.scattershot["pelletMaxFrameDistance"] = 50;
+		stage.scattershot["maxConsecutiveFailedPellets"] = 10;
+		stage.scattershot["maxShots"] = maxShots;
+		stage.scattershot["maxSolutions"] = 1;
+		Configuration config = pipeline.ScattershotConfiguration(stage);
+		return Scattershot_BitfsScEnding::ConfigureScattershot(config)
+			.ImportResourcePerThread([&](int) -> Sm64Resource* { return &resource; })
+			.ConfigureMetricScript(args)
+			.Run<ReplayedEnding>(args, replayBefore);
+	}
+}
+
+// The stage accepts the maintainer's fourth example (ROADMAP 4.11, 2026-11-20): with the
+// movie's own inputs for its moves from the last crossing on, every frame passes the stage's
+// validation and the probe finds the squish cancel on the frame before the movie's squish.
+// The leave is the frame that failed before: Mario steps off where the edge stands 20 under
+// the catch's window and moves sideways up it as he falls, and the rule on where the catch will
+// come carried him along the edge by his velocity alone, about a unit a frame at the step
+// off. It now asks whether the window is within what the air's controls can still reach.
+TEST_CASE("sc-ending: the stage's rules accept the southwest example and its probe finds the squish cancel")
+{
+	PipelineConfig pipeline = PipelineConfig::Load(g_config);
+	REQUIRE_MESSAGE(fs::exists(SouthwestMovie(pipeline)), "the fourth example movie is not beside the config's movie");
+	std::vector<LibSm64> resources;
+	OneResource(pipeline, resources);
+
+	BitfsScEndingArgs args = SouthwestArgs();
+	auto solutions = RunSouthwest(resources[0], args, std::numeric_limits<int64_t>::max(), 5);
+	REQUIRE(solutions.size() == 1);
+	const BitfsScEndingSolution& solution = solutions[0].data;
+	CHECK(solution.approach == int(BitfsScEndingMetrics::Approach::DIVE_RECOVER));
+	CHECK(solution.departureFrame == SouthwestLeave);
+	CHECK(solution.squishFrame == SouthwestCatch);
+	CHECK(solution.probeNormalX == doctest::Approx(-0.357264161).epsilon(0.000001)); // the normal in the movie's name
+	CHECK(solution.probeNormalZ == doctest::Approx(-0.207810417).epsilon(0.000001));
+	CHECK(std::fabs(solution.probeSpeed) >= args.squishMinSpeed);
+	CHECK(solution.probeHeight - BitfsScEndingMetrics::LavaHeight >= args.squishMinClearance);
+}
+
+// The fall to the catch (ROADMAP 4.11, 2026-11-20). The squish needs the top more than 78
+// above Mario, which a fall from the edge has on its seventh air frame; the example's is
+// squished after six, because it moves sideways up the rising edge and the top over it rises 20,
+// and a frame later its side is no longer steep. From the example's leave, the movie's
+// inputs up to it, the stage's air moves find a squish cancel with the fall as one move
+// (FALL_TO_CATCH), caught within six air frames; the one-frame air moves alone, whose
+// stick is on the line in and out of the platform, are run beside it for the count.
+TEST_CASE("sc-ending: from the southwest example's leave, the fall to the catch finds a squish cancel")
+{
+	PipelineConfig pipeline = PipelineConfig::Load(g_config);
+	REQUIRE_MESSAGE(fs::exists(SouthwestMovie(pipeline)), "the fourth example movie is not beside the config's movie");
+	std::vector<LibSm64> resources;
+	OneResource(pipeline, resources);
+
+	BitfsScEndingArgs fall = SouthwestArgs();
+	fall.weightStrainBack = 0;
+	fall.weightAirDive = 0;
+	fall.weightNutLand = 0;
+	auto solutions = RunSouthwest(resources[0], fall, SouthwestLeave, 20);
+	REQUIRE(solutions.size() == 1);
+	const BitfsScEndingSolution& solution = solutions[0].data;
+	CHECK(solution.departureFrame == SouthwestLeave);
+	CHECK(solution.squishFrame - solution.departureFrame <= 6);
+	CHECK(std::fabs(solution.probeSpeed) >= fall.squishMinSpeed);
+	CHECK(solution.probeHeight - BitfsScEndingMetrics::LavaHeight >= fall.squishMinClearance);
+
+	BitfsScEndingArgs oneFrame = SouthwestArgs();
+	oneFrame.weightFallToCatch = 0;
+	auto without = RunSouthwest(resources[0], oneFrame, SouthwestLeave, 20);
+	char line[200];
+	std::snprintf(line, sizeof(line), "the fall to the catch: caught %lld frames after the leave, normal (%.3f, %.3f); the one-frame air moves alone: %zu squish cancel(s) in 20 shots",
+		(long long)(solution.squishFrame - solution.departureFrame), double(solution.probeNormalX), double(solution.probeNormalZ), without.size());
+	MESSAGE(line);
+}
+
+namespace
+{
+	// The fourth example's oscillations: its rest, and its fifth and sixth crossings as the dr
+	// stage's metric script counts them, 30 frames apart. At the sixth Mario runs at 31.06.
+	constexpr int64_t SouthwestRest = 4183;
+	constexpr int64_t SouthwestFifthCrossing = 4326;
+	constexpr int64_t SouthwestSixthCrossing = 4356;
+	constexpr int SouthwestRunOutFrames = 10; // the example's run out from its fifth crossing
+
+	// The dr stage's search from the example's fifth crossing with the first half of the
+	// oscillation in the example's order instead of drawn: the run out up the axis for the
+	// example's ten frames, the turnaround ended facing down the slope, and two frames that
+	// keep the facing. The rest of the way back is drawn as the stage draws it. The order
+	// is read off the game's state, never counted, since the search replays a block's moves
+	// from its seed (hard rule 3). Of the stage's rules only the death rule is kept: the
+	// example's normal is off the 0.01 grid the rules conserve, so they would refuse every
+	// frame.
+	class ExampleOrderOscillation : public Scattershot_BitfsDr
+	{
+	public:
+		ExampleOrderOscillation(Alias_Scattershot_BitfsDr& scattershot, NormalSpecsDto specs, BitfsDrMoveWeights moves)
+			: Scattershot_BitfsDr(scattershot, 6, specs, 3, 84, true, 0.0f, moves) {}
+
+		void SelectMovementOptions() override
+		{
+			const auto state = GetMetrics(GetCurrentFrame());
+			const bool runOut = state.phase == BitfsDrMetrics::Phase::RUN_DOWNHILL || state.phase == BitfsDrMetrics::Phase::TURN_UPHILL;
+			if (runOut && int64_t(GetCurrentFrame()) - SouthwestFifthCrossing < SouthwestRunOutFrames)
+				AddMovementOption(CustomMoves::RUN_UP_AXIS);
+			else if (runOut)
+				AddMovementOption(CustomMoves::TURN_AROUND); // the frames Mario slows on; the frame he stops on is the next move's
+			else if (state.marioAction == ACT_TURNING_AROUND)
+				AddMovementOption(CustomMoves::FACE_DOWN_SLOPE);
+			else if (GetMetrics(GetCurrentFrame() - 1).marioAction == ACT_TURNING_AROUND || GetMetrics(GetCurrentFrame() - 2).marioAction == ACT_TURNING_AROUND)
+				AddMovementOption(CustomMoves::KEEP_FACING); // the two frames after the stop
+			else
+				Scattershot_BitfsDr::SelectMovementOptions(); // the rest of the way back, drawn
+		}
+
+		bool ValidateState() override
+		{
+			MarioState* marioState = *(MarioState**)(ReadState("gMarioState"));
+			return !MarioDeath::IsDying(*marioState);
+		}
+
+		// The first crossing after the start ends the pellet.
+		bool IsSolution() override
+		{
+			return GetMetrics(GetCurrentFrame()).currentCrossing > GetMetrics(uint64_t(SouthwestFifthCrossing)).currentCrossing;
+		}
+	};
+
+	struct ExampleOrderCrossings
+	{
+		size_t found = 0;  // the crossings the search made
+		int64_t frame = 0; // the fastest of them: its frame, Mario's speed and the tilt
+		float speed = 0;
+		float tilt = 0;
+	};
+
+	ExampleOrderCrossings RunExampleOrderOscillation(LibSm64& resource, int maxShots)
+	{
+		PipelineConfig pipeline = PipelineConfig::Load(g_config);
+		pipeline.threads = 1;
+		pipeline.outputDirectory = TestOutputDirectory();
+		StageConfig stage = StageOfType(pipeline, "dr-oscillations");
+		stage.m64 = SouthwestMovie(pipeline);
+		stage.startFrame = SouthwestFifthCrossing;
+		stage.visualize.reset();
+		stage.scattershot["deterministic"] = true;
+		stage.scattershot["csvSamplePeriod"] = 0;
+		stage.scattershot["seed"] = 6;
+		stage.scattershot["pelletsPerShot"] = 200;
+		stage.scattershot["pelletMaxScripts"] = 40; // a pellet from the start plays the whole oscillation, a move a frame but for the turnaround
+		stage.scattershot["pelletMaxFrameDistance"] = 50;
+		stage.scattershot["maxConsecutiveFailedPellets"] = 10;
+		stage.scattershot["maxShots"] = maxShots;
+		stage.scattershot["maxSolutions"] = 100000;
+		Configuration config = pipeline.ScattershotConfiguration(stage);
+
+		// What the metric script needs to count the example's crossings from its rest: the
+		// leg's end at the turnaround's 16 of speed, a regime from the example's own tilt.
+		NormalSpecsDto specs;
+		specs.onlyMinMajor = true;
+		specs.startXzSum = 0.70f;
+		specs.minXzSum = 0.70f;
+		specs.maxExitXzSum = 0.72f;
+		specs.speedRule = SpeedRule::OFF;
+		specs.minAxis = 0.05f;
+		specs.restXzSum = 0.677f;
+		specs.minMajor = 0.3f;
+		specs.maxMajor = 0.601f;
+		specs.regionsMajor = 10000;
+		specs.minMinor = 0.19f;
+		specs.maxMinor = 0.2f;
+		specs.regionsMinor = 10000;
+
+		BitfsDrMoveWeights moves;
+		moves.keepFacing = 0.4; // the drawn frames of the way back may keep the facing too
+
+		auto solutions = Scattershot_BitfsDr::ConfigureScattershot(config)
+			.ImportResourcePerThread([&](int) -> Sm64Resource* { return &resource; })
+			.ConfigureMetricScript(SouthwestRest, 3, specs, 15, -0.357264161f, -0.207810417f, 84)
+			.Run<ExampleOrderOscillation>(specs, moves);
+
+		ExampleOrderCrossings crossings;
+		for (const auto& solution : solutions)
+		{
+			if (solution.m64Diff.frames.empty())
+				continue;
+			crossings.found++;
+			if (solution.data.fSpd <= crossings.speed)
+				continue;
+			crossings.frame = int64_t(solution.m64Diff.frames.rbegin()->first) + 1; // the frame after the last input written
+			crossings.speed = solution.data.fSpd;
+			crossings.tilt = solution.data.xzSum;
+		}
+		return crossings;
+	}
+}
+
+// The example movies' three choices as the dr stage's moves (ROADMAP 4.12, 2026-11-21): the
+// run out up the axis, the turnaround ended facing down the slope and the frames that keep
+// the facing. With those in the example's order from its fifth crossing and the rest of the
+// way back drawn, the search's fastest crossing comes where the example's does, within a
+// frame, and within two of its speed (the moves the stage had before reached 27.3 from
+// there in 2,000 shots; ROADMAP 4.12).
+TEST_CASE("dr-oscillations: the run up the axis, the turnaround facing down the slope and the kept facing make the southwest example's oscillation")
+{
+	PipelineConfig pipeline = PipelineConfig::Load(g_config);
+	REQUIRE_MESSAGE(fs::exists(SouthwestMovie(pipeline)), "the fourth example movie is not beside the config's movie");
+	std::vector<LibSm64> resources;
+	OneResource(pipeline, resources);
+
+	const int shots = 100;
+	const ExampleOrderCrossings crossings = RunExampleOrderOscillation(resources[0], shots);
+	REQUIRE(crossings.found > 0);
+	CHECK(std::llabs((long long)(crossings.frame - SouthwestSixthCrossing)) <= 1);
+	CHECK(crossings.speed >= 29.0f);
+
+	char line[240];
+	std::snprintf(line, sizeof(line), "the example crosses on frame %lld at 31.06; with the three moves in its order, %zu crossings in %d shots, the fastest on frame %lld at %.2f (tilt %.3f)",
+		(long long)SouthwestSixthCrossing, crossings.found, shots, (long long)crossings.frame, double(crossings.speed), double(crossings.tilt));
+	MESSAGE(line);
 }

@@ -29,7 +29,8 @@ public:
 // The weights of the swing's moves after a crossing while the run is downhill, the draw's
 // odds (the config's "moves" of a dr-oscillations stage; the maintainer, 2026-10-19: which
 // weights give the most squish cancels in the least time is a measured question). The first
-// swing from the leg and the uphill-turn phase keep their own weights (SelectMovementOptions).
+// swing from the leg keeps its own weights, and so does the uphill-turn phase while
+// runUpAxis is 0 (SelectMovementOptions).
 class BitfsDrMoveWeights
 {
 public:
@@ -37,6 +38,17 @@ public:
     int probeRun = 4;   // ProbeRun_1f: one frame downhill at the minimum angle from the facing, the probe's run
     int turnUphill = 1; // TurnUphill_1f, from over the turnaround's 16 of speed
     int turnAround = 1; // TurnAround, from a frame the slope took speed on
+    int targetCrossing = 0; // TargetCrossing: the swing aimed at the crossing point the window asks for (the maintainer, 2026-10-21); 0 leaves it out
+
+    // Three choices the example movies make and the moves above cannot (the maintainer,
+    // 2026-11-21; ROADMAP 4.12), each a one-frame move the search draws, so that it can try
+    // them at any frame and keep what works. 0 leaves one out; with all three at 0 the stage
+    // draws exactly as it did before them.
+    // The run out is what Mario does from a crossing to his turnaround; the way back is from
+    // the turnaround's end to the next crossing.
+    int runUpAxis = 0;        // RunUpAxis_1f: a frame of the run out up the slope, along the axis whose tilt has to flatten. Over 0, the uphill-turn phase draws by these weights too: the lead run, this frame, the turnaround (only after a frame that ran uphill) and the targeted move
+    double faceDownSlope = 0; // FaceDownSlope_1f: the frame the turnaround stops on, the stick just past the game's held-back angle on the downhill side, so the way back begins down the slope. Its weight beside the way back's two moves, which weigh 1 each
+    double keepFacing = 0;    // KeepFacing_1f: a frame of the way back that does not turn, beside the same two moves
 };
 
 // Where the "gain speed each crossing" rule compares a crossing with the one two before it
@@ -269,7 +281,8 @@ class Scattershot_BitfsDr : public Alias_ScattershotThread_BitfsDr
 {
 public:
     // This search's moves; the draw walks a list in this order.
-    enum class CustomMoves { NO_SCRIPT, PBD, RUN_DOWNHILL, RUN_DOWNHILL_MIN, REWIND, TURN_UPHILL, RUN_FORWARD, TURN_AROUND, QUICKTURN, FIRST_LEG, LEAD_RUN, PROBE_RUN };
+    enum class CustomMoves { NO_SCRIPT, PBD, RUN_DOWNHILL, RUN_DOWNHILL_MIN, REWIND, TURN_UPHILL, RUN_FORWARD, TURN_AROUND, QUICKTURN, FIRST_LEG, LEAD_RUN, PROBE_RUN, TARGET_CROSSING,
+        RUN_UP_AXIS, FACE_DOWN_SLOPE, KEEP_FACING };
 
     // How far from the pyramid's home the search lets Mario be, on each axis: the platform's
     // half-width plus what the tilt and a fall past the edge add.
@@ -360,12 +373,79 @@ private:
     bool RunDownhillThenTurnUphill();
     bool TurnAroundThenRunDownhill();
     bool TurnAround();
+    // The swing aimed at the crossing point the window asks for (the maintainer, 2026-10-21:
+    // the path exists, as the third example shows, but a random draw seldom finds it, so a
+    // move targets it). The point: for the crossing to come with the window's tilt and axis
+    // difference, Mario must pass the point under the normal there, so the point is the
+    // normal's spot on the platform (500 up, as the pyramid's goal is) with the tilt
+    // TargetTiltAbove over the window's floor, within its ceiling, and the axis difference
+    // TargetDiffAbove over the rule's, the larger component on the major axis, the one the
+    // crossing's steps reduce. The move: uphill along the minor axis toward the center, the
+    // run that leaves the normal behind on that axis (the example's eleven frames, 26 down
+    // to 21, the lag its 27 at the crossing comes from; the search's own swings lack it),
+    // until Mario is within TargetCenterBand of the center on that axis, the speed is down
+    // to TargetTurnSpeed (the game turns around from 16 only) or TargetUphillFrames are
+    // played (a fixed six to ten frames overshot the center from most of the run's frames,
+    // and the crossings came early and slow: 8 hand-overs at 17.8 against 19 at 22.2 over
+    // five seeds, 2026-10-21); then the turnaround with the stick at the point, and the run
+    // back: at the point until Mario is past the point under the normal on the minor axis,
+    // toward the chord end, then at the chord end, as the example curves (a run that aims at
+    // the point to the end arrives before the normal does, where the point stands 4 above
+    // the lava, and 65% of such runs died there on frames 10 to 14; the census of
+    // 2026-10-21), TargetRunFrames at most. The move keeps what it played, as TurnAround
+    // does, so the search goes on from wherever it got to (the turnaround not taken, the
+    // stick must be held back from the facing; the walk lost; no crossing yet; a frame no
+    // stick keeps the pyramid stepping on, 32% of the runs back in that census, where
+    // another move's yaw may still find one).
+    static constexpr float TargetTiltAbove = 0.015f;
+    static constexpr float TargetDiffAbove = 0.05f;
+    static constexpr float TargetCenterBand = 60.0f;
+    static constexpr float TargetTurnSpeed = 16.5f;
+    static constexpr int TargetUphillFrames = 16;
+    static constexpr int TargetRunFrames = 24;
+    bool TargetCrossing();
+    bool CrossingTarget(int16_t roughTargetAngle, const Object* pyramid, float& targetX, float& targetZ, int16_t& uphillYaw, bool& majorX) const; // the point (world), the uphill run's yaw and which axis is the major one, for the crossing heading to the chord end given; false without a window
     bool RunDownhill_1f(bool min = true);
     bool TurnUphill_1f();
     bool Quickturn();
     bool FirstLeg_1f();
     bool LeadRun_1f(bool toCorner = false); // toCorner: both leads outward, the lineup's run into the corner
     bool ProbeRun_1f(); // one frame downhill at the minimum angle from the facing: the frame the metric's probe plays from a crossing, so the search can make the run the probe measured (the maintainer, 2026-10-19)
+
+    // The example movies' oscillation as one-frame moves (the maintainer, 2026-11-21; ROADMAP
+    // 4.12). The speed at a crossing comes only from the frames after the turnaround, about
+    // 1.5 for each frame Mario faces downhill, and the frame the crossing must come on is
+    // set by the tilt. So the example runs out up the slope, which leaves the turnaround
+    // less speed to take off; it ends the turnaround facing down the slope; and it keeps that
+    // facing for a few frames before it turns toward the equilibrium point. The moves above
+    // run out along the level, end the turnaround facing the chord's far end and turn toward
+    // it at once, which brings the crossing early. The search draws these frame by frame.
+    //
+    // RunUpAxis_1f: a frame of the run out with the stick along one axis toward the
+    // pyramid's center line (RunOutYaw). Along the axis and not straight uphill: straight
+    // uphill also takes Mario toward the equilibrium point on the other axis, where he must
+    // stay ahead of it for the pyramid to keep stepping.
+    bool RunUpAxis_1f();
+    // The axis of the run out for the oscillation that heads to the chord end
+    // roughTargetAngle names, as the yaw up it: the axis whose tilt that oscillation
+    // flattens, the minor one at its crossing (majorX: whether the other, major, axis is
+    // x). False when the angle is not one of the corner's two chord ends.
+    static bool RunOutYaw(int16_t roughTargetAngle, int quadrant, int16_t& yaw, bool& majorX);
+    // FaceDownSlope_1f: the frame a turnaround stops on. Mario's facing is fixed while he
+    // slows; on the frame he stops he starts walking where the stick points, and the stick
+    // must be more than HeldBackAngle from his facing or the game cancels the turnaround.
+    // The stick here is FaceDownSlopeMargin to FaceDownSlopeMargin + FaceDownSlopeSpread
+    // past that angle, on the side of the facing the floor's downhill is on (103 to 125
+    // degrees; the fourth example's turnarounds turn 107 to 125). After a run out up an
+    // axis that is nearly straight down the other axis's slope.
+    static constexpr int HeldBackAngle = 0x471C;       // analog_stick_held_back's threshold, 100 degrees
+    static constexpr int FaceDownSlopeMargin = 0x200;  // 2.8 degrees past it
+    static constexpr int FaceDownSlopeSpread = 0x1000; // and up to 22.5 more, drawn
+    bool FaceDownSlope_1f();
+    // KeepFacing_1f: a frame of the way back with the stick at the facing. The way back's
+    // other moves turn Mario toward the chord's far end from their first frame; a few
+    // frames of this first gain speed without closing on the equilibrium point.
+    bool KeepFacing_1f();
     bool Handover() const { return _normalSpecsDto.handoverXzSum > _normalSpecsDto.restXzSum + 0.005f; } // the old lineup (NormalSpecsDto::handoverXzSum)
     static void Leads(const MarioState* marioState, const Object* pyramid, int dirX, int dirZ, float& leadX, float& leadZ); // the goal past the normal in the directions given
     static void LegDirection(float restNormalX, float restNormalZ, int cornerSignX, int cornerSignZ, int& signX, int& signZ); // the leg's way along the chord: the far side of the corner on the rest's steeper axis

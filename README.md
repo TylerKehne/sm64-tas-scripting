@@ -117,7 +117,7 @@ with a `visualize` block opens the viewer on its CSV as it is written ("The view
 on the corner (`"resource": "corner"`) first prints which objects its corners were imported
 with and at which frame, and after the search how many of its solutions the game reproduces
 (`replayed on the game: n of m solution(s) match`; the others are dropped, each with a line
-saying how it differed). The committed config puts all three stages on the corner, each with
+saying how it differed). The committed config puts every stage on the corner, each with
 every object, since 2026-10-12. The stage
 summary prints wall time and the frame advances, saves and loads summed over threads, which
 are the fixed-workload numbers a performance change has to report (AGENTS.md, hard rule 8).
@@ -248,9 +248,9 @@ One JSON file. Relative paths resolve against the file's own directory, unless t
   `maxSolutions` lets the lineup pass keep hundreds of lineups rather than the first
   hundred, whose roots are alike; ROADMAP 4.6), the tilt the last pass's
   solutions must have at their crossing, `minXzSum`, the tilt they may not exceed there,
-  `maxExitXzSum` (2 in the
-  committed config, none; it bounds the final-oscillation stage's hand-overs, so that the
-  ending starts from hand-overs alike in tilt), and how far
+  `maxExitXzSum` (0.63 in the committed `dr` stage and 0.67 in its `dr-final`; 2 asks
+  none; it bounds a stage's hand-overs, so that the next stage starts from hand-overs
+  alike in tilt), and how far
   into the corner's
   quadrant each axis of the normal must stay, `minAxis` (0.05 in the committed config: the
   fixer's lattice steps reversibly down to its `farNormal` past the origin, and a floor at
@@ -285,8 +285,9 @@ One JSON file. Relative paths resolve against the file's own directory, unless t
   of 16 without, 8 and 1 at 90; 60 cuts the turnaround's own overshoot of up to 90
   units, 3 of 16), so the table it starves the search of is not what the lineage that
   leaves was missing; the forward speed at which the leg from the rest ends and the first
-  swing begins, `legExitSpeed` (17.5 in the committed config; 16, the game's turnaround
-  threshold, by default): the census of 2026-10-04 inside the first-oscillation pass found
+  swing begins, `legExitSpeed` (27.5 in the committed config, corner 3's; 17.5 in the
+  uscz setup the census below was taken on; 16, the game's turnaround threshold, by
+  default): the census of 2026-10-04 inside the first-oscillation pass found
   that the swing crosses only when it reverses within a frame or two of the leg's end, an
   uphill frame that costs about a unit of speed and then the turnaround the game refuses
   under 16, before the lead-steered run carries Mario out to the +x side where no crossing
@@ -339,11 +340,44 @@ One JSON file. Relative paths resolve against the file's own directory, unless t
   the swing dies at its turn, from the rest and in every oscillation after (ROADMAP 4.6);
   after a crossing the probe's own run is a move beside it (`ProbeRun_1f`: one frame
   downhill at the minimum angle from the facing; the maintainer, 2026-10-19), so that the
-  search can make the run the roots are ranked by. The weights of the four moves of a swing
+  search can make the run the roots are ranked by. The weights of the moves of an oscillation
   after its crossing, while the run is downhill, are the stage's `moves` (`leadRun`,
-  `probeRun`, `turnUphill`, `turnAround`; 9, 4, 1 and 1 in the committed config); the
-  first swing from the leg and the uphill-turn phase keep their own, measured in ROADMAP
-  4.6.
+  `probeRun`, `turnUphill`, `turnAround`; 6, 0, 0 and 2 in the config, and 9, 4, 1 and 1
+  where a config names none; and
+  `targetCrossing`, the oscillation aimed at the crossing point the window asks for: uphill
+  along the minor axis until Mario is near the center on it, the turnaround with the stick
+  at the equilibrium point the window's normal would have, a run toward the corner while
+  the tilt is under the window's and the top is clear of the lava, and the run back at
+  where that point will stand and then at the chord end, to the crossing, the third
+  example's oscillation as one move; 0 in the config,
+  since at 4 the `dr-final` stage handed over fewer crossings, at the tilt the oscillation turned
+  at rather than the window's; the maintainer's idea, 2026-10-21, ROADMAP 4.12); the first
+  oscillation from the leg and the uphill-turn phase keep their own, measured in ROADMAP 4.6.
+  Three more weights are choices the example movies make, as one-frame moves the search
+  draws (the maintainer, 2026-11-21; ROADMAP 4.12). The run out is what Mario does from a
+  crossing to his turnaround, the way back from the turnaround to the next crossing. The
+  speed at a crossing comes only from the way back, about 1.5 for each frame Mario faces
+  downhill, and the tilt sets the frame the crossing must come on. So the examples run
+  out up the slope, end the turnaround facing down the slope, and keep that facing a few
+  frames before they turn toward the equilibrium point; the moves above run out along the
+  level and turn toward the chord's far end at once, which brings the crossing early.
+  `runUpAxis` (12 in the config) is a frame of the run out with the stick along the axis
+  whose tilt has to flatten, toward the pyramid's center line; over 0, the uphill-turn phase
+  draws by the config's weights too (the lead run, this frame, the turnaround and the
+  targeted oscillation), and its turnaround begins only after a frame that ran uphill, so
+  that it takes speed at the game's full 4.9 a frame. `faceDownSlope` (0.67) is the frame
+  the turnaround stops on, with the stick just past the angle the game counts as held
+  back, 100 degrees from the facing, on the downhill side; its weight is beside the way
+  back's two moves, which weigh 1 each, so 0.67 is one turnaround in four. `keepFacing`
+  (0.4, one frame in six) is a frame of the way back that does not turn. With all three at
+  0, their default, the stage draws exactly as it did before them. What they change on
+  the corner 3 setup is in docs/performance-changelog.md (2026-11-21). They go with the
+  tilt the last oscillation is asked for: their fastest crossings come at a tilt of 0.63
+  to 0.69, so a `dr-final` window there suits them (the committed one is 0.65 to 0.67).
+  In a window of 0.71 to 0.73, the earlier uscz setup's, they make about a tenth of the
+  crossings the weights before them (9, 4, 1 and 1) make, since nothing asks an
+  oscillation to hold its tilt and the search ranks by speed (the same changelog entry;
+  ROADMAP 4.12).
   The stage conserves the
   fixer's adjusted remainder error exactly from the hand-over frame on, which needs set
   values whose 0.01 steps round back exactly across the tilts the oscillations use: the
@@ -414,7 +448,9 @@ One JSON file. Relative paths resolve against the file's own directory, unless t
   (ROADMAP 4.6). From the movie's own dive slide (frame 3269) the rollout reaches tilts up
   to about 0.6 only; from the run before the dive (3250, the committed start) 0.67 and
   beyond. The regime the fixer works in, measured 2026-10-06 and locked by `bitfs-turn
-  --test` (one line per case): every corner at the tilt floor 0.5, exact and within 100
+  --test` (one line per case; the case runs on the target it was measured with, the uscz
+  setup's (-0.1792, 0.393), whatever target the config carries, and so do the first
+  oscillation's case and the refusals'): every corner at the tilt floor 0.5, exact and within 100
   ULPs; within 100 at the floors 0.4 and 0.6 in every corner, and exact there in the
   corners the movie's dive flies toward, 0.4 in corners 3 and 4, 0.6 in corners 1, 3 and 4
   (at the far corners' floor ends the rests the fine frames reach jump units for a landing
@@ -430,12 +466,14 @@ One JSON file. Relative paths resolve against the file's own directory, unless t
   final oscillation runs from the oscillation's corner along an
   edge to the adjacent corner, where the squish cancel is: `uscz` along a z edge, so the
   normal's x crosses the origin, `uscx` along an x edge, so z does; the committed setup
-  oscillates in corner 4 and runs toward corner 1 along the +z edge, its target's x
-  (-0.179) still on the oscillation's side. The two kinds are not alike (the maintainer,
+  is an `uscx` one, the maintainer's southwest example's (2026-11-21): it oscillates in
+  corner 3 and runs toward corner 4 along the -x edge, the squish over the +z edge, with
+  no target normal in the ending. The two kinds are not alike (the maintainer,
   2026-10-06): `uscz` is much more lenient, where `uscx` generally needs the movement to the
-  squish spot optimized, Mario having to reach it before the normal's y gets too low; the
-  committed setup is the lenient kind, so an `uscx` corner is where the ending stage's moves
-  will be judged (ROADMAP 4.11). A pass's solution is the crossing that reached its
+  squish spot optimized, Mario having to reach it before the normal's y gets too low. The
+  `uscz` setup the config had before (corner 4 toward corner 1 along the +z edge, the
+  target (-0.1792, 0.393)) is `config.json` at git 065470c, and what the new move weights
+  need of it is in ROADMAP 4.12. A pass's solution is the crossing that reached its
   oscillation, the frame on which the oscillation count rose to the pass's target,
   persisted as it is (the maintainer's design, 2026-10-17 and 19; the leg's rule is its
   own). Its `roughTargetAngle` is the chord end the normal steps toward after that
@@ -471,7 +509,7 @@ One JSON file. Relative paths resolve against the file's own directory, unless t
   2026-10-12: held to its ten fastest, which are all at one end of the chord, it gives the
   first oscillation nothing, on master's code as on this branch;
   docs/performance-changelog.md); from the first oscillation on, each pass carries its
-  `keepTop` (10) fastest solutions into the next, and the last pass hands on all of its
+  `keepTop` (100) fastest solutions into the next, and the last pass hands on all of its
   solutions, or its `lastKeepTop` fastest when that is set (the committed `dr-final`
   hands the ending its 100 fastest; the rewind's hand-over is trimmed the same way; the
   fastest of each 0.01 cell of the normal was tried on 2026-10-06 and carried
@@ -482,8 +520,8 @@ One JSON file. Relative paths resolve against the file's own directory, unless t
   against 11 without; the three failures were the last pass at the tilt ceiling), but a
   retry re-rolls that lottery rather than removing it, so the committed config asks none
   and the knob is a diagnostic; the cause is ROADMAP 4.6's open item. From the second
-  crossing on, a crossing's normal must sit at least `minCrossingAxisDiff` (0.26 in the
-  committed config) further along one axis than the other, the lag the example movies'
+  crossing on, a crossing's normal must sit at least `minCrossingAxisDiff` (0.2 in the
+  committed `dr` stage, 0.3 in its `dr-final`) further along one axis than the other, the lag the example movies'
   crossings carry (ROADMAP 4.12). A pass that yields nothing does not end the run: the
   stage hands on every earlier solution that meets the last pass's rules (the tilt
   `minXzSum`, the step parity) from the passes whose crossing heads toward the

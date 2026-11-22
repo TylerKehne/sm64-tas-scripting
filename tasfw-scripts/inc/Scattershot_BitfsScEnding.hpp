@@ -17,7 +17,8 @@
 // run braked to a stop), the leave over the squish edge, the far edge of that corner (a
 // slow walk off, a run off parallel to the edge, a quickturn to idle, a C-up deceleration
 // onto a NUT spot, a wait for the displacement), and the air after it (straining back over
-// the platform, landing on the edge again). The squish spot is past that edge (the
+// the platform, landing on the edge again, the whole fall strained up the rising edge to
+// the catch). The squish spot is past that edge (the
 // maintainer, 2026-10-06), the high side at the target's tilt, so the leave is a fall. It does
 // not optimize any one of these: every option is a move the config weights, a solution
 // records which ones it took, and the only judgment is the maintainer's two rules
@@ -99,8 +100,25 @@ public:
     double weightCUp = 1;        // C-up with a small stick: a deceleration under one unit of speed
     double weightWait = 1;       // a neutral frame standing: the displacement alone (a NUT spot)
     double weightStrainBack = 1; // in the air after the departure, the stick back over the platform
+    double weightAirDive = 1;    // in the air after the departure, falling: B, a dive that adds 15 to the forward speed along the facing (the maintainer's third example leaves at 8 and dives in the air to 22, 2026-10-21)
     double weightNutStop = 1;    // from a stop at the squish edge: a stop searched onto a NUT spot, where the next frame's carry takes him off with no step of his own, and the strain on the fall's first frame
     double weightNutLand = 1;    // in the air beside the squish edge: a frame over the platform within the band, or a touch down that his speed steps off again at once, for the tilt those frames give
+    double weightPunchCancel = 1; // from a landing stop or idle: the standing punch's first frame, then a stick at the facing, a walk that keeps the punch's 10 and runs off the edge (the maintainer, 2026-10-21)
+    double weightFallToCatch = 1; // in the air after the departure: the whole fall as one move, each frame the stick that keeps Mario beside the sweeping edge and takes him up the rising edge, so that the top is far enough above him for the squish a frame sooner (the maintainer's fourth example moves 54 units up the edge in its six air frames, 2026-11-20)
+
+    // The dive recover's steering in the air (the maintainer, 2026-10-21): each frame, the
+    // sticks whose flight, held to its end, lands in reach of the squish edge and in the
+    // catch window are the frame's range. This share of the recovers write the stick whose
+    // landing is nearest a spot drawn across the window; the rest draw one at random from
+    // the range.
+    double landingTargeted = 0.5;
+    // This share of the recovers' moves take only the sticks whose flight keeps the pyramid
+    // Mario's platform on every frame, within 4 of the top, so that it tilts toward him
+    // throughout, and fail where there is none (the maintainer, 2026-10-21); the rest take
+    // the plain range. A flight above the band flattens the run's axis, which the squish
+    // cancel's side face needs steep; from these roots the rollout's first two frames
+    // cannot keep it, so a requirement took the dive recover out (ROADMAP 4.11).
+    double landingBand = 0.5;
 };
 
 class BitfsScEndingMetrics : public Script<Sm64Resource>
@@ -237,11 +255,90 @@ public:
         float Rise(float dirX, float dirZ) const;                     // the top's rise per unit moved along a horizontal unit direction (negative downhill)
 
         float ux = 0, uy = 1, uz = 0, s = 1;
+        float nx = 0, ny = 1, nz = 0; // the stored normal it was made from (the components the game steps by 0.01)
         float homeX = 0, homeY = 0, homeZ = 0;
     };
     // The face a frame on while the pyramid is not Mario's platform: each stored component
     // approaches flat by 0.01 (approach_by_increment).
     static Face NextFace(const Object* pyramid);
+
+    // One game frame of Mario's air over the pyramid, in the game's own arithmetic, so that
+    // a move can ask what a stick does without playing the frame (ROADMAP 4.11, 2026-10-21):
+    // the pyramid's tilt step and the carry of a Mario on its platform
+    // (bhv_tilting_inverted_pyramid_loop); its top as the game loads it, the collision's
+    // square A (307, 307, -306), B (-306, 307, 307), C (307, 307, 307), D (-306, 307, -306)
+    // and the triangles A B C and A D B, each vertex transformed by the normal's matrix and
+    // truncated to a short, the normals and origin offsets as read_surface_data makes them;
+    // find_floor's tests on the truncated position, the lava where the top is not the floor;
+    // then Mario's action with the stick: the dive from a walk (20 up, 15 more speed, 48 at
+    // most), the slide's B press into the rollout (30 up), or a frame of either in the air
+    // (update_air_without_turn, the four quarter steps, gravity), and update_mario_platform's
+    // band of 4. The arithmetic is the decomp copies' float by float, in their order, and the
+    // project builds with contraction off, so the result is the game's bit for bit:
+    // bitfs-turn --test checks it against the game for 321 sticks at every dive recover
+    // frame of both example movies (position, speed, landing and platform the same), and
+    // test_bitfs_ending_geometry.cpp pins frames of it without the game. Not modelled:
+    // walls, ceilings, the slide's own frames, the walk, the other objects.
+    class AirStep
+    {
+    public:
+        struct Pyramid
+        {
+            struct Triangle
+            {
+                int16_t v[3][3] = {}; // the vertices, world coordinates truncated to shorts
+                float nx = 0, ny = 1, nz = 0, originOffset = 0;
+            };
+
+            static Pyramid Of(const Object* pyramid);
+            static Pyramid Of(float nx, float ny, float nz, float homeX, float homeY, float homeZ);
+            Face ToFace() const { return Face::Of(nx, ny, nz, homeX, homeY, homeZ); }
+            // The frame's tilt: the normal steps toward the goal Mario's position sets while he
+            // is on the platform, toward flat else; the top is placed again; a Mario on the
+            // platform is carried with it, his position updated in place.
+            void Tilt(float& marioX, float& marioY, float& marioZ, bool onPlatform);
+            // find_floor at a position: the top's height where the top is the floor there
+            // (isTop), else the lava's.
+            float FindFloor(float x, float y, float z, bool& isTop) const;
+
+            float homeX = 0, homeY = 0, homeZ = 0;
+            float nx = 0, ny = 1, nz = 0; // the stored normal
+            float rows[3][3] = {};       // the transform's rows: left, up, forward
+            Triangle top[2];
+
+        private:
+            void Place(); // the rows and the top from the normal
+        };
+        struct Mario
+        {
+            static Mario Of(const MarioState* marioState, const Object* pyramid);
+
+            float x = 0, y = 0, z = 0;
+            float vx = 0, vy = 0, vz = 0;
+            float forwardVel = 0;
+            int16_t yaw = 0;
+            uint32_t action = 0;
+            bool onPlatform = false; // the pyramid his platform at the frame's end (the band)
+            float floorHeight = 0;
+            bool floorIsTop = false; // his floor the pyramid's top
+            bool landed = false;     // this frame's air step landed
+        };
+        // One frame: the pyramid's tilt, Mario's action with the stick (intendedYaw and
+        // intendedMag as the game derives them from the stick, Inputs::GetIntendedYawMagFromInput;
+        // a magnitude of 0 is a neutral stick), then the platform. False, nothing changed, when
+        // the action is not one the model plays: a walk without the dive's B, a slide without B.
+        static bool Frame(Mario& mario, Pyramid& pyramid, int16_t intendedYaw, float intendedMag, bool bPressed);
+
+    private:
+        // The decomp's helpers, as it writes them.
+        static float ApproachByIncrement(float goal, float src, float inc);
+        static float ApproachF32(float current, float target, float inc, float dec);
+        static void Normalize(float v[3]);
+        static void Cross(float dest[3], const float a[3], const float b[3]);
+        static void LinearMul(const float rows[3][3], float dest[3], const float v[3]);
+        static void UpdateAirWithoutTurn(Mario& mario, int16_t intendedYaw, float intendedMag);
+        static bool PerformAirStep(Mario& mario, const Pyramid& pyramid);
+    };
 
     // One push of the probe: the bully's placement, as the unit direction of the push and the
     // fraction of the push-out distance the bully stands behind Mario against it, and the
@@ -379,14 +476,17 @@ public:
         RELEASE,          // a neutral stick: braking, decelerating
         WALK_OFF,         // a small stick off the edge, from straight off to the edge's own line
         LEAVE_ALONG,      // from a stop: the quickturn to idle, then a walk off along the edge toward the catch window, within 45 degrees of the edge's line; three frames
+        PUNCH_CANCEL,     // from a landing stop (its first frame too) or idle: B, the standing punch's first frame, a step of 10 in the facing, then a full stick at the facing, which cancels the punch into a walk that keeps the 10 and gains about 0.9 a frame, until the walk steps off the edge; four frames at most
         PARALLEL,         // a full stick along the edge
-        QUICKTURN,        // from a landing or braking stop: a minimum-magnitude stick, then neutral; two frames
+        QUICKTURN,        // from a landing or braking stop: a minimum-magnitude stick, then neutral; two frames, three from a landing stop still carrying its speed
         CUP_DECEL,        // C-up with a small stick or none
         WAIT,             // a neutral frame
         WAIT_FOR_TILT,    // stopped on the platform: neutral frames until the tilt across the squish edge has just the steps the leave and the fall need; up to sixteen
         STRAIN_BACK,      // in the air: the stick in or out on the platform's line, at the magnitude that holds Mario where the sweeping edge catches him
+        AIR_DIVE,         // in the air, falling: B with that stick, a dive that adds 15 to the forward speed and keeps the fall's vertical speed (the maintainer's third example, 2026-10-21)
         NUT_STOP,         // from a stop: a walk and stop onto a NUT spot, the next frame's carry taking him off with no step of his own, then StrainBack's stick on that frame; two to twelve frames
-        NUT_LAND          // in the air: the stick that gives a platform frame, a hover within the band over the top or a touch down his speed steps off again at once; one or two frames
+        NUT_LAND,         // in the air: the stick that gives a platform frame, a hover within the band over the top or a touch down his speed steps off again at once; one or two frames
+        FALL_TO_CATCH     // in the air: the whole fall, each frame the stick that holds Mario beside the sweeping edge and takes him up the rising edge to a height drawn across the catch's window, until the next frame's face catches him or he stops falling; up to the probe's window of frames
     };
 
     // How far from the pyramid's home the search lets Mario be, on each axis.
@@ -428,14 +528,22 @@ public:
     // 30 and nothing over 32 (the uscz movie's turn, 35 to 31 in five frames). A little
     // less than the cost at 30, so the gate refuses a little less than it could.
     static constexpr float TurnSpeedCost = 0.5f;
-    // The least the floor must rise a frame under a dive, along its heading at its speed, for
-    // the rollout to stay within the band of 4 over the platform: the movies' dives rise 24
-    // to 27, a dive straight at the squish edge 13, which the rollout out-climbs.
-    static constexpr float DiveRise = 16.0f;
-    // The frames after the dive's pause the rollout is kept lowest over the platform (its
-    // press and its first frame, the Rollout move), and the most the recover takes from the
-    // pause to its landing stop (the Landing move has the rest).
-    static constexpr int RolloutLowFrames = 2;
+    // The dive recover's air is steered by the game's own arithmetic
+    // (BitfsScEndingMetrics::AirStep): on each frame the sticks below are played in the
+    // model, each held to the end of the flight, and the ones whose flight lands in the
+    // zone, keeping the band on every frame for the moves that ask it, are the frame's
+    // range of inputs (the maintainer, 2026-10-21).
+    // Before it, a compare of 33 yaws played in the game kept the rollout lowest and then
+    // highest within the band, which from the roots' dive point landed 259 to 277 along the
+    // edge every time, 30 to 60 nearer the corner than the catches that cancel; the model's
+    // reach from the same slides spans 207 to 300. The sticks: this many yaws around the
+    // turn at each of the magnitudes, and neutral.
+    static constexpr int RecoverYaws = 16;
+    static constexpr float RecoverMagnitudes[2] = { 32.0f, 16.0f };
+    // The frames the Rollout move plays after the dive's pause (the rollout's press and its
+    // first frame), and the most the recover takes from the pause to its landing stop (the
+    // Landing move has the rest).
+    static constexpr int RolloutFirstFrames = 2;
     static constexpr int RolloutFrames = 12;
     // The time budget on the platform (the maintainer, 2026-10-11): the fall from the edge to
     // the catch, in frames of the tilt flattening (the first solutions' 7, the uscz movie's
@@ -464,6 +572,16 @@ public:
     // (update_air_without_turn: 10 times the stick's magnitude), the strain that gets a fall
     // clear of the sweep or back over the platform; along the facing a full stick is 1.5.
     static constexpr float SidewaysStrain = 10.0f;
+    // The air's other controls, for what a fall can still reach (ReachAlongEdge): what a full
+    // stick along his facing adds to his forward speed in a frame, what the air's drag takes
+    // off it, and what B on a fall, the dive in the air, adds to it at once.
+    static constexpr float ForwardStrain = 1.5f;
+    static constexpr float AirDrag = 0.35f;
+    static constexpr float AirDiveSpeed = 15.0f;
+    // The fall's sticks (FallToCatch): this many directions from Mario's facing, evenly
+    // spaced, at each of the magnitudes, and neutral; each is played in the game.
+    static constexpr int FallYaws = 8;
+    static constexpr float FallMagnitudes[2] = { 32.0f, 16.0f };
 
     Scattershot_BitfsScEnding(Alias_Scattershot_BitfsScEnding& scattershot, const BitfsScEndingArgs& args)
         : Alias_ScattershotThread_BitfsScEnding(scattershot), _args(args),
@@ -482,12 +600,23 @@ public:
     BitfsScEndingSolution GetSolutionState() override;
 
 private:
-    // A frame of the dive recover's rollout, as the compare judges it.
-    struct RolloutStep
+    // A dive recover's steering, drawn where its move begins (Rollout, Landing): whether it
+    // aims at a landing spot and which, as the coordinate along the squish edge; the
+    // landing zone, how far inside the squish edge the landing may be, drawn for the leave
+    // it suits (LandingZones: the maintainer, 2026-10-21, the zone adjusted to what comes
+    // after).
+    struct Recover
     {
-        bool landed = false;
-        float height = 0; // Mario above his floor
+        bool targeted = false;
+        bool bandOnly = false; // only sticks whose flight keeps the band on every frame
+        float targetAlong = 0;
+        float insideMax = DrLandingReach;
     };
+    // The landing zones, as the most a landing may be inside the squish edge: what the
+    // punch's first frame reaches outward at the dive's heading (10 along the facing, 65 to
+    // 75 degrees off the edge's line), the punch cancel's two frames, and the whole reach for
+    // the walk after a quickturn.
+    static constexpr float LandingZones[3] = { 10.0f, 21.0f, DrLandingReach };
 
     BitfsScEndingArgs _args;
     int16_t _roughTargetAngle = 0;
@@ -496,8 +625,9 @@ private:
     void EdgeDirections(float& edgeX, float& edgeZ, float& outX, float& outZ) const; // the run's edge
     void SquishDirections(float& outX, float& outZ, float& alongX, float& alongZ) const; // the squish edge
     int16_t SquishEdgeYaw() const; // straight off the squish edge
-    // How far inside the squish edge Mario is, along its outward direction, by the face
-    // (negative outside it).
+    // How far inside the squish edge a point is, along its outward direction, by the face
+    // (negative outside it); Mario's by the pyramid's face.
+    float SquishEdgeDistance(float x, float z, const BitfsScEndingMetrics::Face& face) const;
     float SquishEdgeDistance(const MarioState* marioState, const Object* pyramid) const;
     // The push-out distance of the probe's bully: the two hitbox radii and the padding.
     float PushDistance(const MarioState* marioState) const;
@@ -511,16 +641,23 @@ private:
     // edge, and of the dive recover's turn.
     void EdgePoint(const BitfsScEndingMetrics::Face& face, float along, float& x, float& z) const;
     void AimPoint(const BitfsScEndingMetrics::Face& face, float pushDistance, float& x, float& z, float fraction = 0.5f) const;
+    // What a Mario in the air can still reach along the squish edge in a number of frames, as
+    // the lowest and highest coordinate along it from the home: where his forward speed
+    // carries him, give or take what a stick along his facing changes of it and what a stick
+    // across his facing moves him sideways, and, while he is in freefall, what a dive in the
+    // air adds along his facing. The window rule asks whether the catch's window is in it.
+    void ReachAlongEdge(const MarioState* marioState, const Object* pyramid, float frames, float& low, float& high) const;
     // The normal's component across the squish edge at the catch, and the face there, for
     // the aim, the landing and the time budget: with a target, the target's; without one,
-    // this frame's component flattened to the last value at which the side is still steep,
+    // the face's component flattened to the last value at which the side is still steep,
     // with the catch's slack, the latest catch the cancel allows (the run across the
     // platform flattens that component a step a frame, and a leave at this frame's tilt
-    // aims where the edge will stand far too high).
-    float CatchAcross(const Object* pyramid) const;
-    BitfsScEndingMetrics::Face CatchFace(const Object* pyramid) const;
-    // The face at the catch a dive recover from here is heading for, for its aim and its
-    // landing, and the face a departed Mario's fall ends on, for the window rule (the run
+    // aims where the edge will stand far too high). The face is the pyramid's now, or the
+    // model's at a landing.
+    float CatchAcross(const BitfsScEndingMetrics::Face& face) const;
+    BitfsScEndingMetrics::Face CatchFace(const BitfsScEndingMetrics::Face& face) const;
+    // The face at the catch a dive recover from here is heading for, for its aim, and the
+    // face a departed Mario's fall ends on, for the window rule (the run
     // to the edge keeps the latest catch's, the brake's leave being the search's to
     // place): this frame's component across the squish edge stepped toward flat once a
     // frame for the frames the catch is away, and no further than CatchAcross (the
@@ -532,15 +669,13 @@ private:
     // axis: 0.27 at the dive and 0.40 at the catches that cancel, so an aim on this
     // frame's value stood 40 to 60 units nearer the corner than the window, 2026-10-13)
     // and toward flat once he is off it. FramesToCatch is that count: the frames to the
-    // edge at the run's speed or a walk-off's, LeaveFrames for the stop and the step off,
-    // and the fall's; a departed Mario's count is what the fall has left.
-    float FramesToCatch(const MarioState* marioState, const Object* pyramid) const;
-    BitfsScEndingMetrics::Face ExpectedCatchFace(const MarioState* marioState, const Object* pyramid, float framesToCatch) const;
-    // Whether the squish edge, on the catch's face, stands within the catch's window of
-    // heights at Mario's position along it: where a landing must be for the fall from it
-    // to be caught where the cancel works.
-    bool InCatchWindow(const MarioState* marioState, const Object* pyramid) const;
-    bool InCatchWindow(const MarioState* marioState, const Object* pyramid, const BitfsScEndingMetrics::Face& catchFace) const;
+    // edge from a distance inside it at the run's speed or a walk-off's, LeaveFrames for
+    // the stop and the step off, and the fall's; a departed Mario's count is what the fall
+    // has left. The position and the face are Mario's and the pyramid's now, or a model's
+    // at a landing; the second form reads them from Mario.
+    float FramesToCatch(float edgeDistance, float forwardVel) const;
+    BitfsScEndingMetrics::Face ExpectedCatchFace(float x, float z, const BitfsScEndingMetrics::Face& face, float framesToCatch) const;
+    BitfsScEndingMetrics::Face ExpectedCatchFace(const MarioState* marioState, const Object* pyramid) const;
     // The steps the normal's axis (0 x, 2 z) is further from flat than the target, from the
     // metric's count of steps to the target: negative when it is nearer flat than the target.
     int StepsToFlat(const BitfsScEndingMetrics::CustomScriptStatus& state, int axis) const;
@@ -566,20 +701,50 @@ private:
     // three moves, so that the CSV has a row on the slide, one in the rollout and one at the
     // landing stop (the maintainer, 2026-10-13: while the recover was one move, the viewer
     // showed none of it). Dive: the turn toward the aim, drawn across the catch's window,
-    // then the dive straight ahead as soon as the edge is in reach, and the pause buffer;
-    // false, the frames reverted, when the turn is not done by the dive's window, the speed
-    // is under the dive's 29 after it, or the floor does not rise under the dive. Rollout:
-    // the rollout's press and its first frame. Landing: the rest of its flight, to the
-    // landing stop. Every frame after the dive is the stick, among the yaws within a quarter
-    // turn toward uphill, that keeps the rollout low over the platform (RolloutFrame); the
-    // last two moves are false when the rollout leaves the platform, or lands further than
-    // DrLandingReach inside the squish edge (LandedInReach).
+    // its stick kept within the game's turnaround threshold of the facing, then the dive
+    // straight ahead as soon as the edge is in reach, and the pause buffer; false, the
+    // frames reverted, when the turn is not done by the dive's window, the speed is under
+    // the dive's 29 after it, or no held stick lands the rollout after it in reach
+    // (RecoverReachable). Rollout: the rollout's press and its first frame. Landing: the
+    // rest of its flight, to the landing stop. Each of the two draws its steering where it
+    // begins (StartRecover) and plays its frames by the model (RecoverFrame): the sticks
+    // whose held flight lands in the zone, and, for the share of moves that take only them
+    // (landingBand), keeps the pyramid his platform on every frame, within 4 of the top,
+    // are the frame's range; the one landing nearest the drawn spot or one drawn from the
+    // range is written, and the move is false when the range is empty, the game's frame
+    // leaves the pyramid's floor, or the landing is out of reach (LandedInReach).
     bool Dive();
     bool Rollout();
     bool Landing();
-    bool RolloutFrame(int frame, int rotation);
-    int RolloutRotation(const MarioState* marioState);
-    bool LandedInReach();
+    Recover StartRecover();
+    bool RecoverFrame(const Recover& recover, int framesLeft);
+    // A stick held from a model state to the end of the flight, the dive's air and the
+    // slide's press included: true when it lands within the zone, and, with `band`, every
+    // frame keeps the pyramid his platform; with the landing's coordinate along the squish
+    // edge.
+    bool HeldLanding(BitfsScEndingMetrics::AirStep::Mario mario, BitfsScEndingMetrics::AirStep::Pyramid pyramid, int16_t intendedYaw, float intendedMag, float insideMax, bool band, int framesLeft, float& along) const;
+    // Whether any of the recover's sticks, held, lands in reach from a model state.
+    bool RecoverReachable(const BitfsScEndingMetrics::AirStep::Mario& mario, const BitfsScEndingMetrics::AirStep::Pyramid& pyramid, int framesLeft) const;
+    // A landing within the zone inside the squish edge: a model's, and Mario's now (a
+    // landing stop). Where the edge stands at the landing is not asked (it was, from
+    // 2026-10-11 to 2026-10-21, the catch's window of heights at Mario's position along
+    // the edge): the maintainer's third example lands at the edge's low end, 65 from the
+    // corner, where the edge is about 105 above the lava, and reaches the window by a dive
+    // in the air along the rising edge, 100 units on; the rules on the fall judge where
+    // the catch will come.
+    bool LandedInReach(float x, float z, const BitfsScEndingMetrics::Face& face, float insideMax) const;
+    bool LandedInReach(float insideMax);
+    // The leave from a landing stop that keeps its facing (the maintainer, 2026-10-21): the
+    // punch cancel, B on the stop (its first frame too: the landing's speed is overwritten
+    // by the punch's own, 10 on its first frame), then a full stick at the facing, which
+    // cancels the punch into a walk that keeps the 10 and gains about 0.9 a frame, until
+    // the walk steps off the edge; false when four frames have not. The punch alone does
+    // not leave: a ground step past an edge more than 100 above the lava takes one quarter
+    // step and stops, the punch ignores that it left the ground, and the edge, sweeping
+    // outward 3.5 a frame, is under him again by the next frame, so he moves 2 to 4 a
+    // frame beside it at the platform's height and never falls (bitfs-turn --test pins
+    // it); the walk falls at once because walking handles the leaving of the ground.
+    bool PunchCancel();
     bool HoldBack();
     bool WalkOff();
     // The leave the squish cancels of 2026-10-11 and 2026-10-13 have, as one move from a stop: the
@@ -593,7 +758,13 @@ private:
     bool Parallel();
     bool Quickturn();
     bool CUpDecel();
-    bool StrainBack();
+    // The strain's frame, with the buttons given: B on a freefall frame is the dive in the air
+    // (AirDive), which adds 15 to the forward speed, 48 at most, keeps the fall's vertical
+    // speed and the facing, and leaves the stick's effect as in any air frame; the
+    // maintainer's third example leaves a landing stop at 8 and dives in the air to 22,
+    // along the edge, where a leave at 5 to 8 is overtaken by the sweep.
+    bool StrainBack(uint16_t buttons = 0);
+    bool AirDive();
     // Neutral frames stopped on the platform until the tilt across the squish edge has just
     // the steps the leave and the fall need (the time budget's frames left down to
     // LeaveFrames): the dive recover lands with the tilt still 0.30 across where the squish
@@ -614,4 +785,13 @@ private:
     // off again on its first landing frame; the pyramid tilts toward him on those frames
     // (the maintainer, 2026-10-17). False, nothing written, when none does.
     bool NutLand();
+    // The whole fall as one move (the maintainer's fourth example, 2026-11-20): the squish
+    // needs the top more than FloorReach above Mario, which a fall alone has on its seventh
+    // air frame and one that moves up the rising edge a frame sooner, with the tilt a step
+    // steeper. Each frame, of sticks in every direction played in the game, the one after
+    // which the game squishes him on the next frame where a push can cancel it, which ends
+    // the move; else the one that holds him beside the sweeping edge and takes him up the
+    // edge, no higher than a height drawn across the catch's window. False, nothing
+    // written, when no stick keeps him falling on the first frame.
+    bool FallToCatch();
 };

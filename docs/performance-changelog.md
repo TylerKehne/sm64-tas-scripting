@@ -4,6 +4,226 @@ Every hot-path change records its delta table here, newest first; the policy, th
 how to run it are in [performance.md](performance.md). The first measurements (2026-09-07),
 which everything since is compared against, are at the bottom.
 
+## 2026-11-21: the dr stage's run up the axis, turnaround facing down the slope and kept facing (ROADMAP 4.12)
+
+Not a framework change; the dr stage's script only. Three one-frame moves (the config's
+`runUpAxis`, `faceDownSlope` and `keepFacing` weights, 0 by default) let the search draw
+three things the example movies do in an oscillation and the stage's moves could not. The
+run out is what Mario does from a crossing to
+his turnaround, the way back from the turnaround to the next crossing. `RunUpAxis_1f` is a
+frame of the run out up the slope, along the axis whose tilt has to flatten;
+`FaceDownSlope_1f` is the frame a turnaround stops on, with the stick just past the game's
+held-back angle on the downhill side; `KeepFacing_1f` is a frame of the way back that does
+not turn. With the first on, the uphill-turn phase draws by the config's weights, and its
+turnaround begins only after a frame that ran uphill.
+
+With the three weights at 0 the stage is unchanged. The same configuration, run
+deterministically with the cost model off by the binary before the change and after it,
+gave the same solutions, shots, blocks, scripts, frame advances, saves and loads in every
+pass of both oscillation stages (`dr`: 319,761,436 frame advances, 18,100 saves and
+13,370,600 loads; `dr-final`: 171,093,603, 6,018 and 6,576,485), and solution files that
+are byte for byte the same.
+
+Measured as the `are-fix`, `dr` and `dr-final` stages on the corner resource (16 threads,
+not deterministic, no viewer) with the corner 3 configuration, which this change commits
+as `config.json`: the oscillations in corner 3, the `dr` stage's tilt window 0.61 to 0.63, the `dr-final`
+stage's 0.65 to 0.67 with an axis difference of 0.3, 20,000 shots a `dr` pass and 200,000
+for `dr-final`. Then the `ending` stage from each run's 100 hand-overs: 500,000 shots, the
+squish over the +z edge, no target normal. The same binary with the weights that
+configuration had (lead run 18, probe run 4, uphill turn 1, turnaround 1, targeted
+oscillation 4) and with the new ones (lead run 6, turnaround 2, run up the axis 12, face
+down slope 0.67, keep facing 0.4, the other three 0), seeds 6, 7 and 8 in that order.
+
+| | The weights before | The new weights |
+|---|---|---|
+| `dr`, oscillations 2 to 4: solutions in a pass | 66 to 977, in all 20,000 shots | 1,000 each, the pass's cap, in 660 to 1,480 shots |
+| `dr`, its last pass (oscillation 5): solutions | 1, 0, 0 in 20,000 shots | 1,000 each, in 7,111, 5,811 and 5,073 shots |
+| `dr`: hand-overs | 1; 123 and 139 from earlier passes, by the fallback | 1,000 each |
+| `dr`: the hand-overs' crossing speed, fastest | 26.1, 23.5, 23.6 | 36.1, 35.7, 35.6 |
+| `dr`: the same, median | 26.1, 19.3, 18.7 | 29.3, 29.5, 29.2 |
+| `dr`: wall time | 61.5, 58.4, 58.3 s | 30.9, 29.8, 27.8 s |
+| `dr`: frame advances | 163.9, 164.0, 159.9 million | 60.6, 58.7, 52.6 million |
+| `dr-final`: crossings found in 200,000 shots | 231, 209, 205 | 457, 390, 413 |
+| `dr-final`: its 100 hand-overs' crossing speed, fastest | 29.4, 29.4, 28.2 | 35.8, 36.3, 35.8 |
+| `dr-final`: the same, median | 24.9, 24.9, 23.3 | 33.4, 33.0, 33.0 |
+| `dr-final`: the same, slowest | 15.3, 14.0, 14.4 | 26.2, 26.4, 25.9 |
+| `dr-final`: wall time | 118.7, 125.9, 118.9 s | 347.1, 362.6, 356.6 s |
+| `dr-final`: frame advances | 337.0, 354.9, 332.1 million | 884.3, 876.2, 888.8 million |
+| `dr-final`: blocks, scripts | 0.26 to 0.61 million, 12.0 to 18.4 million | 5.0 to 5.3 million, 89.9 to 91.1 million |
+| `ending`: squish cancels in 500,000 shots | 0, 0, 0 | 40, 43, 50, all replayed on the game |
+| `ending`: wall time | 352.7, 313.4, 282.5 s | 505.5, 527.9, 514.5 s |
+| `ending`: frame advances | 0.91, 0.84, 0.77 billion | 1.29, 1.33, 1.32 billion |
+| `ending`: blocks, scripts | 1.3 to 1.7 million, 23.2 to 24.7 million | 4.0 to 4.1 million, 33.2 to 33.7 million |
+
+Every hand-over of every run replayed on the game and matched. The hand-overs' normals are
+the same three cells before and after, (-0.18, -0.49) to (-0.16, -0.51), at a tilt of
+0.665. The `dr` stage takes half the time, since its passes reach their cap of 1,000
+solutions in a fraction of their shots. `dr-final` takes three times as long for the same
+200,000 shots: with more states to continue from it makes ten to twenty times the blocks
+and five to seven times the scripts. Both stages together took about 180 s before and 385 s
+after.
+The ending found no squish cancel from the slower hand-overs on any seed and 40 to 50 from
+the faster ones, about half of them with the normal (-0.32, -0.21) at the squish. On the
+faster hand-overs it takes about 1.6 times as long and makes two to three times the blocks.
+The first of the three runs before (352.7 s) shared the machine with a test run, so its
+time is high.
+
+The same weights on the uscz setup, measured later the same day. The setup is the
+`config.json` git had before this change (065470c: oscillations in corner 4, the `dr`
+stage's last pass at a tilt of 0.59 or more, `dr-final` at 0.71 to 0.73 with 0.2 between
+the axes, 20,000 shots a pass) with this change's ending settings. The weights it had (lead run 9, probe run 4,
+uphill turn 1, turnaround 1) against the new ones, seeds 6, 7 and 8 in that order. Then,
+on seeds 6 and 7 and from the same `dr` hand-overs, `dr-final` with its window lowered to
+0.67 to 0.69, and the ending from each `dr-final`.
+
+| | The weights before | The new weights |
+|---|---|---|
+| `dr`, oscillations 2 to 6: shots a pass took to its 1,000 solutions | 1,041 to 14,829 | 622 to 1,416 |
+| `dr`: the fastest crossing a pass carries on, oscillations 2 to 6 | 27.6 to 31.6 | 31.0 to 35.9 |
+| `dr`: its 1,000 hand-overs' crossing speed, fastest | 29.5, 31.6, 29.6 | 35.9, 35.1, 35.6 |
+| `dr`: the same, median | 23.2, 24.1, 23.5 | 28.7, 29.1, 29.0 |
+| `dr`: hand-overs at a tilt of 0.69 or more | 368, 107, 378 | 10, 0, 29 |
+| `dr`: wall time | 45.0, 37.8, 58.2 s | 26.6, 28.8, 32.5 s |
+| `dr`: frame advances | 94.0, 80.1, 126.8 million | 48.0, 51.8, 58.0 million |
+| `dr-final` at 0.71 to 0.73: crossings found in 20,000 shots | 453, 394, 461 | 60, 31, 40 |
+| `dr-final` at 0.71 to 0.73: the fastest of them | 28.5, 28.3, 28.2 | 30.6, 29.4, 28.1 |
+| `dr-final` at 0.71 to 0.73: wall time | 29.4, 30.4, 31.3 s | 35.8, 36.3, 41.2 s |
+| `dr-final` at 0.71 to 0.73: frame advances | 80.9, 84.1, 80.6 million | 98.5, 98.2, 99.6 million |
+| `ending` from it, seeds 6 and 7: squish cancels | 1,000 in 482,524 shots; 233 in 500,000 | 677 and 30 in 500,000 |
+| `dr-final` at 0.67 to 0.69, seeds 6 and 7: shots to its 1,000 crossings | 19,732 and 7,993 | 10,472 and 11,930 |
+| `dr-final` at 0.67 to 0.69: its 100 hand-overs' crossing speed, fastest | 29.5 on both | 33.1, 33.0 |
+| `dr-final` at 0.67 to 0.69: the same, median | 26.6 on both | 30.1, 29.2 |
+| `ending` from it, seeds 6 and 7: squish cancels | 148 and 216 in 500,000 shots | 1,000 in 53,328 shots; 1,000 in 76,377 |
+
+Every hand-over and every squish cancel replayed on the game and matched. The `dr` rows and
+the `dr-final` rows at 0.71 to 0.73 ran alone, but for seed 8's `dr-final` with the new
+weights (41.2 s), which ran beside a build. The endings and the runs at 0.67 to 0.69 shared
+the machine with each other and with single-thread searches, so only their shots are given.
+
+With the new weights `dr` reaches each pass's 1,000 solutions in fewer shots and takes about
+two thirds of the time, as on corner 3. Its crossings are faster and at a lower tilt: an
+oscillation made with the new moves gives up tilt for speed. So `dr-final`, asked for 0.71
+to 0.73, finds about a tenth of the crossings, and the ending from them finds fewer squish
+cancels on both seeds. Asked for 0.67 to 0.69, both weights give `dr-final` its 1,000
+crossings, the new weights' about 3 faster. From the new weights' hand-overs the ending
+reaches 1,000 squish cancels in 53,328 and 76,377 shots; from the others it finds 148 and
+216 in 500,000. So the gain is the new moves at the tilt where they are fast, and not the
+window alone. Those squish cancels are at a lower normal, (-0.18, 0.35) and (-0.19, 0.32
+to 0.34) where the window of 0.71 to 0.73 gives (-0.16, 0.41) and (-0.17, 0.40), and they
+come about 45 frames later in the movie, since an oscillation of the new moves is about
+five frames longer (ROADMAP 4.12).
+
+The stage is in no perf tier, so the suite was not run.
+
+## 2026-11-20: the ending's fall to the catch, and what a fall can reach along the edge (ROADMAP 4.11)
+
+Not a framework change; the ending's script only. Two changes, measured together. The rule
+on where a fall's catch will come along the squish edge carried Mario by his velocity
+alone; it now asks whether the catch's window is within what the air's controls can still
+reach (`ReachAlongEdge`), so more departed states are kept. And a new move, `FALL_TO_CATCH`
+(the config's `fallToCatch` weight), plays the whole fall: each frame it tries 17 sticks in
+the game (eight directions from Mario's facing at two magnitudes, and neutral), and one more
+frame for a stick the model calls a catch, to ask the game whether it squishes. So the move
+costs about 17 loads and frame advances for each frame of the fall.
+
+Measured as the ending stage alone on the corner resource (16 threads, not deterministic,
+no viewer), one run each, the same configuration with the old and the new source file. The
+workloads: the fourth example's own last crossing (the movie as the source, frame 4418,
+its corner and edge; the corner's track platform left out, since it is moving by then and
+the corner refuses it); the maintainer's uscz `dr-final` hand-over of 2026-10-20 (100
+roots at a tilt of 0.69, the ending set to corner 1 and the z-aligned edge); and a
+`dr-final` hand-over in corner 3 at a tilt of 0.685 (100 roots, the x-aligned edge).
+
+| The ending stage | Shots | Before | After |
+|---|---|---|---|
+| From the fourth example's crossing: squish cancels | 100,000 | 0 | 13, all replayed on the game |
+| Wall time | | 15.9 s | 40.6 s |
+| Frame advances, saves, loads | | 38.8, 5.1 and 18.4 million | 104.8, 7.6 and 73.6 million |
+| Blocks, scripts | | 638,322 and 7.74 million | 619,985 and 7.47 million |
+| From the uscz hand-over of 2026-10-20: squish cancels | 100,000 | 23 | 245, all replayed on the game |
+| Wall time | | 54.3 s | 76.0 s |
+| Frame advances, saves, loads | | 157.5, 15.6 and 19.1 million | 215.3, 17.8 and 63.0 million |
+| Blocks, scripts | | 654,899 and 10.68 million | 676,335 and 10.57 million |
+| From the corner 3 hand-over at 0.685: squish cancels | 40,000 | 0 | 0 |
+| Wall time | | 17.0 s | 21.6 s |
+| Frame advances, saves, loads | | 48.1, 6.1 and 5.1 million | 56.9, 7.0 and 12.1 million |
+| Blocks, scripts | | 183,966 and 5.10 million | 192,173 and 5.14 million |
+
+A run takes 1.3 to 2.6 times as long as it did for the same shots, and finds squish
+cancels where it found none or a tenth as many: on the uscz hand-over the rate went from
+0.42 squish cancels a second to 3.2.
+On the game itself (the fourth example's crossing, 20,000 shots, 16 copies of the DLL)
+the same change went from no squish cancel in 53 s to 3 in 126 s; a load there costs
+about 140 µs with 16 threads against 1.3 µs on the corner, and the move is mostly loads.
+The hand-over at 0.685 has too little tilt for this edge whatever the fall does (ROADMAP
+4.11). The stage is in no perf tier, so the suite was not run.
+
+## 2026-10-21: the dr stage's targeted oscillation (ROADMAP 4.12)
+
+Not a framework change; the dr stage's script only. A new move, `TargetCrossing` (the
+config's `targetCrossing` weight, 0 in the committed config), plays the third example's
+oscillation as one move: uphill along the minor axis to the center, the turnaround with the stick
+at the point under the window's normal, the run back at it and then at the chord end, to the
+crossing. Measured as the `dr-final` stage alone (50,000 shots, 16 threads on the corner
+resource, not deterministic, no export) on the maintainer's `dr` hand-over of 2026-10-21
+21:49, five seeds each, the same binary with the weight 0 and 4; the stage's time falls with
+the move because its draws end their pellets' frames sooner.
+
+| The dr-final stage, 50,000 shots, seeds 6 to 10 | Without the move | With it, first form | Second form | Third form | Fourth form | Fifth form (the code's) |
+|---|---|---|---|---|---|---|
+| Hand-overs (all five seeds) | 19 | 8 | 4 | 5 | 7 | 5 |
+| Crossing speed, median | 22.2 | 17.8 | 22.1 | 21.0 | 15.7 | 20.8 |
+| Wall time, median of a run | 26.5 s | 18.2 s | 19.0 s | 19.1 s | 17.9 s | 18.1 s |
+| Frame advances, median of a run | 71.6 million | 50.5 million | 50.5 million | 52.0 million | 50.3 million | 50.8 million |
+
+The forms are in ROADMAP 4.12 with the censuses of the third, fourth and fifth forms' draws.
+The stage is in no perf tier, so the suite was not run.
+
+## 2026-10-21: the ending's dive recover steered by the air model (ROADMAP 4.11)
+
+Not a framework change; the ending's script only. The rollout's air frames were steered by
+a compare of 33 yaws played in the game on every frame (33 loads and advances a frame,
+with their saves). Each frame now plays 33 sticks in `BitfsScEndingMetrics::AirStep`, the
+game's own arithmetic for the air over the pyramid, each held to the end of the flight,
+and writes one frame in the game; the dive is taken only where that model lands the
+rollout in reach. Measured as the ending stage alone on the maintainer's `dr-final`
+hand-over of 2026-10-20, the committed settings (500,000 shots, 16 threads, not
+deterministic, no export), one run each; the run before overlapped the run after for its
+first minute, so its time is high if anything.
+
+| The ending stage, 500,000 shots | Before | After | After, with `Quickturn`'s waiting frame | After, with the punch cancel and the landing zones | After, with the band required on every frame | After, with the band favored (half the moves) | After, with the dive in the air (the maintainer's roots of 2026-10-21) | After, the landing's window check gone (the same roots) | The same, on the maintainer's roots from the third example's crossing settings |
+|---|---|---|---|---|---|---|---|---|---|
+| Wall time | 222 s | 238 s | 207 s | 230 s | 211 s | 222 s | 244 s | 250 s | 195 s |
+| Frame advances | 663.7 million | 673.2 million | 674.5 million | 683.9 million | 656.9 million | 674.6 million | 663.3 million | 668.9 million | 594.1 million |
+| Saves | 66.8 million | 69.3 million | 69.0 million | 67.8 million | 67.0 million | 68.0 million | 60.1 million | 61.5 million | 63.4 million |
+| Loads | 85.5 million | 91.5 million | 93.4 million | 97.1 million | 79.7 million | 92.2 million | 113.2 million | 115.2 million | 72.2 million |
+| Dive recover landing stops | 17 | 227 | 358 | 157 | 0 | 67 | 3,802 | 6,256 | 0 |
+| Dive recover departed rows | 12,291 | 77,530 | 83,919 | 85,530 | 0 | 52,541 | 305,056 | 321,011 | 0 |
+| Squish cancels kept (all the brake's) | 55 | 35 | 15 | 158 | 7 | 3 | 222 | 126 | 0 |
+
+The counts rise with the dive recover's lineages, six times as many, each a block and its
+pellets; the squish cancel counts are inside the seeds' spread (the maintainer's run of the
+day before kept 280 on the same settings). The third run has `Quickturn` giving a
+landing stop its first frame, the fourth the punch cancel and the landing zones (ROADMAP
+4.11, the same day), script changes with no cost of their own; the fourth's 158 squish
+cancels against the third's 15 is the seeds' spread, both all the brake's. The fifth
+requires the band on every frame of the flight, which no dive from these roots can keep
+(ROADMAP 4.11): no dive recover ran, and the stage's work is the brake's alone. The sixth
+is the committed form, the band favored by half the recover's moves (`landingBand`
+0.5); its 3 squish cancels are the seeds' spread again. The seventh adds the dive in
+the air (`AIR_DIVE`, a compare of seven sticks played in the game like the strain's) and
+runs on the maintainer's faster roots of that evening, so its counts are not the earlier
+runs' to compare; its loads rise with the compare's. The eighth takes the catch window off
+the landing's judgment (ROADMAP 4.11: the third example lands below the window and reaches
+it by the dive in the air) on the seventh's roots: twice the landings, from 173 to 302
+along the edge, still no dive recover catch, and 126 squish cancels, the brake's, within
+the seeds' spread. The ninth is the same build on the maintainer's roots from the third
+example's crossing settings (tilt 0.717): no dive recover ran at all, the stage's work is
+the brake's, and ROADMAP 4.11 has the census of the dive's refusals. A build and the test
+suite ran beside the eighth and ninth, so their times are high if anything. The model's own
+cost is in "outside the resource", 22.6% before and 23.7% after. The ending stage is in no
+perf tier, so the suite was not run.
+
 ## 2026-10-19: the downhill look-ahead's frame takes a neutral written input, never the movie's (ROADMAP 4.12)
 
 Not a framework change; the script only (`GetMinimumDownhillWalkingAngle`, the one-frame
